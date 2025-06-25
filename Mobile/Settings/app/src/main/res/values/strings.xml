@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Settings(Alpha)</string>
+    <string name="wifi_settings">Wi-Fi Settings</string>
+    <string name="bluetooth_settings">Bluetooth Settings</string>
+    <string name="display_settings">Display Settings</string>
+    <string name="sound_settings">Sound Settings</string>
+    <string name="battery_settings">Battery Settings</string>
+    <string name="apps_permissions">Apps &amp; Permissions</string>
+    <string name="accessibility">Accessibility</string>
+    <string name="about_phone">About Phone</string>
+    <string name="toggle_airplane_mode">Toggle Airplane Mode (Root)</string>
+    <string name="root_login">Root Login(Alpha)</string>
+</resources>
