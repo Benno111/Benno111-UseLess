@@ -1,3 +1,4 @@
+
 mod boot_manager;
 mod drivers;
 mod framebuffer;
@@ -8,6 +9,5 @@ mod config;
 mod utils;
 
 fn main() {
-    // Start boot sequence
     boot_manager::boot_sequence();
 }

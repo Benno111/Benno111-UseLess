@@ -1,4 +1,4 @@
+
 pub fn start() {
-    // Start apps launcher UI
-    // Allow launching installed apps
+    crate::framebuffer::draw_text("App Launcher Started", 2, 4);
 }

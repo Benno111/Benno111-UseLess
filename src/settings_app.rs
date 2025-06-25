@@ -1,4 +1,4 @@
+
 pub fn start() {
-    // Start settings UI
-    // Allow viewing and modifying system settings loaded from JSON config
+    crate::framebuffer::draw_text("Settings App Started", 2, 6);
 }

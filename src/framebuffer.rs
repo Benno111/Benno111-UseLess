@@ -1,15 +1,17 @@
+
 pub fn init() {
-    // Initialize framebuffer, clear screen
+    clear_screen();
+    draw_text("Desktop Initialized", 2, 2);
 }
 
 pub fn clear_screen() {
-    // Clear framebuffer contents
+    println!("[FB] Clear screen");
 }
 
 pub fn draw_text(text: &str, x: usize, y: usize) {
-    // Draw text at given coordinates
+    println!("[FB] ({}, {}): {}", x, y, text);
 }
 
 pub fn render_frame() {
-    // Render UI frame with mouse cursor, desktop, windows
+    println!("[FB] Frame rendered.");
 }

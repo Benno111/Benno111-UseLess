@@ -1,3 +1,4 @@
+
 pub fn some_helper_function() {
-    // Utility functions
+    println!("[Utils] Helper called.");
 }

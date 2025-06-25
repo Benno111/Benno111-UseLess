@@ -1,9 +1,11 @@
+
 use crate::drivers;
 use crate::framebuffer;
 use crate::input;
+use crate::apps_launcher;
+use crate::config;
 
 pub fn boot_sequence() {
-    // Initialize firmware keyboard support and check for Ctrl+B hold
     if firmware_keyboard::wait_for_ctrl_b_hold() {
         enter_boot_options_menu();
     } else {
@@ -12,23 +14,51 @@ pub fn boot_sequence() {
 }
 
 fn enter_boot_options_menu() {
-    // Render boot options UI, wait for user input
-    framebuffer::clear_screen();
-    framebuffer::draw_text("Boot Options Menu", 10, 10);
-    // TODO: Implement options menu interaction
-    loop {}
+    let mut selected = 0;
+    let options = ["Toggle Verbose Boot", "Select Boot Device", "Continue Boot"];
+
+    loop {
+        framebuffer::clear_screen();
+        framebuffer::draw_text("Boot Options Menu", 2, 2);
+
+        for (i, option) in options.iter().enumerate() {
+            let prefix = if i == selected { ">> " } else { "   " };
+            framebuffer::draw_text(&format!("{}{}", prefix, option), 4, 4 + i * 2);
+        }
+
+        framebuffer::render_frame();
+
+        match firmware_keyboard::read_key() {
+            Some(firmware_keyboard::FWKey::Up) => {
+                if selected > 0 { selected -= 1; }
+            }
+            Some(firmware_keyboard::FWKey::Down) => {
+                if selected < options.len() - 1 { selected += 1; }
+            }
+            Some(firmware_keyboard::FWKey::Enter) => {
+                match selected {
+                    0 => config::toggle_verbose(),
+                    1 => framebuffer::draw_text("Boot device selection: Default", 4, 12),
+                    2 => return,
+                    _ => {}
+                }
+            }
+            Some(firmware_keyboard::FWKey::Esc) => return,
+            _ => {}
+        }
+    }
 }
 
 fn normal_boot() {
-    // Initialize devices
+    if config::is_verbose() {
+        framebuffer::draw_text("Booting in VERBOSE mode...", 2, 2);
+    }
+
     drivers::init_ps2();
     drivers::init_usb();
-
-    // Initialize desktop UI
     framebuffer::init();
     apps_launcher::start();
 
-    // Enter main event loop
     loop {
         input::poll_input_events();
         framebuffer::render_frame();
@@ -38,14 +68,18 @@ fn normal_boot() {
 mod firmware_keyboard {
     use std::time::{Instant, Duration};
 
+    #[derive(Debug)]
+    pub enum FWKey {
+        Up, Down, Enter, Esc, Char(char),
+    }
+
     pub fn wait_for_ctrl_b_hold() -> bool {
-        // Stub: Replace with actual firmware keyboard polling code
-        let start = Instant::now();
-        while Instant::now().duration_since(start) < Duration::from_secs(3) {
-            // Check keyboard events from firmware API
-            // Detect Ctrl + B hold for 500ms
-            // Return true if detected
-        }
+        println!("(Simulated) Waiting for Ctrl+B hold...");
+        std::thread::sleep(Duration::from_secs(1));
         false
+    }
+
+    pub fn read_key() -> Option<FWKey> {
+        None
     }
 }
