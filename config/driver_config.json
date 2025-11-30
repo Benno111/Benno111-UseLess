@@ -1,7 +1,0 @@
-
-{
-  "platform_exclusive_calls": [
-    "x86_64_specific_call",
-    "arm64_specific_call"
-  ]
-}
