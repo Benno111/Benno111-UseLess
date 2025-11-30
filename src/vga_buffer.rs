@@ -4,8 +4,8 @@
 #![allow(dead_code)]
 
 use core::fmt;
-use spin::Mutex;
-use volatile::Volatile;
+use core::ptr::{read_volatile, write_volatile};
+use spin::{Lazy, Mutex};
 
 const VGA_BUFFER_ADDRESS: usize = 0xb8000;
 const BUFFER_WIDTH: usize = 80;
@@ -21,7 +21,7 @@ struct VgaChar {
 
 #[repr(transparent)]
 struct VgaBuffer {
-    chars: [[Volatile<VgaChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [[VgaChar; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
 /// Simple 4-bit foreground + 4-bit background color.
@@ -69,14 +69,24 @@ impl VgaWriter {
         }
     }
 
+    fn read_char(&self, row: usize, col: usize) -> VgaChar {
+        // SAFETY: The VGA memory is always valid for the size of a single character.
+        unsafe { read_volatile(&self.buffer.chars[row][col]) }
+    }
+
+    fn write_char(&mut self, row: usize, col: usize, value: VgaChar) {
+        // SAFETY: The VGA memory is always valid for the size of a single character.
+        unsafe { write_volatile(&mut self.buffer.chars[row][col], value) };
+    }
+
     fn newline(&mut self) {
         self.col = 0;
         if self.row + 1 >= BUFFER_HEIGHT {
             // Scroll everything one line up.
             for y in 1..BUFFER_HEIGHT {
                 for x in 0..BUFFER_WIDTH {
-                    let ch = self.buffer.chars[y][x].read();
-                    self.buffer.chars[y - 1][x].write(ch);
+                    let ch = self.read_char(y, x);
+                    self.write_char(y - 1, x, ch);
                 }
             }
             // Clear last line.
@@ -92,7 +102,7 @@ impl VgaWriter {
             color: self.color,
         };
         for x in 0..BUFFER_WIDTH {
-            self.buffer.chars[row][x].write(blank);
+            self.write_char(row, x, blank);
         }
     }
 
@@ -107,7 +117,7 @@ impl VgaWriter {
                     ascii: byte,
                     color: self.color,
                 };
-                self.buffer.chars[self.row][self.col].write(vchar);
+                self.write_char(self.row, self.col, vchar);
                 self.col += 1;
             }
         }
@@ -127,7 +137,7 @@ impl fmt::Write for VgaWriter {
     }
 }
 
-static GLOBAL_WRITER: Mutex<VgaWriter> = Mutex::new(VgaWriter::new());
+static GLOBAL_WRITER: Lazy<Mutex<VgaWriter>> = Lazy::new(|| Mutex::new(VgaWriter::new()));
 
 /// Get a locked writer handle for printing to the VGA text buffer.
 pub fn writer() -> impl core::ops::DerefMut<Target = VgaWriter> {

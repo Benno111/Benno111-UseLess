@@ -1,0 +1,1 @@
+/home/benno111/Documents/GitHub/OS-Kernel-Private/target/x86_64-unknown-none/debug/os-kernel-edition: /home/benno111/Documents/GitHub/OS-Kernel-Private/src/main.rs /home/benno111/Documents/GitHub/OS-Kernel-Private/src/vga_buffer.rs
