@@ -1,23 +1,23 @@
 use crate::framebuffer;
 use crate::vga_buffer;
+use crate::windowing;
 use alloc::format;
+use crate::framebuffer::{COLOR_CARD, COLOR_ACCENT, COLOR_TEXT};
 
 pub fn start() {
     let options = ["Calculator", "Settings", "Logs", "Power Off"];
-    framebuffer::draw_text("== App Selector ==", 2, 4);
-    let mut y = 10;
-    for (i, app) in options.iter().enumerate() {
-        framebuffer::draw_text(&format!("[{}] {}", i + 1, app), 4, y);
-        y += 20;
-    }
-    framebuffer::draw_text("Input (scripted): 1,3", 2, y + 4);
+    windowing::set_app_windows(&options);
+    framebuffer::draw_rect(20, 12, 320, 60, COLOR_CARD);
+    framebuffer::draw_text("Desktop apps (scripted selects 1,3)", 28, 20);
     framebuffer::render_frame();
 
     // Scripted selections to show input handling.
     let selections = [1usize, 3usize];
+    let mut y = 36;
     for sel in selections {
         vga_buffer::log_line(&format!("[apps] selecting option {sel}"));
-        framebuffer::draw_text(&format!("> {sel}"), 2, y + 24);
+        framebuffer::draw_text(&format!("> {sel}"), 28, y);
         framebuffer::render_frame();
+        y += 14;
     }
 }

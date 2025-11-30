@@ -3,11 +3,11 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=2223488 bytes
-[FB] Clear screen
+[boot] kernel image: addr=0x1000000, len=5080728 bytes
 [FB] Draw text
 [FB] Framebuffer initialized.
-[FB] Clear screen
+[FB] Draw text
+[FB] Draw text
 [FB] Draw text
 [FB] Draw text
 [FB] Draw text
@@ -43,11 +43,6 @@ user 'guest' created
 - guest
 [FB] Frame rendered.
 [FB] Draw text
-[FB] Draw text
-[FB] Draw text
-[FB] Draw text
-[FB] Draw text
-[FB] Draw text
 [FB] Frame rendered.
 [apps] selecting option 1
 [FB] Draw text
@@ -55,12 +50,18 @@ user 'guest' created
 [apps] selecting option 3
 [FB] Draw text
 [FB] Frame rendered.
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
 [FB] Frame rendered.
-[Input] keyboard event: Enter
+[windowing] rendered windows and cursor
 [FB] Frame rendered.
-[Input] mouse move: (10,5)
+[Input] key: h
 [FB] Frame rendered.
-[Input] keyboard event: Esc
+[Input] key: i
 [FB] Frame rendered.
-[Input] No more scripted events
+[Input] mouse move: (15, 8)
+[FB] Frame rendered.
+[Input] key: !
 [FB] Frame rendered.

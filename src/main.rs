@@ -21,6 +21,7 @@ mod framebuffer;
 mod input;
 mod apps_launcher;
 mod login;
+mod windowing;
 mod serial;
 mod vga_buffer;
 
@@ -67,9 +68,14 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
         scale: 2,
         letter_spacing: 2,
     });
+    if let Some((w, h)) = framebuffer::framebuffer_size() {
+        windowing::set_bounds(w, h);
+    }
     accounts::ensure_user("admin", "pass123");
 
     if login::run_login_screen() {
+        windowing::init_default_windows();
+        input::enqueue_demo_inputs();
         // Show a simple command input screen and run scripted commands.
         command_ui::show_command_screen(&[
             "listusers",
@@ -78,6 +84,7 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
             "listusers",
         ]);
         apps_launcher::start();
+        windowing::render();
         framebuffer::render_frame();
     } else {
         vga_buffer::log_line("[kernel] login failed; halting");

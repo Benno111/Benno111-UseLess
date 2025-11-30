@@ -5,6 +5,16 @@ use spin::Mutex;
 use crate::vga_buffer;
 use crate::fonts::{self, FontConfig, FONT_W};
 
+// Simple flat palette for UI.
+pub const COLOR_BG: (u8, u8, u8) = (16, 18, 24);
+pub const COLOR_CARD: (u8, u8, u8) = (30, 33, 40);
+pub const COLOR_ACCENT: (u8, u8, u8) = (82, 156, 255);
+pub const COLOR_TEXT: (u8, u8, u8) = (230, 234, 240);
+pub const COLOR_SUB: (u8, u8, u8) = (150, 156, 168);
+const WALL_W: usize = 960;
+const WALL_H: usize = 720;
+const WALLPAPER: &[u8] = include_bytes!("../assets/ui/wallpaper.raw");
+
 struct FbState {
     buffer: &'static mut [u8],
     info: FrameBufferInfo,
@@ -24,7 +34,7 @@ pub fn init(fb: Option<&mut FrameBuffer>) {
         // SAFETY: bootloader-provided framebuffer lives for the whole kernel lifetime.
         let buffer: &'static mut [u8] = unsafe { core::mem::transmute(fb.buffer_mut()) };
         *FB.lock() = Some(FbState { buffer, info });
-        clear_screen();
+        draw_wallpaper();
         draw_text("Desktop Initialized", 2, 2);
         vga_buffer::log_line("[FB] Framebuffer initialized.");
     } else {
@@ -78,7 +88,137 @@ pub fn set_font_config(cfg: FontConfig) {
     *FONT_CFG.lock() = cfg;
 }
 
-fn with_fb<F: FnOnce(&mut [u8], &FrameBufferInfo)>(f: F) -> bool {
+/// Current framebuffer dimensions, if initialized.
+pub fn framebuffer_size() -> Option<(usize, usize)> {
+    FB.lock().as_ref().map(|fb| (fb.info.width, fb.info.height))
+}
+
+pub fn read_pixel(px: &[u8], info: &FrameBufferInfo) -> (u8, u8, u8) {
+    match info.pixel_format {
+        bootloader_api::info::PixelFormat::Rgb => {
+            if px.len() >= 3 {
+                (px[0], px[1], px[2])
+            } else {
+                (0, 0, 0)
+            }
+        }
+        bootloader_api::info::PixelFormat::Bgr => {
+            if px.len() >= 3 {
+                (px[2], px[1], px[0])
+            } else {
+                (0, 0, 0)
+            }
+        }
+        _ => (px.get(0).copied().unwrap_or(0), 0, 0),
+    }
+}
+
+pub fn write_pixel(px: &mut [u8], bpp: usize, r: u8, g: u8, b: u8, info: &FrameBufferInfo) {
+    set_pixel_bytes(px, bpp, r, g, b, info);
+}
+
+pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: (u8, u8, u8)) {
+    let _ = with_fb(|buf, info| {
+        // top/bottom
+        for yy in y..y.saturating_add(h) {
+            if yy >= info.height {
+                break;
+            }
+            for xx in x..x.saturating_add(w) {
+                if xx >= info.width {
+                    break;
+                }
+                let alpha = if yy == y || yy + 1 == y + h || xx == x || xx + 1 == x + w { 255 } else { 128 };
+                let bpp = info.bytes_per_pixel;
+                let pix_idx = yy * info.stride * bpp + xx * bpp;
+                if let Some(px) = buf.get_mut(pix_idx..pix_idx + bpp) {
+                    let (pr, pg, pb) = read_pixel(px, info);
+                    let inv = 255 - alpha as u16;
+                    let nr = ((color.0 as u16 * alpha as u16 + pr as u16 * inv) / 255) as u8;
+                    let ng = ((color.1 as u16 * alpha as u16 + pg as u16 * inv) / 255) as u8;
+                    let nb = ((color.2 as u16 * alpha as u16 + pb as u16 * inv) / 255) as u8;
+                    write_pixel(px, bpp, nr, ng, nb, info);
+                }
+            }
+        }
+    });
+}
+
+pub fn draw_cursor(x: usize, y: usize, color: (u8, u8, u8)) {
+    let size = 6;
+    let _ = with_fb(|buf, info| {
+        for dx in 0..size {
+            draw_pixel(buf, info, x + dx, y, color);
+        }
+        for dy in 0..size {
+            draw_pixel(buf, info, x, y + dy, color);
+        }
+    });
+}
+
+/// Blit an RGBA buffer at the given position.
+pub fn blit_rgba(x: usize, y: usize, w: usize, h: usize, data: &[u8]) {
+    let expected = w.saturating_mul(h).saturating_mul(4);
+    if data.len() < expected {
+        return;
+    }
+    let _ = with_fb(|buf, info| {
+        for row in 0..h {
+            if y + row >= info.height {
+                break;
+            }
+            for col in 0..w {
+                if x + col >= info.width {
+                    break;
+                }
+                let idx = (row * w + col) * 4;
+                let r = data[idx];
+                let g = data[idx + 1];
+                let b = data[idx + 2];
+                let a = data[idx + 3];
+                if a == 0 {
+                    continue;
+                }
+                let alpha = a as u16;
+                let inv = 255 - a as u16;
+
+                let bpp = info.bytes_per_pixel;
+                let pix_idx = (y + row) * info.stride * bpp + (x + col) * bpp;
+                if let Some(px) = buf.get_mut(pix_idx..pix_idx + bpp) {
+                    let (pr, pg, pb) = read_pixel(px, info);
+                    let nr = ((r as u16 * alpha + pr as u16 * inv) / 255) as u8;
+                    let ng = ((g as u16 * alpha + pg as u16 * inv) / 255) as u8;
+                    let nb = ((b as u16 * alpha + pb as u16 * inv) / 255) as u8;
+                    write_pixel(px, bpp, nr, ng, nb, info);
+                }
+            }
+        }
+    });
+}
+
+/// Paint the wallpaper scaled to the framebuffer.
+pub fn draw_wallpaper() {
+    let _ = with_fb(|buf, info| {
+        if WALLPAPER.len() < WALL_W * WALL_H * 4 {
+            return;
+        }
+        let w = info.width;
+        let h = info.height;
+        for y in 0..h {
+            let sy = y * WALL_H / h;
+            for x in 0..w {
+                let sx = x * WALL_W / w;
+                let idx = (sy * WALL_W + sx) * 4;
+                let r = WALLPAPER[idx];
+                let g = WALLPAPER[idx + 1];
+                let b = WALLPAPER[idx + 2];
+                draw_pixel(buf, info, x, y, (r, g, b));
+            }
+        }
+    });
+}
+
+pub(crate) fn with_fb<F: FnOnce(&mut [u8], &FrameBufferInfo)>(f: F) -> bool {
     if let Some(fb) = FB.lock().as_mut() {
         f(fb.buffer, &fb.info);
         true
