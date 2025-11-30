@@ -1,11 +1,18 @@
-
 [package]
 name = "os-kernel-edition"
 version = "0.0.1"
-edition = "2025"
+edition = "2021"
 
+# This crate is a freestanding kernel, so we build with no_std and no_main.
+# The actual entry point is defined via the bootloader_api::entry_point! macro.
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-zip = "0.6"
-walkdir = "2.3"
+bootloader_api = "0.11"
+x86_64 = "0.15"
+spin = "0.9"
+volatile = "0.4"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
