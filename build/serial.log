@@ -3,7 +3,7 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=5080728 bytes
+[boot] kernel image: addr=0x1000000, len=5140432 bytes
 [FB] Draw text
 [FB] Framebuffer initialized.
 [FB] Draw text
@@ -50,18 +50,59 @@ user 'guest' created
 [apps] selecting option 3
 [FB] Draw text
 [FB] Frame rendered.
+[Input] key: h
 [FB] Draw text
 [FB] Draw text
 [FB] Draw text
 [FB] Draw text
 [FB] Frame rendered.
 [windowing] rendered windows and cursor
-[FB] Frame rendered.
-[Input] key: h
-[FB] Frame rendered.
 [Input] key: i
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
 [FB] Frame rendered.
+[windowing] rendered windows and cursor
 [Input] mouse move: (15, 8)
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
 [FB] Frame rendered.
+[windowing] rendered windows and cursor
 [Input] key: !
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
 [FB] Frame rendered.
+[windowing] rendered windows and cursor
+[Input] key: h
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Frame rendered.
+[windowing] rendered windows and cursor
+[Input] key: i
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Frame rendered.
+[windowing] rendered windows and cursor
+[Input] mouse move: (15, 8)
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Frame rendered.
+[windowing] rendered windows and cursor
+[Input] key: !
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Draw text
+[FB] Frame rendered.
+[windowing] rendered windows and cursor

@@ -102,6 +102,9 @@ pub fn set_bounds(w: usize, h: usize) {
 }
 
 pub fn render() {
+    // Draw wallpaper + windows + cursor.
+    framebuffer::draw_wallpaper();
+
     // Draw windows as outlined rectangles with titles.
     let windows_snapshot = unsafe { WINDOWS };
     for win in windows_snapshot.iter().flatten() {

@@ -14,6 +14,7 @@ use core::panic::PanicInfo;
 
 mod allocator;
 mod accounts;
+mod crash;
 mod fonts;
 mod commands;
 mod command_ui;
@@ -37,6 +38,7 @@ entry_point!(kernel_main, config = &KERNEL_CONFIG);
 fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     use core::fmt::Write;
     let boot_info = _boot_info;
+    crash::set_boot_info_ptr(boot_info as *mut _ as usize);
 
     // Initialize VGA writer with the physical memory offset provided by the bootloader.
     vga_buffer::init(boot_info);
@@ -84,16 +86,13 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
             "listusers",
         ]);
         apps_launcher::start();
-        windowing::render();
-        framebuffer::render_frame();
+        // Simple render loop to process inputs and keep the desktop refreshed.
+        for _ in 0..8 {
+            input::poll_input_events();
+            windowing::render();
+        }
     } else {
         vga_buffer::log_line("[kernel] login failed; halting");
-    }
-
-    // Poll a few scripted input events to show they are wired.
-    for _ in 0..4 {
-        input::poll_input_events();
-        framebuffer::render_frame();
     }
 
     // Main kernel loop – halt until next interrupt.
@@ -140,15 +139,7 @@ fn log_boot_info(boot_info: &BootInfo) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    use core::fmt::Write;
-
-    {
-        let mut writer = vga_buffer::writer();
-        let _ = writeln!(writer, "");
-        let _ = writeln!(writer, "================ KERNEL PANIC ================");
-        let _ = writeln!(writer, "{info}");
-    }
-
+    crash::show_crash(info);
     loop {
         x86_64::instructions::hlt();
     }
