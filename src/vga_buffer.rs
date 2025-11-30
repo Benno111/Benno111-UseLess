@@ -4,7 +4,11 @@
 #![allow(dead_code)]
 
 use core::fmt;
+use core::fmt::Write as _;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::ptr::{read_volatile, write_volatile};
+use bootloader_api::BootInfo;
+use crate::serial;
 use spin::{Lazy, Mutex};
 
 const VGA_BUFFER_ADDRESS: usize = 0xb8000;
@@ -56,8 +60,12 @@ pub struct VgaWriter {
     col: usize,
     row: usize,
     color: u8,
-    buffer: &'static mut VgaBuffer,
+    buffer: *mut VgaBuffer,
 }
+
+// Safe because the underlying memory is a fixed hardware buffer and access is guarded by a mutex.
+unsafe impl Send for VgaWriter {}
+unsafe impl Sync for VgaWriter {}
 
 impl VgaWriter {
     fn new() -> Self {
@@ -65,18 +73,23 @@ impl VgaWriter {
             col: 0,
             row: 0,
             color: make_color(Color::LightGray, Color::Black),
-            buffer: unsafe { &mut *(VGA_BUFFER_ADDRESS as *mut VgaBuffer) },
+            buffer: current_buffer_ptr(),
         }
+    }
+
+    fn buffer(&mut self) -> &mut VgaBuffer {
+        // SAFETY: Pointer is initialized during boot via `init`, mapped by bootloader.
+        unsafe { &mut *self.buffer }
     }
 
     fn read_char(&self, row: usize, col: usize) -> VgaChar {
         // SAFETY: The VGA memory is always valid for the size of a single character.
-        unsafe { read_volatile(&self.buffer.chars[row][col]) }
+        unsafe { read_volatile(&(*self.buffer).chars[row][col]) }
     }
 
     fn write_char(&mut self, row: usize, col: usize, value: VgaChar) {
         // SAFETY: The VGA memory is always valid for the size of a single character.
-        unsafe { write_volatile(&mut self.buffer.chars[row][col], value) };
+        unsafe { write_volatile(&mut (*self.buffer).chars[row][col], value) };
     }
 
     fn newline(&mut self) {
@@ -128,6 +141,25 @@ impl VgaWriter {
             self.write_byte(b);
         }
     }
+
+    pub fn clear(&mut self) {
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row);
+        }
+        self.col = 0;
+        self.row = 0;
+    }
+
+    pub fn write_at(&mut self, x: usize, y: usize, s: &str) {
+        if y >= BUFFER_HEIGHT {
+            return;
+        }
+        self.row = y;
+        self.col = x.min(BUFFER_WIDTH.saturating_sub(1));
+        for b in s.bytes() {
+            self.write_byte(b);
+        }
+    }
 }
 
 impl fmt::Write for VgaWriter {
@@ -139,7 +171,43 @@ impl fmt::Write for VgaWriter {
 
 static GLOBAL_WRITER: Lazy<Mutex<VgaWriter>> = Lazy::new(|| Mutex::new(VgaWriter::new()));
 
+// Virtual pointer to the VGA text buffer. Updated during init when we learn the physical
+// memory offset from the bootloader.
+static VGA_PTR: AtomicUsize = AtomicUsize::new(VGA_BUFFER_ADDRESS);
+
+fn current_buffer_ptr() -> *mut VgaBuffer {
+    VGA_PTR.load(Ordering::SeqCst) as *mut VgaBuffer
+}
+
+/// Initialize the VGA writer with the bootloader-provided physical memory mapping offset.
+/// Must be called before using `writer()` to ensure the VGA memory is mapped.
+pub fn init(boot_info: &BootInfo) {
+    if let Some(offset) = boot_info.physical_memory_offset.into_option() {
+        VGA_PTR.store((offset as usize) + VGA_BUFFER_ADDRESS, Ordering::SeqCst);
+    }
+}
+
 /// Get a locked writer handle for printing to the VGA text buffer.
 pub fn writer() -> impl core::ops::DerefMut<Target = VgaWriter> {
     GLOBAL_WRITER.lock()
+}
+
+/// Write a formatted line to the VGA console.
+pub fn log(args: fmt::Arguments) {
+    let mut w = writer();
+    let _ = w.write_fmt(args);
+    let _ = w.write_str("\n");
+    serial::log(args);
+}
+
+/// Convenience helper to log a plain string.
+pub fn log_line(msg: &str) {
+    log(format_args!("{msg}"));
+}
+
+/// Print a raw string (no automatic newline) to VGA and mirror to serial.
+pub fn print(msg: &str) {
+    let mut w = writer();
+    let _ = w.write_str(msg);
+    serial::log(format_args!("{msg}"));
 }

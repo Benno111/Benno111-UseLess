@@ -5,6 +5,7 @@ PROJECT_NAME="os-kernel-edition"
 TARGET="x86_64-unknown-none"
 KERNEL_ELF="target/$TARGET/debug/$PROJECT_NAME"
 IMAGE_OUT="build/bios.img"
+LOG_OUT="build/serial.log"
 
 # Ensure cargo/rustup-installed tools are on PATH (bootloader_linker, etc.)
 export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin:$PATH"
@@ -46,6 +47,7 @@ echo "    Kernel built successfully!"
 # 4. PREP OUTPUT DIR
 echo "[4/6] Preparing build directory..."
 mkdir -p build
+rm -f "$LOG_OUT"
 
 # 5. BUILD DISK IMAGE
 echo "[5/6] Building bootable disk image..."
@@ -64,8 +66,10 @@ echo "    Image generated: $IMAGE_OUT"
 
 # 6. RUN IN QEMU
 echo "[6/6] Launching QEMU..."
+echo "    Serial log -> $LOG_OUT"
 qemu-system-x86_64 \
     -drive format=raw,file="$IMAGE_OUT" \
+    -serial file:"$LOG_OUT" \
     -serial mon:stdio \
     -no-reboot \
     -no-shutdown

@@ -4,15 +4,46 @@
 #![no_std]
 #![no_main]
 
-use bootloader_api::{entry_point, BootInfo};
+extern crate alloc;
+
+use bootloader_api::{
+    config::{BootloaderConfig, Mapping},
+    entry_point, BootInfo,
+};
 use core::panic::PanicInfo;
 
+mod allocator;
+mod accounts;
+mod fonts;
+mod commands;
+mod command_ui;
+mod framebuffer;
+mod input;
+mod apps_launcher;
+mod login;
+mod serial;
 mod vga_buffer;
 
-entry_point!(kernel_main);
+const KERNEL_CONFIG: BootloaderConfig = {
+    let mut cfg = BootloaderConfig::new_default();
+    // Map physical memory so we can reach the legacy VGA buffer at 0xb8000 through the offset.
+    cfg.mappings.physical_memory = Some(Mapping::Dynamic);
+    cfg
+};
+
+entry_point!(kernel_main, config = &KERNEL_CONFIG);
 
 fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     use core::fmt::Write;
+    let boot_info = _boot_info;
+
+    // Initialize VGA writer with the physical memory offset provided by the bootloader.
+    vga_buffer::init(boot_info);
+    serial::init();
+    unsafe { allocator::init_heap() };
+    vga_buffer::log_line("[boot] heap initialized (static 64 KiB)");
+
+    log_boot_info(boot_info);
 
     {
         let mut writer = vga_buffer::writer();
@@ -26,10 +57,78 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
         );
     }
 
+    // Initialize simple "desktop" rendering and run demo input/commands.
+    let fb_opt: Option<&'static mut bootloader_api::info::FrameBuffer> =
+        unsafe { core::mem::transmute(boot_info.framebuffer.as_mut()) };
+    framebuffer::init(fb_opt);
+    framebuffer::set_font_config(fonts::FontConfig {
+        fg: (255, 255, 255),
+        bg: Some((0, 0, 0)),
+        scale: 2,
+        letter_spacing: 2,
+    });
+    accounts::ensure_user("admin", "pass123");
+
+    if login::run_login_screen() {
+        // Show a simple command input screen and run scripted commands.
+        command_ui::show_command_screen(&[
+            "listusers",
+            "login admin pass123",
+            "useradd guest guest",
+            "listusers",
+        ]);
+        apps_launcher::start();
+        framebuffer::render_frame();
+    } else {
+        vga_buffer::log_line("[kernel] login failed; halting");
+    }
+
+    // Poll a few scripted input events to show they are wired.
+    for _ in 0..4 {
+        input::poll_input_events();
+        framebuffer::render_frame();
+    }
+
     // Main kernel loop – halt until next interrupt.
     loop {
         x86_64::instructions::hlt();
     }
+}
+
+fn log_boot_info(boot_info: &BootInfo) {
+    vga_buffer::log_line("[boot] kernel entry");
+
+    match boot_info.physical_memory_offset.into_option() {
+        Some(off) => vga_buffer::log(format_args!(
+            "[boot] physical memory mapped at offset 0x{off:016x}"
+        )),
+        None => vga_buffer::log_line("[boot] physical memory offset not provided"),
+    }
+
+    vga_buffer::log(format_args!(
+        "[boot] memory regions provided: {}",
+        boot_info.memory_regions.len()
+    ));
+
+    if let Some(fb) = boot_info.framebuffer.as_ref() {
+        let info = fb.info();
+        vga_buffer::log(format_args!(
+            "[boot] framebuffer {}x{} {:?}, {} bytes_per_pixel, stride {}",
+            info.width,
+            info.height,
+            info.pixel_format,
+            info.bytes_per_pixel,
+            info.stride
+        ));
+    } else {
+        vga_buffer::log_line("[boot] framebuffer not available");
+    }
+
+    vga_buffer::log(format_args!(
+        "[boot] kernel image: addr=0x{:x}, len={} bytes",
+        boot_info.kernel_addr,
+        boot_info.kernel_len
+    ));
 }
 
 #[panic_handler]
