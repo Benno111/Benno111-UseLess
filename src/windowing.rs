@@ -1,5 +1,5 @@
 use crate::framebuffer;
-use crate::vga_buffer;
+use spin::Mutex;
 
 #[derive(Clone, Copy)]
 pub struct Window {
@@ -12,11 +12,17 @@ pub struct Window {
 
 pub const MAX_WINDOWS: usize = 4;
 
-static mut WINDOWS: [Option<Window>; MAX_WINDOWS] = [None; MAX_WINDOWS];
-#[allow(static_mut_refs)]
-static mut MOUSE_POS: (usize, usize) = (20, 20);
-#[allow(static_mut_refs)]
-static mut FB_BOUNDS: (usize, usize) = (640, 480);
+struct State {
+    windows: [Option<Window>; MAX_WINDOWS],
+    mouse: (usize, usize),
+    bounds: (usize, usize),
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    windows: [None; MAX_WINDOWS],
+    mouse: (20, 20),
+    bounds: (640, 480),
+});
 const CURSOR_W: usize = 16;
 const CURSOR_H: usize = 16;
 // Simple arrow cursor sprite (white with black border), RGBA.
@@ -47,76 +53,99 @@ pub fn init_default_windows() {
         }),
         None,
     ];
-    unsafe {
-        WINDOWS = defaults;
-    }
+    let mut st = STATE.lock();
+    st.windows = defaults;
 }
 
 /// Replace the current window list with a tiled set derived from app names.
 pub fn set_app_windows(names: &[&'static str]) {
     let mut windows: [Option<Window>; MAX_WINDOWS] = [None; MAX_WINDOWS];
-    // Use framebuffer bounds to scale tiling a bit.
-    let (w, h) = unsafe { FB_BOUNDS };
-    let col_width = (w / 2).max(120);
-    let row_height = (h / 2).max(100);
+    // Floating layout: drop windows at a handful of positions and leave them there
+    // until explicitly moved.
+    const FLOAT_POS: &[(usize, usize)] = &[(40, 50), (220, 80), (120, 220), (300, 180)];
     for (i, name) in names.iter().take(MAX_WINDOWS).enumerate() {
-        let col = i % 2;
-        let row = i / 2;
-        let x = 10 + col * (col_width + 10);
-        let y = 20 + row * (row_height + 10);
+        let (x, y) = FLOAT_POS.get(i).copied().unwrap_or((30 + i * 40, 40 + i * 30));
         windows[i] = Some(Window {
             title: name,
             x,
             y,
-            w: col_width.saturating_sub(20),
-            h: row_height.saturating_sub(20),
+            w: 220,
+            h: 140,
         });
     }
-    unsafe {
-        WINDOWS = windows;
-    }
+    STATE.lock().windows = windows;
 }
 
 pub fn set_mouse_position(x: usize, y: usize) {
-    unsafe {
-        let (w, h) = FB_BOUNDS;
-        let clamped_x = x.min(w.saturating_sub(1));
-        let clamped_y = y.min(h.saturating_sub(1));
-        MOUSE_POS = (clamped_x, clamped_y);
-    }
+    let mut st = STATE.lock();
+    let (w, h) = st.bounds;
+    let clamped_x = x.min(w.saturating_sub(1));
+    let clamped_y = y.min(h.saturating_sub(1));
+    st.mouse = (clamped_x, clamped_y);
 }
 
 pub fn move_mouse(dx: isize, dy: isize) {
-    unsafe {
-        let (cur_x, cur_y) = MOUSE_POS;
-        let new_x = cur_x as isize + dx;
-        let new_y = cur_y as isize + dy;
-        set_mouse_position(new_x.max(0) as usize, new_y.max(0) as usize);
-    }
+    let mut st = STATE.lock();
+    let (cur_x, cur_y) = st.mouse;
+    let new_x = cur_x as isize + dx;
+    let new_y = cur_y as isize + dy;
+    let (bw, bh) = st.bounds;
+    st.mouse = (
+        clamp(new_x, 0, bw.saturating_sub(1) as isize) as usize,
+        clamp(new_y, 0, bh.saturating_sub(1) as isize) as usize,
+    );
 }
 
 pub fn set_bounds(w: usize, h: usize) {
-    unsafe {
-        FB_BOUNDS = (w, h);
+    STATE.lock().bounds = (w, h);
+}
+
+/// Move a window by index by the given delta (floating manager behavior).
+pub fn move_window(idx: usize, dx: isize, dy: isize) {
+    let mut st = STATE.lock();
+    let (bw, bh) = st.bounds;
+    if let Some(win) = st.windows.get_mut(idx).and_then(|w| w.as_mut()) {
+        let new_x = clamp(win.x as isize + dx, 0, bw.saturating_sub(win.w) as isize);
+        let new_y = clamp(win.y as isize + dy, 0, bh.saturating_sub(win.h) as isize);
+        win.x = new_x as usize;
+        win.y = new_y as usize;
+    }
+}
+
+fn clamp(v: isize, min: isize, max: isize) -> isize {
+    if v < min {
+        min
+    } else if v > max {
+        max
+    } else {
+        v
     }
 }
 
 pub fn render() {
-    // Draw wallpaper + windows + cursor.
-    framebuffer::draw_wallpaper();
+    if !crate::framebuffer::is_invalidated() {
+        return;
+    }
+    // Draw background + windows + cursor.
+    framebuffer::fill_screen(crate::framebuffer::COLOR_BG);
 
+    framebuffer::lock_refresh();
     // Draw windows as outlined rectangles with titles.
-    let windows_snapshot = unsafe { WINDOWS };
+    let st = STATE.lock();
+    let windows_snapshot = st.windows;
+    let (mx, my) = st.mouse;
+    let frame_no = crate::framebuffer::next_frame_count();
     for win in windows_snapshot.iter().flatten() {
         framebuffer::draw_rect(win.x, win.y, win.w, win.h, (50, 120, 200));
         framebuffer::draw_rect(win.x + 2, win.y + 16, win.w - 4, win.h - 18, (20, 20, 20));
         framebuffer::draw_text(win.title, win.x + 6, win.y + 2);
     }
+    // Overlay frame counter without triggering extra invalidation.
+    framebuffer::draw_text_no_invalidate(&alloc::format!("Frame: {}", frame_no), 4, 4);
     // Draw mouse cursor.
-    let (mx, my) = unsafe { MOUSE_POS };
     draw_cursor_sprite(mx, my);
+    framebuffer::unlock_refresh();
     framebuffer::render_frame();
-    vga_buffer::log_line("[windowing] rendered windows and cursor");
 }
 
 fn draw_cursor_sprite(x: usize, y: usize) {

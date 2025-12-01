@@ -59,6 +59,11 @@ pub fn enqueue_demo_inputs() {
     }
 }
 
+/// Allow other subsystems (e.g., drivers) to enqueue input events.
+pub fn enqueue_event(ev: InputEvent) {
+    QUEUE.lock().push(ev);
+}
+
 pub fn poll_input_events() {
     if let Some(ev) = QUEUE.lock().pop() {
         match ev {

@@ -1,4 +1,7 @@
 
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::str;
+
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo};
 use spin::Mutex;
 
@@ -9,11 +12,10 @@ use crate::fonts::{self, FontConfig, FONT_W};
 pub const COLOR_BG: (u8, u8, u8) = (16, 18, 24);
 pub const COLOR_CARD: (u8, u8, u8) = (30, 33, 40);
 pub const COLOR_ACCENT: (u8, u8, u8) = (82, 156, 255);
-pub const COLOR_TEXT: (u8, u8, u8) = (230, 234, 240);
-pub const COLOR_SUB: (u8, u8, u8) = (150, 156, 168);
 const WALL_W: usize = 960;
 const WALL_H: usize = 720;
 const WALLPAPER: &[u8] = include_bytes!("../assets/ui/wallpaper.raw");
+const LOG_FB: bool = false;
 
 struct FbState {
     buffer: &'static mut [u8],
@@ -27,6 +29,9 @@ static FONT_CFG: Mutex<FontConfig> = Mutex::new(FontConfig {
     scale: 1,
     letter_spacing: 1,
 });
+static INVALIDATED: AtomicBool = AtomicBool::new(true);
+static REFRESH_LOCK: AtomicBool = AtomicBool::new(false);
+static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init(fb: Option<&mut FrameBuffer>) {
     if let Some(fb) = fb {
@@ -40,6 +45,7 @@ pub fn init(fb: Option<&mut FrameBuffer>) {
     } else {
         vga_buffer::log_line("[FB] No framebuffer provided; rendering disabled");
     }
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 pub fn clear_screen() {
@@ -77,20 +83,113 @@ pub fn draw_text(text: &str, x: usize, y: usize) {
         let mut w = vga_buffer::writer();
         w.write_at(x, y, text);
     }
-    vga_buffer::log_line("[FB] Draw text");
+    if LOG_FB {
+        vga_buffer::log_line("[FB] Draw text");
+    }
+}
+
+/// Draw text without marking the framebuffer invalid (for overlays after other draws).
+pub fn draw_text_no_invalidate(text: &str, x: usize, y: usize) {
+    let _ = with_fb(|buf, info| {
+        let cfg = *FONT_CFG.lock();
+        for (i, ch) in text.bytes().enumerate() {
+            let x_offset = x + i * ((FONT_W as u8 * cfg.scale + cfg.letter_spacing) as usize);
+            draw_glyph(buf, info, x_offset, y, ch, &cfg);
+        }
+    });
 }
 
 pub fn render_frame() {
-    vga_buffer::log_line("[FB] Frame rendered.");
+    // Centralized present: only act when something marked the buffer dirty.
+    if !INVALIDATED.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    if REFRESH_LOCK.load(Ordering::SeqCst) {
+        // Re-mark as dirty so we try again after unlock.
+        INVALIDATED.store(true, Ordering::SeqCst);
+        return;
+    }
+    draw_frame_counter(4, 4);
+    if LOG_FB {
+        vga_buffer::log_line("[FB] Frame rendered.");
+    }
+}
+
+/// Increment and fetch the next frame count for overlays.
+pub fn next_frame_count() -> usize {
+    FRAME_COUNT.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+fn draw_frame_counter(x: usize, y: usize) {
+    let n = next_frame_count();
+    let mut buf = [0u8; 32];
+    let mut idx = buf.len();
+    let mut val = n;
+    if val == 0 {
+        idx -= 1;
+        buf[idx] = b'0';
+    } else {
+        while val > 0 && idx > 0 {
+            let digit = (val % 10) as u8;
+            idx -= 1;
+            buf[idx] = b'0' + digit;
+            val /= 10;
+        }
+    }
+    // prefix "Frame: "
+    let prefix = b"Frame: ";
+    let mut text = [0u8; 32];
+    let mut tlen = 0;
+    for &b in prefix.iter() {
+        text[tlen] = b;
+        tlen += 1;
+    }
+    let digits = &buf[idx..];
+    for &b in digits {
+        text[tlen] = b;
+        tlen += 1;
+    }
+    let s = unsafe { str::from_utf8_unchecked(&text[..tlen]) };
+    draw_text_no_invalidate(s, x, y);
+}
+
+/// Check if the framebuffer has pending changes.
+pub fn is_invalidated() -> bool {
+    INVALIDATED.load(Ordering::SeqCst)
+}
+
+/// Prevent refresh from presenting while long operations are running.
+pub fn lock_refresh() {
+    REFRESH_LOCK.store(true, Ordering::SeqCst);
+}
+
+/// Allow refresh again.
+pub fn unlock_refresh() {
+    REFRESH_LOCK.store(false, Ordering::SeqCst);
 }
 
 pub fn set_font_config(cfg: FontConfig) {
     *FONT_CFG.lock() = cfg;
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 /// Current framebuffer dimensions, if initialized.
 pub fn framebuffer_size() -> Option<(usize, usize)> {
     FB.lock().as_ref().map(|fb| (fb.info.width, fb.info.height))
+}
+
+/// Fill the entire framebuffer with a solid color.
+pub fn fill_screen(color: (u8, u8, u8)) {
+    let _ = with_fb(|buf, info| {
+        let bpp = info.bytes_per_pixel;
+        let stride = info.stride * bpp;
+        for chunk in buf.chunks_exact_mut(stride) {
+            for px in chunk.chunks_exact_mut(bpp) {
+                write_pixel(px, bpp, color.0, color.1, color.2, info);
+            }
+        }
+    });
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 pub fn read_pixel(px: &[u8], info: &FrameBufferInfo) -> (u8, u8, u8) {
@@ -142,8 +241,10 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: (u8, u8, u8)) {
             }
         }
     });
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
+#[allow(dead_code)]
 pub fn draw_cursor(x: usize, y: usize, color: (u8, u8, u8)) {
     let size = 6;
     let _ = with_fb(|buf, info| {
@@ -154,6 +255,7 @@ pub fn draw_cursor(x: usize, y: usize, color: (u8, u8, u8)) {
             draw_pixel(buf, info, x, y + dy, color);
         }
     });
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 /// Blit an RGBA buffer at the given position.
@@ -194,6 +296,7 @@ pub fn blit_rgba(x: usize, y: usize, w: usize, h: usize, data: &[u8]) {
             }
         }
     });
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 /// Paint the wallpaper scaled to the framebuffer.
@@ -216,6 +319,7 @@ pub fn draw_wallpaper() {
             }
         }
     });
+    INVALIDATED.store(true, Ordering::SeqCst);
 }
 
 pub(crate) fn with_fb<F: FnOnce(&mut [u8], &FrameBufferInfo)>(f: F) -> bool {

@@ -17,14 +17,15 @@ mod accounts;
 mod crash;
 mod fonts;
 mod commands;
-mod command_ui;
 mod framebuffer;
 mod input;
-mod apps_launcher;
-mod login;
 mod windowing;
+mod acpi;
+mod qemu_drivers;
+mod fs;
 mod serial;
 mod vga_buffer;
+mod drivers;
 
 const KERNEL_CONFIG: BootloaderConfig = {
     let mut cfg = BootloaderConfig::new_default();
@@ -71,33 +72,21 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
         letter_spacing: 2,
     });
     if let Some((w, h)) = framebuffer::framebuffer_size() {
-        windowing::set_bounds(w, h);
-    }
+    windowing::set_bounds(w, h);
+}
+qemu_drivers::init();
+    fs::init_main_volume();
+    acpi::init();
+    drivers::init();
     accounts::ensure_user("admin", "pass123");
 
-    if login::run_login_screen() {
-        windowing::init_default_windows();
-        input::enqueue_demo_inputs();
-        // Show a simple command input screen and run scripted commands.
-        command_ui::show_command_screen(&[
-            "listusers",
-            "login admin pass123",
-            "useradd guest guest",
-            "listusers",
-        ]);
-        apps_launcher::start();
-        // Simple render loop to process inputs and keep the desktop refreshed.
-        for _ in 0..8 {
-            input::poll_input_events();
-            windowing::render();
-        }
-    } else {
-        vga_buffer::log_line("[kernel] login failed; halting");
-    }
-
-    // Main kernel loop – halt until next interrupt.
+    // Straight to desktop render loop.
+    windowing::init_default_windows();
+    input::enqueue_demo_inputs();
     loop {
-        x86_64::instructions::hlt();
+        input::poll_input_events();
+        drivers::poll_devices();
+        windowing::render();
     }
 }
 

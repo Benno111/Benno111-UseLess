@@ -3,7 +3,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 
-use crate::framebuffer::{self, COLOR_ACCENT, COLOR_CARD, COLOR_TEXT};
+use crate::framebuffer::{self, COLOR_ACCENT, COLOR_CARD};
 use crate::vga_buffer;
 use bootloader_api::BootInfo;
 
