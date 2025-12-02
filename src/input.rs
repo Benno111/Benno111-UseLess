@@ -41,6 +41,14 @@ impl EventQueue {
         self.head = (self.head + 1) % self.buf.len();
         ev
     }
+
+    fn len(&self) -> usize {
+        if self.tail >= self.head {
+            self.tail - self.head
+        } else {
+            self.buf.len() - (self.head - self.tail)
+        }
+    }
 }
 
 static QUEUE: Mutex<EventQueue> = Mutex::new(EventQueue::new());
@@ -65,7 +73,10 @@ pub fn enqueue_event(ev: InputEvent) {
 }
 
 pub fn poll_input_events() {
-    if let Some(ev) = QUEUE.lock().pop() {
+    // Drain all pending events so movement feels responsive and the queue stays small.
+    let mut had_event = false;
+    while let Some(ev) = QUEUE.lock().pop() {
+        had_event = true;
         match ev {
             InputEvent::Key(c) => {
                 vga_buffer::log_line(&format!("[Input] key: {}", c));
@@ -75,19 +86,28 @@ pub fn poll_input_events() {
                 vga_buffer::log_line(&format!("[Input] mouse move: ({}, {})", dx, dy));
             }
         }
-    } else {
-        // fall back to a fixed script if queue empty
-        let idx = EVENT_IDX.fetch_add(1, Ordering::SeqCst);
-        if let Some(ev) = SCRIPTED_EVENTS.get(idx) {
-            match ev {
-                InputEvent::Key(c) => vga_buffer::log_line(&format!("[Input] key: {}", c)),
-                InputEvent::MouseMove { dx, dy } => {
-                    windowing::move_mouse(*dx, *dy);
-                    vga_buffer::log_line(&format!("[Input] mouse move: ({}, {})", dx, dy));
-                }
-            }
-        } else {
-            vga_buffer::log_line("[Input] No more scripted events");
-        }
     }
+
+    if had_event {
+        return;
+    }
+
+    // fall back to a fixed script if queue empty
+    let idx = EVENT_IDX.fetch_add(1, Ordering::SeqCst);
+    if let Some(ev) = SCRIPTED_EVENTS.get(idx) {
+        match ev {
+            InputEvent::Key(c) => vga_buffer::log_line(&format!("[Input] key: {}", c)),
+            InputEvent::MouseMove { dx, dy } => {
+                windowing::move_mouse(*dx, *dy);
+                vga_buffer::log_line(&format!("[Input] mouse move: ({}, {})", dx, dy));
+            }
+        }
+    } else {
+        vga_buffer::log_line("[Input] No more scripted events");
+    }
+}
+
+/// Current queued input event count (for driver throttling).
+pub fn queue_len() -> usize {
+    QUEUE.lock().len()
 }

@@ -23,9 +23,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     mouse: (20, 20),
     bounds: (640, 480),
 });
-const CURSOR_W: usize = 16;
-const CURSOR_H: usize = 16;
-// Simple arrow cursor sprite (white with black border), RGBA.
+const CURSOR_W: usize = 20;
+const CURSOR_H: usize = 20;
+// Arrow cursor sprite with a small shadow, RGBA.
 const CURSOR_SPRITE: [u8; CURSOR_W * CURSOR_H * 4] = generate_cursor_sprite();
 
 pub fn init_default_windows() {
@@ -82,18 +82,25 @@ pub fn set_mouse_position(x: usize, y: usize) {
     let clamped_x = x.min(w.saturating_sub(1));
     let clamped_y = y.min(h.saturating_sub(1));
     st.mouse = (clamped_x, clamped_y);
+    framebuffer::invalidate();
 }
 
 pub fn move_mouse(dx: isize, dy: isize) {
     let mut st = STATE.lock();
     let (cur_x, cur_y) = st.mouse;
-    let new_x = cur_x as isize + dx;
-    let new_y = cur_y as isize + dy;
+    // Speed up movement so small deltas move the cursor visibly.
+    let accel = 4;
+    // Smooth out jitter: apply a minimum of 1px but cap to keep visuals stable.
+    let step_x = (dx * accel).clamp(-16, 16);
+    let step_y = (dy * accel).clamp(-16, 16);
+    let new_x = cur_x as isize + step_x;
+    let new_y = cur_y as isize + step_y;
     let (bw, bh) = st.bounds;
     st.mouse = (
         clamp(new_x, 0, bw.saturating_sub(1) as isize) as usize,
         clamp(new_y, 0, bh.saturating_sub(1) as isize) as usize,
     );
+    framebuffer::invalidate();
 }
 
 pub fn set_bounds(w: usize, h: usize) {
@@ -159,19 +166,25 @@ const fn generate_cursor_sprite() -> [u8; CURSOR_W * CURSOR_H * 4] {
         let mut x = 0;
         while x < CURSOR_W {
             let idx = (y * CURSOR_W + x) * 4;
-            // Simple arrow: filled triangle with border.
-            let filled = x <= y && x >= y.saturating_sub(4);
-            let border = x == y || x == y.saturating_sub(1);
+            // Simple arrow with a faint shadow.
+            let shadow = x + 2 <= y + 2 && x + 2 >= y.saturating_sub(6) && y + 2 < CURSOR_H;
+            let filled = x <= y && x >= y.saturating_sub(6);
+            let border = x == y || x + 1 == y;
             if border {
                 data[idx] = 0;
                 data[idx + 1] = 0;
                 data[idx + 2] = 0;
                 data[idx + 3] = 255;
             } else if filled {
-                data[idx] = 255;
-                data[idx + 1] = 255;
-                data[idx + 2] = 255;
+                data[idx] = 245;
+                data[idx + 1] = 245;
+                data[idx + 2] = 245;
                 data[idx + 3] = 255;
+            } else if shadow {
+                data[idx] = 0;
+                data[idx + 1] = 0;
+                data[idx + 2] = 0;
+                data[idx + 3] = 90;
             } else {
                 data[idx + 3] = 0;
             }

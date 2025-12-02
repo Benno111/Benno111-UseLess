@@ -1,5 +1,6 @@
 use crate::vga_buffer;
 use crate::input::{self, InputEvent};
+use crate::windowing;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub fn init() {
@@ -38,10 +39,29 @@ static POLL_TICK: AtomicUsize = AtomicUsize::new(0);
 
 pub fn poll_devices() {
     let tick = POLL_TICK.fetch_add(1, Ordering::SeqCst);
-    match tick % 4 {
-        0 => input::enqueue_event(InputEvent::Key('k')),
-        1 => input::enqueue_event(InputEvent::MouseMove { dx: 1, dy: 0 }),
-        2 => input::enqueue_event(InputEvent::Key('u')),
-        _ => input::enqueue_event(InputEvent::MouseMove { dx: -1, dy: 1 }),
+    let queued = input::queue_len();
+
+    // Mouse: always emit a movement so the driver continuously grabs input,
+    // even if the queue is busy (push is internally checked for space).
+    let dir = (tick & 0b11) as isize;
+    let (dx, dy) = match dir {
+        0 => (1, 0),
+        1 => (0, 1),
+        2 => (-1, 0),
+        _ => (0, -1),
+    };
+    input::enqueue_event(InputEvent::MouseMove { dx, dy });
+
+    // Emit keyboard/device chatter less frequently to avoid starving input pipeline.
+    if queued < 28 && tick % 8 == 0 {
+        match (tick / 8) % 2 {
+            0 => input::enqueue_event(InputEvent::Key('k')),
+            _ => input::enqueue_event(InputEvent::Key('u')),
+        }
+    }
+
+    // Even when saturated, keep cursor alive by nudging it directly so the driver never "stops."
+    if queued >= 30 {
+        windowing::move_mouse(1, 0);
     }
 }

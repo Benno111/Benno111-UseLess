@@ -33,6 +33,11 @@ static INVALIDATED: AtomicBool = AtomicBool::new(true);
 static REFRESH_LOCK: AtomicBool = AtomicBool::new(false);
 static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+/// Mark the framebuffer as dirty so the renderer will present on the next cycle.
+pub fn invalidate() {
+    INVALIDATED.store(true, Ordering::SeqCst);
+}
+
 pub fn init(fb: Option<&mut FrameBuffer>) {
     if let Some(fb) = fb {
         let info = fb.info();
