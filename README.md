@@ -1,81 +1,209 @@
-# os-kernel-edition — real bootable Rust kernel
+OS Kernel Edition — Minimal Bootable Rust Kernel (x86_64)
 
-This is a **minimal x86_64 bare‑metal kernel** version of your `os-kernel-edition`
-project. It uses the [`bootloader_api`] crate so it can be loaded by the
-[`bootloader`] project (BIOS or UEFI) and booted like a real OS.
+A clean, modern, and fully bootable bare-metal Rust kernel for x86_64 PCs.
+This project uses the bootloader ecosystem to generate real bootable disk images (BIOS or UEFI) and provides a minimal foundation for building a custom OS or microkernel.
 
-It currently:
-- boots in 64‑bit long mode (handled by the bootloader)
-- runs as a freestanding `#![no_std]` Rust binary
-- prints a banner to the VGA text buffer at `0xb8000`
-- loops forever, halting the CPU between interrupts
+This repository contains:
 
-## 1. Prerequisites
+A #![no_std], #![no_main] Rust kernel
 
-On your dev machine (Ubuntu etc.):
+VGA text-mode output at 0xb8000
 
-```bash
-rustup toolchain install nightly
-rustup component add llvm-tools-preview --toolchain nightly
-rustup target add x86_64-unknown-none --toolchain nightly
-cargo install bootloader_linker
-```
+Entry into 64-bit long mode (via bootloader)
 
-The `rust-toolchain.toml` in this repo pins the project to `nightly` and the
-`x86_64-unknown-none` target.
+A stable halt loop that halts the CPU until the next interrupt
 
-## 2. Build the kernel ELF
 
-From this directory:
+The design emphasizes clarity, minimal dependencies, and expandability so you can grow this into a larger OS architecture (microkernel, monolithic, module-based loader, etc.).
 
-```bash
-cargo +nightly build
-```
 
-This produces a kernel binary at:
+---
 
-```text
-target/x86_64-unknown-none/debug/os-kernel-edition
-```
+Features
 
-(or `release` if you use `--release`).
+✔ Bare-metal Rust kernel
 
-## 3. Create a bootable disk image
+Runs without the standard library, allocator, or OS services.
 
-Use [`bootloader_linker`] to combine this kernel with the `bootloader` crate
-into a BIOS/UEFI‑bootable disk image. Roughly:
+✔ Boots on real or virtual hardware
 
-```bash
-bootloader_linker build         --kernel target/x86_64-unknown-none/debug/os-kernel-edition         --output os-kernel-edition.img
-```
+The bootloader crate produces a valid bootable image for:
 
-> ⚠ NOTE: Check `bootloader_linker`'s documentation (`bootloader_linker --help`
-> or crates.io page) for the exact flags; they can change between versions.
+BIOS (legacy)
 
-Now you can boot it in QEMU:
+UEFI
 
-```bash
-qemu-system-x86_64 -drive format=raw,file=os-kernel-edition.img
-```
+QEMU
 
-You should see:
+Bare-metal devices
 
-```text
-OS-Kernel-Edition booted via bootloader
---------------------------------------
-Welcome, Benno111!
-This is a real bare-metal kernel now.
-```
 
-## 4. Next steps
+✔ Early VGA driver
 
-From here you can:
+Writes text directly to the VGA text buffer at 0xb8000.
 
-- Add a proper interrupt descriptor table (IDT) and exception handlers
-- Map the framebuffer from `BootInfo` and port your existing UI ideas
-- Add a basic heap allocator and convert this into a micro‑kernel or monolith
-- Implement a driver pack / module loader and IPC, like in your earlier designs
+✔ Minimal runtime
 
-[`bootloader_api`]: https://docs.rs/bootloader_api
-[`bootloader`]: https://github.com/rust-osdev/bootloader
-[`bootloader_linker`]: https://lib.rs/crates/bootloader_linker
+The CPU is halted safely using a hardware hlt loop.
+
+
+---
+
+1. Requirements
+
+Install these on your development machine (Ubuntu, Debian, Arch, etc.):
+
+Rust toolchain
+
+rustup component add rust-src
+rustup target add x86_64-unknown-none
+
+Build utilities
+
+sudo apt install qemu-system-x86 nasm llvm lld
+
+Nightly compiler (required by bootloader)
+
+rustup default nightly
+
+
+---
+
+2. Building the Kernel
+
+Build the bootable image
+
+cargo bootimage
+
+This produces:
+
+target/x86_64-unknown-none/debug/bootimage-kernel.bin
+
+You can write it to a USB stick or boot it via QEMU.
+
+
+---
+
+3. Running in QEMU
+
+Standard run:
+
+qemu-system-x86_64 -drive format=raw,file=target/x86_64-unknown-none/debug/bootimage-kernel.bin
+
+With hardware acceleration (KVM):
+
+qemu-system-x86_64 \
+  -enable-kvm \
+  -cpu host \
+  -drive format=raw,file=target/.../bootimage-kernel.bin
+
+
+---
+
+4. Project Structure
+
+src/
+ ├── main.rs       # Kernel entry point (no_std, no_main)
+ ├── vga_buffer.rs # Low-level VGA writer implementation
+ └── lib.rs        # Core modules (if expanded later)
+
+Boot process:
+
+1. bootloader loads your kernel image
+
+
+2. CPU enters long mode
+
+
+3. Rust kernel starts execution at _start
+
+
+4. Kernel initializes VGA text mode
+
+
+5. Kernel enters a safe halted loop
+
+
+
+
+---
+
+5. Extending the Kernel
+
+Here are natural next steps you can implement:
+
+Interrupts & Exceptions
+
+Interrupt Descriptor Table (IDT)
+
+Page fault, double fault, breakpoint handlers
+
+
+Memory Management
+
+Paging structures via BootInfo
+
+Higher-half kernel mapping
+
+Heap allocator
+
+
+Framebuffer & UI
+
+Map framebuffer from bootloader_api
+
+Minimal graphics driver
+
+Draw text and primitives
+
+
+Tasking / Scheduling
+
+Cooperative or preemptive scheduler
+
+Kernel tasks and user-space model
+
+
+Drivers & Modules
+
+PCI enumeration
+
+PS/2 or USB input
+
+Modular driver loader
+
+
+This repo is intentionally minimal so you can grow the architecture in any direction (microkernel, monolithic, hybrid, capability-based, etc.).
+
+
+---
+
+6. References
+
+bootloader
+
+bootloader_api
+
+bootloader_linker
+
+Philipp Oppermann’s Writing an OS in Rust series
+
+
+
+---
+
+License
+
+MIT — free to use, modify, or integrate into your own kernel or OS project.
+
+
+---
+
+If you'd like, I can also:
+
+✅ Rewrite this README in a more formal / academic tone
+✅ Add graphics or architecture diagrams
+✅ Add contributor guidelines, code-of-conduct, or architecture docs
+✅ Break this into README.md, docs/boot.md, and docs/memory.md
+
+Just tell me your preferred style!
