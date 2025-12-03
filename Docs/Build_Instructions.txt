@@ -1,0 +1,15 @@
+Build Instructions
+-------------------
+Requirements:
+- Rust nightly
+- rust-src component
+- bootloader crate
+
+Commands:
+    rustup toolchain install nightly
+    rustup default nightly
+    rustup component add rust-src
+    cargo bootimage
+
+Output:
+bootimage-kernel.bin in target/...

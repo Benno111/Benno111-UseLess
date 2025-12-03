@@ -1,0 +1,13 @@
+Kernel Architecture
+--------------------
+Boot Process:
+1. bootloader loads kernel
+2. CPU enters long mode
+3. Kernel entry point runs
+
+Memory:
+- No standard library
+- No allocator yet
+
+Display:
+- VGA text buffer at 0xb8000

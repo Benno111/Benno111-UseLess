@@ -1,0 +1,8 @@
+OS Kernel Edition - Overview
+------------------------------
+This document provides a high-level overview of the OS kernel project.
+Features:
+- Bare-metal Rust kernel
+- Bootable via bootloader
+- VGA text output
+- 64-bit long mode
