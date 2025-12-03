@@ -1,4 +1,3 @@
-
 use alloc::format;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
@@ -9,6 +8,48 @@ pub enum InputEvent {
     Key(char),
     MouseMove { dx: isize, dy: isize },
 }
+
+// =============================
+// Mouse acceleration settings
+// =============================
+
+// Base sensitivity multiplier (applies at all speeds)
+const MOUSE_SENS: f32 = 1.0;
+
+// Acceleration strength (0.0 = off, 1.0 = normal, 1.4 = strong)
+const MOUSE_ACCEL: f32 = 1.4;
+
+// Prevent insane movement from bad deltas or overflow
+const MOUSE_MAX_DELTA: f32 = 1000.0;
+
+// =============================
+// Mouse acceleration function
+// =============================
+
+fn apply_mouse_accel(dx: isize, dy: isize) -> (isize, isize) {
+    let dx_f = dx as f32;
+    let dy_f = dy as f32;
+
+    // Clamp extreme input from buggy hardware
+    let mut dx_f = dx_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
+    let mut dy_f = dy_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
+
+    // Speed = vector length
+    let speed = (dx_f * dx_f + dy_f * dy_f).sqrt();
+
+    // Acceleration:
+    // gain = base sensitivity + (speed * accel * 0.01)
+    let gain = MOUSE_SENS + (speed * MOUSE_ACCEL * 0.01);
+
+    dx_f *= gain;
+    dy_f *= gain;
+
+    (dx_f as isize, dy_f as isize)
+}
+
+// =============================
+// Event Queue
+// =============================
 
 struct EventQueue {
     buf: [Option<InputEvent>; 32],
@@ -53,12 +94,18 @@ impl EventQueue {
 
 static QUEUE: Mutex<EventQueue> = Mutex::new(EventQueue::new());
 static EVENT_IDX: AtomicUsize = AtomicUsize::new(0);
+
+// Scripted fallback events (demo mode)
 const SCRIPTED_EVENTS: &[InputEvent] = &[
     InputEvent::Key('h'),
     InputEvent::Key('i'),
     InputEvent::MouseMove { dx: 15, dy: 8 },
     InputEvent::Key('!'),
 ];
+
+// =============================
+// Public API
+// =============================
 
 pub fn enqueue_demo_inputs() {
     let mut q = QUEUE.lock();
@@ -67,24 +114,51 @@ pub fn enqueue_demo_inputs() {
     }
 }
 
-/// Allow other subsystems (e.g., drivers) to enqueue input events.
 pub fn enqueue_event(ev: InputEvent) {
     QUEUE.lock().push(ev);
 }
 
+pub fn queue_len() -> usize {
+    QUEUE.lock().len()
+}
+
+// =============================
+// Event Handler
+// =============================
+
+fn handle_event(ev: InputEvent) {
+    match ev {
+        InputEvent::Key(c) => {
+            vga_buffer::log_line(&format!("[Input] key: {}", c));
+        }
+
+        InputEvent::MouseMove { dx, dy } => {
+            // Apply acceleration
+            let (adx, ady) = apply_mouse_accel(dx, dy);
+
+            windowing::move_mouse(adx, ady);
+
+            vga_buffer::log_line(&format!(
+                "[Input] mouse move: raw=({},{}) accel=({},{})",
+                dx, dy, adx, ady
+            ));
+        }
+    }
+}
+
+// =============================
+// Main Poll Function
+// =============================
+
 pub fn poll_input_events() {
-    // Drain all pending events so movement feels responsive and the queue stays small.
     let mut had_event = false;
-    while let Some(ev) = QUEUE.lock().pop() {
-        had_event = true;
-        match ev {
-            InputEvent::Key(c) => {
-                vga_buffer::log_line(&format!("[Input] key: {}", c));
-            }
-            InputEvent::MouseMove { dx, dy } => {
-                windowing::move_mouse(dx, dy);
-                vga_buffer::log_line(&format!("[Input] mouse move: ({}, {})", dx, dy));
-            }
+
+    // Drain queue with only *one* lock
+    {
+        let mut q = QUEUE.lock();
+        while let Some(ev) = q.pop() {
+            had_event = true;
+            handle_event(ev);
         }
     }
 
@@ -92,22 +166,12 @@ pub fn poll_input_events() {
         return;
     }
 
-    // fall back to a fixed script if queue empty
+    // No queued events → fallback scripted demo events
     let idx = EVENT_IDX.fetch_add(1, Ordering::SeqCst);
+
     if let Some(ev) = SCRIPTED_EVENTS.get(idx) {
-        match ev {
-            InputEvent::Key(c) => vga_buffer::log_line(&format!("[Input] key: {}", c)),
-            InputEvent::MouseMove { dx, dy } => {
-                windowing::move_mouse(*dx, *dy);
-                vga_buffer::log_line(&format!("[Input] mouse move: ({}, {})", dx, dy));
-            }
-        }
+        handle_event(*ev);
     } else {
         vga_buffer::log_line("[Input] No more scripted events");
     }
-}
-
-/// Current queued input event count (for driver throttling).
-pub fn queue_len() -> usize {
-    QUEUE.lock().len()
 }
