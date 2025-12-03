@@ -1,0 +1,4 @@
+{"QMP": {"version": {"qemu": {"micro": 2, "minor": 2, "major": 8}, "package": "Debian 1:8.2.2+ds-0ubuntu1.10"}, "capabilities": ["oob"]}}
+{"return": {}}
+{"return": {"status": "running", "singlestep": false, "running": true}}
+{"timestamp": {"seconds": 1764791620, "microseconds": 171573}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}}

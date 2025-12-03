@@ -3,7 +3,7 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=5809408 bytes
+[boot] kernel image: addr=0x1000000, len=2848064 bytes
 [FB] Framebuffer initialized.
 [qemu] initializing emulated devices
 [qemu] RTC stub ready
@@ -20,560 +20,633 @@
 [drivers] USB: port 2 empty (stub)
 [Input] mouse move: raw=(1,0) accel=(2,0)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(5,1) accel=(12,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,1) accel=(10,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,1) accel=(12,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(6,1) accel=(14,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(6,1) accel=(14,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,1) accel=(7,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,0) accel=(5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,0) accel=(5,0)
 [Input] mouse move: raw=(1,1) accel=(2,2)
+[Input] mouse move: raw=(4,1) accel=(10,2)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input] mouse move: raw=(7,3) accel=(17,7)
+[Input] mouse move: raw=(10,6) accel=(24,15)
+[Input] mouse move: raw=(41,22) accel=(101,54)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(28,14) accel=(69,34)
+[Input] mouse move: raw=(32,14) accel=(78,34)
+[Input] mouse move: raw=(127,62) accel=(332,162)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(23,0) accel=(56,0)
+[Input] mouse move: raw=(38,14) accel=(94,34)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(6,2) accel=(14,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,1) accel=(7,2)
-[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input] mouse move: raw=(38,14) accel=(94,34)
+[Input] mouse move: raw=(36,12) accel=(88,29)
+[Input] mouse move: raw=(34,12) accel=(83,29)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(68,18) accel=(170,45)
+[Input] mouse move: raw=(34,8) accel=(83,20)
+[Input] mouse move: raw=(36,4) accel=(88,10)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(76,4) accel=(191,10)
+[Input] mouse move: raw=(38,-2) accel=(93,-5)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(3,1) accel=(7,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,1) accel=(7,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,1) accel=(7,2)
-[Input] mouse move: raw=(3,2) accel=(7,5)
+[Input] mouse move: raw=(114,-42) accel=(294,-108)
+[Input] mouse move: raw=(34,-24) accel=(84,-59)
+[Input] mouse move: raw=(30,-28) accel=(74,-69)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(46,-104) accel=(118,-267)
+[Input] mouse move: raw=(-2,-36) accel=(-5,-88)
+[Input] mouse move: raw=(-10,-36) accel=(-25,-88)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-54,-70) accel=(-137,-177)
+[Input] mouse move: raw=(-42,-34) accel=(-104,-84)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(5,1) accel=(12,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,3) accel=(10,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,2) accel=(12,5)
-[Input] mouse move: raw=(6,4) accel=(14,10)
+[Input] mouse move: raw=(-127,-77) accel=(-333,-202)
+[Input] mouse move: raw=(-45,0) accel=(-111,0)
+[Input] mouse move: raw=(-68,-16) accel=(-170,-40)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-16) accel=(-329,-41)
+[Input] mouse move: raw=(-83,0) accel=(-210,0)
+[Input] mouse move: raw=(-70,6) accel=(-175,15)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,54) accel=(-331,141)
+[Input] mouse move: raw=(-75,0) accel=(-188,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(9,6) accel=(22,14)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(27,21) accel=(66,51)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(42,24) accel=(104,59)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(22,10) accel=(54,24)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(22,8) accel=(54,19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(48,14) accel=(119,35)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(26,4) accel=(63,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(28,2) accel=(68,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(28,0) accel=(68,0)
-[Input][debug] processed 1 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-91,20) accel=(-231,51)
+[Input] mouse move: raw=(-26,48) accel=(-65,119)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(100,127) accel=(264,336)
+[Input] mouse move: raw=(0,59) accel=(0,147)
+[Input] mouse move: raw=(72,34) accel=(181,86)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,42) accel=(330,109)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-80) accel=(333,-210)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(92,-57) accel=(236,-146)
+[Input] mouse move: raw=(-24,-24) accel=(-59,-59)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-38,-24) accel=(-94,-59)
+[Input] mouse move: raw=(-54,-22) accel=(-134,-55)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,-54) accel=(-331,-141)
+[Input] mouse move: raw=(-117,0) accel=(-301,0)
+[Input] mouse move: raw=(-108,-12) accel=(-277,-31)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-12) accel=(-329,-31)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-122,0) accel=(-315,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,66) accel=(-332,173)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,105) accel=(-336,278)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,127) accel=(339,339)
+[Input] mouse move: raw=(7,3) accel=(17,7)
+[Input] mouse move: raw=(127,12) accel=(329,31)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-42) accel=(330,-109)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-37) accel=(330,-96)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-13) accel=(329,-34)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-52) accel=(-331,-136)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,12) accel=(-329,31)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,66) accel=(-332,173)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-20) accel=(329,-52)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-42) accel=(330,-109)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,14) accel=(329,36)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,59) accel=(-331,154)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,1) accel=(-329,3)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-2) accel=(-329,-5)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(104,-17) accel=(266,-43)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-54) accel=(331,-141)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(29,0) accel=(71,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,8) accel=(-329,21)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-38) accel=(330,-99)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-106) accel=(336,-281)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,22) accel=(-329,57)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(112,-61) accel=(290,-158)
+[Input] mouse move: raw=(97,-80) accel=(251,-207)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-82) accel=(334,-215)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,56) accel=(-331,146)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,102) accel=(-336,270)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-70) accel=(332,-183)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,112) accel=(337,297)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,109) accel=(-337,289)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-101) accel=(336,-267)
 [Input] mouse move: raw=(26,0) accel=(63,0)
-[Input] mouse move: raw=(24,-2) accel=(58,-5)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-15) accel=(329,-39)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(22,-2) accel=(54,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(17,-2) accel=(41,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(14,-4) accel=(34,-10)
-[Input] mouse move: raw=(8,-1) accel=(19,-2)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,84) accel=(-334,221)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,63) accel=(-332,165)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-61,-56) accel=(-154,-141)
+[Input] mouse move: raw=(127,-30) accel=(330,-78)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(5,-1) accel=(12,-2)
+[Input] mouse move: raw=(127,-58) accel=(331,-151)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-71,127) accel=(-186,333)
+[Input] mouse move: raw=(0,127) accel=(0,329)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,24) accel=(-329,62)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,10) accel=(329,26)
+[Input] mouse move: raw=(63,0) accel=(157,0)
+[Input] mouse move: raw=(127,-12) accel=(329,-31)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,24) accel=(329,62)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-83,127) accel=(-218,334)
+[Input] mouse move: raw=(0,127) accel=(0,329)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,67) accel=(-332,175)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-82) accel=(334,-215)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-126) accel=(339,-336)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,127) accel=(339,339)
+[Input] mouse move: raw=(127,5) accel=(329,13)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,90) accel=(-334,237)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,6) accel=(-329,16)
+[Input] mouse move: raw=(-28,0) accel=(-68,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-3,3) accel=(-7,7)
+[Input] mouse move: raw=(7,7) accel=(17,17)
+[Input] mouse move: raw=(22,16) accel=(54,39)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(92,58) accel=(236,149)
+[Input] mouse move: raw=(30,14) accel=(73,34)
+[Input] mouse move: raw=(46,12) accel=(114,30)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(50,-10) accel=(124,-25)
+[Input] mouse move: raw=(20,-16) accel=(49,-39)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(102,-94) accel=(266,-245)
+[Input] mouse move: raw=(8,-7) accel=(19,-17)
+[Input] mouse move: raw=(4,-3) accel=(10,-7)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(2,-2) accel=(5,-5)
 [Input][debug] processed 1 events
 [Input] mouse move: raw=(1,0) accel=(2,0)
 [Input][debug] processed 1 events
 [Input] mouse move: raw=(0,-1) accel=(0,-2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,-6) accel=(-2,-14)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-3) accel=(-5,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-4) accel=(-5,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-5,-5) accel=(-12,-12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,-7) accel=(-14,-17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-7,-8) accel=(-17,-19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-10,-10) accel=(-24,-24)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-15,-11) accel=(-36,-27)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-15,-13) accel=(-36,-32)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-16,-12) accel=(-39,-29)
-[Input] mouse move: raw=(-18,-12) accel=(-44,-29)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-18,-12) accel=(-44,-29)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-18,-10) accel=(-44,-24)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-18,-8) accel=(-44,-19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-17,-6) accel=(-41,-15)
-[Input] mouse move: raw=(-15,-3) accel=(-36,-7)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-11,-2) accel=(-27,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-11,-1) accel=(-27,-2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-8,0) accel=(-19,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-7,0) accel=(-17,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,0) accel=(-14,0)
-[Input] mouse move: raw=(-8,0) accel=(-19,0)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-7,1) accel=(-17,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,3) accel=(-14,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-7,2) accel=(-17,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-10,6) accel=(-24,15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-5,9) accel=(-12,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,4) accel=(-5,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,5) accel=(-2,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,6) accel=(0,14)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,4) accel=(0,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,6) accel=(7,14)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,7) accel=(10,17)
-[Input] mouse move: raw=(5,5) accel=(12,12)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(9,8) accel=(22,19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(16,9) accel=(39,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(20,10) accel=(49,24)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(40,14) accel=(99,34)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(34,4) accel=(83,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(22,-5) accel=(54,-12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(13,-8) accel=(31,-19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,-4) accel=(5,-10)
-[Input] mouse move: raw=(1,-3) accel=(2,-7)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(0,-3) accel=(0,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-11,-13) accel=(-27,-32)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-15,-10) accel=(-36,-24)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-9,-4) accel=(-22,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-13,-5) accel=(-31,-12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-14,-7) accel=(-34,-17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
-[Input] mouse move: raw=(-22,-6) accel=(-54,-15)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-26,-4) accel=(-63,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-26,-4) accel=(-63,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-26,0) accel=(-63,0)
-[Input] mouse move: raw=(-24,0) accel=(-58,0)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-18,4) accel=(-44,10)
-[Input] mouse move: raw=(-12,4) accel=(-29,10)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-7,4) accel=(-17,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-4,7) accel=(-10,17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,6) accel=(-5,14)
-[Input] mouse move: raw=(0,10) accel=(0,24)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(3,11) accel=(7,27)
-[Input] mouse move: raw=(5,11) accel=(12,27)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(15,19) accel=(37,46)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(21,15) accel=(51,37)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(28,14) accel=(69,34)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(28,7) accel=(68,17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(22,1) accel=(54,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(15,-4) accel=(36,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(9,-7) accel=(22,-17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,-9) accel=(5,-22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-11) accel=(-5,-27)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-13,-12) accel=(-32,-29)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-19,-16) accel=(-46,-39)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-23,-14) accel=(-56,-34)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-14,-7) accel=(-34,-17)
-[Input] mouse move: raw=(-17,-5) accel=(-41,-12)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-42,-6) accel=(-103,-15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-20,0) accel=(-49,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,2) accel=(-5,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,8) accel=(12,19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(10,9) accel=(24,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(12,9) accel=(29,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(20,14) accel=(49,34)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(39,19) accel=(96,47)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(50,18) accel=(124,45)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(62,14) accel=(155,35)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(60,6) accel=(149,15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(68,-12) accel=(170,-30)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(19,-17) accel=(46,-41)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,-17) accel=(7,-41)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,-15) accel=(-15,-36)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-11,-13) accel=(-27,-32)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-14,-11) accel=(-34,-27)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-23,-15) accel=(-56,-37)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-36,-15) accel=(-89,-37)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-40,-10) accel=(-98,-25)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-31,-3) accel=(-76,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-12,0) accel=(-29,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,1) accel=(-7,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,7) accel=(0,17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,9) accel=(12,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(11,9) accel=(27,22)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(11,5) accel=(27,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(13,4) accel=(31,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(14,4) accel=(34,10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(19,1) accel=(46,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(21,0) accel=(51,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(21,-2) accel=(51,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(20,-3) accel=(49,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(7,-2) accel=(17,-5)
-[Input][debug] processed 1 events
 [Input] mouse move: raw=(1,-1) accel=(2,-2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(0,-2) accel=(0,-5)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,-1) accel=(-2,-2)
+[Input] mouse move: raw=(0,2) accel=(0,5)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,-1) accel=(-14,-2)
+[Input] mouse move: raw=(-1,1) accel=(-2,2)
+[Input] mouse move: raw=(0,2) accel=(0,5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-1,1) accel=(-2,2)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-10,-1) accel=(-24,-2)
+[Input] mouse move: raw=(2,-2) accel=(5,-5)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-14,0) accel=(-34,0)
+[Input] mouse move: raw=(6,-10) accel=(15,-24)
+[Input] mouse move: raw=(9,-27) accel=(22,-66)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-10,-98) accel=(-25,-250)
+[Input] mouse move: raw=(-36,-72) accel=(-91,-181)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-64,-86) accel=(-164,-220)
+[Input] mouse move: raw=(-127,-127) accel=(-339,-339)
+[Input] mouse move: raw=(-83,-60) accel=(-212,-153)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-60) accel=(-332,-157)
+[Input] mouse move: raw=(-5,0) accel=(-12,0)
+[Input] mouse move: raw=(-127,-70) accel=(-332,-183)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-96) accel=(-335,-253)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,-24) accel=(-329,-62)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,7) accel=(-329,18)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-100,127) accel=(-264,336)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,127) accel=(339,339)
+[Input] mouse move: raw=(127,127) accel=(339,339)
+[Input] mouse move: raw=(127,67) accel=(332,175)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,40) accel=(330,104)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-73) accel=(333,-191)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-127) accel=(-339,-339)
+[Input] mouse move: raw=(-102,-29) accel=(-261,-74)
+[Input] mouse move: raw=(-127,-18) accel=(-329,-47)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,2) accel=(-329,5)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,85) accel=(-334,223)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(30,127) accel=(78,330)
+[Input] mouse move: raw=(0,123) accel=(0,318)
+[Input] mouse move: raw=(127,44) accel=(330,114)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,3) accel=(329,8)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-19) accel=(329,-49)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-127) accel=(-339,-339)
+[Input] mouse move: raw=(-127,-65) accel=(-332,-170)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,20) accel=(-329,52)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,126) accel=(-339,336)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(0,62) accel=(0,155)
+[Input] mouse move: raw=(86,0) accel=(217,0)
+[Input] mouse move: raw=(68,-2) accel=(170,-5)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(78,-8) accel=(196,-20)
+[Input] mouse move: raw=(13,-2) accel=(31,-5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(10,-1) accel=(24,-2)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-26,0) accel=(-63,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-26,0) accel=(-63,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-13,2) accel=(-31,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,0) accel=(-7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,2) accel=(10,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(8,3) accel=(19,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(16,6) accel=(39,15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(46,15) accel=(114,37)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(30,7) accel=(73,17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(19,3) accel=(46,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,0) accel=(10,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,1) accel=(2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
+[Input] mouse move: raw=(13,-7) accel=(31,-17)
+[Input] mouse move: raw=(50,-22) accel=(124,-55)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(74,-36) accel=(187,-91)
+[Input] mouse move: raw=(88,-50) accel=(225,-128)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(95,-64) accel=(244,-165)
+[Input] mouse move: raw=(98,-96) accel=(255,-250)
+[Input] mouse move: raw=(92,-108) accel=(240,-282)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(80,-112) accel=(209,-292)
+[Input] mouse move: raw=(62,-110) accel=(161,-285)
+[Input] mouse move: raw=(44,-34) accel=(109,-84)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(0,-82) accel=(0,-207)
+[Input] mouse move: raw=(-22,-70) accel=(-55,-176)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,-127) accel=(-339,-339)
+[Input] mouse move: raw=(-127,-23) accel=(-329,-60)
+[Input] mouse move: raw=(-84,0) accel=(-212,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,34) accel=(-330,88)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,42) accel=(-330,109)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,28) accel=(-330,73)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,127) accel=(339,339)
+[Input] mouse move: raw=(127,86) accel=(334,226)
+[Input] mouse move: raw=(116,0) accel=(299,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,16) accel=(329,41)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-99) accel=(335,-262)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-118) accel=(-338,-314)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,36) accel=(-330,94)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,118) accel=(-338,314)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,84) accel=(-334,221)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-16) accel=(329,-41)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,-86) accel=(334,-226)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(65,-18) accel=(163,-45)
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-5,2) accel=(-12,5)
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input][debug] processed 2 events
 [Input] mouse move: raw=(-1,0) accel=(-2,0)
 [Input][debug] processed 1 events
 [Input] mouse move: raw=(-2,0) accel=(-5,0)
 [Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,-1) accel=(-7,-2)
-[Input] mouse move: raw=(-5,-1) accel=(-12,-2)
+[Input] mouse move: raw=(-7,-4) accel=(-17,-10)
+[Input] mouse move: raw=(-25,-11) accel=(-61,-27)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(-10,-3) accel=(-24,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-15,-4) accel=(-36,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-17,-3) accel=(-41,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-21,-2) accel=(-51,-5)
-[Input] mouse move: raw=(-24,-2) accel=(-58,-5)
+[Input] mouse move: raw=(-44,-20) accel=(-109,-49)
+[Input] mouse move: raw=(-127,-56) accel=(-331,-146)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(-24,0) accel=(-58,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-42,2) accel=(-103,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-24,7) accel=(-59,17)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-7,3) accel=(-17,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,1) accel=(-2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,2) accel=(0,5)
-[Input] mouse move: raw=(1,3) accel=(2,7)
+[Input] mouse move: raw=(-33,0) accel=(-81,0)
+[Input] mouse move: raw=(-127,-56) accel=(-331,-146)
+[Input] mouse move: raw=(-99,0) accel=(-252,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-124,-20) accel=(-321,-52)
+[Input] mouse move: raw=(-122,-16) accel=(-315,-41)
+[Input] mouse move: raw=(-120,-10) accel=(-310,-26)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-113,-6) accel=(-290,-15)
+[Input] mouse move: raw=(-108,-4) accel=(-277,-10)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(2,3) accel=(5,7)
-[Input] mouse move: raw=(2,3) accel=(5,7)
+[Input] mouse move: raw=(-127,18) accel=(-329,47)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-96,0) accel=(-244,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(48,4) accel=(119,10)
+[Input] mouse move: raw=(127,-26) accel=(329,-67)
+[Input] mouse move: raw=(57,0) accel=(142,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-38) accel=(330,-99)
+[Input] mouse move: raw=(127,0) accel=(329,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(2,4) accel=(5,10)
-[Input] mouse move: raw=(2,4) accel=(5,10)
+[Input] mouse move: raw=(127,-70) accel=(332,-183)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-110) accel=(337,-292)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-55,-32) accel=(-137,-80)
+[Input] mouse move: raw=(-122,-16) accel=(-315,-41)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(3,5) accel=(7,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,5) accel=(7,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,5) accel=(10,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,5) accel=(12,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(14,8) accel=(34,19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(13,8) accel=(31,19)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(13,5) accel=(31,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(5,2) accel=(12,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(6,1) accel=(14,2)
-[Input] mouse move: raw=(5,1) accel=(12,2)
+[Input] mouse move: raw=(-127,-14) accel=(-329,-36)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,120) accel=(-338,319)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,43) accel=(-330,112)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input] mouse move: raw=(3,-1) accel=(7,-2)
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,63) accel=(-332,165)
+[Input] mouse move: raw=(-76,0) accel=(-191,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-6) accel=(329,-16)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-76) accel=(333,-199)
+[Input] mouse move: raw=(127,0) accel=(329,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(2,-2) accel=(5,-5)
-[Input] mouse move: raw=(2,-2) accel=(5,-5)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-125) accel=(339,-333)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-76) accel=(-333,-199)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-25,0) accel=(-61,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,60) accel=(-332,157)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(1,-3) accel=(2,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,-5) accel=(5,-12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,-3) accel=(2,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,-3) accel=(0,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,-3) accel=(0,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,-3) accel=(0,-7)
-[Input] mouse move: raw=(0,-3) accel=(0,-7)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(-2,-6) accel=(-5,-14)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-5) accel=(-5,-12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,-2) accel=(-2,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,-3) accel=(-7,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,-2) accel=(-7,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,-1) accel=(-2,-2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,0) accel=(5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(4,-1) accel=(10,-2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(16,-3) accel=(39,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(28,-6) accel=(68,-15)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(36,-10) accel=(88,-25)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(17,-4) accel=(41,-10)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(14,-3) accel=(34,-7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(12,-2) accel=(29,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(7,-1) accel=(17,-2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(3,0) accel=(7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,0) accel=(5,0)
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,0) accel=(2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,1) accel=(2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,2) accel=(5,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(2,1) accel=(5,2)
-[Input] mouse move: raw=(1,2) accel=(2,5)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(1,2) accel=(2,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,2) accel=(2,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,1) accel=(2,2)
-[Input] mouse move: raw=(1,2) accel=(2,5)
-[Input][debug] processed 2 events
-[Input] mouse move: raw=(1,1) accel=(2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(1,1) accel=(2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,1) accel=(0,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,2) accel=(0,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(0,4) accel=(0,10)
-[Input][debug] processed 1 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,39) accel=(-330,101)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(107,127) accel=(283,336)
+[Input] mouse move: raw=(0,127) accel=(0,329)
 [Input] mouse move: raw=(0,5) accel=(0,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,5) accel=(-5,12)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,3) accel=(-2,7)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,2) accel=(-5,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,2) accel=(-2,5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,1) accel=(-2,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,0) accel=(-2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-1,0) accel=(-2,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,1) accel=(-5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,1) accel=(-5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-4,1) accel=(-10,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,1) accel=(-5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,1) accel=(-5,2)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-32) accel=(330,-83)
+[Input] mouse move: raw=(127,0) accel=(329,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(-2,0) accel=(-5,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,0) accel=(-7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,0) accel=(-7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-3,0) accel=(-7,0)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-4,0) accel=(-10,0)
-[Input] mouse move: raw=(-3,-1) accel=(-7,-2)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-91) accel=(335,-240)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(56,-30) accel=(140,-75)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,-62) accel=(-332,-162)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
 [Input][debug] processed 2 events
-[Input] mouse move: raw=(-6,-2) accel=(-14,-5)
-[Input][debug] processed 1 events
-[Input] mouse move: raw=(-6,-1) accel=(-14,-2)
+[Input] mouse move: raw=(-127,76) accel=(-333,199)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-127,51) accel=(-331,133)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,127) accel=(-339,339)
+[Input] mouse move: raw=(-59,61) accel=(-149,154)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,62) accel=(332,162)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input] mouse move: raw=(50,0) accel=(124,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-37) accel=(330,-96)
+[Input] mouse move: raw=(127,0) accel=(329,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(127,-127) accel=(339,-339)
+[Input] mouse move: raw=(127,-125) accel=(339,-333)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-14,-73) accel=(-35,-183)
+[Input] mouse move: raw=(-20,-12) accel=(-49,-29)
+[Input] mouse move: raw=(-64,-18) accel=(-160,-45)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-100,-10) accel=(-255,-26)
+[Input] mouse move: raw=(-127,-2) accel=(-329,-5)
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-21,0) accel=(-51,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-127,46) accel=(-331,120)
+[Input] mouse move: raw=(-127,0) accel=(-329,0)
+[Input] mouse move: raw=(-69,0) accel=(-173,0)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(54,110) accel=(140,284)
+[Input] mouse move: raw=(70,38) accel=(176,96)
+[Input] mouse move: raw=(94,34) accel=(240,87)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(56,16) accel=(139,40)
+[Input] mouse move: raw=(59,14) accel=(147,35)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(127,18) accel=(329,47)
+[Input] mouse move: raw=(5,0) accel=(12,0)
+[Input] mouse move: raw=(124,-12) accel=(321,-31)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(96,-42) accel=(245,-107)
+[Input] mouse move: raw=(62,-62) accel=(157,-157)
+[Input] mouse move: raw=(30,-94) accel=(76,-240)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-3,-37) accel=(-7,-91)
+[Input] mouse move: raw=(-12,-15) accel=(-29,-36)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-35,-13) accel=(-86,-32)
+[Input] mouse move: raw=(-64,-6) accel=(-160,-15)
+[Input] mouse move: raw=(-96,-2) accel=(-244,-5)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-120,6) accel=(-310,15)
+[Input] mouse move: raw=(-66,8) accel=(-165,20)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-67,8) accel=(-168,20)
+[Input] mouse move: raw=(-70,10) accel=(-175,25)
+[Input] mouse move: raw=(-127,36) accel=(-330,94)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-55,0) accel=(-137,0)
+[Input] mouse move: raw=(-36,10) accel=(-88,25)
+[Input] mouse move: raw=(-20,10) accel=(-49,24)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(-8,7) accel=(-19,17)
+[Input] mouse move: raw=(-3,4) accel=(-7,10)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-1,12) accel=(-2,29)
+[Input] mouse move: raw=(1,4) accel=(2,10)
+[Input] mouse move: raw=(4,7) accel=(10,17)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(19,13) accel=(46,32)
+[Input] mouse move: raw=(11,3) accel=(27,7)
+[Input] mouse move: raw=(17,2) accel=(41,5)
+[Input][debug] processed 3 events
+[Input] mouse move: raw=(22,0) accel=(54,0)
+[Input] mouse move: raw=(26,-2) accel=(63,-5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(100,-28) accel=(256,-72)
+[Input] mouse move: raw=(40,-14) accel=(99,-34)

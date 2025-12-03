@@ -3,17 +3,25 @@ use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use core::fmt::Write;
+use core::sync::atomic::AtomicBool;
 
 use crate::vga_buffer;
 use bootloader_api::BootInfo;
 
 static BOOT_INFO_PTR: AtomicUsize = AtomicUsize::new(0);
+static CRASHED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_boot_info_ptr(ptr: usize) {
     BOOT_INFO_PTR.store(ptr, Ordering::SeqCst);
 }
 
 pub fn show_crash(info: &core::panic::PanicInfo) {
+    if CRASHED.swap(true, Ordering::SeqCst) {
+        // Already handling a crash; avoid recursive panic paths.
+        loop {
+            x86_64::instructions::hlt();
+        }
+    }
     let reason = truncate(&format!("{}", info), 200);
     vga_buffer::log_line(&format!("[crash] fatal panic: {}", reason));
     let mut w = vga_buffer::writer();
@@ -41,7 +49,7 @@ pub fn show_crash(info: &core::panic::PanicInfo) {
     let _ = write!(
         w,
         "System halted. Check serial for full backtrace.\n\
-Enter 'R' to reboot or power cycle the VM/device.\n> "
+Press Enter to reboot or power cycle the VM/device.\n> "
     );
 }
 
