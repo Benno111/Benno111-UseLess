@@ -1,6 +1,7 @@
 use alloc::format;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
+use libm::{sqrtf, roundf};
 use crate::{vga_buffer, windowing};
 
 #[derive(Clone, Copy)]
@@ -31,20 +32,24 @@ fn apply_mouse_accel(dx: isize, dy: isize) -> (isize, isize) {
     let dy_f = dy as f32;
 
     // Clamp extreme input from buggy hardware
-    let mut dx_f = dx_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
-    let mut dy_f = dy_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
+    let dx_f = dx_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
+    let dy_f = dy_f.clamp(-MOUSE_MAX_DELTA, MOUSE_MAX_DELTA);
 
     // Speed = vector length
-    let speed = (dx_f * dx_f + dy_f * dy_f).sqrt();
+    // Use libm sqrt because we're in a no_std environment
+    let speed = sqrtf(dx_f * dx_f + dy_f * dy_f);
 
     // Acceleration:
     // gain = base sensitivity + (speed * accel * 0.01)
     let gain = MOUSE_SENS + (speed * MOUSE_ACCEL * 0.01);
 
-    dx_f *= gain;
-    dy_f *= gain;
+    let dx_scaled = dx_f * gain;
+    let dy_scaled = dy_f * gain;
 
-    (dx_f as isize, dy_f as isize)
+    let dx_out = roundf(dx_scaled);
+    let dy_out = roundf(dy_scaled);
+
+    (dx_out as isize, dy_out as isize)
 }
 
 // =============================

@@ -2,8 +2,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
+use core::fmt::Write;
 
-use crate::framebuffer::{self, COLOR_ACCENT, COLOR_CARD};
 use crate::vga_buffer;
 use bootloader_api::BootInfo;
 
@@ -14,56 +14,35 @@ pub fn set_boot_info_ptr(ptr: usize) {
 }
 
 pub fn show_crash(info: &core::panic::PanicInfo) {
-    vga_buffer::log_line("[crash] fatal panic, rendering crash screen");
-    framebuffer::draw_wallpaper();
-    framebuffer::draw_rect(20, 20, 360, 200, COLOR_CARD);
-    framebuffer::draw_rect(22, 22, 356, 26, COLOR_ACCENT);
-    framebuffer::draw_text("System Crash", 28, 26);
-
-    let mut y = 56;
-    framebuffer::draw_text("Reason:", 28, y);
-    y += 14;
-    framebuffer::draw_text(&truncate(&format!("{}", info), 50), 28, y);
-    y += 20;
+    let reason = truncate(&format!("{}", info), 200);
+    vga_buffer::log_line(&format!("[crash] fatal panic: {}", reason));
+    let mut w = vga_buffer::writer();
+    w.clear();
+    let _ = write!(
+        w,
+        "=== KERNEL PANIC ===\nReason: {}\n\n",
+        truncate(&reason, 70)
+    );
 
     if let Some(bi) = boot_info() {
-        framebuffer::draw_text("Dump:", 28, y);
-        y += 14;
-        framebuffer::draw_text(
-            &format!(
-                "mem regions: {}  kernel: 0x{:x} len:{}",
-                bi.memory_regions.len(),
-                bi.kernel_addr,
-                bi.kernel_len
-            ),
-            28,
-            y,
+        let _ = write!(
+            w,
+            "mem regions: {}  kernel: 0x{:x} len:{}\nphys offset: {:x}  image off: {:x}\nframebuffer: {}x{}\n\n",
+            bi.memory_regions.len(),
+            bi.kernel_addr,
+            bi.kernel_len,
+            bi.physical_memory_offset.into_option().unwrap_or(0),
+            bi.kernel_image_offset,
+            bi.framebuffer.as_ref().map(|f| f.info().width).unwrap_or(0),
+            bi.framebuffer.as_ref().map(|f| f.info().height).unwrap_or(0),
         );
-        y += 14;
-        framebuffer::draw_text(
-            &format!(
-                "phys offset: {:x}  image off: {:x}",
-                bi.physical_memory_offset.into_option().unwrap_or(0),
-                bi.kernel_image_offset
-            ),
-            28,
-            y,
-        );
-        y += 14;
-        framebuffer::draw_text(
-            &format!(
-                "framebuffer: {}x{}",
-                bi.framebuffer.as_ref().map(|f| f.info().width).unwrap_or(0),
-                bi.framebuffer.as_ref().map(|f| f.info().height).unwrap_or(0)
-            ),
-            28,
-            y,
-        );
-        y += 14;
     }
 
-    framebuffer::draw_text("System halted. Check serial log for details.", 28, y + 8);
-    framebuffer::render_frame();
+    let _ = write!(
+        w,
+        "System halted. Check serial for full backtrace.\n\
+Enter 'R' to reboot or power cycle the VM/device.\n> "
+    );
 }
 
 fn boot_info() -> Option<&'static BootInfo> {

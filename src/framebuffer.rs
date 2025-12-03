@@ -22,6 +22,11 @@ struct FbState {
     info: FrameBufferInfo,
 }
 
+pub enum DirtyRegion {
+    Full,
+    Rect { x: usize, y: usize, w: usize, h: usize },
+}
+
 static FB: Mutex<Option<FbState>> = Mutex::new(None);
 static FONT_CFG: Mutex<FontConfig> = Mutex::new(FontConfig {
     fg: (255, 255, 255),
@@ -32,10 +37,53 @@ static FONT_CFG: Mutex<FontConfig> = Mutex::new(FontConfig {
 static INVALIDATED: AtomicBool = AtomicBool::new(true);
 static REFRESH_LOCK: AtomicBool = AtomicBool::new(false);
 static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
+static DIRTY_RECT: Mutex<Option<DirtyRegion>> = Mutex::new(None);
 
 /// Mark the framebuffer as dirty so the renderer will present on the next cycle.
 pub fn invalidate() {
     INVALIDATED.store(true, Ordering::SeqCst);
+    *DIRTY_RECT.lock() = None;
+}
+
+/// Mark a specific rectangle as dirty, merging with existing dirty state.
+pub fn invalidate_rect(x: usize, y: usize, w: usize, h: usize) {
+    if w == 0 || h == 0 {
+        invalidate();
+        return;
+    }
+    INVALIDATED.store(true, Ordering::SeqCst);
+    let mut dirty = DIRTY_RECT.lock();
+    match dirty.as_mut() {
+        Some(DirtyRegion::Rect {
+            x: dx,
+            y: dy,
+            w: dw,
+            h: dh,
+        }) => {
+            let x2 = x + w;
+            let y2 = y + h;
+            let dx2 = *dx + *dw;
+            let dy2 = *dy + *dh;
+            *dx = (*dx).min(x);
+            *dy = (*dy).min(y);
+            *dw = dx2.max(x2) - *dx;
+            *dh = dy2.max(y2) - *dy;
+        }
+        Some(DirtyRegion::Full) => {
+            // already full
+        }
+        None => {
+            *dirty = Some(DirtyRegion::Rect { x, y, w, h });
+        }
+    }
+}
+
+/// Fetch and clear the current dirty region.
+pub fn take_dirty_region() -> Option<DirtyRegion> {
+    if !INVALIDATED.swap(false, Ordering::SeqCst) {
+        return None;
+    }
+    DIRTY_RECT.lock().take().or(Some(DirtyRegion::Full))
 }
 
 pub fn init(fb: Option<&mut FrameBuffer>) {
