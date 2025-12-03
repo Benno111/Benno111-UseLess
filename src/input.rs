@@ -1,5 +1,4 @@
 use alloc::format;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
 use libm::{sqrtf, roundf};
 use crate::{vga_buffer, windowing};
@@ -15,13 +14,19 @@ pub enum InputEvent {
 // =============================
 
 // Base sensitivity multiplier (applies at all speeds)
-const MOUSE_SENS: f32 = 1.0;
+const MOUSE_SENS: f32 = 2.4;
 
-// Acceleration strength (0.0 = off, 1.0 = normal, 1.4 = strong)
-const MOUSE_ACCEL: f32 = 1.4;
+// Acceleration strength (low value keeps response snappy without runaway speed)
+const MOUSE_ACCEL: f32 = 0.15;
 
 // Prevent insane movement from bad deltas or overflow
 const MOUSE_MAX_DELTA: f32 = 1000.0;
+
+// Ignore tiny jitter to avoid cursor wiggle
+const MOUSE_DEADZONE: f32 = 0.25;
+
+// Cap the gain so wild packets don't explode
+const MOUSE_MAX_GAIN: f32 = 8.0;
 
 // =============================
 // Mouse acceleration function
@@ -39,9 +44,17 @@ fn apply_mouse_accel(dx: isize, dy: isize) -> (isize, isize) {
     // Use libm sqrt because we're in a no_std environment
     let speed = sqrtf(dx_f * dx_f + dy_f * dy_f);
 
+    // Drop tiny jitter; keep hardware noise from nudging the cursor
+    if speed < MOUSE_DEADZONE {
+        return (0, 0);
+    }
+
     // Acceleration:
     // gain = base sensitivity + (speed * accel * 0.01)
-    let gain = MOUSE_SENS + (speed * MOUSE_ACCEL * 0.01);
+    let mut gain = MOUSE_SENS + (speed * MOUSE_ACCEL * 0.01);
+    if gain > MOUSE_MAX_GAIN {
+        gain = MOUSE_MAX_GAIN;
+    }
 
     let dx_scaled = dx_f * gain;
     let dy_scaled = dy_f * gain;
@@ -98,29 +111,19 @@ impl EventQueue {
 }
 
 static QUEUE: Mutex<EventQueue> = Mutex::new(EventQueue::new());
-static EVENT_IDX: AtomicUsize = AtomicUsize::new(0);
-
-// Scripted fallback events (demo mode)
-const SCRIPTED_EVENTS: &[InputEvent] = &[
-    InputEvent::Key('h'),
-    InputEvent::Key('i'),
-    InputEvent::MouseMove { dx: 15, dy: 8 },
-    InputEvent::Key('!'),
-];
-
 // =============================
 // Public API
 // =============================
 
-pub fn enqueue_demo_inputs() {
-    let mut q = QUEUE.lock();
-    for ev in SCRIPTED_EVENTS {
-        q.push(*ev);
-    }
-}
-
 pub fn enqueue_event(ev: InputEvent) {
     QUEUE.lock().push(ev);
+}
+
+pub fn enqueue_events<I: IntoIterator<Item = InputEvent>>(events: I) {
+    let mut q = QUEUE.lock();
+    for ev in events {
+        q.push(ev);
+    }
 }
 
 pub fn queue_len() -> usize {
@@ -133,10 +136,6 @@ pub fn queue_len() -> usize {
 
 fn handle_event(ev: InputEvent) {
     match ev {
-        InputEvent::Key(c) => {
-            vga_buffer::log_line(&format!("[Input] key: {}", c));
-        }
-
         InputEvent::MouseMove { dx, dy } => {
             // Apply acceleration
             let (adx, ady) = apply_mouse_accel(dx, dy);
@@ -148,6 +147,17 @@ fn handle_event(ev: InputEvent) {
                 dx, dy, adx, ady
             ));
         }
+        InputEvent::Key('\n') => {
+            windowing::mouse_click_left();
+            vga_buffer::log_line("[Input] mouse left click via Enter");
+        }
+        InputEvent::Key('\u{8}') => {
+            windowing::mouse_click_right();
+            vga_buffer::log_line("[Input] mouse right click via Backspace");
+        }
+        InputEvent::Key(c) => {
+            vga_buffer::log_line(&format!("[Input] key: {}", c));
+        }
     }
 }
 
@@ -157,26 +167,25 @@ fn handle_event(ev: InputEvent) {
 
 pub fn poll_input_events() {
     let mut had_event = false;
+    let mut processed = 0usize;
 
     // Drain queue with only *one* lock
     {
         let mut q = QUEUE.lock();
         while let Some(ev) = q.pop() {
             had_event = true;
+            processed += 1;
             handle_event(ev);
         }
+    }
+
+    if processed > 0 {
+        vga_buffer::log_line(&format!("[Input][debug] processed {} events", processed));
     }
 
     if had_event {
         return;
     }
 
-    // No queued events → fallback scripted demo events
-    let idx = EVENT_IDX.fetch_add(1, Ordering::SeqCst);
-
-    if let Some(ev) = SCRIPTED_EVENTS.get(idx) {
-        handle_event(*ev);
-    } else {
-        vga_buffer::log_line("[Input] No more scripted events");
-    }
+    // No queued events; nothing to handle.
 }

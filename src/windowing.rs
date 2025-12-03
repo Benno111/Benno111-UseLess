@@ -1,5 +1,6 @@
 use crate::framebuffer;
 use spin::Mutex;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy)]
 pub struct Window {
@@ -37,6 +38,7 @@ struct CursorCache {
 }
 
 static CURSOR_CACHE: Mutex<Option<CursorCache>> = Mutex::new(None);
+static INITIAL_FULL_DRAWN: AtomicBool = AtomicBool::new(false);
 
 pub fn init_default_windows() {
     let defaults = [
@@ -98,11 +100,9 @@ pub fn set_mouse_position(x: usize, y: usize) {
 pub fn move_mouse(dx: isize, dy: isize) {
     let mut st = STATE.lock();
     let (cur_x, cur_y) = st.mouse;
-    // Speed up movement so small deltas move the cursor visibly.
-    let accel = 4;
-    // Smooth out jitter: apply a minimum of 1px but cap to keep visuals stable.
-    let step_x = (dx * accel).clamp(-16, 16);
-    let step_y = (dy * accel).clamp(-16, 16);
+    // Apply deltas directly; clamp for sanity but keep motion lively.
+    let step_x = dx.clamp(-96, 96);
+    let step_y = dy.clamp(-96, 96);
     let new_x = cur_x as isize + step_x;
     let new_y = cur_y as isize + step_y;
     let (bw, bh) = st.bounds;
@@ -113,22 +113,17 @@ pub fn move_mouse(dx: isize, dy: isize) {
     st.mouse = new_mouse;
     drop(st);
 
-    // Only invalidate the union of the old and new cursor rectangles.
-    let min_x = cur_x.min(new_mouse.0);
-    let min_y = cur_y.min(new_mouse.1);
-    let max_x = cur_x
-        .saturating_add(CURSOR_W)
-        .max(new_mouse.0.saturating_add(CURSOR_W));
-    let max_y = cur_y
-        .saturating_add(CURSOR_H)
-        .max(new_mouse.1.saturating_add(CURSOR_H));
-    let w = max_x.saturating_sub(min_x);
-    let h = max_y.saturating_sub(min_y);
-    if w == 0 || h == 0 {
-        framebuffer::invalidate();
-    } else {
-        framebuffer::invalidate_rect(min_x, min_y, w, h);
-    }
+    // Full invalidate for stability; avoids partial-refresh edge cases.
+    framebuffer::invalidate();
+}
+
+pub fn mouse_click_left() {
+    // Placeholder: invalidate to allow UI to react/redraw if needed.
+    framebuffer::invalidate();
+}
+
+pub fn mouse_click_right() {
+    framebuffer::invalidate();
 }
 
 pub fn set_bounds(w: usize, h: usize) {
@@ -164,10 +159,27 @@ pub fn render() {
     };
 
     match dirty {
-        framebuffer::DirtyRegion::Full => full_redraw(),
-        framebuffer::DirtyRegion::Rect { .. } => {
-            if !refresh_cursor_only() {
+        framebuffer::DirtyRegion::Full => {
+            // Only do a full redraw once at startup; afterwards, fall back to partial.
+            if !INITIAL_FULL_DRAWN.swap(true, Ordering::SeqCst) {
                 full_redraw();
+            } else {
+                if refresh_cursor_only() {
+                    framebuffer::render_frame();
+                } else {
+                    framebuffer::invalidate();
+                }
+            }
+        }
+        framebuffer::DirtyRegion::Rect { .. } => {
+            // Lightweight path: only refresh cursor; avoid touching other areas.
+            let ok = refresh_cursor_only();
+            if ok {
+                crate::vga_buffer::log_line("[FB][debug] partial redraw (cursor)");
+                framebuffer::render_frame();
+            } else {
+                // If cursor refresh failed, schedule a full redraw next frame.
+                framebuffer::invalidate();
             }
         }
     }
@@ -300,6 +312,9 @@ fn draw_cursor_with_cache(x: usize, y: usize, restore_old: bool) -> bool {
         *cache = Some(next_cache);
         ok = true;
     });
+    if !ok {
+        *cache = None;
+    }
     ok
 }
 

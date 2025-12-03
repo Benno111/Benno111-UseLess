@@ -82,10 +82,10 @@ qemu_drivers::init();
 
     // Straight to desktop render loop.
     windowing::init_default_windows();
-    input::enqueue_demo_inputs();
     loop {
+        let frame = drivers::poll_devices();
+        input::enqueue_events(frame.events);
         input::poll_input_events();
-        drivers::poll_devices();
         windowing::render();
     }
 }

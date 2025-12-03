@@ -3,7 +3,7 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=5762264 bytes
+[boot] kernel image: addr=0x1000000, len=5809408 bytes
 [FB] Framebuffer initialized.
 [qemu] initializing emulated devices
 [qemu] RTC stub ready
@@ -12,965 +12,568 @@
 [fs] FAT32 main volume (stub) initialized
 [acpi] initializing power management stubs
 [drivers] PS/2 controller stub initialized
-[drivers] PS/2: keyboard detected (stub)
-[drivers] PS/2: mouse detected (stub)
+[drivers] PS/2: keyboard detected (stub, i8042)
+[drivers] PS/2: mouse detected (stub, 3-byte standard packet)
+[drivers] PS/2 mouse streaming enabled
 [drivers] USB controller stub initialized
-[drivers] USB: port 1 device present (stub)
+[drivers] USB: port 1 device present (stub, class HID unknown)
 [drivers] USB: port 2 empty (stub)
-[Input] key: k
-[Input] mouse move: raw=(3,2) accel=(3,2)
-[Input] key: u
-[Input] key: h
-[Input] key: i
-[Input] mouse move: raw=(15,8) accel=(19,10)
-[Input] key: !
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: k
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
-[Input] mouse move: raw=(1,0) accel=(1,0)
-[Input] key: u
-[Input] mouse move: raw=(0,1) accel=(0,1)
-[Input] mouse move: raw=(-1,0) accel=(-1,0)
-[Input] mouse move: raw=(0,-1) accel=(0,-1)
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(5,1) accel=(12,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,1) accel=(10,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,1) accel=(12,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(6,1) accel=(14,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(6,1) accel=(14,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(6,2) accel=(14,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,1) accel=(7,2)
+[Input] mouse move: raw=(3,2) accel=(7,5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(5,1) accel=(12,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,3) accel=(10,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,2) accel=(12,5)
+[Input] mouse move: raw=(6,4) accel=(14,10)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(9,6) accel=(22,14)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(27,21) accel=(66,51)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(42,24) accel=(104,59)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(22,10) accel=(54,24)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(22,8) accel=(54,19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(48,14) accel=(119,35)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(26,4) accel=(63,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(28,2) accel=(68,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(28,0) accel=(68,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(26,0) accel=(63,0)
+[Input] mouse move: raw=(24,-2) accel=(58,-5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(22,-2) accel=(54,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(17,-2) accel=(41,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(14,-4) accel=(34,-10)
+[Input] mouse move: raw=(8,-1) accel=(19,-2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(5,-1) accel=(12,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,-1) accel=(0,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,-6) accel=(-2,-14)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-3) accel=(-5,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-4) accel=(-5,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-5,-5) accel=(-12,-12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,-7) accel=(-14,-17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-7,-8) accel=(-17,-19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-10,-10) accel=(-24,-24)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-15,-11) accel=(-36,-27)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-15,-13) accel=(-36,-32)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-16,-12) accel=(-39,-29)
+[Input] mouse move: raw=(-18,-12) accel=(-44,-29)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-18,-12) accel=(-44,-29)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-18,-10) accel=(-44,-24)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-18,-8) accel=(-44,-19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-17,-6) accel=(-41,-15)
+[Input] mouse move: raw=(-15,-3) accel=(-36,-7)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-11,-2) accel=(-27,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-11,-1) accel=(-27,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-8,0) accel=(-19,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-7,0) accel=(-17,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,0) accel=(-14,0)
+[Input] mouse move: raw=(-8,0) accel=(-19,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-7,1) accel=(-17,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,3) accel=(-14,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-7,2) accel=(-17,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-10,6) accel=(-24,15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-5,9) accel=(-12,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,4) accel=(-5,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,5) accel=(-2,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,6) accel=(0,14)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,4) accel=(0,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,6) accel=(7,14)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,7) accel=(10,17)
+[Input] mouse move: raw=(5,5) accel=(12,12)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(9,8) accel=(22,19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(16,9) accel=(39,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(20,10) accel=(49,24)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(40,14) accel=(99,34)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(34,4) accel=(83,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(22,-5) accel=(54,-12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(13,-8) accel=(31,-19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,-4) accel=(5,-10)
+[Input] mouse move: raw=(1,-3) accel=(2,-7)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(0,-3) accel=(0,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-11,-13) accel=(-27,-32)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-15,-10) accel=(-36,-24)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-9,-4) accel=(-22,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-13,-5) accel=(-31,-12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-14,-7) accel=(-34,-17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
+[Input] mouse move: raw=(-22,-6) accel=(-54,-15)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-26,-4) accel=(-63,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-26,-4) accel=(-63,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-26,0) accel=(-63,0)
+[Input] mouse move: raw=(-24,0) accel=(-58,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-18,4) accel=(-44,10)
+[Input] mouse move: raw=(-12,4) accel=(-29,10)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-7,4) accel=(-17,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-4,7) accel=(-10,17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,6) accel=(-5,14)
+[Input] mouse move: raw=(0,10) accel=(0,24)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(3,11) accel=(7,27)
+[Input] mouse move: raw=(5,11) accel=(12,27)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(15,19) accel=(37,46)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(21,15) accel=(51,37)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(28,14) accel=(69,34)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(28,7) accel=(68,17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(22,1) accel=(54,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(15,-4) accel=(36,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(9,-7) accel=(22,-17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,-9) accel=(5,-22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-11) accel=(-5,-27)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-13,-12) accel=(-32,-29)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-19,-16) accel=(-46,-39)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-23,-14) accel=(-56,-34)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-14,-7) accel=(-34,-17)
+[Input] mouse move: raw=(-17,-5) accel=(-41,-12)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-19,-6) accel=(-46,-15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-42,-6) accel=(-103,-15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-20,0) accel=(-49,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,2) accel=(-5,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,8) accel=(12,19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(10,9) accel=(24,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(12,9) accel=(29,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(20,14) accel=(49,34)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(39,19) accel=(96,47)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(50,18) accel=(124,45)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(62,14) accel=(155,35)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(60,6) accel=(149,15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(68,-12) accel=(170,-30)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(19,-17) accel=(46,-41)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,-17) accel=(7,-41)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,-15) accel=(-15,-36)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-11,-13) accel=(-27,-32)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-14,-11) accel=(-34,-27)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-23,-15) accel=(-56,-37)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-36,-15) accel=(-89,-37)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-40,-10) accel=(-98,-25)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-31,-3) accel=(-76,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-12,0) accel=(-29,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,1) accel=(-7,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,7) accel=(0,17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,9) accel=(12,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(11,9) accel=(27,22)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(11,5) accel=(27,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(13,4) accel=(31,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(14,4) accel=(34,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(19,1) accel=(46,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(21,0) accel=(51,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(21,-2) accel=(51,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(20,-3) accel=(49,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(7,-2) accel=(17,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,-1) accel=(2,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,-1) accel=(-2,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,-1) accel=(-14,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-10,-1) accel=(-24,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-14,0) accel=(-34,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-26,0) accel=(-63,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-26,0) accel=(-63,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-13,2) accel=(-31,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,0) accel=(-7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,2) accel=(10,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(8,3) accel=(19,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(16,6) accel=(39,15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(46,15) accel=(114,37)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(30,7) accel=(73,17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(19,3) accel=(46,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,0) accel=(10,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,-1) accel=(-7,-2)
+[Input] mouse move: raw=(-5,-1) accel=(-12,-2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-10,-3) accel=(-24,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-15,-4) accel=(-36,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-17,-3) accel=(-41,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-21,-2) accel=(-51,-5)
+[Input] mouse move: raw=(-24,-2) accel=(-58,-5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-24,0) accel=(-58,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-42,2) accel=(-103,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-24,7) accel=(-59,17)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-7,3) accel=(-17,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,1) accel=(-2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,2) accel=(0,5)
+[Input] mouse move: raw=(1,3) accel=(2,7)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(2,3) accel=(5,7)
+[Input] mouse move: raw=(2,3) accel=(5,7)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(2,4) accel=(5,10)
+[Input] mouse move: raw=(2,4) accel=(5,10)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(3,5) accel=(7,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,5) accel=(7,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,5) accel=(10,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,5) accel=(12,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(14,8) accel=(34,19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(13,8) accel=(31,19)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(13,5) accel=(31,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(5,2) accel=(12,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(6,1) accel=(14,2)
+[Input] mouse move: raw=(5,1) accel=(12,2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input] mouse move: raw=(3,-1) accel=(7,-2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(2,-2) accel=(5,-5)
+[Input] mouse move: raw=(2,-2) accel=(5,-5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(1,-3) accel=(2,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,-5) accel=(5,-12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,-3) accel=(2,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,-3) accel=(0,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,-3) accel=(0,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,-3) accel=(0,-7)
+[Input] mouse move: raw=(0,-3) accel=(0,-7)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-2,-6) accel=(-5,-14)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-5) accel=(-5,-12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,-2) accel=(-2,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,-3) accel=(-7,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,-2) accel=(-7,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,-2) accel=(-5,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,-1) accel=(-2,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(4,-1) accel=(10,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(16,-3) accel=(39,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(28,-6) accel=(68,-15)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(36,-10) accel=(88,-25)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(17,-4) accel=(41,-10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(14,-3) accel=(34,-7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(12,-2) accel=(29,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(7,-1) accel=(17,-2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(3,0) accel=(7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,0) accel=(5,0)
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,0) accel=(2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,2) accel=(5,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(2,1) accel=(5,2)
+[Input] mouse move: raw=(1,2) accel=(2,5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(1,2) accel=(2,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,2) accel=(2,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input] mouse move: raw=(1,2) accel=(2,5)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(1,1) accel=(2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,1) accel=(0,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,2) accel=(0,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,4) accel=(0,10)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(0,5) accel=(0,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,5) accel=(-5,12)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,3) accel=(-2,7)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,2) accel=(-5,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,2) accel=(-2,5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,1) accel=(-2,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-1,0) accel=(-2,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,1) accel=(-5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,1) accel=(-5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-4,1) accel=(-10,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,1) accel=(-5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,1) accel=(-5,2)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-2,0) accel=(-5,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,0) accel=(-7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,0) accel=(-7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-3,0) accel=(-7,0)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-4,0) accel=(-10,0)
+[Input] mouse move: raw=(-3,-1) accel=(-7,-2)
+[Input][debug] processed 2 events
+[Input] mouse move: raw=(-6,-2) accel=(-14,-5)
+[Input][debug] processed 1 events
+[Input] mouse move: raw=(-6,-1) accel=(-14,-2)
