@@ -54,6 +54,8 @@ static MOUSE_PACKET: Mutex<MousePacket> = Mutex::new(MousePacket { buf: [0; 3], 
 static PS2_MOUSE_ENABLED: AtomicBool = AtomicBool::new(true);
 static PS2_KEYBOARD_ENABLED: AtomicBool = AtomicBool::new(true);
 static PS2_BUDGET_BYTES: AtomicUsize = AtomicUsize::new(8);
+static POLL_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static POLL_SKIPPED: AtomicUsize = AtomicUsize::new(0);
 
 fn wait_input_empty() {
     unsafe {
@@ -254,7 +256,31 @@ fn scancode_to_input_events(code: u8) -> Option<InputEvent> {
 }
 
 pub fn poll_devices() -> DriverInputFrame {
+    struct PollGuard;
+    impl Drop for PollGuard {
+        fn drop(&mut self) {
+            POLL_IN_PROGRESS.store(false, Ordering::SeqCst);
+        }
+    }
+
+    if POLL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        let skips = POLL_SKIPPED.fetch_add(1, Ordering::SeqCst) + 1;
+        if skips % 4 == 0 {
+            vga_buffer::log_line("[drivers] poll skipped; previous poll still running");
+        }
+        return DriverInputFrame::new();
+    }
+    let _g = PollGuard;
     let mut frame = DriverInputFrame::new();
     poll_ps2_ports(&mut frame);
+    POLL_SKIPPED.store(0, Ordering::SeqCst);
     frame
+}
+
+pub fn poll_skip_count() -> usize {
+    POLL_SKIPPED.load(Ordering::SeqCst)
+}
+
+pub fn current_poll_budget() -> usize {
+    PS2_BUDGET_BYTES.load(Ordering::Relaxed)
 }

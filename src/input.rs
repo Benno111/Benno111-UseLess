@@ -84,11 +84,15 @@ impl EventQueue {
         }
     }
 
-    fn push(&mut self, ev: InputEvent) {
+    fn push(&mut self, ev: InputEvent) -> bool {
         let next = (self.tail + 1) % self.buf.len();
         if next != self.head {
             self.buf[self.tail] = Some(ev);
             self.tail = next;
+            true
+        } else {
+            // queue full: drop silently
+            false
         }
     }
 
@@ -116,13 +120,14 @@ static QUEUE: Mutex<EventQueue> = Mutex::new(EventQueue::new());
 // =============================
 
 pub fn enqueue_event(ev: InputEvent) {
-    QUEUE.lock().push(ev);
+    let mut q = QUEUE.lock();
+    let _ = q.push(ev);
 }
 
 pub fn enqueue_events<I: IntoIterator<Item = InputEvent>>(events: I) {
     let mut q = QUEUE.lock();
     for ev in events {
-        q.push(ev);
+        let _ = q.push(ev);
     }
 }
 
@@ -141,11 +146,6 @@ fn handle_event(ev: InputEvent) {
             let (adx, ady) = apply_mouse_accel(dx, dy);
 
             windowing::move_mouse(adx, ady);
-
-            vga_buffer::log_line(&format!(
-                "[Input] mouse move: raw=({},{}) accel=({},{})",
-                dx, dy, adx, ady
-            ));
         }
         InputEvent::Key('\n') => {
             windowing::mouse_click_left();
@@ -179,13 +179,6 @@ pub fn poll_input_events() {
         }
     }
 
-    if processed > 0 {
-        vga_buffer::log_line(&format!("[Input][debug] processed {} events", processed));
-    }
-
-    if had_event {
-        return;
-    }
-
-    // No queued events; nothing to handle.
+    let _ = processed;
+    let _ = had_event;
 }

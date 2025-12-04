@@ -1,5 +1,8 @@
 use alloc::format;
 use crate::framebuffer;
+use crate::task_manager;
+use crate::crash_predictor;
+use crate::vga_buffer;
 use spin::Mutex;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -26,6 +29,49 @@ static STATE: Mutex<State> = Mutex::new(State {
     bounds: (640, 480),
 });
 static RENDERING: AtomicBool = AtomicBool::new(false);
+static FB_WARNED: AtomicBool = AtomicBool::new(false);
+
+struct RenderGuard;
+
+impl RenderGuard {
+    fn new(flag: &'static AtomicBool) -> Option<Self> {
+        if flag.swap(true, Ordering::SeqCst) {
+            None
+        } else {
+            Some(Self)
+        }
+    }
+}
+
+impl Drop for RenderGuard {
+    fn drop(&mut self) {
+        RENDERING.store(false, Ordering::SeqCst);
+    }
+}
+
+struct RefreshGuard(bool);
+
+impl RefreshGuard {
+    fn new() -> Self {
+        framebuffer::lock_refresh();
+        Self(true)
+    }
+    fn release(&mut self) {
+        if self.0 {
+            framebuffer::unlock_refresh();
+            self.0 = false;
+        }
+    }
+}
+
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            framebuffer::unlock_refresh();
+            self.0 = false;
+        }
+    }
+}
 
 const CURSOR_W: usize = 20;
 const CURSOR_H: usize = 20;
@@ -54,7 +100,13 @@ pub fn init_default_windows() {
             w: 360,
             h: 120,
         }),
-        None,
+        Some(Window {
+            title: "Task Manager",
+            x: 420,
+            y: 40,
+            w: 260,
+            h: 180,
+        }),
     ];
     STATE.lock().windows = defaults;
     framebuffer::invalidate();
@@ -132,15 +184,22 @@ fn clamp(v: isize, min: isize, max: isize) -> isize {
 }
 
 pub fn render() {
-    if RENDERING.swap(true, Ordering::SeqCst) {
+    let Some(_render_guard) = RenderGuard::new(&RENDERING) else {
+        return;
+    };
+    if !framebuffer::framebuffer_available() {
+        if !FB_WARNED.swap(true, Ordering::SeqCst) {
+            vga_buffer::log_line("[windowing] framebuffer unavailable; redraw skipped");
+        }
+        crash_predictor::note_framebuffer_unavailable();
         return;
     }
     if !framebuffer::is_invalidated() {
-        RENDERING.store(false, Ordering::SeqCst);
+        crash_predictor::note_render_skip("not invalidated");
         return;
     }
     framebuffer::fill_screen(crate::framebuffer::COLOR_BG);
-    framebuffer::lock_refresh();
+    let mut refresh_guard = RefreshGuard::new();
     let st = STATE.lock();
     let windows_snapshot = st.windows;
     let (mx, my) = st.mouse;
@@ -148,17 +207,22 @@ pub fn render() {
         framebuffer::draw_rect(win.x, win.y, win.w, win.h, (50, 120, 200));
         framebuffer::draw_rect(win.x + 2, win.y + 16, win.w - 4, win.h - 18, (20, 20, 20));
         framebuffer::draw_text(win.title, win.x + 6, win.y + 2);
+        render_window_content(win);
     }
-    let frame_no = crate::framebuffer::next_frame_count();
-    framebuffer::draw_text_no_invalidate(&format!("Frame: {}", frame_no), 4, 4);
     draw_cursor(mx, my);
-    framebuffer::unlock_refresh();
+    refresh_guard.release();
     framebuffer::render_frame();
-    RENDERING.store(false, Ordering::SeqCst);
 }
 
 fn draw_cursor(x: usize, y: usize) {
     framebuffer::blit_rgba(x, y, CURSOR_W, CURSOR_H, &CURSOR_SPRITE);
+}
+
+fn render_window_content(win: &Window) {
+    match win.title {
+        "Task Manager" => task_manager::render(win.x + 6, win.y + 20, win.w.saturating_sub(12), win.h.saturating_sub(26)),
+        _ => {}
+    }
 }
 
 const fn generate_cursor_sprite() -> [u8; CURSOR_W * CURSOR_H * 4] {

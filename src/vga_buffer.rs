@@ -9,7 +9,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use core::ptr::{read_volatile, write_volatile};
 use bootloader_api::BootInfo;
 use crate::serial;
-use spin::{Lazy, Mutex};
+use spin::{Lazy, Mutex, MutexGuard};
 
 const VGA_BUFFER_ADDRESS: usize = 0xb8000;
 const BUFFER_WIDTH: usize = 80;
@@ -174,6 +174,7 @@ static GLOBAL_WRITER: Lazy<Mutex<VgaWriter>> = Lazy::new(|| Mutex::new(VgaWriter
 // Virtual pointer to the VGA text buffer. Updated during init when we learn the physical
 // memory offset from the bootloader.
 static VGA_PTR: AtomicUsize = AtomicUsize::new(VGA_BUFFER_ADDRESS);
+static LOG_CONTENDED: AtomicUsize = AtomicUsize::new(0);
 
 fn current_buffer_ptr() -> *mut VgaBuffer {
     VGA_PTR.load(Ordering::SeqCst) as *mut VgaBuffer
@@ -192,12 +193,24 @@ pub fn writer() -> impl core::ops::DerefMut<Target = VgaWriter> {
     GLOBAL_WRITER.lock()
 }
 
+fn try_writer() -> Option<MutexGuard<'static, VgaWriter>> {
+    GLOBAL_WRITER.try_lock()
+}
+
 /// Write a formatted line to the VGA console.
 pub fn log(args: fmt::Arguments) {
-    let mut w = writer();
-    let _ = w.write_fmt(args);
-    let _ = w.write_str("\n");
-    serial::log(args);
+    if let Some(mut w) = try_writer() {
+        LOG_CONTENDED.store(0, Ordering::SeqCst);
+        let _ = w.write_fmt(args);
+        let _ = w.write_str("\n");
+        serial::log(args);
+    } else {
+        let skipped = LOG_CONTENDED.fetch_add(1, Ordering::SeqCst) + 1;
+        serial::log(args);
+        if skipped <= 3 || skipped % 16 == 0 {
+            serial::log(format_args!("[log] contention; VGA write skipped ({skipped})"));
+        }
+    }
 }
 
 /// Convenience helper to log a plain string.
@@ -207,7 +220,19 @@ pub fn log_line(msg: &str) {
 
 /// Print a raw string (no automatic newline) to VGA and mirror to serial.
 pub fn print(msg: &str) {
-    let mut w = writer();
-    let _ = w.write_str(msg);
-    serial::log(format_args!("{msg}"));
+    if let Some(mut w) = try_writer() {
+        LOG_CONTENDED.store(0, Ordering::SeqCst);
+        let _ = w.write_str(msg);
+        serial::log(format_args!("{msg}"));
+    } else {
+        let skipped = LOG_CONTENDED.fetch_add(1, Ordering::SeqCst) + 1;
+        serial::log(format_args!("{msg}"));
+        if skipped <= 3 || skipped % 16 == 0 {
+            serial::log(format_args!("[log] contention; VGA print skipped ({skipped})"));
+        }
+    }
+}
+
+pub fn log_contention_count() -> usize {
+    LOG_CONTENDED.load(Ordering::SeqCst)
 }

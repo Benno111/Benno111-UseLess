@@ -2,6 +2,7 @@
 
 use core::fmt;
 use spin::Mutex;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use x86_64::instructions::port::Port;
 
 struct SerialPort {
@@ -64,17 +65,25 @@ impl SerialPort {
 
 // SAFETY: Access serialized through the mutex; ports are fixed hardware IO.
 static SERIAL1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new() });
+static SERIAL_CONTENDED: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init() {
     unsafe { SERIAL1.lock().init() };
 }
 
 pub fn log(args: fmt::Arguments) {
-    let mut port = SERIAL1.lock();
-    unsafe {
-        port.init();
-        let _ = fmt::write(&mut SerialWriter { port: &mut *port }, args);
-        port.write_byte(b'\n');
+    if let Some(mut port) = SERIAL1.try_lock() {
+        SERIAL_CONTENDED.store(0, Ordering::SeqCst);
+        unsafe {
+            port.init();
+            let _ = fmt::write(&mut SerialWriter { port: &mut *port }, args);
+            port.write_byte(b'\n');
+        }
+    } else {
+        let skipped = SERIAL_CONTENDED.fetch_add(1, Ordering::SeqCst) + 1;
+        if skipped <= 3 || skipped % 16 == 0 {
+            // Drop silently; cannot log contention without the lock.
+        }
     }
 }
 

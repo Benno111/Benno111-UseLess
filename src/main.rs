@@ -10,7 +10,7 @@ use bootloader_api::{
     config::{BootloaderConfig, Mapping},
     entry_point, BootInfo,
 };
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, str};
 
 mod allocator;
 mod accounts;
@@ -26,6 +26,8 @@ mod fs;
 mod serial;
 mod vga_buffer;
 mod drivers;
+mod task_manager;
+mod crash_predictor;
 
 const KERNEL_CONFIG: BootloaderConfig = {
     let mut cfg = BootloaderConfig::new_default();
@@ -45,9 +47,14 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     vga_buffer::init(boot_info);
     serial::init();
     unsafe { allocator::init_heap() };
-    vga_buffer::log_line("[boot] heap initialized (static 64 KiB)");
+    let mut boot_step = 0usize;
+    const BOOT_STEPS: usize = 9;
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Heap initialized (static 64 KiB)");
 
     log_boot_info(boot_info);
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Boot info captured");
 
     {
         let mut writer = vga_buffer::writer();
@@ -72,22 +79,36 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
         letter_spacing: 2,
     });
     if let Some((w, h)) = framebuffer::framebuffer_size() {
-    windowing::set_bounds(w, h);
-}
-qemu_drivers::init();
+        windowing::set_bounds(w, h);
+    }
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Framebuffer configured");
+
+    qemu_drivers::init();
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Virtual devices initialized");
+
     fs::init_main_volume();
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Main volume mounted");
+
     acpi::init();
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "ACPI tables parsed");
+
     drivers::init();
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Device drivers ready");
+
     accounts::ensure_user("admin", "pass123");
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Accounts service initialized");
 
     // Straight to desktop render loop.
     windowing::init_default_windows();
-    loop {
-        let frame = drivers::poll_devices();
-        input::enqueue_events(frame.events);
-        input::poll_input_events();
-        windowing::render();
-    }
+    boot_step += 1;
+    log_boot_progress(boot_step, BOOT_STEPS, "Desktop ready; entering render loop");
+    run_main_loop();
 }
 
 fn log_boot_info(boot_info: &BootInfo) {
@@ -124,6 +145,32 @@ fn log_boot_info(boot_info: &BootInfo) {
         boot_info.kernel_addr,
         boot_info.kernel_len
     ));
+}
+
+fn log_boot_progress(step: usize, total_steps: usize, label: &str) {
+    const BAR_WIDTH: usize = 24;
+    let clamped_total = total_steps.max(1);
+    let pct = (step.min(clamped_total) * 100) / clamped_total;
+    let filled = (pct * BAR_WIDTH) / 100;
+    let mut bar = [b'.'; BAR_WIDTH];
+    for i in 0..filled.min(BAR_WIDTH) {
+        bar[i] = b'#';
+    }
+    let bar_str = unsafe { str::from_utf8_unchecked(&bar) };
+    let _ = framebuffer::draw_boot_splash(pct, label);
+    vga_buffer::log(format_args!(
+        "[boot {pct:3}%] [{bar_str}] {label}"
+    ));
+}
+
+#[inline(never)]
+fn run_main_loop() -> ! {
+    loop {
+        let frame = drivers::poll_devices();
+        input::enqueue_events(frame.events);
+        input::poll_input_events();
+        windowing::render();
+    }
 }
 
 #[panic_handler]
