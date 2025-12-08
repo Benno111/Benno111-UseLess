@@ -8,6 +8,7 @@ IMAGE_OUT="build/bios.img"
 LOG_OUT="build/serial.log"
 QMP_SOCKET="/tmp/qmp-socket"
 QMP_LOG="build/qmp-events.log"
+EMBED_LOG_SRC="${EMBED_LOG_SRC:-$LOG_OUT}"
 
 # Ensure cargo/rustup-installed tools are on PATH (bootloader_linker, etc.)
 export PATH="$HOME/.cargo/bin:$HOME/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin:$PATH"
@@ -18,7 +19,7 @@ echo "==============================="
 echo ""
 
 # 1. CHECK RUST TOOLCHAIN
-echo "[1/6] Installing nightly toolchain if missing..."
+echo "[1/7] Installing nightly toolchain if missing..."
 rustup toolchain install nightly >/dev/null 2>&1 || true
 
 echo "    Adding target $TARGET..."
@@ -28,7 +29,7 @@ echo "    Adding LLVM tools..."
 rustup component add llvm-tools-preview --toolchain nightly >/dev/null 2>&1 || true
 
 # 2. INSTALL BOOTLOADER_LINKER
-echo "[2/6] Checking bootloader_linker..."
+echo "[2/7] Checking bootloader_linker..."
 if ! command -v bootloader_linker >/dev/null 2>&1; then
     echo "    bootloader_linker not found. Installing..."
     cargo install bootloader_linker
@@ -37,7 +38,7 @@ else
 fi
 
 # 3. BUILD KERNEL ELF
-echo "[3/6] Building kernel ELF (release)..."
+echo "[3/7] Building kernel ELF (release)..."
 cargo +nightly build --target "$TARGET" --release
 
 if [ ! -f "target/$TARGET/release/$PROJECT_NAME" ]; then
@@ -47,12 +48,12 @@ fi
 echo "    Kernel built successfully!"
 
 # 4. PREP OUTPUT DIR
-echo "[4/6] Preparing build directory..."
+echo "[4/7] Preparing build directory..."
 mkdir -p build
 rm -f "$LOG_OUT" "$QMP_SOCKET" "$QMP_LOG"
 
 # 5. BUILD DISK IMAGE
-echo "[5/6] Building bootable disk image..."
+echo "[5/7] Building bootable disk image..."
 bootloader_linker build "$KERNEL_ELF" --out-dir build
 
 if [ -f "$IMAGE_OUT" ]; then
@@ -67,7 +68,7 @@ fi
 echo "    Image generated: $IMAGE_OUT"
 
 # 6. RUN IN QEMU
-echo "[6/6] Launching QEMU..."
+echo "[6/7] Launching QEMU..."
 echo "    Serial log -> $LOG_OUT"
 echo "    QMP log    -> $QMP_LOG"
 
@@ -123,6 +124,22 @@ qemu-system-x86_64 \
     -qmp unix:/tmp/qmp-socket,server,nowait \
     -no-reboot \
     -no-shutdown
+
+echo "[7/7] Embedding log into disk image (logs/ folder payload)..."
+if [ -f "$EMBED_LOG_SRC" ]; then
+    echo "    Appending log from $EMBED_LOG_SRC into $IMAGE_OUT"
+    {
+        printf "\n==== OSK-LOG-BEGIN ====\n"
+        printf "path=logs/embedded.log\n"
+        printf "----8<---- LOG CONTENT ----8<----\n"
+        cat "$EMBED_LOG_SRC"
+        printf "\n----8<---- END LOG CONTENT ----8<----\n"
+        printf "==== OSK-LOG-END ====\n"
+    } >> "$IMAGE_OUT"
+    echo "    Log embedded under virtual path logs/embedded.log (image size: $(stat -c%s "$IMAGE_OUT") bytes)"
+else
+    echo "    No log found at $EMBED_LOG_SRC; skipping embed"
+fi
 
 echo ""
 echo "Build complete."

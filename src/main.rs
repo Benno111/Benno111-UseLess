@@ -28,6 +28,9 @@ mod vga_buffer;
 mod drivers;
 mod task_manager;
 mod crash_predictor;
+mod pci;
+mod usb;
+mod embedded_log;
 
 const KERNEL_CONFIG: BootloaderConfig = {
     let mut cfg = BootloaderConfig::new_default();
@@ -46,11 +49,18 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     // Initialize VGA writer with the physical memory offset provided by the bootloader.
     vga_buffer::init(boot_info);
     serial::init();
-    unsafe { allocator::init_heap() };
+    let heap_result = unsafe { allocator::init_heap(boot_info) };
     let mut boot_step = 0usize;
     const BOOT_STEPS: usize = 9;
     boot_step += 1;
-    log_boot_progress(boot_step, BOOT_STEPS, "Heap initialized (static 64 KiB)");
+    let heap_label = if heap_result.used_fallback {
+        "Heap initialized (fallback 64 KiB)"
+    } else if heap_result.regions_added > 0 {
+        "Heap initialized from memory map"
+    } else {
+        "Heap already initialized"
+    };
+    log_boot_progress(boot_step, BOOT_STEPS, heap_label);
 
     log_boot_info(boot_info);
     boot_step += 1;
@@ -108,6 +118,7 @@ fn kernel_main(_boot_info: &'static mut BootInfo) -> ! {
     windowing::init_default_windows();
     boot_step += 1;
     log_boot_progress(boot_step, BOOT_STEPS, "Desktop ready; entering render loop");
+    embedded_log::embed_boot_log(boot_info, heap_label);
     run_main_loop();
 }
 

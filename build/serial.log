@@ -1,9 +1,32 @@
-[boot  11%] [##......................] Heap initialized (static 64 KiB)
+[boot  11%] [##......................] Heap initialized from memory map
 [boot] kernel entry
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=90688 bytes
+[boot] kernel image: addr=0x1000000, len=102464 bytes
 [boot  22%] [#####...................] Boot info captured
-[crash] fatal panic: panicked at library/alloc/src/alloc.rs:439:13:
-memory allocation of 2764800 bytes failed
+[FB] Framebuffer initialized.
+[boot  33%] [#######.................] Framebuffer configured
+[qemu] initializing emulated devices
+[qemu] RTC stub ready
+[qemu] virtio-blk stub ready
+[qemu] virtio-net stub ready
+[boot  44%] [##########..............] Virtual devices initialized
+[fs] FAT32 main volume (stub) initialized
+[boot  55%] [#############...........] Main volume mounted
+[acpi] initializing power management stubs
+[boot  66%] [###############.........] ACPI tables parsed
+[drivers] PS/2 controller stub initialized
+[drivers] PS/2: keyboard detected (stub, i8042)
+[drivers] PS/2: mouse detected (stub, 3-byte standard packet)
+[drivers] PS/2 mouse streaming enabled
+[USB] No xHCI controller detected via PCI.
+[USB-HID] No mice found via HID descriptors.
+[USB-HID] No keyboards found via HID descriptors.
+[drivers] USB HID: 0 mice, 0 keyboards ready
+[drivers] USB: port 1 device present (stub, class HID unknown)
+[drivers] USB: port 2 empty (stub)
+[boot  77%] [##################......] Device drivers ready
+[boot  88%] [#####################...] Accounts service initialized
+[boot 100%] [########################] Desktop ready; entering render loop
+[log] embedded boot log into image payload

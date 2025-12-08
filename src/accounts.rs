@@ -1,6 +1,8 @@
 //! Minimal in-memory account table for the tiny kernel demo.
 //! Uses fixed-size slots (no heap) and simple ASCII-only usernames/passwords.
 
+#![allow(dead_code)]
+
 use core::str;
 use spin::Mutex;
 

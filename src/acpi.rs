@@ -8,6 +8,7 @@ pub fn init() {
 }
 
 /// Request system power-off (stub).
+#[allow(dead_code)]
 pub fn power_off() -> ! {
     vga_buffer::log_line("[acpi] power_off requested (stub)");
     loop {
@@ -17,6 +18,7 @@ pub fn power_off() -> ! {
 }
 
 /// Request system reboot (stub).
+#[allow(dead_code)]
 pub fn reboot() -> ! {
     vga_buffer::log_line("[acpi] reboot requested (stub)");
     // In real impl: write to 0xCF9 or use ACPI reset register.

@@ -1,12 +1,21 @@
 use alloc::format;
 use spin::Mutex;
 use libm::{sqrtf, roundf};
-use crate::{vga_buffer, windowing};
+use crate::{framebuffer, vga_buffer, windowing};
+
+#[derive(Clone, Copy)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
 
 #[derive(Clone, Copy)]
 pub enum InputEvent {
     Key(char),
     MouseMove { dx: isize, dy: isize },
+    MouseButton { button: MouseButton, pressed: bool },
+    MouseWheel { delta: i16 },
 }
 
 // =============================
@@ -119,6 +128,7 @@ static QUEUE: Mutex<EventQueue> = Mutex::new(EventQueue::new());
 // Public API
 // =============================
 
+#[allow(dead_code)]
 pub fn enqueue_event(ev: InputEvent) {
     let mut q = QUEUE.lock();
     let _ = q.push(ev);
@@ -146,6 +156,20 @@ fn handle_event(ev: InputEvent) {
             let (adx, ady) = apply_mouse_accel(dx, dy);
 
             windowing::move_mouse(adx, ady);
+        }
+        InputEvent::MouseButton { button: MouseButton::Left, pressed: true } => {
+            windowing::mouse_click_left();
+            vga_buffer::log_line("[Input] mouse left click");
+        }
+        InputEvent::MouseButton { button: MouseButton::Right, pressed: true } => {
+            windowing::mouse_click_right();
+            vga_buffer::log_line("[Input] mouse right click");
+        }
+        InputEvent::MouseButton { .. } => {
+            // Ignore releases and unsupported buttons for now.
+        }
+        InputEvent::MouseWheel { delta } => {
+            vga_buffer::log_line(&format!("[Input] mouse wheel delta={}", delta));
         }
         InputEvent::Key('\n') => {
             windowing::mouse_click_left();
@@ -181,4 +205,8 @@ pub fn poll_input_events() {
 
     let _ = processed;
     let _ = had_event;
+
+    if processed > 0 {
+        framebuffer::invalidate();
+    }
 }

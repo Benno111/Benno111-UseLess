@@ -1,4 +1,3 @@
-use alloc::format;
 use crate::framebuffer;
 use crate::task_manager;
 use crate::crash_predictor;
@@ -17,8 +16,16 @@ pub struct Window {
 
 pub const MAX_WINDOWS: usize = 4;
 
+type WindowRender = fn(&Window);
+
+#[derive(Clone, Copy)]
+struct WindowEntry {
+    window: Window,
+    render: WindowRender,
+}
+
 struct State {
-    windows: [Option<Window>; MAX_WINDOWS],
+    windows: [Option<WindowEntry>; MAX_WINDOWS],
     mouse: (usize, usize),
     bounds: (usize, usize),
 }
@@ -78,58 +85,72 @@ const CURSOR_H: usize = 20;
 const CURSOR_SPRITE: [u8; CURSOR_W * CURSOR_H * 4] = generate_cursor_sprite();
 
 pub fn init_default_windows() {
-    let defaults = [
-        Some(Window {
+    clear_windows();
+    let _ = register_window(
+        Window {
             title: "Console",
             x: 10,
             y: 30,
             w: 240,
             h: 120,
-        }),
-        Some(Window {
+        },
+        render_console,
+    );
+    let _ = register_window(
+        Window {
             title: "Apps",
             x: 270,
             y: 40,
             w: 220,
             h: 120,
-        }),
-        Some(Window {
+        },
+        render_apps,
+    );
+    let _ = register_window(
+        Window {
             title: "Logs",
             x: 60,
             y: 170,
             w: 360,
             h: 120,
-        }),
-        Some(Window {
+        },
+        render_logs,
+    );
+    let _ = register_window(
+        Window {
             title: "Task Manager",
             x: 420,
             y: 40,
             w: 260,
             h: 180,
-        }),
-    ];
-    STATE.lock().windows = defaults;
+        },
+        render_task_manager,
+    );
     framebuffer::invalidate();
 }
 
 /// Replace the current window list with a tiled set derived from app names.
+#[allow(dead_code)]
 pub fn set_app_windows(names: &[&'static str]) {
-    let mut windows: [Option<Window>; MAX_WINDOWS] = [None; MAX_WINDOWS];
+    clear_windows();
     const FLOAT_POS: &[(usize, usize)] = &[(40, 50), (220, 80), (120, 220), (300, 180)];
     for (i, name) in names.iter().take(MAX_WINDOWS).enumerate() {
         let (x, y) = FLOAT_POS.get(i).copied().unwrap_or((30 + i * 40, 40 + i * 30));
-        windows[i] = Some(Window {
-            title: name,
-            x,
-            y,
-            w: 220,
-            h: 140,
-        });
+        let _ = register_window(
+            Window {
+                title: name,
+                x,
+                y,
+                w: 220,
+                h: 140,
+            },
+            render_placeholder,
+        );
     }
-    STATE.lock().windows = windows;
     framebuffer::invalidate();
 }
 
+#[allow(dead_code)]
 pub fn set_mouse_position(x: usize, y: usize) {
     let mut st = STATE.lock();
     let (w, h) = st.bounds;
@@ -161,10 +182,12 @@ pub fn set_bounds(w: usize, h: usize) {
 }
 
 /// Move a window by index by the given delta (floating manager behavior).
+#[allow(dead_code)]
 pub fn move_window(idx: usize, dx: isize, dy: isize) {
     let mut st = STATE.lock();
     let (bw, bh) = st.bounds;
-    if let Some(win) = st.windows.get_mut(idx).and_then(|w| w.as_mut()) {
+    if let Some(entry) = st.windows.get_mut(idx).and_then(|w| w.as_mut()) {
+        let win = &mut entry.window;
         let new_x = clamp(win.x as isize + dx, 0, bw.saturating_sub(win.w) as isize);
         let new_y = clamp(win.y as isize + dy, 0, bh.saturating_sub(win.h) as isize);
         win.x = new_x as usize;
@@ -194,20 +217,21 @@ pub fn render() {
         crash_predictor::note_framebuffer_unavailable();
         return;
     }
+    // Always render; if nothing marked dirty, force a refresh so UI stays live.
     if !framebuffer::is_invalidated() {
-        crash_predictor::note_render_skip("not invalidated");
-        return;
+        framebuffer::invalidate();
     }
     framebuffer::fill_screen(crate::framebuffer::COLOR_BG);
     let mut refresh_guard = RefreshGuard::new();
     let st = STATE.lock();
     let windows_snapshot = st.windows;
     let (mx, my) = st.mouse;
-    for win in windows_snapshot.iter().flatten() {
+    for entry in windows_snapshot.iter().flatten() {
+        let win = entry.window;
         framebuffer::draw_rect(win.x, win.y, win.w, win.h, (50, 120, 200));
         framebuffer::draw_rect(win.x + 2, win.y + 16, win.w - 4, win.h - 18, (20, 20, 20));
         framebuffer::draw_text(win.title, win.x + 6, win.y + 2);
-        render_window_content(win);
+        (entry.render)(&win);
     }
     draw_cursor(mx, my);
     refresh_guard.release();
@@ -218,11 +242,48 @@ fn draw_cursor(x: usize, y: usize) {
     framebuffer::blit_rgba(x, y, CURSOR_W, CURSOR_H, &CURSOR_SPRITE);
 }
 
-fn render_window_content(win: &Window) {
-    match win.title {
-        "Task Manager" => task_manager::render(win.x + 6, win.y + 20, win.w.saturating_sub(12), win.h.saturating_sub(26)),
-        _ => {}
+// ===== Window app API =====
+
+/// Clear all windows.
+pub fn clear_windows() {
+    STATE.lock().windows = [None; MAX_WINDOWS];
+}
+
+/// Register a window with a render callback. Returns its slot index if inserted.
+pub fn register_window(win: Window, render: WindowRender) -> Option<usize> {
+    let mut st = STATE.lock();
+    if let Some((idx, slot)) = st.windows.iter_mut().enumerate().find(|(_, s)| s.is_none()) {
+        *slot = Some(WindowEntry { window: win, render });
+        framebuffer::invalidate();
+        Some(idx)
+    } else {
+        None
     }
+}
+
+fn render_console(win: &Window) {
+    framebuffer::draw_text("Console ready", win.x + 8, win.y + 28);
+}
+
+fn render_apps(win: &Window) {
+    framebuffer::draw_text("Apps placeholder", win.x + 8, win.y + 28);
+}
+
+fn render_logs(win: &Window) {
+    framebuffer::draw_text("Logs placeholder", win.x + 8, win.y + 28);
+}
+
+fn render_task_manager(win: &Window) {
+    task_manager::render(
+        win.x + 6,
+        win.y + 20,
+        win.w.saturating_sub(12),
+        win.h.saturating_sub(26),
+    );
+}
+
+fn render_placeholder(win: &Window) {
+    framebuffer::draw_text(win.title, win.x + 8, win.y + 28);
 }
 
 const fn generate_cursor_sprite() -> [u8; CURSOR_W * CURSOR_H * 4] {

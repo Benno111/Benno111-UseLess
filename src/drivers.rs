@@ -1,8 +1,11 @@
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{format, vec::Vec};
 use crate::vga_buffer;
-use crate::input::InputEvent;
+use crate::input::{InputEvent, MouseButton};
+use crate::usb;
+use crate::usb::{hid, mouse};
+use crate::usb::hid::KeyEventKind;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
@@ -18,7 +21,9 @@ pub fn init_ps2() {
 }
 
 pub fn init_usb() {
-    vga_buffer::log_line("[drivers] USB controller stub initialized");
+    // Wire up the real USB stack (xHCI discovery). Stubbed PCI scan logs when absent.
+    usb::init();
+    refresh_usb_hid_devices();
     probe_usb_ports();
 }
 
@@ -33,6 +38,22 @@ fn probe_usb_ports() {
     // Stub: in real code we'd enumerate EHCI/XHCI/OHCI controllers and devices.
     vga_buffer::log_line("[drivers] USB: port 1 device present (stub, class HID unknown)");
     vga_buffer::log_line("[drivers] USB: port 2 empty (stub)");
+}
+
+fn refresh_usb_hid_devices() {
+    let devices = usb::enumerate_ports();
+    let mice = mouse::init_mice_from_devices(&devices);
+    let keyboards = hid::init_keyboards_from_devices(&devices);
+
+    let mut state = USB_HID_STATE.lock();
+    state.mice = mice;
+    state.keyboards = keyboards;
+
+    vga_buffer::log_line(&format!(
+        "[drivers] USB HID: {} mice, {} keyboards ready",
+        state.mice.len(),
+        state.keyboards.len()
+    ));
 }
 
 pub struct DriverInputFrame {
@@ -51,6 +72,15 @@ struct MousePacket {
 }
 
 static MOUSE_PACKET: Mutex<MousePacket> = Mutex::new(MousePacket { buf: [0; 3], idx: 0 });
+struct UsbHidState {
+    mice: Vec<mouse::UsbMouse>,
+    keyboards: Vec<hid::UsbKeyboard>,
+}
+
+static USB_HID_STATE: Mutex<UsbHidState> = Mutex::new(UsbHidState {
+    mice: Vec::new(),
+    keyboards: Vec::new(),
+});
 static PS2_MOUSE_ENABLED: AtomicBool = AtomicBool::new(true);
 static PS2_KEYBOARD_ENABLED: AtomicBool = AtomicBool::new(true);
 static PS2_BUDGET_BYTES: AtomicUsize = AtomicUsize::new(8);
@@ -102,15 +132,46 @@ fn ps2_write_mouse(data: u8) {
     }
 }
 
-fn init_ps2_mouse() {
-    // Enable auxiliary device.
-    ps2_write_command(0xA8);
-    // Enable streaming packets from the mouse.
-    ps2_write_mouse(0xF4);
-    let _ = wait_output_full(); // ack (0xFA)
-    vga_buffer::log_line("[drivers] PS/2 mouse streaming enabled");
+/// Drain any pending bytes from the PS/2 data port to start with a clean buffer.
+fn ps2_flush_output() {
+    unsafe {
+        let mut status_port: Port<u8> = Port::new(0x64);
+        let mut data_port: Port<u8> = Port::new(0x60);
+        for _ in 0..8 {
+            if status_port.read() & 0x01 == 0 {
+                break;
+            }
+            let _ = data_port.read();
+        }
+    }
 }
 
+/// Send a mouse command and confirm the 0xFA ACK.
+fn ps2_mouse_command(cmd: u8) -> bool {
+    ps2_write_mouse(cmd);
+    matches!(wait_output_full(), Some(0xFA))
+}
+
+fn init_ps2_mouse() {
+    ps2_flush_output();
+
+    // Enable auxiliary device.
+    ps2_write_command(0xA8);
+
+    // Reset to defaults then enable streaming.
+    let ok_defaults = ps2_mouse_command(0xF6); // Set Defaults
+    let ok_stream = ps2_mouse_command(0xF4);   // Enable Data Reporting
+
+    if ok_defaults && ok_stream {
+        PS2_MOUSE_ENABLED.store(true, Ordering::Relaxed);
+        vga_buffer::log_line("[drivers] PS/2 mouse streaming enabled");
+    } else {
+        PS2_MOUSE_ENABLED.store(false, Ordering::Relaxed);
+        vga_buffer::log_line("[drivers] PS/2 mouse init failed (no ACK)");
+    }
+}
+
+#[allow(dead_code)]
 pub fn set_ps2_mouse_enabled(enabled: bool) {
     PS2_MOUSE_ENABLED.store(enabled, Ordering::Relaxed);
     vga_buffer::log_line(if enabled {
@@ -120,6 +181,7 @@ pub fn set_ps2_mouse_enabled(enabled: bool) {
     });
 }
 
+#[allow(dead_code)]
 pub fn set_ps2_keyboard_enabled(enabled: bool) {
     PS2_KEYBOARD_ENABLED.store(enabled, Ordering::Relaxed);
     vga_buffer::log_line(if enabled {
@@ -129,6 +191,7 @@ pub fn set_ps2_keyboard_enabled(enabled: bool) {
     });
 }
 
+#[allow(dead_code)]
 pub fn set_ps2_poll_budget(bytes_per_tick: usize) {
     let clamped = bytes_per_tick.clamp(1, 64);
     PS2_BUDGET_BYTES.store(clamped, Ordering::Relaxed);
@@ -247,10 +310,10 @@ fn scancode_to_input_events(code: u8) -> Option<InputEvent> {
         0x50 => Some(InputEvent::MouseMove { dx: 0, dy: 5 }),  // Down
         0x4B => Some(InputEvent::MouseMove { dx: -5, dy: 0 }), // Left
         0x4D => Some(InputEvent::MouseMove { dx: 5, dy: 0 }),  // Right
-        // Enter => left click
-        0x1C => Some(InputEvent::MouseMove { dx: 0, dy: 0 }), // translate later to click
-        // Backspace => right click
-        0x0E => Some(InputEvent::MouseMove { dx: 0, dy: 0 }), // translate later to click
+        // Enter => left click (handled in input handler)
+        0x1C => Some(InputEvent::Key('\n')),
+        // Backspace => right click (handled in input handler)
+        0x0E => Some(InputEvent::Key('\u{8}')),
         _ => scancode_to_char(code).map(InputEvent::Key),
     }
 }
@@ -273,6 +336,7 @@ pub fn poll_devices() -> DriverInputFrame {
     let _g = PollGuard;
     let mut frame = DriverInputFrame::new();
     poll_ps2_ports(&mut frame);
+    poll_usb_devices(&mut frame);
     POLL_SKIPPED.store(0, Ordering::SeqCst);
     frame
 }
@@ -283,4 +347,72 @@ pub fn poll_skip_count() -> usize {
 
 pub fn current_poll_budget() -> usize {
     PS2_BUDGET_BYTES.load(Ordering::Relaxed)
+}
+
+fn poll_usb_devices(frame: &mut DriverInputFrame) {
+    let mut state = USB_HID_STATE.lock();
+
+    for evt in mouse::poll_mice(&mut state.mice) {
+        let dx = evt.dx as isize;
+        let dy = -(evt.dy as isize);
+        if dx != 0 || dy != 0 {
+            frame.events.push(InputEvent::MouseMove { dx, dy });
+        }
+
+        if evt.wheel != 0 {
+            frame.events.push(InputEvent::MouseWheel {
+                delta: evt.wheel as i16,
+            });
+        }
+
+        // Button bits: 0 = left, 1 = right, 2 = middle.
+        if evt.pressed & 0x01 != 0 {
+            frame.events.push(InputEvent::MouseButton {
+                button: MouseButton::Left,
+                pressed: true,
+            });
+        }
+        if evt.released & 0x01 != 0 {
+            frame.events.push(InputEvent::MouseButton {
+                button: MouseButton::Left,
+                pressed: false,
+            });
+        }
+        if evt.pressed & 0x02 != 0 {
+            frame.events.push(InputEvent::MouseButton {
+                button: MouseButton::Right,
+                pressed: true,
+            });
+        }
+        if evt.released & 0x02 != 0 {
+            frame.events.push(InputEvent::MouseButton {
+                button: MouseButton::Right,
+                pressed: false,
+            });
+        }
+    }
+
+    for evt in hid::poll_keyboards(&mut state.keyboards) {
+        if evt.kind != KeyEventKind::Press {
+            continue;
+        }
+        if let Some(input) = map_keyboard_event(&evt) {
+            frame.events.push(input);
+        }
+    }
+}
+
+fn map_keyboard_event(evt: &hid::KeyEvent) -> Option<InputEvent> {
+    if let Some(ch) = evt.ch {
+        return Some(InputEvent::Key(ch));
+    }
+
+    match evt.keycode {
+        // Arrow keys (HID usage IDs) mapped to mouse nudges to keep desktop controllable.
+        0x52 => Some(InputEvent::MouseMove { dx: 0, dy: -5 }), // Up
+        0x51 => Some(InputEvent::MouseMove { dx: 0, dy: 5 }),  // Down
+        0x50 => Some(InputEvent::MouseMove { dx: -5, dy: 0 }), // Left
+        0x4F => Some(InputEvent::MouseMove { dx: 5, dy: 0 }),  // Right
+        _ => None,
+    }
 }

@@ -1,4 +1,4 @@
-use alloc::{format, boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::str;
 
@@ -10,6 +10,7 @@ use crate::fonts::{self, FontConfig, FONT_W};
 
 // Simple flat palette for UI (no external assets).
 pub const COLOR_BG: (u8, u8, u8) = (16, 18, 24);
+#[allow(dead_code)]
 pub const COLOR_CARD: (u8, u8, u8) = (30, 33, 40);
 pub const COLOR_ACCENT: (u8, u8, u8) = (82, 156, 255);
 const LOG_FB: bool = false;
@@ -144,6 +145,7 @@ pub fn init(fb: Option<&mut FrameBuffer>) {
     INVALIDATED.store(true, Ordering::SeqCst);
 }
 
+#[allow(dead_code)]
 pub fn clear_screen() {
     if with_fb(|buf, info| {
         let bg = FONT_CFG.lock().bg;
@@ -188,6 +190,7 @@ pub fn draw_text(text: &str, x: usize, y: usize) {
     let width = text.len().saturating_mul(step);
     let height = FONT_H_EST.saturating_mul(cfg.scale.max(1) as usize);
     mark_dirty_rect(x, y, width, height);
+    INVALIDATED.store(true, Ordering::SeqCst);
 
     if LOG_FB {
         vga_buffer::log_line("[FB] Draw text");
@@ -240,7 +243,7 @@ pub fn render_frame() {
     }
 
     let bpp = fb.info.bytes_per_pixel;
-    let stride = fb.info.stride;
+    let stride_bytes = fb.info.stride.saturating_mul(bpp);
     let width = fb.info.width;
     let height = fb.info.height;
 
@@ -254,8 +257,8 @@ pub fn render_frame() {
         let row_bytes = copy_w * bpp;
 
         for y in y1..y2 {
-            let row_off = y * stride;
-            let start = (row_off + x1) * bpp;
+            let row_off = y * stride_bytes;
+            let start = row_off + x1 * bpp;
             let end = start + row_bytes;
             if end > fb.front_buffer.len() || end > fb.back_buffer.len() {
                 break;
@@ -386,6 +389,7 @@ pub fn write_pixel(px: &mut [u8], bpp: usize, r: u8, g: u8, b: u8, info: &FrameB
 
 pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: (u8, u8, u8)) {
     let _ = with_fb(|buf, info| {
+        let stride_bytes = info.stride.saturating_mul(info.bytes_per_pixel);
         // top/bottom + simple alpha blend on interior
         for yy in y..y.saturating_add(h) {
             if yy >= info.height {
@@ -401,7 +405,7 @@ pub fn draw_rect(x: usize, y: usize, w: usize, h: usize, color: (u8, u8, u8)) {
                     128
                 };
                 let bpp = info.bytes_per_pixel;
-                let pix_idx = yy * info.stride * bpp + xx * bpp;
+                let pix_idx = yy * stride_bytes + xx * bpp;
                 if let Some(px) = buf.get_mut(pix_idx..pix_idx + bpp) {
                     let (pr, pg, pb) = read_pixel(px, info);
                     let inv = 255 - alpha as u16;
@@ -439,6 +443,7 @@ pub fn blit_rgba(x: usize, y: usize, w: usize, h: usize, data: &[u8]) {
         return;
     }
     let _ = with_fb(|buf, info| {
+        let stride_bytes = info.stride.saturating_mul(info.bytes_per_pixel);
         for row in 0..h {
             if y + row >= info.height {
                 break;
@@ -459,7 +464,7 @@ pub fn blit_rgba(x: usize, y: usize, w: usize, h: usize, data: &[u8]) {
                 let inv = 255 - a as u16;
 
                 let bpp = info.bytes_per_pixel;
-                let pix_idx = (y + row) * info.stride * bpp + (x + col) * bpp;
+                let pix_idx = (y + row) * stride_bytes + (x + col) * bpp;
                 if let Some(px) = buf.get_mut(pix_idx..pix_idx + bpp) {
                     let (pr, pg, pb) = read_pixel(px, info);
                     let nr = ((r as u16 * alpha + pr as u16 * inv) / 255) as u8;
@@ -474,6 +479,7 @@ pub fn blit_rgba(x: usize, y: usize, w: usize, h: usize, data: &[u8]) {
     INVALIDATED.store(true, Ordering::SeqCst);
 }
 
+#[allow(dead_code)]
 fn blit_rgba_locked(
     buf: &mut [u8],
     info: &FrameBufferInfo,
@@ -487,6 +493,7 @@ fn blit_rgba_locked(
     if data.len() < expected {
         return;
     }
+    let stride_bytes = info.stride.saturating_mul(info.bytes_per_pixel);
     for row in 0..h {
         if y + row >= info.height {
             break;
@@ -507,7 +514,7 @@ fn blit_rgba_locked(
             let inv = 255 - a as u16;
 
             let bpp = info.bytes_per_pixel;
-            let pix_idx = (y + row) * info.stride * bpp + (x + col) * bpp;
+            let pix_idx = (y + row) * stride_bytes + (x + col) * bpp;
             if let Some(px) = buf.get_mut(pix_idx..pix_idx + bpp) {
                 let (pr, pg, pb) = read_pixel(px, info);
                 let nr = ((r as u16 * alpha + pr as u16 * inv) / 255) as u8;
@@ -621,6 +628,7 @@ fn fill_rect_raw(
     h: usize,
     color: (u8, u8, u8),
 ) {
+    let stride_bytes = info.stride.saturating_mul(info.bytes_per_pixel);
     for yy in y..y.saturating_add(h) {
         if yy >= info.height {
             break;
@@ -630,7 +638,7 @@ fn fill_rect_raw(
                 break;
             }
             let bpp = info.bytes_per_pixel;
-            let idx = yy * info.stride * bpp + xx * bpp;
+            let idx = yy * stride_bytes + xx * bpp;
             if let Some(px) = buf.get_mut(idx..idx + bpp) {
                 set_pixel_bytes(px, bpp, color.0, color.1, color.2, info);
             }
@@ -643,7 +651,7 @@ fn draw_pixel(buf: &mut [u8], info: &FrameBufferInfo, x: usize, y: usize, color:
         return;
     }
     let bpp = info.bytes_per_pixel;
-    let idx = y * info.stride * bpp + x * bpp;
+    let idx = y * info.stride.saturating_mul(bpp) + x * bpp;
     if let Some(px) = buf.get_mut(idx..idx + bpp) {
         set_pixel_bytes(px, bpp, color.0, color.1, color.2, info);
     }

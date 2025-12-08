@@ -5,6 +5,7 @@ use alloc::format;
 use crate::accounts;
 use crate::vga_buffer;
 
+#[allow(dead_code)]
 pub fn run_command(line: &str) {
     vga_buffer::log(format_args!("> {line}"));
 
