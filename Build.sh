@@ -19,14 +19,23 @@ echo "==============================="
 echo ""
 
 # 1. CHECK RUST TOOLCHAIN
-echo "[1/7] Installing nightly toolchain if missing..."
-rustup toolchain install nightly >/dev/null 2>&1 || true
+echo "[1/7] Ensuring nightly toolchain is available..."
+if ! rustup toolchain list | rg -q "^nightly"; then
+    echo "ERROR: nightly toolchain not installed. Run: rustup toolchain install nightly"
+    exit 1
+fi
 
-echo "    Adding target $TARGET..."
-rustup target add $TARGET --toolchain nightly >/dev/null 2>&1 || true
+echo "    Checking target $TARGET..."
+if ! rustup target list --installed --toolchain nightly | rg -q "^${TARGET}$"; then
+    echo "ERROR: target $TARGET missing. Run: rustup target add $TARGET --toolchain nightly"
+    exit 1
+fi
 
-echo "    Adding LLVM tools..."
-rustup component add llvm-tools-preview --toolchain nightly >/dev/null 2>&1 || true
+echo "    Checking LLVM tools..."
+if ! rustup component list --installed --toolchain nightly | rg -q "^llvm-tools"; then
+    echo "ERROR: llvm-tools-preview missing. Run: rustup component add llvm-tools-preview --toolchain nightly"
+    exit 1
+fi
 
 # 2. INSTALL BOOTLOADER_LINKER
 echo "[2/7] Checking bootloader_linker..."
@@ -117,13 +126,23 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s, open(log_path, "a")
             continue
 PY
 
+QEMU_NO_SHUTDOWN="${QEMU_NO_SHUTDOWN:-0}"
+QEMU_NO_REBOOT="${QEMU_NO_REBOOT:-0}"
+
+QEMU_ARGS=()
+if [ "$QEMU_NO_SHUTDOWN" = "1" ]; then
+    QEMU_ARGS+=("-no-shutdown")
+fi
+if [ "$QEMU_NO_REBOOT" = "1" ]; then
+    QEMU_ARGS+=("-no-reboot")
+fi
+
 qemu-system-x86_64 \
     -drive format=raw,file="$IMAGE_OUT" \
     -serial file:"$LOG_OUT" \
     -serial mon:stdio \
     -qmp unix:/tmp/qmp-socket,server,nowait \
-    -no-reboot \
-    -no-shutdown
+    "${QEMU_ARGS[@]}"
 
 echo "[7/7] Embedding log into disk image (logs/ folder payload)..."
 if [ -f "$EMBED_LOG_SRC" ]; then
@@ -131,10 +150,11 @@ if [ -f "$EMBED_LOG_SRC" ]; then
     {
         printf "\n==== OSK-LOG-BEGIN ====\n"
         printf "path=logs/embedded.log\n"
-        printf "----8<---- LOG CONTENT ----8<----\n"
+        printf '%s\n' '----8<---- LOG CONTENT ----8<----'
         cat "$EMBED_LOG_SRC"
-        printf "\n----8<---- END LOG CONTENT ----8<----\n"
-        printf "==== OSK-LOG-END ====\n"
+        printf '%s\n' ''
+        printf '%s\n' '----8<---- END LOG CONTENT ----8<----'
+        printf '%s\n' '==== OSK-LOG-END ===='
     } >> "$IMAGE_OUT"
     echo "    Log embedded under virtual path logs/embedded.log (image size: $(stat -c%s "$IMAGE_OUT") bytes)"
 else

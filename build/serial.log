@@ -3,7 +3,7 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=102464 bytes
+[boot] kernel image: addr=0x1000000, len=129912 bytes
 [boot  22%] [#####...................] Boot info captured
 [FB] Framebuffer initialized.
 [boot  33%] [#######.................] Framebuffer configured
@@ -26,7 +26,35 @@
 [drivers] USB HID: 0 mice, 0 keyboards ready
 [drivers] USB: port 1 device present (stub, class HID unknown)
 [drivers] USB: port 2 empty (stub)
+[driver-ring] online
 [boot  77%] [##################......] Device drivers ready
 [boot  88%] [#####################...] Accounts service initialized
+[windowing] window manager stopped (login)
 [boot 100%] [########################] Desktop ready; entering render loop
 [log] embedded boot log into image payload
+[windowing] login click
+[Input] mouse left click
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[windowing] login click
+[login] focus password
+[Input] mouse left click
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[login] key input
+[windowing] login click
+[login] sign in click
+[login] submit
+[login] authenticated
+[login] loading desktop (200ms)
+[Input] mouse left click
+[windowing] pending WM start: switching to desktop
+[windowing] window manager started
+[windowing] wm running outside sandbox
