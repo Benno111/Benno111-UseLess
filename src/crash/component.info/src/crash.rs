@@ -24,6 +24,21 @@ pub fn show_crash(info: &core::panic::PanicInfo) {
     }
     let reason = truncate(&format!("{}", info), 200);
     vga_buffer::log_line(&format!("[crash] fatal panic: {}", reason));
+    if let Some(bi) = boot_info() {
+        vga_buffer::log_line(&format!(
+            "[crash] mem regions={} kernel=0x{:x} len={} phys_off=0x{:x} image_off=0x{:x}",
+            bi.memory_regions.len(),
+            bi.kernel_addr,
+            bi.kernel_len,
+            bi.physical_memory_offset.into_option().unwrap_or(0),
+            bi.kernel_image_offset,
+        ));
+        vga_buffer::log_line(&format!(
+            "[crash] framebuffer={}x{}",
+            bi.framebuffer.as_ref().map(|f| f.info().width).unwrap_or(0),
+            bi.framebuffer.as_ref().map(|f| f.info().height).unwrap_or(0),
+        ));
+    }
     let mut w = vga_buffer::writer();
     w.clear();
     let _ = write!(

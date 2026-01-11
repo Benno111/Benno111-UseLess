@@ -189,21 +189,23 @@ impl DragState {
 }
 
 pub fn init_default_windows() {
-    let mut st = STATE.lock();
-    st.login.status = LoginStatus::None;
-    st.login.window = None;
-    st.wm_mode = WindowManagerMode::Desktop;
-    st.pending_wm_start = false;
-    st.pending_wm_delay = 0;
-    st.wm_sandboxed = false;
-    st.force_render_ticks = 120;
-    if active_user_ref(&st).is_none() {
-        let idx = st.active_user;
-        st.users[idx] = Some(UserSlot::empty());
-    }
-    if let Some(user) = active_user_mut(&mut st) {
-        user.desktop = DesktopState::new();
-        init_desktop_icons_locked(&mut user.desktop);
+    {
+        let mut st = STATE.lock();
+        st.login.status = LoginStatus::None;
+        st.login.window = None;
+        st.wm_mode = WindowManagerMode::Desktop;
+        st.pending_wm_start = false;
+        st.pending_wm_delay = 0;
+        st.wm_sandboxed = false;
+        st.force_render_ticks = 120;
+        if active_user_ref(&st).is_none() {
+            let idx = st.active_user;
+            st.users[idx] = Some(UserSlot::empty());
+        }
+        if let Some(user) = active_user_mut(&mut st) {
+            user.desktop = DesktopState::new();
+            init_desktop_icons_locked(&mut user.desktop);
+        }
     }
     framebuffer::set_force_swap(true);
     framebuffer::set_desktop_mode(true);
@@ -538,10 +540,12 @@ pub fn render() {
         }
         render_window(&entry.window, entry.render);
     }
-    if let Some(win) = login_window() {
-        render_window(&win, render_login);
-    } else if wm_mode == WindowManagerMode::Login {
-        vga_buffer::log_line("[windowing] render error: login window missing");
+    if wm_mode == WindowManagerMode::Login {
+        if let Some(win) = login_window() {
+            render_window(&win, render_login);
+        } else {
+            vga_buffer::log_line("[windowing] render error: login window missing");
+        }
     }
     draw_cursor(mx, my);
     framebuffer::render_frame();
@@ -1028,22 +1032,25 @@ fn submit_login() {
     let username = str::from_utf8(&uname_buf[..ulen]).unwrap_or("");
     let password = str::from_utf8(&pass_buf[..plen]).unwrap_or("");
     vga_buffer::log_line("[login] submit");
-    if crate::accounts::authenticate(username, password) {
-        {
-            let mut st = STATE.lock();
-            st.login.status = LoginStatus::Loading;
-            st.pending_wm_start = true;
-            st.pending_wm_delay = 12;
-            let user_idx = ensure_user_slot(&mut st, username);
-            st.active_user = user_idx;
-        }
-        vga_buffer::log_line("[login] authenticated");
-        vga_buffer::log_line("[login] loading desktop (200ms)");
+    let start_desktop = if crate::accounts::authenticate(username, password) {
+        let mut st = STATE.lock();
+        st.login.status = LoginStatus::Success;
+        st.pending_wm_start = false;
+        st.pending_wm_delay = 0;
+        let user_idx = ensure_user_slot(&mut st, username);
+        st.active_user = user_idx;
+        true
     } else {
         let mut st = STATE.lock();
         st.login.status = LoginStatus::Failed;
         framebuffer::invalidate();
         vga_buffer::log_line("[login] invalid credentials");
+        false
+    };
+    if start_desktop {
+        vga_buffer::log_line("[login] authenticated");
+        vga_buffer::log_line("[login] switching to desktop");
+        init_default_windows();
     }
 }
 
