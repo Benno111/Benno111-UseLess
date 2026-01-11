@@ -1,4 +1,4 @@
 {"QMP": {"version": {"qemu": {"micro": 2, "minor": 2, "major": 8}, "package": "Debian 1:8.2.2+ds-0ubuntu1.11"}, "capabilities": ["oob"]}}
 {"return": {}}
 {"return": {"status": "running", "singlestep": false, "running": true}}
-{"timestamp": {"seconds": 1768161935, "microseconds": 99019}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}}
+{"timestamp": {"seconds": 1768164374, "microseconds": 501285}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}}

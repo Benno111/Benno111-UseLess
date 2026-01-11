@@ -45,6 +45,7 @@ dependencies = [
 name = "os-kernel-edition"
 version = "0.0.1"
 dependencies = [
+ "bitflags",
  "bootloader_api",
  "libm",
  "spin",

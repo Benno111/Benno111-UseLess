@@ -1,65 +1,6 @@
-[boot  11%] [##......................] Heap initialized from memory map
 [boot] kernel entry
 [boot] physical memory mapped at offset 0x0000028000000000
-[boot] memory regions provided: 11
-[boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=135448 bytes
-[boot  22%] [#####...................] Boot info captured
-[FB] Framebuffer initialized.
-[boot  33%] [#######.................] Framebuffer configured
-[qemu] initializing emulated devices
-[qemu] RTC stub ready
-[qemu] virtio-blk stub ready
-[qemu] virtio-net stub ready
-[boot  44%] [##########..............] Virtual devices initialized
-[fs] FAT32 main volume (stub) initialized
-[boot  55%] [#############...........] Main volume mounted
-[acpi] initializing power management stubs
-[boot  66%] [###############.........] ACPI tables parsed
-[drivers] PS/2 controller stub initialized
-[drivers] PS/2: keyboard detected (stub, i8042)
-[drivers] PS/2: mouse detected (stub, 3-byte standard packet)
-[drivers] PS/2 mouse streaming enabled
-[USB] No xHCI controller detected via PCI.
-[USB-HID] No mice found via HID descriptors.
-[USB-HID] No keyboards found via HID descriptors.
-[drivers] USB HID: 0 mice, 0 keyboards ready
-[drivers] USB: port 1 device present (stub, class HID unknown)
-[drivers] USB: port 2 empty (stub)
-[driver-ring] online
-[boot  77%] [##################......] Device drivers ready
-[boot  88%] [#####################...] Accounts service initialized
-[windowing] window manager stopped (login)
-[boot 100%] [########################] Desktop ready; entering render loop
-[log] embedded boot log into image payload
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[windowing] login click
-[Input] mouse left click
-[windowing] login click
-[login] focus password
-[Input] mouse left click
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] submit key
-[login] submit
-[login] authenticated
-[login] switching to desktop
-[windowing] pending WM start: switching to desktop
-[windowing] user sandbox started
-[windowing] desktop icons prepared
-[windowing] taskbar prepared
-[windowing] window manager started
-[windowing] window manager active
-[windowing] swapped to new window manager
-[windowing] old window manager stopped
-[windowing] renderer mode change: Desktop
-[windowing] renderer target WM user slot: 0
+[boot] memory regions: 11
+[boot] framebuffer 1280x720 Bgr, 3 bpp, stride 1280
+[boot] kernel image: addr=0x1000000, len=91128 bytes
+[boot  10%] [##......................] Heap initialized from memory map
