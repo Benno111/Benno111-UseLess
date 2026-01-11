@@ -1,5 +1,4 @@
 use crate::framebuffer;
-use crate::task_manager;
 use crate::acpi;
 use crate::crash_predictor;
 use crate::vga_buffer;
@@ -7,6 +6,8 @@ use spin::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::str;
 use alloc::format;
+
+mod apps;
 
 #[derive(Clone, Copy)]
 pub struct Window {
@@ -63,6 +64,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 static RENDERING: AtomicBool = AtomicBool::new(false);
 static FB_WARNED: AtomicBool = AtomicBool::new(false);
 static RENDER_TICK: AtomicUsize = AtomicUsize::new(0);
+static LAST_WM_MODE: AtomicUsize = AtomicUsize::new(usize::MAX);
+static LAST_ACTIVE_USER: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 struct RenderGuard;
 
@@ -191,13 +194,9 @@ impl DragState {
 pub fn init_default_windows() {
     {
         let mut st = STATE.lock();
-        st.login.status = LoginStatus::None;
-        st.login.window = None;
-        st.wm_mode = WindowManagerMode::Desktop;
-        st.pending_wm_start = false;
-        st.pending_wm_delay = 0;
-        st.wm_sandboxed = false;
-        st.force_render_ticks = 120;
+        // Start sandbox for user (logical flag for now).
+        st.wm_sandboxed = true;
+        // Prep desktop state for the active user.
         if active_user_ref(&st).is_none() {
             let idx = st.active_user;
             st.users[idx] = Some(UserSlot::empty());
@@ -206,11 +205,25 @@ pub fn init_default_windows() {
             user.desktop = DesktopState::new();
             init_desktop_icons_locked(&mut user.desktop);
         }
+        // Prep taskbar/render cadence.
+        st.force_render_ticks = 120;
+        // Startup WM and activate.
+        st.wm_mode = WindowManagerMode::Desktop;
+        st.pending_wm_start = false;
+        st.pending_wm_delay = 0;
+        // Swap to the new WM and stop the old one.
+        st.login.status = LoginStatus::None;
+        st.login.window = None;
     }
     framebuffer::set_force_swap(true);
     framebuffer::set_desktop_mode(true);
+    vga_buffer::log_line("[windowing] user sandbox started");
+    vga_buffer::log_line("[windowing] desktop icons prepared");
+    vga_buffer::log_line("[windowing] taskbar prepared");
     vga_buffer::log_line("[windowing] window manager started");
-    vga_buffer::log_line("[windowing] wm running outside sandbox");
+    vga_buffer::log_line("[windowing] window manager active");
+    vga_buffer::log_line("[windowing] swapped to new window manager");
+    vga_buffer::log_line("[windowing] old window manager stopped");
     framebuffer::invalidate();
     let _ = register_window(
         Window {
@@ -220,7 +233,7 @@ pub fn init_default_windows() {
             w: 240,
             h: 120,
         },
-        render_console,
+        apps::render_console,
     );
     let _ = register_window(
         Window {
@@ -230,7 +243,7 @@ pub fn init_default_windows() {
             w: 220,
             h: 120,
         },
-        render_apps,
+        apps::render_apps,
     );
     let _ = register_window(
         Window {
@@ -240,7 +253,7 @@ pub fn init_default_windows() {
             w: 360,
             h: 120,
         },
-        render_logs,
+        apps::render_logs,
     );
     let _ = register_window(
         Window {
@@ -250,7 +263,7 @@ pub fn init_default_windows() {
             w: 260,
             h: 180,
         },
-        render_task_manager,
+        apps::render_task_manager,
     );
     framebuffer::invalidate();
 }
@@ -264,6 +277,7 @@ pub fn init_login_window() {
     st.wm_sandboxed = false;
     st.force_render_ticks = 0;
     framebuffer::set_desktop_mode(false);
+    framebuffer::set_renderer(render_login_only);
     let (bw, bh) = st.bounds;
     let w = 360usize;
     let h = 200usize;
@@ -296,25 +310,25 @@ fn init_desktop_icons_locked(desktop: &mut DesktopState) {
             label: "Console",
             w: 48,
             h: 48,
-            render: render_console,
+            render: apps::render_console,
         },
         DesktopIcon {
             label: "Apps",
             w: 48,
             h: 48,
-            render: render_apps,
+            render: apps::render_apps,
         },
         DesktopIcon {
             label: "Logs",
             w: 48,
             h: 48,
-            render: render_logs,
+            render: apps::render_logs,
         },
         DesktopIcon {
             label: "Tasks",
             w: 48,
             h: 48,
-            render: render_task_manager,
+            render: apps::render_task_manager,
         },
     ];
     for (idx, icon) in icons.into_iter().enumerate() {
@@ -463,6 +477,7 @@ pub fn render() {
                 false
             } else {
                 st.pending_wm_start = false;
+                st.wm_mode = WindowManagerMode::Desktop;
                 vga_buffer::log_line("[windowing] pending WM start: switching to desktop");
                 true
             }
@@ -472,6 +487,22 @@ pub fn render() {
     };
     if start_desktop {
         init_default_windows();
+    }
+    {
+        let mut st = STATE.lock();
+        if st.wm_mode == WindowManagerMode::Desktop && active_user_ref(&st).is_none() {
+            let idx = st.active_user;
+            st.users[idx] = Some(UserSlot::empty());
+            if let Some(user) = active_user_mut(&mut st) {
+                user.desktop = DesktopState::new();
+                init_desktop_icons_locked(&mut user.desktop);
+            }
+            st.force_render_ticks = 120;
+            framebuffer::set_force_swap(true);
+            framebuffer::set_desktop_mode(true);
+            framebuffer::invalidate();
+            vga_buffer::log_line("[windowing] desktop state recovered");
+        }
     }
     let (mouse, last_mouse) = {
         let st = STATE.lock();
@@ -486,45 +517,105 @@ pub fn render() {
     }
     framebuffer::invalidate();
     framebuffer::draw_desktop();
-    let (windows_snapshot, (mx, my), active_ws, icons_snapshot, bounds, wm_mode, first_frame) = {
+    let (mx, my, wm_mode, pending_start, active_user_id) = {
         let st = STATE.lock();
-        if st.wm_mode == WindowManagerMode::Desktop {
-            if let Some(user) = active_user_ref(&st) {
-                (
-                    user.desktop.windows,
-                    st.mouse,
-                    user.desktop.active_workspace,
-                    user.desktop.icons,
-                    st.bounds,
-                    st.wm_mode,
-                    !user.desktop.desktop_rendered_once,
-                )
-            } else {
-                vga_buffer::log_line("[windowing] render error: no active user");
-                (
-                    [None; MAX_WINDOWS],
-                    st.mouse,
-                    0,
-                    [None; MAX_ICONS],
-                    st.bounds,
-                    st.wm_mode,
-                    false,
-                )
+        (st.mouse.0, st.mouse.1, st.wm_mode, st.pending_wm_start, st.active_user)
+    };
+    let mode_id = match wm_mode {
+        WindowManagerMode::Desktop => 1usize,
+        WindowManagerMode::Login => 2usize,
+    };
+    let last_mode = LAST_WM_MODE.swap(mode_id, Ordering::SeqCst);
+    if last_mode != mode_id {
+        vga_buffer::log_line(&format!(
+            "[windowing] renderer mode change: {}",
+            if mode_id == 1 { "Desktop" } else { "Login" }
+        ));
+    }
+    if mode_id == 1 || pending_start {
+        let last_user = LAST_ACTIVE_USER.swap(active_user_id, Ordering::SeqCst);
+        if last_user != active_user_id {
+            vga_buffer::log_line(&format!(
+                "[windowing] renderer target WM user slot: {}",
+                active_user_id
+            ));
+        }
+    } else {
+        let last_user = LAST_ACTIVE_USER.swap(usize::MAX, Ordering::SeqCst);
+        if last_user != usize::MAX {
+            vga_buffer::log_line("[windowing] renderer target WM: login");
+        }
+    }
+    render_animated_circle(tick);
+    match wm_mode {
+        WindowManagerMode::Desktop => render_desktop_path(tick, mx, my),
+        WindowManagerMode::Login => render_login_path(tick, mx, my),
+    }
+    framebuffer::render_frame();
+    {
+        let mut st = STATE.lock();
+        st.last_render_mouse = (mx, my);
+        if st.force_render_ticks > 0 {
+            st.force_render_ticks = st.force_render_ticks.saturating_sub(1);
+            if st.force_render_ticks == 0 {
+                framebuffer::set_force_swap(false);
             }
+        }
+    }
+}
+
+pub fn render_login_only() {
+    let Some(_render_guard) = RenderGuard::new(&RENDERING) else {
+        return;
+    };
+    let tick = RENDER_TICK.fetch_add(1, Ordering::Relaxed) + 1;
+    let (mx, my) = {
+        let st = STATE.lock();
+        (st.mouse.0, st.mouse.1)
+    };
+    if !framebuffer::framebuffer_available() {
+        if !FB_WARNED.swap(true, Ordering::SeqCst) {
+            vga_buffer::log_line("[windowing] framebuffer unavailable; redraw skipped");
+        }
+        crash_predictor::note_framebuffer_unavailable();
+        return;
+    }
+    framebuffer::invalidate();
+    framebuffer::draw_desktop();
+    render_animated_circle(tick);
+    render_login_path(tick, mx, my);
+    framebuffer::render_frame();
+    {
+        let mut st = STATE.lock();
+        st.last_render_mouse = (mx, my);
+    }
+}
+
+fn render_desktop_path(tick: usize, mx: usize, my: usize) {
+    let (windows_snapshot, active_ws, icons_snapshot, bounds, first_frame) = {
+        let st = STATE.lock();
+        if let Some(user) = active_user_ref(&st) {
+            (
+                user.desktop.windows,
+                user.desktop.active_workspace,
+                user.desktop.icons,
+                st.bounds,
+                !user.desktop.desktop_rendered_once,
+            )
         } else {
+            vga_buffer::log_line("[windowing] render error: no active user (dead WM instance)");
             (
                 [None; MAX_WINDOWS],
-                st.mouse,
                 0,
                 [None; MAX_ICONS],
                 st.bounds,
-                st.wm_mode,
                 false,
             )
         }
     };
     render_taskbar(&windows_snapshot, active_ws, bounds);
     render_icons(&icons_snapshot);
+    render_spinner(tick);
     if first_frame {
         let mut st = STATE.lock();
         if let Some(user) = active_user_mut(&mut st) {
@@ -540,25 +631,17 @@ pub fn render() {
         }
         render_window(&entry.window, entry.render);
     }
-    if wm_mode == WindowManagerMode::Login {
-        if let Some(win) = login_window() {
-            render_window(&win, render_login);
-        } else {
-            vga_buffer::log_line("[windowing] render error: login window missing");
-        }
-    }
     draw_cursor(mx, my);
-    framebuffer::render_frame();
-    {
-        let mut st = STATE.lock();
-        st.last_render_mouse = (mx, my);
-        if st.force_render_ticks > 0 {
-            st.force_render_ticks = st.force_render_ticks.saturating_sub(1);
-            if st.force_render_ticks == 0 {
-                framebuffer::set_force_swap(false);
-            }
-        }
+}
+
+fn render_login_path(tick: usize, mx: usize, my: usize) {
+    if let Some(win) = login_window() {
+        render_window(&win, render_login);
+    } else {
+        vga_buffer::log_line("[windowing] render error: login window missing");
     }
+    render_spinner(tick);
+    draw_cursor(mx, my);
 }
 
 fn draw_cursor(x: usize, y: usize) {
@@ -566,6 +649,63 @@ fn draw_cursor(x: usize, y: usize) {
         framebuffer::draw_cursor(x, y, (255, 255, 255));
     } else {
         framebuffer::blit_rgba(x, y, CURSOR_W, CURSOR_H, &CURSOR_SPRITE);
+    }
+}
+
+fn render_spinner(tick: usize) {
+    const CENTER_X: usize = 18;
+    const CENTER_Y: usize = 18;
+    const DOT_SIZE: usize = 3;
+    const OFFSETS: [(isize, isize); 8] = [
+        (0, -8),
+        (6, -6),
+        (8, 0),
+        (6, 6),
+        (0, 8),
+        (-6, 6),
+        (-8, 0),
+        (-6, -6),
+    ];
+    let phase = (tick / 4) % OFFSETS.len();
+    for (idx, (dx, dy)) in OFFSETS.iter().enumerate() {
+        let x = (CENTER_X as isize + dx) as usize;
+        let y = (CENTER_Y as isize + dy) as usize;
+        let color = if idx == phase {
+            (220, 230, 255)
+        } else {
+            (70, 78, 92)
+        };
+        framebuffer::draw_rect(x, y, DOT_SIZE, DOT_SIZE, color);
+    }
+}
+
+fn render_animated_circle(tick: usize) {
+    const CENTER_X: isize = 36;
+    const CENTER_Y: isize = 36;
+    const POINTS: [(isize, isize); 12] = [
+        (0, -12),
+        (6, -10),
+        (10, -6),
+        (12, 0),
+        (10, 6),
+        (6, 10),
+        (0, 12),
+        (-6, 10),
+        (-10, 6),
+        (-12, 0),
+        (-10, -6),
+        (-6, -10),
+    ];
+    let phase = (tick / 3) % POINTS.len();
+    for (idx, (dx, dy)) in POINTS.iter().enumerate() {
+        let x = (CENTER_X + dx) as usize;
+        let y = (CENTER_Y + dy) as usize;
+        let color = if idx == phase {
+            (255, 220, 120)
+        } else {
+            (90, 96, 108)
+        };
+        framebuffer::draw_rect(x, y, 2, 2, color);
     }
 }
 
@@ -598,27 +738,6 @@ fn register_window_in_workspace(
         return register_window_in_desktop(&mut user.desktop, win, render, workspace);
     }
     None
-}
-
-fn render_console(win: &Window) {
-    framebuffer::draw_text("Console ready", win.x + 8, win.y + 28);
-}
-
-fn render_apps(win: &Window) {
-    framebuffer::draw_text("Apps placeholder", win.x + 8, win.y + 28);
-}
-
-fn render_logs(win: &Window) {
-    framebuffer::draw_text("Logs placeholder", win.x + 8, win.y + 28);
-}
-
-fn render_task_manager(win: &Window) {
-    task_manager::render(
-        win.x + 6,
-        win.y + 20,
-        win.w.saturating_sub(12),
-        win.h.saturating_sub(26),
-    );
 }
 
 fn render_login(win: &Window) {
@@ -1034,11 +1153,18 @@ fn submit_login() {
     vga_buffer::log_line("[login] submit");
     let start_desktop = if crate::accounts::authenticate(username, password) {
         let mut st = STATE.lock();
-        st.login.status = LoginStatus::Success;
-        st.pending_wm_start = false;
+        st.login.status = LoginStatus::Loading;
+        st.pending_wm_start = true;
         st.pending_wm_delay = 0;
+        st.force_render_ticks = 120;
+        framebuffer::set_force_swap(true);
+        framebuffer::set_text_opacity(210);
         let user_idx = ensure_user_slot(&mut st, username);
         st.active_user = user_idx;
+        if st.users[user_idx].is_none() {
+            st.users[user_idx] = Some(UserSlot::empty());
+        }
+        framebuffer::set_renderer(render);
         true
     } else {
         let mut st = STATE.lock();
@@ -1050,7 +1176,9 @@ fn submit_login() {
     if start_desktop {
         vga_buffer::log_line("[login] authenticated");
         vga_buffer::log_line("[login] switching to desktop");
-        init_default_windows();
+        framebuffer::set_force_swap(true);
+        framebuffer::set_desktop_mode(true);
+        framebuffer::invalidate();
     }
 }
 

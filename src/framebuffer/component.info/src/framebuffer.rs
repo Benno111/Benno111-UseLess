@@ -61,6 +61,7 @@ static REFRESH_LOCK: AtomicBool = AtomicBool::new(false);
 static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FORCE_SWAP: AtomicBool = AtomicBool::new(false);
 static DESKTOP_MODE: AtomicBool = AtomicBool::new(false);
+static RENDERER: Mutex<Option<fn()>> = Mutex::new(None);
 
 /// A rough glyph height estimate for dirty rects.
 const FONT_H_EST: usize = 8;
@@ -314,6 +315,16 @@ pub fn set_force_swap(enabled: bool) {
 
 pub fn set_desktop_mode(enabled: bool) {
     DESKTOP_MODE.store(enabled, Ordering::SeqCst);
+}
+
+pub fn set_renderer(renderer: fn()) {
+    *RENDERER.lock() = Some(renderer);
+}
+
+pub fn render_registered() {
+    if let Some(renderer) = *RENDERER.lock() {
+        renderer();
+    }
 }
 
 pub fn set_text_opacity(opacity: u8) {

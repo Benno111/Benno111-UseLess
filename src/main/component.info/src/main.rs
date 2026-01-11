@@ -207,7 +207,7 @@ fn run_main_loop() -> ! {
         let frame = driver_api::poll_devices();
         input::enqueue_events(frame.events);
         input::poll_input_events();
-        windowing::render();
+        framebuffer::render_registered();
         if windowing::desktop_active() {
             let tick = MAIN_TICK.fetch_add(1, Ordering::Relaxed) + 1;
             if tick % 600 == 0 {

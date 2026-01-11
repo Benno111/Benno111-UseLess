@@ -3,7 +3,7 @@
 [boot] physical memory mapped at offset 0x0000028000000000
 [boot] memory regions provided: 11
 [boot] framebuffer 1280x720 Bgr, 3 bytes_per_pixel, stride 1280
-[boot] kernel image: addr=0x1000000, len=131096 bytes
+[boot] kernel image: addr=0x1000000, len=135448 bytes
 [boot  22%] [#####...................] Boot info captured
 [FB] Framebuffer initialized.
 [boot  33%] [#######.................] Framebuffer configured
@@ -36,16 +36,9 @@
 [login] key input
 [login] key input
 [login] key input
-[login] backspace
-[login] backspace
-[login] backspace
-[login] backspace
-[login] backspace
 [login] key input
-[login] key input
-[login] key input
-[login] key input
-[login] key input
+[windowing] login click
+[Input] mouse left click
 [windowing] login click
 [login] focus password
 [Input] mouse left click
@@ -60,6 +53,13 @@
 [login] submit
 [login] authenticated
 [login] switching to desktop
+[windowing] pending WM start: switching to desktop
+[windowing] user sandbox started
+[windowing] desktop icons prepared
+[windowing] taskbar prepared
 [windowing] window manager started
-[windowing] wm running outside sandbox
-[windowing] desktop frame rendered
+[windowing] window manager active
+[windowing] swapped to new window manager
+[windowing] old window manager stopped
+[windowing] renderer mode change: Desktop
+[windowing] renderer target WM user slot: 0
