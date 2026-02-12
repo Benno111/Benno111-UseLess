@@ -13,7 +13,7 @@ use spin::Mutex;
 
 use crate::pci::PciDevice;
 use crate::usb::device::{UsbDevice, PortSpeed};
-use crate::vga_buffer;
+use crate::serial;
 
 // ============ TRB & constants ============
 
@@ -284,7 +284,7 @@ pub fn init_from_pci(dev: &PciDevice, bar0: u32) -> Result<(), &'static str> {
             cap.dboff,
             cap.rtsoff,
         );
-        vga_buffer::log_line(&msg);
+        serial::log_line(&msg);
 
         let cmd_ring = XhciRing::new(256)?;
         let evt_ring = init_event_ring(&mut regs)?;
@@ -392,7 +392,7 @@ unsafe fn init_controller_hw(
     while op.usbcmd & USBCMD_HCRST != 0 {
         tries += 1;
         if tries > 1_000_000 {
-            vga_buffer::log_line("[xHCI] HCRST did not clear (timeout)");
+            serial::log_line("[xHCI] HCRST did not clear (timeout)");
             break;
         }
     }
@@ -408,7 +408,7 @@ unsafe fn init_controller_hw(
     // Set max slots
     op.config = (max_slots as u32) & 0xFF;
 
-    vga_buffer::log_line("[xHCI] Controller basic registers configured.");
+    serial::log_line("[xHCI] Controller basic registers configured.");
 
     // Clear status bits
     op.usbsts |= op.usbsts;
@@ -510,18 +510,18 @@ pub fn enumerate_ports() -> Vec<UsbDevice> {
     let ctrl = match controller_mut() {
         Some(c) => c,
         None => {
-            vga_buffer::log_line("[xHCI] enumerate_ports(): controller not initialized");
+            serial::log_line("[xHCI] enumerate_ports(): controller not initialized");
             return out;
         }
     };
 
     let max_ports = ctrl.max_ports;
     if max_ports == 0 {
-        vga_buffer::log_line("[xHCI] enumerate_ports(): max_ports = 0");
+        serial::log_line("[xHCI] enumerate_ports(): max_ports = 0");
         return out;
     }
 
-    vga_buffer::log_line("[xHCI] Enumerating xHCI ports...");
+    serial::log_line("[xHCI] Enumerating xHCI ports...");
 
     for i in 0..max_ports {
         let port_num = i + 1;
@@ -533,19 +533,19 @@ pub fn enumerate_ports() -> Vec<UsbDevice> {
             continue;
         }
 
-        vga_buffer::log_line(&format!(
+        serial::log_line(&format!(
             "[xHCI] Port {}: device present, PORTSC=0x{:08x}",
             port_num, portsc_val
         ));
 
         if let Err(e) = reset_port(port_num as u8, portsc_ptr) {
-            vga_buffer::log_line(e);
+            serial::log_line(e);
             continue;
         }
 
         portsc_val = unsafe { core::ptr::read_volatile(portsc_ptr) };
         let speed = decode_port_speed(portsc_val);
-        vga_buffer::log_line(&format!(
+        serial::log_line(&format!(
             "[xHCI] Port {}: reset complete, speed={:?}, PORTSC=0x{:08x}",
             port_num, speed, portsc_val
         ));
@@ -554,7 +554,7 @@ pub fn enumerate_ports() -> Vec<UsbDevice> {
     }
 
     if out.is_empty() {
-        vga_buffer::log_line("[xHCI] No devices detected on ports.");
+        serial::log_line("[xHCI] No devices detected on ports.");
     }
 
     out
@@ -570,7 +570,7 @@ fn reset_port(port_num: u8, portsc_ptr: *mut u32) -> Result<(), &'static str> {
         core::ptr::write_volatile(portsc_ptr, v);
     }
 
-    vga_buffer::log_line(&format!("[xHCI] Port {}: reset requested", port_num));
+    serial::log_line(&format!("[xHCI] Port {}: reset requested", port_num));
 
     let mut tries = 0;
     loop {
@@ -584,7 +584,7 @@ fn reset_port(port_num: u8, portsc_ptr: *mut u32) -> Result<(), &'static str> {
 
         tries += 1;
         if tries > 1_000_000 {
-            vga_buffer::log_line(&format!(
+            serial::log_line(&format!(
                 "[xHCI] Port {}: reset timeout, PORTSC=0x{:08x}",
                 port_num, v
             ));

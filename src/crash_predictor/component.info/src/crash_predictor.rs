@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::vga_buffer;
+use crate::serial;
 
 static FRAMEBUFFER_MISSING: AtomicUsize = AtomicUsize::new(0);
 
@@ -10,8 +10,8 @@ static FRAMEBUFFER_MISSING: AtomicUsize = AtomicUsize::new(0);
 pub fn note_framebuffer_unavailable() {
     let n = FRAMEBUFFER_MISSING.fetch_add(1, Ordering::SeqCst) + 1;
     if n == 1 {
-        vga_buffer::log_line("[predict] framebuffer missing once; rendering paused");
+        serial::log_line("[predict] framebuffer missing once; rendering paused");
     } else if n == 3 {
-        vga_buffer::log_line("[predict] crash likely: framebuffer still missing after 3 attempts");
+        serial::log_line("[predict] crash likely: framebuffer still missing after 3 attempts");
     }
 }

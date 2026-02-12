@@ -1,7 +1,7 @@
 use alloc::format;
 use spin::Mutex;
 use libm::{sqrtf, roundf};
-use crate::{framebuffer, vga_buffer, windowing};
+use crate::{framebuffer, serial, windowing};
 
 #[derive(Clone, Copy)]
 pub enum MouseButton {
@@ -159,20 +159,20 @@ fn handle_event(ev: InputEvent) {
         }
         InputEvent::MouseButton { button: MouseButton::Left, pressed: true } => {
             windowing::mouse_click_left();
-            vga_buffer::log_line("[Input] mouse left click");
+            serial::log_line("[Input] mouse left click");
         }
         InputEvent::MouseButton { button: MouseButton::Left, pressed: false } => {
             windowing::mouse_release_left();
         }
         InputEvent::MouseButton { button: MouseButton::Right, pressed: true } => {
             windowing::mouse_click_right();
-            vga_buffer::log_line("[Input] mouse right click");
+            serial::log_line("[Input] mouse right click");
         }
         InputEvent::MouseButton { .. } => {
             // Ignore releases and unsupported buttons for now.
         }
         InputEvent::MouseWheel { delta } => {
-            vga_buffer::log_line(&format!("[Input] mouse wheel delta={}", delta));
+            serial::log_line(&format!("[Input] mouse wheel delta={}", delta));
         }
         InputEvent::Key(c) => {
             if windowing::handle_key_input(c) {
@@ -180,15 +180,15 @@ fn handle_event(ev: InputEvent) {
             }
             if c == '\n' {
                 windowing::mouse_click_left();
-                vga_buffer::log_line("[Input] mouse left click via Enter");
+                serial::log_line("[Input] mouse left click via Enter");
                 return;
             }
             if c == '\u{8}' {
                 windowing::mouse_click_right();
-                vga_buffer::log_line("[Input] mouse right click via Backspace");
+                serial::log_line("[Input] mouse right click via Backspace");
                 return;
             }
-            vga_buffer::log_line(&format!("[Input] key: {}", c));
+            serial::log_line(&format!("[Input] key: {}", c));
         }
     }
 }

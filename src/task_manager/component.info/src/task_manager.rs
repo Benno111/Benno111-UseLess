@@ -1,7 +1,7 @@
 use alloc::format;
 
 use crate::framebuffer;
-use crate::{driver_api, input, vga_buffer};
+use crate::{driver_api, input, serial};
 
 struct Task {
     name: &'static str,
@@ -72,7 +72,6 @@ pub fn render(x: usize, y: usize, w: usize, h: usize) {
         let detail_y = row_y + 16;
         let input_q = input::queue_len();
         let stats = driver_api::stats();
-        let log_contended = vga_buffer::log_contention_count();
         framebuffer::draw_text_no_invalidate(
             &format!(
                 "Input queue: {:>3}  Poll skips: {:>2}  Budget: {:>2}B",
@@ -81,13 +80,7 @@ pub fn render(x: usize, y: usize, w: usize, h: usize) {
             x + 2,
             detail_y,
         );
-        if detail_y + 12 < y + h {
-            framebuffer::draw_text_no_invalidate(
-                &format!("Log contention: {}", log_contended),
-                x + 2,
-                detail_y + 12,
-            );
-        }
+        let _ = serial::log_line;
     }
 
     // Draw a simple usage bar under the header.

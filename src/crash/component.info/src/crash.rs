@@ -2,11 +2,10 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
-use core::fmt::Write;
 use core::sync::atomic::AtomicBool;
 
-use crate::vga_buffer;
-use bootloader_api::BootInfo;
+use crate::bootinfo::BootInfo;
+use crate::serial;
 
 static BOOT_INFO_PTR: AtomicUsize = AtomicUsize::new(0);
 static CRASHED: AtomicBool = AtomicBool::new(false);
@@ -23,49 +22,31 @@ pub fn show_crash(info: &core::panic::PanicInfo) {
         }
     }
     let reason = truncate(&format!("{}", info), 200);
-    vga_buffer::log_line(&format!("[crash] fatal panic: {}", reason));
+    serial::log_line(&format!("[crash] fatal panic: {}", reason));
     if let Some(bi) = boot_info() {
-        vga_buffer::log_line(&format!(
+        serial::log_line(&format!(
             "[crash] mem regions={} kernel=0x{:x} len={} phys_off=0x{:x} image_off=0x{:x}",
-            bi.memory_regions.len(),
+            bi.memory_regions().len(),
             bi.kernel_addr,
             bi.kernel_len,
-            bi.physical_memory_offset.into_option().unwrap_or(0),
+            bi.physical_memory_offset,
             bi.kernel_image_offset,
         ));
-        vga_buffer::log_line(&format!(
-            "[crash] framebuffer={}x{}",
-            bi.framebuffer.as_ref().map(|f| f.info().width).unwrap_or(0),
-            bi.framebuffer.as_ref().map(|f| f.info().height).unwrap_or(0),
-        ));
+        serial::log_line("[crash] framebuffer=none");
     }
-    let mut w = vga_buffer::writer();
-    w.clear();
-    let _ = write!(
-        w,
-        "=== KERNEL PANIC ===\nReason: {}\n\n",
-        truncate(&reason, 70)
-    );
-
+    serial::log_line("=== KERNEL PANIC ===");
+    serial::log_line(&format!("Reason: {}", truncate(&reason, 70)));
     if let Some(bi) = boot_info() {
-        let _ = write!(
-            w,
-            "mem regions: {}  kernel: 0x{:x} len:{}\nphys offset: {:x}  image off: {:x}\nframebuffer: {}x{}\n\n",
-            bi.memory_regions.len(),
+        serial::log_line(&format!(
+            "mem regions: {}  kernel: 0x{:x} len:{} phys off: {:x} image off: {:x} framebuffer: none",
+            bi.memory_regions().len(),
             bi.kernel_addr,
             bi.kernel_len,
-            bi.physical_memory_offset.into_option().unwrap_or(0),
+            bi.physical_memory_offset,
             bi.kernel_image_offset,
-            bi.framebuffer.as_ref().map(|f| f.info().width).unwrap_or(0),
-            bi.framebuffer.as_ref().map(|f| f.info().height).unwrap_or(0),
-        );
+        ));
     }
-
-    let _ = write!(
-        w,
-        "System halted. Check serial for full backtrace.\n\
-Press Enter to reboot or power cycle the VM/device.\n> "
-    );
+    serial::log_line("System halted. Check serial for full backtrace.");
 }
 
 fn boot_info() -> Option<&'static BootInfo> {

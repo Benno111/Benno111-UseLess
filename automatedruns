@@ -1,0 +1,3 @@
+./Build.sh
+./bundle_iso.sh
+./run.sh

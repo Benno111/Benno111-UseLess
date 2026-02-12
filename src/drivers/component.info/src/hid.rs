@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::usb::device::{UsbDevice, UsbEndpoint, EndpointType};
-use crate::vga_buffer;
+use crate::serial;
 use crate::usb::xhci; // for xhci::interrupt_in(..)
 
 /// A single USB keyboard attached via xHCI.
@@ -40,7 +40,7 @@ pub fn init_keyboards_from_devices(devs: &[UsbDevice]) -> Vec<UsbKeyboard> {
     for dev in devs {
         let kbs = find_keyboard_endpoints(dev);
         for (iface_idx, ep_idx, ep) in kbs {
-            vga_buffer::log_line(&alloc::format!(
+            serial::log_line(&alloc::format!(
                 "[USB-HID] Keyboard on port {} slot {} if={} ep=0x{:02x}",
                 dev.port,
                 dev.slot_id,
@@ -59,7 +59,7 @@ pub fn init_keyboards_from_devices(devs: &[UsbDevice]) -> Vec<UsbKeyboard> {
     }
 
     if out.is_empty() {
-        vga_buffer::log_line("[USB-HID] No keyboards found via HID descriptors.");
+        serial::log_line("[USB-HID] No keyboards found via HID descriptors.");
     }
 
     out
@@ -107,7 +107,7 @@ pub fn poll_keyboards(keyboards: &mut [UsbKeyboard]) -> Vec<KeyEvent> {
             Ok(n) if n >= 8 => 8,
             Ok(_) => continue, // short packet; ignore for now
             Err(e) => {
-                vga_buffer::log_line(e);
+                serial::log_line(e);
                 continue;
             }
         };

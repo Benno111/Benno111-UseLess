@@ -2,7 +2,7 @@
 //! A real implementation would hook up `fatfs` with a block device; here we just
 //! reserve a static buffer and log that the volume is available.
 
-use crate::vga_buffer;
+use crate::serial;
 
 const MAIN_VOL_SIZE: usize = 512 * 1024; // 512 KiB scratch "disk"
 static mut MAIN_VOL: [u8; MAIN_VOL_SIZE] = [0; MAIN_VOL_SIZE];
@@ -20,7 +20,7 @@ pub fn init_main_volume() {
         core::ptr::write_bytes(ptr, 0, MAIN_VOL_SIZE);
         INIT = true;
     }
-    vga_buffer::log_line("[fs] FAT32 main volume (stub) initialized");
+    serial::log_line("[fs] FAT32 main volume (stub) initialized");
 }
 
 /// Write a small log blob into a reserved slot near the end of the stub volume.

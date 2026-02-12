@@ -6,7 +6,6 @@ edition = "2021"
 # This crate is a freestanding kernel, so we build with no_std and no_main.
 # The actual entry point is defined via the bootloader_api::entry_point! macro.
 [dependencies]
-bootloader_api = "0.11"
 x86_64 = "0.15"
 spin = "0.9"
 libm = "0.2"

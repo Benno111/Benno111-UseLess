@@ -1,6 +1,0 @@
-[boot] kernel entry
-[boot] physical memory mapped at offset 0x0000028000000000
-[boot] memory regions: 11
-[boot] framebuffer 1280x720 Bgr, 3 bpp, stride 1280
-[boot] kernel image: addr=0x1000000, len=91128 bytes
-[boot  10%] [##......................] Heap initialized from memory map

@@ -3,7 +3,7 @@
 
 use alloc::{format, vec::Vec};
 
-use crate::vga_buffer;
+use crate::serial;
 
 pub mod device;
 pub mod descriptor;
@@ -18,17 +18,17 @@ use device::UsbDevice;
 pub fn init_pci_usb() {
     if let Some(xhci_dev) = crate::pci::find_xhci() {
         let bar0 = crate::pci::bar0(&xhci_dev);
-        vga_buffer::log_line(&format!(
+        serial::log_line(&format!(
             "[USB] xHCI candidate at {:02x}:{:02x}.{} BAR0=0x{:08x}",
             xhci_dev.bus, xhci_dev.slot, xhci_dev.func, bar0,
         ));
 
         match xhci::init_from_pci(&xhci_dev, bar0) {
-            Ok(_) => vga_buffer::log_line("[USB] xHCI initialized."),
-            Err(e) => vga_buffer::log_line(e),
+            Ok(_) => serial::log_line("[USB] xHCI initialized."),
+            Err(e) => serial::log_line(e),
         }
     } else {
-        vga_buffer::log_line("[USB] No xHCI controller detected via PCI.");
+        serial::log_line("[USB] No xHCI controller detected via PCI.");
     }
 }
 

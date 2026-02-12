@@ -1,17 +1,17 @@
 //! Minimal ACPI power-management stubs.
 //! Real support would parse ACPI tables and invoke S5/S4 via FADT/DSDT methods.
 
-use crate::vga_buffer;
+use crate::serial;
 use x86_64::instructions::port::Port;
 
 pub fn init() {
-    vga_buffer::log_line("[acpi] initializing power management stubs");
+    serial::log_line("[acpi] initializing power management stubs");
 }
 
 /// Request system power-off.
 #[allow(dead_code)]
 pub fn power_off() -> ! {
-    vga_buffer::log_line("[acpi] power_off requested");
+    serial::log_line("[acpi] power_off requested");
     unsafe {
         // QEMU ACPI power-off.
         let mut qemu: Port<u16> = Port::new(0x604);
@@ -28,7 +28,7 @@ pub fn power_off() -> ! {
 /// Request system reboot.
 #[allow(dead_code)]
 pub fn reboot() -> ! {
-    vga_buffer::log_line("[acpi] reboot requested");
+    serial::log_line("[acpi] reboot requested");
     unsafe {
         // Reset Control Register (CF9) reset.
         let mut reset: Port<u8> = Port::new(0xCF9);

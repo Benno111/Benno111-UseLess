@@ -1,8 +1,7 @@
 extern crate alloc;
 
 use alloc::{format, vec::Vec};
-use crate::vga_buffer;
-use crate::input::{InputEvent, MouseButton};
+use crate::serial;
 use crate::usb;
 use crate::usb::{hid, mouse};
 use crate::usb::hid::KeyEventKind;
@@ -32,7 +31,7 @@ pub fn handle_request(req: DriverRequest) -> DriverResponse {
     match req {
         DriverRequest::Init => {
             init();
-            vga_buffer::log_line("[driver-ring] online");
+            serial::log_line("[driver-ring] online");
             DriverResponse::Ack
         }
         DriverRequest::PollInput => DriverResponse::Input(poll_devices()),
@@ -49,7 +48,7 @@ fn init() {
 }
 
 pub fn init_ps2() {
-    vga_buffer::log_line("[drivers] PS/2 controller stub initialized");
+    serial::log_line("[drivers] PS/2 controller stub initialized");
     detect_ps2_devices();
 }
 
@@ -62,15 +61,15 @@ pub fn init_usb() {
 
 fn detect_ps2_devices() {
     // Stub: in real code we'd send PS/2 commands to detect keyboard/mouse.
-    vga_buffer::log_line("[drivers] PS/2: keyboard detected (stub, i8042)");
-    vga_buffer::log_line("[drivers] PS/2: mouse detected (stub, 3-byte standard packet)");
+    serial::log_line("[drivers] PS/2: keyboard detected (stub, i8042)");
+    serial::log_line("[drivers] PS/2: mouse detected (stub, 3-byte standard packet)");
     init_ps2_mouse();
 }
 
 fn probe_usb_ports() {
     // Stub: in real code we'd enumerate EHCI/XHCI/OHCI controllers and devices.
-    vga_buffer::log_line("[drivers] USB: port 1 device present (stub, class HID unknown)");
-    vga_buffer::log_line("[drivers] USB: port 2 empty (stub)");
+    serial::log_line("[drivers] USB: port 1 device present (stub, class HID unknown)");
+    serial::log_line("[drivers] USB: port 2 empty (stub)");
 }
 
 fn refresh_usb_hid_devices() {
@@ -82,7 +81,7 @@ fn refresh_usb_hid_devices() {
     state.mice = mice;
     state.keyboards = keyboards;
 
-    vga_buffer::log_line(&format!(
+    serial::log_line(&format!(
         "[drivers] USB HID: {} mice, {} keyboards ready",
         state.mice.len(),
         state.keyboards.len()
@@ -97,6 +96,20 @@ impl DriverInputFrame {
     pub fn new() -> Self {
         Self { events: Vec::new() }
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
+pub enum InputEvent {
+    MouseMove { dx: isize, dy: isize },
+    MouseButton { button: MouseButton, pressed: bool },
+    MouseWheel { delta: isize },
+    Key(char),
 }
 
 struct MousePacket {
@@ -198,17 +211,17 @@ fn init_ps2_mouse() {
 
     if ok_defaults && ok_stream {
         PS2_MOUSE_ENABLED.store(true, Ordering::Relaxed);
-        vga_buffer::log_line("[drivers] PS/2 mouse streaming enabled");
+        serial::log_line("[drivers] PS/2 mouse streaming enabled");
     } else {
         PS2_MOUSE_ENABLED.store(false, Ordering::Relaxed);
-        vga_buffer::log_line("[drivers] PS/2 mouse init failed (no ACK)");
+        serial::log_line("[drivers] PS/2 mouse init failed (no ACK)");
     }
 }
 
 #[allow(dead_code)]
 pub fn set_ps2_mouse_enabled(enabled: bool) {
     PS2_MOUSE_ENABLED.store(enabled, Ordering::Relaxed);
-    vga_buffer::log_line(if enabled {
+    serial::log_line(if enabled {
         "[drivers] PS/2 mouse enabled"
     } else {
         "[drivers] PS/2 mouse disabled"
@@ -218,7 +231,7 @@ pub fn set_ps2_mouse_enabled(enabled: bool) {
 #[allow(dead_code)]
 pub fn set_ps2_keyboard_enabled(enabled: bool) {
     PS2_KEYBOARD_ENABLED.store(enabled, Ordering::Relaxed);
-    vga_buffer::log_line(if enabled {
+    serial::log_line(if enabled {
         "[drivers] PS/2 keyboard enabled"
     } else {
         "[drivers] PS/2 keyboard disabled"
@@ -229,7 +242,7 @@ pub fn set_ps2_keyboard_enabled(enabled: bool) {
 pub fn set_ps2_poll_budget(bytes_per_tick: usize) {
     let clamped = bytes_per_tick.clamp(1, 64);
     PS2_BUDGET_BYTES.store(clamped, Ordering::Relaxed);
-    vga_buffer::log_line(&alloc::format!(
+    serial::log_line(&alloc::format!(
         "[drivers] PS/2 poll budget set to {} bytes/tick",
         clamped
     ));
@@ -397,7 +410,7 @@ fn poll_devices() -> DriverInputFrame {
     if POLL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         let skips = POLL_SKIPPED.fetch_add(1, Ordering::SeqCst) + 1;
         if skips % 4 == 0 {
-            vga_buffer::log_line("[drivers] poll skipped; previous poll still running");
+            serial::log_line("[drivers] poll skipped; previous poll still running");
         }
         return DriverInputFrame::new();
     }
@@ -429,7 +442,7 @@ fn poll_usb_devices(frame: &mut DriverInputFrame) {
 
         if evt.wheel != 0 {
             frame.events.push(InputEvent::MouseWheel {
-                delta: evt.wheel as i16,
+                delta: evt.wheel as isize,
             });
         }
 

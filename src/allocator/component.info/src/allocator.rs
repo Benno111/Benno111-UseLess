@@ -3,7 +3,7 @@
 //! - Add one or more regions via `add_region` or `init_from_memory_map`.
 //! - Metadata (free list nodes) live inside the free memory itself.
 
-use bootloader_api::{info::MemoryRegionKind, BootInfo};
+use crate::bootinfo::{BootInfo, MemoryRegionKind};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -264,12 +264,9 @@ pub unsafe fn init_heap(boot_info: &BootInfo) -> HeapInitResult {
 unsafe fn try_init_from_memory_map(boot_info: &BootInfo) -> HeapInitResult {
     let mut result = HeapInitResult::empty();
 
-    let phys_offset = match boot_info.physical_memory_offset.into_option() {
-        Some(off) => off as usize,
-        None => return result,
-    };
+    let phys_offset = boot_info.physical_memory_offset as usize;
 
-    for region in boot_info.memory_regions.iter() {
+    for region in boot_info.memory_regions().iter() {
         if region.kind != MemoryRegionKind::Usable {
             continue;
         }

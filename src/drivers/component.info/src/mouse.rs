@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::usb::device::{UsbDevice, UsbEndpoint, EndpointType};
-use crate::vga_buffer;
+use crate::serial;
 use crate::usb::xhci;
 
 /// A single USB mouse attached via xHCI (boot protocol).
@@ -34,7 +34,7 @@ pub fn init_mice_from_devices(devs: &[UsbDevice]) -> Vec<UsbMouse> {
     for dev in devs {
         let ms = find_mouse_endpoints(dev);
         for (iface_idx, ep_idx, ep) in ms {
-            vga_buffer::log_line(&alloc::format!(
+            serial::log_line(&alloc::format!(
                 "[USB-HID] Mouse on port {} slot {} if={} ep=0x{:02x}",
                 dev.port,
                 dev.slot_id,
@@ -53,7 +53,7 @@ pub fn init_mice_from_devices(devs: &[UsbDevice]) -> Vec<UsbMouse> {
     }
 
     if out.is_empty() {
-        vga_buffer::log_line("[USB-HID] No mice found via HID descriptors.");
+        serial::log_line("[USB-HID] No mice found via HID descriptors.");
     }
 
     out
@@ -97,7 +97,7 @@ pub fn poll_mice(mice: &mut [UsbMouse]) -> Vec<MouseEvent> {
             Ok(n) if n >= 3 => n,
             Ok(_) => continue,
             Err(e) => {
-                vga_buffer::log_line(e);
+                serial::log_line(e);
                 continue;
             }
         };
