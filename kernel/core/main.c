@@ -32,6 +32,9 @@ extern char __bss_end[];
 static void print_banner(void);
 static void init_subsystems(void *dtb);
 static void start_init_process(void);
+#ifdef ARCH_X86_64
+static void start_x86_64_bringup(void);
+#endif
 
 /*
  * kernel_main - Main kernel entry point
@@ -51,6 +54,11 @@ void kernel_main(void *dtb) {
   (void)dtb; /* Suppress unused warning */
   (void)__kernel_start;
   (void)__kernel_end;
+
+#ifdef ARCH_X86_64
+  start_x86_64_bringup();
+  panic("x86_64 bring-up returned unexpectedly!");
+#endif
 
   /* Initialize all kernel subsystems */
   init_subsystems(dtb);
@@ -76,12 +84,49 @@ static void print_banner(void) {
   printk("  \\ V /| || |_) |  | |_| |___) |\n");
   printk("   \\_/ |_||_.__/    \\___/|____/ \n");
   printk("\n");
+#ifdef ARCH_X86_64
+  printk("OS next stage v%d.%d.%d - x86_64 bring-up\n", VIBOS_VERSION_MAJOR,
+         VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
+  printk("A Unix-like operating system for x86_64\n");
+#else
   printk("OS next stage v%d.%d.%d - ARM64 with GUI\n", VIBOS_VERSION_MAJOR,
          VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
   printk("A Unix-like operating system for ARM64\n");
+#endif
   printk("Copyright (c) 2026 OS next stage Project\n");
   printk("\n");
 }
+
+#ifdef ARCH_X86_64
+static void start_x86_64_bringup(void) {
+  printk(KERN_INFO "[INIT] x86_64 bring-up mode\n");
+  printk(KERN_INFO "  Using Limine framebuffer and simplified early init\n");
+
+  extern int fb_init(void);
+  extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
+
+  uint32_t *fb_buffer = 0;
+  uint32_t fb_width = 0;
+  uint32_t fb_height = 0;
+
+  if (fb_init() != 0) {
+    panic("Failed to initialize framebuffer on x86_64!");
+  }
+
+  fb_get_info(&fb_buffer, &fb_width, &fb_height);
+
+  if (!fb_buffer || !fb_width || !fb_height) {
+    panic("No usable framebuffer available on x86_64!");
+  }
+
+  printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
+  printk(KERN_INFO "x86_64 boot splash ready. System is idle.\n");
+
+  while (1) {
+    arch_idle();
+  }
+}
+#endif
 
 /*
  * init_subsystems - Initialize all kernel subsystems

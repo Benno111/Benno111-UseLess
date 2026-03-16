@@ -159,6 +159,16 @@ static uint64_t *walk_page_table(uint64_t *pgd, virt_addr_t vaddr, bool allocate
 int vmm_init(void)
 {
     printk(KERN_INFO "VMM: Initializing virtual memory manager\n");
+
+#ifdef ARCH_X86_64
+    /*
+     * The current shared VMM implementation builds ARM64-style page tables.
+     * On x86_64, loading those tables into CR3 causes an immediate boot fault.
+     * Keep the Limine-provided paging active until a native x86_64 VMM lands.
+     */
+    printk(KERN_WARNING "VMM: Using Limine paging on x86_64 bring-up path\n");
+    return 0;
+#endif
     
     /* Kernel PGD is a static array, already initialized */
     printk("VMM: Kernel PGD ready\n");

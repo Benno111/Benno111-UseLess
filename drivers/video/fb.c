@@ -187,7 +187,34 @@ static void virtio_write32(volatile uint8_t *base, uint32_t offset, uint32_t val
 int fb_init(void)
 {
     printk(KERN_INFO "FB: Initializing framebuffer\n");
-    
+
+#ifdef ARCH_X86_64
+    extern int limine_get_framebuffer(uint32_t **buffer, uint32_t *width,
+                                      uint32_t *height, uint32_t *pitch);
+    uint32_t *limine_buffer = NULL;
+    uint32_t limine_width = 0;
+    uint32_t limine_height = 0;
+    uint32_t limine_pitch = 0;
+
+    if (limine_get_framebuffer(&limine_buffer, &limine_width, &limine_height,
+                               &limine_pitch) == 0 &&
+        limine_buffer && limine_width && limine_height) {
+        framebuffer.buffer = limine_buffer;
+        framebuffer.width = limine_width;
+        framebuffer.height = limine_height;
+        framebuffer.pitch = limine_pitch ? limine_pitch : (limine_width * 4);
+        framebuffer.initialized = true;
+
+        printk(KERN_INFO "FB: Using Limine framebuffer %ux%u at 0x%lx\n",
+               framebuffer.width, framebuffer.height,
+               (unsigned long)framebuffer.buffer);
+        fb_show_splash();
+        return 0;
+    }
+
+    printk(KERN_WARNING "FB: Limine framebuffer unavailable, using fallback buffer\n");
+#endif
+
     /* Use static buffer in BSS */
     static uint32_t static_framebuffer[1024 * 768] __attribute__((aligned(4096)));
     
@@ -204,12 +231,14 @@ int fb_init(void)
     fb_clear(0x1E1E2E);
     
     /* Configure QEMU ramfb to display our framebuffer */
+#ifndef ARCH_X86_64
     extern int ramfb_init(uint32_t *framebuffer, uint32_t width, uint32_t height);
     if (ramfb_init(framebuffer.buffer, framebuffer.width, framebuffer.height) == 0) {
         printk(KERN_INFO "FB: QEMU ramfb display connected\n");
     } else {
         printk(KERN_WARNING "FB: ramfb not available, display may not work\n");
     }
+#endif
     
     /* Show boot splash */
     fb_show_splash();
@@ -225,4 +254,9 @@ void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height)
     if (buffer) *buffer = framebuffer.buffer;
     if (width) *width = framebuffer.width;
     if (height) *height = framebuffer.height;
+}
+
+uint32_t fb_get_pitch(void)
+{
+    return framebuffer.pitch;
 }
