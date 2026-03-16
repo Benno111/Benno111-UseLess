@@ -29,6 +29,7 @@ jobs:
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
             qemu-system-arm \
+            qemu-system-x86 \
             make \
             lld \
             llvm
@@ -56,6 +57,22 @@ jobs:
 
           tar -czf vibos-arm64.tar.gz -C release/arm64 .
 
+      - name: Build x86_64 kernel
+        run: |
+          make -f Makefile.multiarch ARCH=x86_64 clean
+          make -f Makefile.multiarch ARCH=x86_64 kernel
+
+      - name: Package x86_64 release bundle
+        run: |
+          mkdir -p release/x86_64
+          cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
+
+          cd release/x86_64
+          sha256sum * > SHA256SUMS
+          cd ../..
+
+          tar -czf vibos-x86_64.tar.gz -C release/x86_64 .
+
       - name: Extract version
         id: get_version
         run: |
@@ -70,11 +87,12 @@ jobs:
           cat > release_notes.md << 'EOF'
           # Vib-OS ${{ steps.get_version.outputs.version }}
 
-          A Unix-like operating system with ARM64 support and GUI.
+          A Unix-like operating system with ARM64 and x86_64 support and GUI.
 
           ## Supported Architectures
 
           - ARM64 - Raspberry Pi 4/5, ARM64 UEFI boards, Apple Silicon (via UTM)
+          - x86_64 - UEFI-capable PCs and x86_64 virtual machines
 
           > Note: For a standalone x86_64 UEFI build, see the `vib-os-x86_64/` folder.
 
@@ -84,6 +102,11 @@ jobs:
           - `vibos-arm64.tar.gz` - ARM64 kernel and bootable image
             - `vibos-arm64.elf` - Kernel binary
             - `vibos-arm64.img` - Bootable SD card image (if available)
+            - `SHA256SUMS` - Checksums for verification
+
+          ### x86_64
+          - `vibos-x86_64.tar.gz` - x86_64 kernel bundle
+            - `vibos-x86_64.elf` - Kernel binary
             - `SHA256SUMS` - Checksums for verification
 
           ## Quick Start
@@ -135,9 +158,10 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Vib-OS ${{ steps.get_version.outputs.version }}
           body_path: release_notes.md
-          draft: false
+          draft: true
           prerelease: false
           files: |
             vibos-arm64.tar.gz
+            vibos-x86_64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

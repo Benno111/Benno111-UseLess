@@ -45,9 +45,36 @@ jobs:
         run: |
           echo "Boot test completed successfully"
 
+  build-x86_64:
+    name: Build x86_64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            make \
+            lld \
+            llvm
+
+      - name: Build x86_64 kernel
+        run: |
+          make -f Makefile.multiarch ARCH=x86_64 clean
+          make -f Makefile.multiarch ARCH=x86_64 kernel
+
+      - name: Check x86_64 build artifacts
+        run: |
+          ls -lh build/x86_64/kernel/vibos-x86_64.elf
+          file build/x86_64/kernel/vibos-x86_64.elf
+
   summary:
     name: Build Summary
-    needs: [build-and-test-arm64]
+    needs: [build-and-test-arm64, build-x86_64]
     runs-on: ubuntu-latest
     if: always()
 
@@ -59,9 +86,10 @@ jobs:
           echo "| Architecture | Build + Test Status |" >> $GITHUB_STEP_SUMMARY
           echo "|--------------|---------------------|" >> $GITHUB_STEP_SUMMARY
           echo "| ARM64        | ${{ needs.build-and-test-arm64.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| x86_64       | ${{ needs.build-x86_64.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.build-and-test-arm64.result }}" == "success" ]; then
+          if [ "${{ needs.build-and-test-arm64.result }}" == "success" ] && [ "${{ needs.build-x86_64.result }}" == "success" ]; then
             echo "All builds passed." >> $GITHUB_STEP_SUMMARY
             exit 0
           else
