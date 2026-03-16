@@ -136,7 +136,11 @@ static void settings_draw(struct application *app) {
   y += 30;
   gui_draw_string(270, y, "OS next stage v0.3.0", 0x808080, 0x1E1E2E);
   y += 20;
+#ifdef ARCH_X86_64
+  gui_draw_string(270, y, "x86_64 Operating System", 0x808080, 0x1E1E2E);
+#else
   gui_draw_string(270, y, "ARM64 Operating System", 0x808080, 0x1E1E2E);
+#endif
 }
 
 /* Simple Text Editor */

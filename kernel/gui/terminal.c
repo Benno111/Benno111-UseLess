@@ -592,7 +592,11 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, cmd + 5);
     term_puts(term, "\n");
   } else if (str_starts_with(cmd, "uname")) {
+#ifdef ARCH_X86_64
+    term_puts(term, "OS next stage 0.5.0 x86_64 x86_64\n");
+#else
     term_puts(term, "OS next stage 0.5.0 ARM64 aarch64\n");
+#endif
   } else if (str_starts_with(cmd, "date")) {
     term_puts(term, "Thu Jan 16 21:35:00 EST 2026\n");
   } else if (str_starts_with(cmd, "uptime")) {
@@ -617,6 +621,15 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
     term_puts(term, "\033[0m\n");
     term_puts(term, "\033[33mOS:\033[0m      OS next stage 0.5.0\n");
+#ifdef ARCH_X86_64
+    term_puts(term, "\033[33mHost:\033[0m    QEMU x86_64 Virtual Machine\n");
+    term_puts(term, "\033[33mKernel:\033[0m  0.5.0-x86_64\n");
+    term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
+    term_puts(term, "\033[33mShell:\033[0m   vsh 1.0\n");
+    term_puts(term, "\033[33mMemory:\033[0m  128 MB kernel heap\n");
+    term_puts(term, "\033[33mCPU:\033[0m     x86_64 (Limine boot)\n");
+    term_puts(term, "\033[33mGPU:\033[0m     Limine framebuffer\n");
+#else
     term_puts(term, "\033[33mHost:\033[0m    QEMU ARM Virtual Machine\n");
     term_puts(term, "\033[33mKernel:\033[0m  0.5.0-arm64\n");
     term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
@@ -624,6 +637,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "\033[33mMemory:\033[0m  12 MB / 252 MB\n");
     term_puts(term, "\033[33mCPU:\033[0m     ARM Cortex-A72 (max)\n");
     term_puts(term, "\033[33mGPU:\033[0m     QEMU ramfb 1024x768\n");
+#endif
   } else if (str_starts_with(cmd, "exit")) {
     term_puts(term, "\033[33mGoodbye!\033[0m\n");
   } else if (str_starts_with(cmd, "play ")) {
@@ -774,7 +788,11 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     } else if (str_starts_with(topic, "cpp") || str_starts_with(topic, "c++")) {
       term_puts(term, "\033[1;36mCPP(1) - C++ Cross-Compilation\033[0m\n\n");
       term_puts(term, "Cross-compile C++ for OS next stage using:\n");
+#ifdef ARCH_X86_64
+      term_puts(term, "  x86_64-none-elf-g++ -nostdlib -ffreestanding\n");
+#else
       term_puts(term, "  aarch64-none-elf-g++ -nostdlib -ffreestanding\n");
+#endif
     } else {
       term_puts(term, "man: No manual entry for ");
       term_puts(term, topic);
@@ -793,14 +811,23 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   } else if (str_starts_with(cmd, "cpp ") || str_starts_with(cmd, "g++ ")) {
     term_puts(term, "\033[33mC++ Cross-Compiler\033[0m\n");
     term_puts(term, "Cross-compile with:\n");
+#ifdef ARCH_X86_64
+    term_puts(term,
+              "  x86_64-none-elf-g++ -nostdlib -ffreestanding <file.cpp>\n");
+#else
     term_puts(term,
               "  aarch64-none-elf-g++ -nostdlib -ffreestanding <file.cpp>\n");
+#endif
   } else if (str_starts_with(cmd, "languages") ||
              str_starts_with(cmd, "lang")) {
     term_puts(term, "\033[1;36mSupported Languages:\033[0m\n");
     term_puts(term, "  \033[32mNanoLang\033[0m - vendor/nanolang/bin/nanoc\n");
     term_puts(term, "  \033[32mMicroPython\033[0m - vendor/micropython/\n");
+#ifdef ARCH_X86_64
+    term_puts(term, "  \033[32mC++\033[0m - x86_64-none-elf-g++\n");
+#else
     term_puts(term, "  \033[32mC++\033[0m - aarch64-none-elf-g++\n");
+#endif
     term_puts(term, "\nUse 'man <lang>' for details.\n");
   } else if (str_starts_with(cmd, "history")) {
     term_puts(term, "\033[1;36mCommand History:\033[0m\n");

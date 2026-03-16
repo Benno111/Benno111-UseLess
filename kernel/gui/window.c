@@ -1905,8 +1905,13 @@ static void draw_window(struct window *win) {
     /* System info box */
     gui_draw_rect(content_x + 20, yy, content_w - 40, 80, 0x252535);
     yy += 10;
+#ifdef ARCH_X86_64
+    gui_draw_string(content_x + 30, yy, "Architecture:  x86_64", 0xCDD6F4,
+                    0x252535);
+#else
     gui_draw_string(content_x + 30, yy, "Architecture:  ARM64", 0xCDD6F4,
                     0x252535);
+#endif
     yy += 18;
     gui_draw_string(content_x + 30, yy, "Kernel:        Vib Kernel 0.5",
                     0xCDD6F4, 0x252535);
@@ -2353,10 +2358,15 @@ static void draw_window(struct window *win) {
       gui_draw_line(x1, y1, x2, y2, 0x303030);
     }
 
+    /* Get time source appropriate for the current architecture. */
+#ifdef ARCH_X86_64
+    uint64_t secs = 12 * 3600 + 34 * 60;
+#else
     /* Get time from PL031 RTC at 0x09010000 (QEMU virt) */
     /* This provides Unix timestamp (seconds since 1970) */
     volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
     uint64_t secs = *pl031_data;
+#endif
 
     /* Apply timezone offset (e.g. -5 for EST) */
     /* Default to UTC for now, or maybe -5 for user */
@@ -2515,9 +2525,15 @@ static void draw_menu_bar(void) {
 
   /* Clock on right - compute from PL031 RTC */
   {
+    uint64_t secs;
+#ifdef ARCH_X86_64
+    /* x86_64 bring-up path does not use the ARM PL031 MMIO RTC. */
+    secs = 12 * 3600 + 34 * 60;
+#else
     /* Read PL031 RTC at 0x09010000 */
     volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
-    uint64_t secs = *pl031_data;
+    secs = *pl031_data;
+#endif
 
     /* Timezone offset */
     int tz_offset = -5;
@@ -3258,6 +3274,10 @@ static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
 /* Draw cursor directly to backbuffer - no save/restore needed since we redraw
  * every frame */
 void gui_draw_cursor(void) {
+#ifdef ARCH_X86_64
+  /* Mouse input is not wired up yet on the x86_64 bring-up path. */
+  return;
+#else
   extern void mouse_get_position(int *x, int *y);
   int cx, cy;
   mouse_get_position(&cx, &cy);
@@ -3288,6 +3308,7 @@ void gui_draw_cursor(void) {
       }
     }
   }
+#endif
 }
 
 void gui_move_mouse(int dx, int dy) {

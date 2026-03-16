@@ -87,21 +87,35 @@ static int kapi_get_key(void) {
 }
 
 static void kapi_mouse_get_pos(int *x, int *y) {
+#ifdef ARCH_X86_64
+    if (x) *x = 0;
+    if (y) *y = 0;
+#else
     mouse_get_position(x, y);
+#endif
 }
 
 static uint8_t kapi_mouse_get_buttons(void) {
+#ifdef ARCH_X86_64
+    return 0;
+#else
     return (uint8_t)mouse_get_buttons();
+#endif
 }
 
 static int last_mouse_x = 0, last_mouse_y = 0;
 static void kapi_mouse_get_delta(int *dx, int *dy) {
+#ifdef ARCH_X86_64
+    if (dx) *dx = 0;
+    if (dy) *dy = 0;
+#else
     int x, y;
     mouse_get_position(&x, &y);
     *dx = x - last_mouse_x;
     *dy = y - last_mouse_y;
     last_mouse_x = x;
     last_mouse_y = y;
+#endif
 }
 
 /* Sound implementation - forwards to Intel HDA driver */
@@ -792,8 +806,13 @@ static int sysmon_app_main(kapi_t *api, int argc, char **argv) {
     api->puts("SYSTEM INFO\n");
     api->puts("-----------\n");
     api->puts("OS:       OS next stage v0.5.0\n");
+#ifdef ARCH_X86_64
+    api->puts("Arch:     x86_64\n");
+    api->puts("Platform: Limine / PC-compatible VM\n\n");
+#else
     api->puts("Arch:     ARM64 (AArch64)\n");
     api->puts("Platform: QEMU virt\n\n");
+#endif
     
     api->puts("DISPLAY\n");
     api->puts("-------\n");

@@ -104,33 +104,73 @@ static void print_banner(void) {
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void) {
   printk(KERN_INFO "[INIT] x86_64 bring-up mode\n");
-  printk(KERN_INFO "  Using Limine framebuffer and safe startup path\n");
+  printk(KERN_INFO "  Using Limine framebuffer and minimal GUI path\n");
 
   extern int fb_init(void);
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
-  extern void fb_show_x86_64_bringup_screen(void);
+  extern uint32_t fb_get_pitch(void);
+  extern void kmalloc_init(void);
+  extern int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
+                      uint32_t pitch);
+  extern struct window *gui_create_window(const char *title, int x, int y,
+                                          int w, int h);
+  extern void gui_focus_window(struct window *win);
+  extern void gui_compose(void);
+  extern struct terminal *term_create(int x, int y, int cols, int rows);
+  extern void term_set_active(struct terminal * term);
+  extern void gui_set_window_userdata(struct window *win, void *data);
+  extern void gui_handle_key_event(int key);
 
   uint32_t *fb_buffer = 0;
   uint32_t fb_width = 0;
   uint32_t fb_height = 0;
+  uint32_t fb_pitch = 0;
+  struct window *term_window = 0;
 
   if (fb_init() != 0) {
     panic("Failed to initialize framebuffer on x86_64!");
   }
 
   fb_get_info(&fb_buffer, &fb_width, &fb_height);
+  fb_pitch = fb_get_pitch();
 
   if (!fb_buffer || !fb_width || !fb_height) {
     panic("No usable framebuffer available on x86_64!");
   }
 
+  kmalloc_init();
+
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
-  fb_show_x86_64_bringup_screen();
-  printk(KERN_INFO "x86_64 bring-up screen displayed.\n");
+  if (gui_init(fb_buffer, fb_width, fb_height,
+               fb_pitch ? fb_pitch : (fb_width * 4)) != 0) {
+    panic("Failed to initialize x86_64 GUI bring-up!");
+  }
+
+  term_window = gui_create_window("Terminal", 50, 50, 700, 420);
+  if (term_window) {
+    struct terminal *term = term_create(52, 80, 80, 20);
+    if (term) {
+      gui_set_window_userdata(term_window, term);
+      term_set_active(term);
+    }
+    gui_focus_window(term_window);
+  }
+
+  printk(KERN_INFO "x86_64 minimal GUI ready.\n");
+  gui_compose();
 
   {
     while (1) {
-      arch_idle();
+      extern int uart_getc_nonblock(void);
+      int c = uart_getc_nonblock();
+      if (c >= 0) {
+        gui_handle_key_event(c);
+      }
+
+      gui_compose();
+
+      for (volatile int i = 0; i < 50000; i++) {
+      }
     }
   }
 }
