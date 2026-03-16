@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up build environment
         run: |
@@ -106,16 +106,8 @@ jobs:
 
       - name: Package full OS files
         run: |
-          tar -czf os-next-stage-files.tar.gz \
-            --exclude=.git \
-            --exclude=.github \
-            --exclude=build \
-            --exclude=image \
-            --exclude=release \
-            --exclude=vibos-arm64.tar.gz \
-            --exclude=vibos-x86_64.tar.gz \
-            --exclude=os-next-stage-files.tar.gz \
-            .
+          git ls-files -z \
+            | tar --null -czf os-next-stage-files.tar.gz --files-from=-
 
       - name: Extract version
         id: get_version
