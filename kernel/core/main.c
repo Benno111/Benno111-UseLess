@@ -124,7 +124,7 @@ static void start_x86_64_bringup(void) {
   extern int vfs_mount(const char *source, const char *target,
                        const char *filesystemtype, unsigned long mountflags,
                        const void *data);
-  extern int vfs_init(void);
+  extern void vfs_init(void);
   extern int ramfs_init(void);
   extern void *limine_get_rsdp(void);
   extern void acpi_init(void *rsdp_ptr);
