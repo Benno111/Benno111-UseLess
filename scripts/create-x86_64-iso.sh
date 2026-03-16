@@ -83,11 +83,19 @@ xorriso -as mkisofs \
 "$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
 
 log "Validating ISO contents..."
-xorriso -indev "$ISO_PATH" -find /boot/kernel.elf -quit >/dev/null 2>&1
-xorriso -indev "$ISO_PATH" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
-xorriso -indev "$ISO_PATH" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
-xorriso -indev "$ISO_PATH" -find /EFI/BOOT/BOOTX64.EFI -quit >/dev/null 2>&1
-xorriso -indev "$ISO_PATH" -find /limine.conf -quit >/dev/null 2>&1
+ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
+xorriso -indev "$ISO_PATH" -find / -print > "$ISO_CONTENTS_FILE"
+
+grep -Fxq "/boot/kernel.elf" "$ISO_CONTENTS_FILE"
+grep -Fxq "/boot/limine-bios-cd.bin" "$ISO_CONTENTS_FILE"
+grep -Fxq "/boot/limine-uefi-cd.bin" "$ISO_CONTENTS_FILE"
+grep -Fxq "/boot/limine-bios.sys" "$ISO_CONTENTS_FILE"
+grep -Fxq "/EFI" "$ISO_CONTENTS_FILE"
+grep -Fxq "/EFI/BOOT" "$ISO_CONTENTS_FILE"
+grep -Fxq "/EFI/BOOT/BOOTX64.EFI" "$ISO_CONTENTS_FILE"
+grep -Fxq "/limine.conf" "$ISO_CONTENTS_FILE"
+grep -Fxq "/boot/limine.conf" "$ISO_CONTENTS_FILE"
+grep -Fxq "/EFI/BOOT/limine.conf" "$ISO_CONTENTS_FILE"
 
 log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
