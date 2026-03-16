@@ -7,14 +7,6 @@ Set-Location $repoRoot
 
 $x64Iso = Join-Path $repoRoot "image\vibos-x86_64.iso"
 $arm64Kernel = Join-Path $repoRoot "build\kernel\unixos.elf"
-$x64InputArgs = @(
-    "-usb",
-    "-device", "usb-kbd",
-    "-device", "usb-mouse",
-    "-device", "i8042",
-    "-device", "ps2-keyboard",
-    "-device", "ps2-mouse"
-)
 
 function Write-Header {
     Write-Host ""
@@ -45,46 +37,13 @@ function Convert-ToWslPath {
     throw "Could not convert Windows path to WSL path: $WindowsPath"
 }
 
-function Resolve-QemuCommand {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    $cmdExe = Get-Command "$Name.exe" -ErrorAction SilentlyContinue
-    if ($cmdExe) {
-        return $cmdExe.Source
-    }
-
-    $candidates = @(
-        (Join-Path $env:ProgramFiles "qemu\$Name.exe"),
-        (Join-Path ${env:ProgramFiles(x86)} "qemu\$Name.exe"),
-        (Join-Path $env:LOCALAPPDATA "Programs\qemu\$Name.exe")
-    ) | Where-Object { $_ }
-
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
-        }
-    }
-
-    return $null
-}
-
 function Resolve-LauncherMode {
-    $nativeQemuX64 = Resolve-QemuCommand "qemu-system-x86_64"
-    $nativeQemuArm64 = Resolve-QemuCommand "qemu-system-aarch64"
+    $nativeQemuX64 = Get-Command qemu-system-x86_64 -ErrorAction SilentlyContinue
+    $nativeQemuArm64 = Get-Command qemu-system-aarch64 -ErrorAction SilentlyContinue
 
     if ($nativeQemuX64 -or $nativeQemuArm64) {
         return @{
             Type = "native"
-            QemuX64 = $nativeQemuX64
-            QemuArm64 = $nativeQemuArm64
         }
     }
 
@@ -188,11 +147,8 @@ function Start-X64Uefi {
     Require-File $x64Iso "Missing x86_64 ISO: $x64Iso. Build the ISO first."
 
     if ($Launcher.Type -eq "native") {
-        if (-not $Launcher.QemuX64) {
-            throw "Could not find native qemu-system-x86_64."
-        }
         $fw = Resolve-NativeUefiFirmware
-        $args = @(
+        Invoke-NativeCommand "qemu-system-x86_64" @(
             "-M", "q35",
             "-cpu", "qemu64",
             "-m", "4G",
@@ -200,14 +156,13 @@ function Start-X64Uefi {
             "-serial", "mon:stdio",
             "-bios", $fw,
             "-cdrom", $x64Iso
-        ) + $x64InputArgs
-        Invoke-NativeCommand $Launcher.QemuX64 $args
+        )
         return
     }
 
     $wslIso = Convert-ToWslPath $x64Iso
     $fw = Resolve-WslUefiFirmware $Launcher.Command
-    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -bios '$fw' -cdrom '$wslIso' -usb -device usb-kbd -device usb-mouse -device i8042 -device ps2-keyboard -device ps2-mouse"
+    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -bios '$fw' -cdrom '$wslIso'"
 }
 
 function Start-X64Bios {
@@ -219,23 +174,19 @@ function Start-X64Bios {
     Require-File $x64Iso "Missing x86_64 ISO: $x64Iso. Build the ISO first."
 
     if ($Launcher.Type -eq "native") {
-        if (-not $Launcher.QemuX64) {
-            throw "Could not find native qemu-system-x86_64."
-        }
-        $args = @(
+        Invoke-NativeCommand "qemu-system-x86_64" @(
             "-M", "q35",
             "-cpu", "qemu64",
             "-m", "4G",
             "-nographic",
             "-serial", "mon:stdio",
             "-cdrom", $x64Iso
-        ) + $x64InputArgs
-        Invoke-NativeCommand $Launcher.QemuX64 $args
+        )
         return
     }
 
     $wslIso = Convert-ToWslPath $x64Iso
-    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -cdrom '$wslIso' -usb -device usb-kbd -device usb-mouse -device i8042 -device ps2-keyboard -device ps2-mouse"
+    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -cdrom '$wslIso'"
 }
 
 function Start-Arm64Gui {
@@ -247,10 +198,7 @@ function Start-Arm64Gui {
     Require-File $arm64Kernel "Missing ARM64 kernel: $arm64Kernel. Build the ARM64 kernel first."
 
     if ($Launcher.Type -eq "native") {
-        if (-not $Launcher.QemuArm64) {
-            throw "Could not find native qemu-system-aarch64."
-        }
-        Invoke-NativeCommand $Launcher.QemuArm64 @(
+        Invoke-NativeCommand "qemu-system-aarch64" @(
             "-M", "virt,gic-version=3",
             "-cpu", "max",
             "-m", "512M",
@@ -279,10 +227,7 @@ function Start-Arm64Text {
     Require-File $arm64Kernel "Missing ARM64 kernel: $arm64Kernel. Build the ARM64 kernel first."
 
     if ($Launcher.Type -eq "native") {
-        if (-not $Launcher.QemuArm64) {
-            throw "Could not find native qemu-system-aarch64."
-        }
-        Invoke-NativeCommand $Launcher.QemuArm64 @(
+        Invoke-NativeCommand "qemu-system-aarch64" @(
             "-M", "virt,gic-version=3",
             "-cpu", "max",
             "-m", "4G",
@@ -311,3 +256,5 @@ switch ($choice.ToUpperInvariant()) {
 }
 
 pause
+
+
