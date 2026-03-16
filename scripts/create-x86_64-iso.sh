@@ -84,18 +84,26 @@ xorriso -as mkisofs \
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
-xorriso -indev "$ISO_PATH" -find / -print > "$ISO_CONTENTS_FILE"
+xorriso -indev "$ISO_PATH" -find / -type f -exec lsdl > "$ISO_CONTENTS_FILE"
 
-grep -Fxq "/boot/kernel.elf" "$ISO_CONTENTS_FILE"
-grep -Fxq "/boot/limine-bios-cd.bin" "$ISO_CONTENTS_FILE"
-grep -Fxq "/boot/limine-uefi-cd.bin" "$ISO_CONTENTS_FILE"
-grep -Fxq "/boot/limine-bios.sys" "$ISO_CONTENTS_FILE"
-grep -Fxq "/EFI" "$ISO_CONTENTS_FILE"
-grep -Fxq "/EFI/BOOT" "$ISO_CONTENTS_FILE"
-grep -Fxq "/EFI/BOOT/BOOTX64.EFI" "$ISO_CONTENTS_FILE"
-grep -Fxq "/limine.conf" "$ISO_CONTENTS_FILE"
-grep -Fxq "/boot/limine.conf" "$ISO_CONTENTS_FILE"
-grep -Fxq "/EFI/BOOT/limine.conf" "$ISO_CONTENTS_FILE"
+require_iso_path() {
+    local iso_path="$1"
+    local output
+    output=$(xorriso -indev "$ISO_PATH" -find "$iso_path" -exec lsdl 2>/dev/null || true)
+    if [ -z "$output" ]; then
+        echo "[ERROR] Missing required ISO path: $iso_path" >&2
+        exit 1
+    fi
+}
+
+require_iso_path "/boot/kernel.elf"
+require_iso_path "/boot/limine-bios-cd.bin"
+require_iso_path "/boot/limine-uefi-cd.bin"
+require_iso_path "/boot/limine-bios.sys"
+require_iso_path "/EFI/BOOT/BOOTX64.EFI"
+require_iso_path "/limine.conf"
+require_iso_path "/boot/limine.conf"
+require_iso_path "/EFI/BOOT/limine.conf"
 
 log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
