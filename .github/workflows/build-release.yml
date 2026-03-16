@@ -70,6 +70,30 @@ jobs:
 
           tar -czf vibos-arm64.tar.gz -C release/arm64 .
 
+      - name: Build x86 kernel
+        run: |
+          make -f Makefile.multiarch ARCH=x86 clean
+          make -f Makefile.multiarch ARCH=x86 kernel
+
+      - name: Package x86 release bundle
+        run: |
+          mkdir -p release/x86
+          cp build/x86/kernel/vibos-x86.elf release/x86/vibos-x86.elf
+          cat > release/x86/BOOTING.md << 'EOF'
+          x86 boot files included in this bundle:
+          - vibos-x86.elf: x86 kernel binary
+
+          Recommended boot path:
+          1. Use this kernel binary for emulator or bootloader integration work.
+          2. If you later add BIOS boot media generation for x86 release builds, include that image alongside this kernel.
+          EOF
+
+          cd release/x86
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          cd ../..
+
+          tar -czf vibos-x86.tar.gz -C release/x86 .
+
       - name: Build x86_64 ISO
         run: |
           make -f Makefile.multiarch ARCH=x86_64 clean
@@ -119,30 +143,6 @@ jobs:
           cd ../..
 
           tar -czf vibos-x86_64.tar.gz -C release/x86_64 .
-
-      - name: Build x86 kernel
-        run: |
-          make -f Makefile.multiarch ARCH=x86 clean
-          make -f Makefile.multiarch ARCH=x86 kernel
-
-      - name: Package x86 release bundle
-        run: |
-          mkdir -p release/x86
-          cp build/x86/kernel/vibos-x86.elf release/x86/vibos-x86.elf
-          cat > release/x86/BOOTING.md << 'EOF'
-          x86 boot files included in this bundle:
-          - vibos-x86.elf: x86 kernel binary
-
-          Recommended boot path:
-          1. Use this kernel binary for emulator or bootloader integration work.
-          2. If you later add BIOS boot media generation for x86 release builds, include that image alongside this kernel.
-          EOF
-
-          cd release/x86
-          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-          cd ../..
-
-          tar -czf vibos-x86.tar.gz -C release/x86 .
 
       - name: Package full OS files
         run: |
