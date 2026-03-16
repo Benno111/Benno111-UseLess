@@ -4116,8 +4116,10 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
     windows[i].id = 0;
   }
 
-  /* Initialize desktop manager */
+  /* Initialize desktop manager only after the filesystem stack is ready. */
+#ifndef ARCH_X86_64
   desktop_manager_init();
+#endif
 
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
 

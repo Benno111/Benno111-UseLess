@@ -47,6 +47,9 @@ static struct block_header *free_list;
 static size_t heap_total;
 static size_t heap_used;
 static bool heap_initialized = false;
+#ifdef ARCH_X86_64
+static uint8_t x86_64_heap_storage[HEAP_SIZE] __attribute__((aligned(4096)));
+#endif
 
 /* Simple spinlock for heap operations */
 static volatile int heap_lock = 0;
@@ -86,7 +89,11 @@ static inline struct block_header *data_to_block(void *ptr) {
 void kmalloc_init(void) {
   /* Use fixed memory region - no PMM dependency */
   /* This is like how VibeOS does it - simple and reliable */
+#ifdef ARCH_X86_64
+  heap_start = x86_64_heap_storage;
+#else
   heap_start = (uint8_t *)HEAP_BASE;
+#endif
   heap_end = heap_start + HEAP_SIZE;
   heap_total = HEAP_SIZE;
   heap_used = 0;
