@@ -86,6 +86,19 @@ make userspace
 make image
 ```
 
+## x86_64 Build
+
+```bash
+# Build x86_64 kernel and UEFI image
+make x86_64
+
+# Build only the x86_64 kernel
+make x86_64-kernel
+
+# Create the x86_64 UEFI image
+make x86_64-image
+```
+
 ## Run in QEMU
 
 ```bash
@@ -100,6 +113,12 @@ make qemu
 
 # Debug mode (GDB on port 1234)
 make qemu-debug
+
+# x86_64 in QEMU
+make x86_64-qemu
+
+# x86_64 with GDB server
+make x86_64-qemu-debug
 ```
 
 ## Troubleshooting

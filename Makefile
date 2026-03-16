@@ -85,7 +85,11 @@ QEMU_FLAGS := -M $(QEMU_MACHINE) -cpu $(QEMU_CPU) -m $(QEMU_MEMORY) \
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel drivers libc userspace runtimes image qemu qemu-debug test help
+.PHONY: all clean kernel drivers libc userspace runtimes image qemu qemu-debug test help \
+        x86_64 x86_64-kernel x86_64-image x86_64-qemu x86_64-qemu-debug
+
+MULTIARCH_MAKEFILE := Makefile.multiarch
+X86_64_ARCH := x86_64
 
 all: kernel drivers libc userspace runtimes image
 	@echo "=========================================="
@@ -111,6 +115,13 @@ help:
 	@echo "  qemu         - Run in QEMU emulator"
 	@echo "  qemu-debug   - Run with GDB server"
 	@echo "  test         - Run test suite"
+	@echo ""
+	@echo "x86_64 targets:"
+	@echo "  x86_64            - Build x86_64 kernel and image"
+	@echo "  x86_64-kernel     - Build x86_64 kernel only"
+	@echo "  x86_64-image      - Create x86_64 UEFI image"
+	@echo "  x86_64-qemu       - Run x86_64 build in QEMU"
+	@echo "  x86_64-qemu-debug - Run x86_64 build with GDB server"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  clean        - Remove build artifacts"
@@ -316,6 +327,25 @@ run-gpu: kernel
 		-device intel-hda -device hda-duplex,audiodev=snd0 \
 		-serial stdio \
 		-kernel $(KERNEL_BINARY)
+
+# ============================================================================
+# x86_64 Convenience Targets
+# ============================================================================
+
+x86_64:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) all
+
+x86_64-kernel:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) kernel
+
+x86_64-image:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) image
+
+x86_64-qemu:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu
+
+x86_64-qemu-debug:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu-debug
 
 # ============================================================================
 # Toolchain Setup
