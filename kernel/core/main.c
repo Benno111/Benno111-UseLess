@@ -28,6 +28,10 @@ extern char __kernel_end[];
 extern char __bss_start[];
 extern char __bss_end[];
 
+/* Forward declarations for GUI bring-up helpers used across this file. */
+struct window;
+struct terminal;
+
 /* Forward declarations */
 static void print_banner(void);
 static void init_subsystems(void *dtb);
