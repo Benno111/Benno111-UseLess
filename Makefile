@@ -24,6 +24,12 @@ SYSROOT := $(BUILD_DIR)/sysroot
 # Detect OS
 UNAME_S := $(shell uname -s)
 
+# Use parallel builds by default unless the caller already set -j/--jobs.
+ifeq ($(filter -j% --jobs%,$(MAKEFLAGS)),)
+    JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    MAKEFLAGS += -j$(JOBS)
+endif
+
 # Toolchain - Support both macOS (Homebrew) and Linux (system/apt)
 ifeq ($(UNAME_S),Darwin)
     # macOS with Homebrew
@@ -49,6 +55,11 @@ else
     AR := llvm-ar
     OBJCOPY := llvm-objcopy
     OBJDUMP := llvm-objdump
+endif
+
+CCACHE := $(shell command -v ccache 2>/dev/null)
+ifneq ($(CCACHE),)
+    CC := $(CCACHE) $(CC)
 endif
 
 # Cross-compilation target
