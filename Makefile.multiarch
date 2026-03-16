@@ -41,7 +41,7 @@ else ifeq ($(ARCH),x86_64)
     QEMU := qemu-system-x86_64
     QEMU_MACHINE := q35
     QEMU_CPU := qemu64
-    LINKER_SCRIPT := $(KERNEL_DIR)/linker_x86_64.ld
+    LINKER_SCRIPT := $(KERNEL_DIR)/linker_x86_64_limine.ld
     KERNEL_ENTRY := _start
 else ifeq ($(ARCH),x86)
     CROSS_TARGET := --target=i686-unknown-none-elf
@@ -130,6 +130,10 @@ KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sandbox -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/arch/$(ARCH) -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_ASM := $(shell find $(KERNEL_DIR)/arch/$(ARCH) -name '*.S' 2>/dev/null)
 # Assembly files are now architecture-specific only
+ifeq ($(ARCH),x86_64)
+    # The Limine build path uses limine_boot.c as the x86_64 entry point.
+    KERNEL_SOURCES_ASM := $(filter-out $(KERNEL_DIR)/arch/x86_64/boot.S,$(KERNEL_SOURCES_ASM))
+endif
 
 # Driver sources (exclude uart for x86_64/x86 as they have arch-specific versions)
 DRIVER_SOURCES := $(shell find $(DRIVERS_DIR) -name '*.c' 2>/dev/null)
