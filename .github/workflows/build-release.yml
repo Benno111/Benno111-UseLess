@@ -75,11 +75,26 @@ jobs:
           make -f Makefile.multiarch ARCH=x86_64 clean
           make -f Makefile.multiarch ARCH=x86_64 image
 
+      - name: Verify x86_64 ISO boot contents
+        run: |
+          ISO=image/vibos-x86_64.iso
+          xorriso -indev "$ISO" -find /boot/kernel.elf -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-bios.sys -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /EFI/BOOT/BOOTX64.EFI -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /limine.conf -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine.conf -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /EFI/BOOT/limine.conf -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find / -type f -exec lsdl >/tmp/x86_64-iso-files.txt
+          cat /tmp/x86_64-iso-files.txt
+
       - name: Package x86_64 release bundle
         run: |
           mkdir -p release/x86_64/boot-support
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
           cp image/vibos-x86_64.iso release/x86_64/vibos-x86_64.iso
+          cp /tmp/x86_64-iso-files.txt release/x86_64/ISO_CONTENTS.txt
           cp vib-os-x86_64/limine.conf release/x86_64/limine.conf
           cp vib-os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
           cp vib-os-x86_64/limine/bin/limine-bios.sys release/x86_64/boot-support/limine-bios.sys
@@ -89,6 +104,7 @@ jobs:
           x86_64 boot files included in this bundle:
           - vibos-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
           - vibos-x86_64.elf: kernel binary
+          - ISO_CONTENTS.txt: manifest of files verified inside the ISO
           - limine.conf: Limine boot menu configuration
           - boot-support/: Limine BIOS and UEFI boot files used to build the ISO
 
@@ -170,6 +186,7 @@ jobs:
           - `vibos-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
             - `vibos-x86_64.elf` - Kernel binary
             - `vibos-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
+            - `ISO_CONTENTS.txt` - Verified manifest of boot files inside the ISO
             - `limine.conf` - Boot menu configuration
             - `boot-support/` - Limine BIOS and UEFI boot files used by the ISO
             - `BOOTING.md` - Boot instructions for the bundle
