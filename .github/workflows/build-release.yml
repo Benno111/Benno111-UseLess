@@ -65,7 +65,7 @@ jobs:
           EOF
 
           cd release/arm64
-          sha256sum * > SHA256SUMS
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cd ../..
 
           tar -czf vibos-arm64.tar.gz -C release/arm64 .
@@ -99,7 +99,7 @@ jobs:
           EOF
 
           cd release/x86_64
-          sha256sum * > SHA256SUMS
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cd ../..
 
           tar -czf vibos-x86_64.tar.gz -C release/x86_64 .
