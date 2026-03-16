@@ -263,11 +263,11 @@ $(KERNEL_BINARY): $(ALL_OBJECTS)
 image: kernel
 	@echo "[IMAGE] Creating $(ARCH) boot image..."
 ifeq ($(ARCH),arm64)
-	@./scripts/create-boot-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@bash ./scripts/create-boot-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 else ifeq ($(ARCH),x86_64)
-	@./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 else ifeq ($(ARCH),x86)
-	@./scripts/create-bios-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@bash ./scripts/create-bios-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 endif
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/vibos-$(ARCH).iso"
