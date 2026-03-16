@@ -51,6 +51,18 @@ jobs:
           if [ -f image/unixos.img ]; then
             cp image/unixos.img release/arm64/vibos-arm64.img
           fi
+          cp boot/grub/grub.cfg release/arm64/grub.cfg
+          cp BUILD_LINUX.md release/arm64/BUILD_LINUX.md
+          cat > release/arm64/BOOTING.md << 'EOF'
+          ARM64 boot files included in this bundle:
+          - vibos-arm64.elf: kernel binary
+          - vibos-arm64.img: bootable disk image, if present
+          - grub.cfg: boot menu configuration used by the project
+
+          Recommended boot path:
+          1. Prefer vibos-arm64.img for QEMU, UTM, or raw flashing to media.
+          2. If you are debugging the kernel manually, use vibos-arm64.elf together with the included config as reference.
+          EOF
 
           cd release/arm64
           sha256sum * > SHA256SUMS
@@ -65,15 +77,45 @@ jobs:
 
       - name: Package x86_64 release bundle
         run: |
-          mkdir -p release/x86_64
+          mkdir -p release/x86_64/boot-support
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
           cp image/vibos-x86_64.iso release/x86_64/vibos-x86_64.iso
+          cp vib-os-x86_64/limine.conf release/x86_64/limine.conf
+          cp vib-os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
+          cp vib-os-x86_64/limine/bin/limine-bios.sys release/x86_64/boot-support/limine-bios.sys
+          cp vib-os-x86_64/limine/bin/limine-bios-cd.bin release/x86_64/boot-support/limine-bios-cd.bin
+          cp vib-os-x86_64/limine/bin/limine-uefi-cd.bin release/x86_64/boot-support/limine-uefi-cd.bin
+          cat > release/x86_64/BOOTING.md << 'EOF'
+          x86_64 boot files included in this bundle:
+          - vibos-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
+          - vibos-x86_64.elf: kernel binary
+          - limine.conf: Limine boot menu configuration
+          - boot-support/: Limine BIOS and UEFI boot files used to build the ISO
+
+          Recommended boot path:
+          1. Use vibos-x86_64.iso directly in a VM.
+          2. Use Rufus in ISO mode to write vibos-x86_64.iso to USB.
+          3. Use the boot-support files only if you are rebuilding or debugging the boot media layout.
+          EOF
 
           cd release/x86_64
           sha256sum * > SHA256SUMS
           cd ../..
 
           tar -czf vibos-x86_64.tar.gz -C release/x86_64 .
+
+      - name: Package full OS files
+        run: |
+          tar -czf os-next-stage-files.tar.gz \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=build \
+            --exclude=image \
+            --exclude=release \
+            --exclude=vibos-arm64.tar.gz \
+            --exclude=vibos-x86_64.tar.gz \
+            --exclude=os-next-stage-files.tar.gz \
+            .
 
       - name: Extract version
         id: get_version
@@ -101,16 +143,25 @@ jobs:
           ## Downloads
 
           ### ARM64
-          - `vibos-arm64.tar.gz` - ARM64 kernel and bootable image
+          - `vibos-arm64.tar.gz` - ARM64 kernel and boot bundle
             - `vibos-arm64.elf` - Kernel binary
             - `vibos-arm64.img` - Bootable SD card image (if available)
+            - `grub.cfg` - Boot menu configuration
+            - `BOOTING.md` - Boot instructions for the bundle
             - `SHA256SUMS` - Checksums for verification
 
           ### x86_64
           - `vibos-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
             - `vibos-x86_64.elf` - Kernel binary
             - `vibos-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
+            - `limine.conf` - Boot menu configuration
+            - `boot-support/` - Limine BIOS and UEFI boot files used by the ISO
+            - `BOOTING.md` - Boot instructions for the bundle
             - `SHA256SUMS` - Checksums for verification
+
+          ### Full OS Files
+          - `os-next-stage-files.tar.gz` - Full project files snapshot for the OS source tree
+            - Kernel, drivers, libc, runtimes, userspace, boot files, scripts, and documentation
 
           ## Quick Start
 
@@ -166,5 +217,6 @@ jobs:
           files: |
             vibos-arm64.tar.gz
             vibos-x86_64.tar.gz
+            os-next-stage-files.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
