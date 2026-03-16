@@ -18,6 +18,15 @@
 struct window *gui_create_file_manager(int x, int y);
 void gui_open_notepad(const char *path);
 
+/* Forward declarations for drawing helpers used before their definitions. */
+void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
+void gui_draw_rect_outline(int x, int y, int w, int h, uint32_t color,
+                           int thickness);
+void gui_draw_line(int x0, int y0, int x1, int y1, uint32_t color);
+void gui_draw_circle(int cx, int cy, int r, uint32_t color, bool filled);
+void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
+void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
+
 /* Terminal functions from terminal.c */
 struct terminal;
 extern struct terminal *term_get_active(void);
@@ -2948,7 +2957,8 @@ static void draw_icon_web(int x, int y, int size) {
 
 /* Draw dock with hover animations - using vector icons */
 static void draw_dock(void) {
-  int mouse_active = (mouse_y >= primary_display.height - DOCK_HEIGHT - 40);
+  int mouse_active =
+      (mouse_y >= (int)primary_display.height - DOCK_HEIGHT - 40);
 
   /* 1. Calculate target sizes for all icons based on magnification */
   int icon_sizes[NUM_DOCK_ICONS];
@@ -3006,7 +3016,6 @@ static void draw_dock(void) {
     if (i < NUM_DOCK_ICONS - 1)
       total_content_w += DOCK_PADDING;
   }
-  int dock_content_w = total_content_w; /* Used by old code too */
   int dock_w = total_content_w + 32;    /* Padding */
   int dock_h = DOCK_HEIGHT - 12;
   int dock_x = (primary_display.width - dock_w) / 2;
