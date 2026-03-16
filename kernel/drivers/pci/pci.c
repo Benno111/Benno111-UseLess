@@ -6,6 +6,7 @@
 
 #include "drivers/pci.h"
 #include "drivers/intel_hda.h"
+#include "drivers/usb/usb.h"
 #include "printk.h"
 #include "types.h"
 
@@ -130,6 +131,7 @@ void pci_init(void) {
       uint32_t class_rev = pci_read32(0, slot, 0, PCI_CLASS_REV);
       pci_dev->class_code = (class_rev >> 24) & 0xFF;
       pci_dev->subclass = (class_rev >> 16) & 0xFF;
+      pci_dev->prog_if = (class_rev >> 8) & 0xFF;
 
       /* Read BAR0 */
       pci_dev->bar0 = pci_alloc_bar(0, slot, 0, PCI_BAR0);
@@ -155,6 +157,23 @@ void pci_init(void) {
       if (vendor == PCI_VENDOR_VIRTIO && device == PCI_DEVICE_VIRTIO_GPU) {
         printk("PCI: Found virtio-gpu device!\n");
         printk("PCI: virtio-gpu BAR0=0x%llx\n", pci_dev->bar0);
+      }
+
+      /* USB xHCI host controller */
+      if (pci_dev->class_code == 0x0C && pci_dev->subclass == 0x03 &&
+          pci_dev->prog_if == 0x30) {
+        printk("PCI: Found xHCI USB controller at 00:%02x.0\n", slot);
+        pci_enable_device(pci_dev);
+
+        if (pci_dev->bar0) {
+          printk("PCI: xHCI BAR0=0x%llx, IRQ=%d\n", pci_dev->bar0,
+                 pci_dev->irq);
+          if (xhci_init(pci_dev->bar0) != 0) {
+            printk("PCI: xHCI initialization failed for 00:%02x.0\n", slot);
+          }
+        } else {
+          printk("PCI: xHCI controller missing MMIO BAR0, skipping\n");
+        }
       }
     }
   }

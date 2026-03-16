@@ -49,6 +49,11 @@
 #define EV_REL 0x02
 #define EV_ABS 0x03
 
+/* Relative axis codes */
+#define REL_X 0x00
+#define REL_Y 0x01
+#define REL_WHEEL 0x08
+
 /* Absolute axis codes */
 #define ABS_X 0x00
 #define ABS_Y 0x01
@@ -57,6 +62,7 @@
 #define BTN_LEFT 0x110
 #define BTN_RIGHT 0x111
 #define BTN_MIDDLE 0x112
+#define BTN_TOUCH 0x14a
 
 /* Virtio input config */
 #define VIRTIO_INPUT_CFG_SELECT 0x100
@@ -119,6 +125,10 @@ static virtio_input_event_t event_bufs[QUEUE_SIZE] __attribute__((aligned(16)));
 static int mouse_x = 16384; /* Raw 0-32767 */
 static int mouse_y = 16384;
 static uint8_t mouse_buttons = 0;
+static int mouse_bounds_w = 1024;
+static int mouse_bounds_h = 768;
+static int mouse_scale = 2;
+static int mouse_has_absolute = 0;
 
 /* Keyboard state */
 static volatile uint32_t *kbd_base = 0;
@@ -246,7 +256,37 @@ static void mmio_write32(volatile uint32_t *addr, uint32_t val) {
 /* Find Virtio Tablet Device */
 /* ===================================================================== */
 
-static volatile uint32_t *find_virtio_tablet(void) {
+static int input_name_contains(const char *name, const char *needle) {
+  int i;
+  int j;
+
+  for (i = 0; name[i]; i++) {
+    for (j = 0; needle[j]; j++) {
+      char a = name[i + j];
+      char b = needle[j];
+
+      if (!a) {
+        return 0;
+      }
+      if (a >= 'A' && a <= 'Z') {
+        a = (char)(a - 'A' + 'a');
+      }
+      if (b >= 'A' && b <= 'Z') {
+        b = (char)(b - 'A' + 'a');
+      }
+      if (a != b) {
+        break;
+      }
+    }
+    if (!needle[j]) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static volatile uint32_t *find_virtio_pointer(void) {
   for (int i = 0; i < 32; i++) {
     volatile uint32_t *base =
         (volatile uint32_t *)(uintptr_t)(VIRTIO_MMIO_BASE +
@@ -275,8 +315,11 @@ static volatile uint32_t *find_virtio_tablet(void) {
 
     printk(KERN_INFO "MOUSE: Found input device: %s\n", name);
 
-    /* Look for "Tablet" */
-    if (name[0] == 'Q' && name[5] == 'V' && name[12] == 'T') {
+    if (input_name_contains(name, "tablet") ||
+        input_name_contains(name, "touchpad") ||
+        input_name_contains(name, "trackpad") ||
+        input_name_contains(name, "mouse") ||
+        input_name_contains(name, "pointer")) {
       return base;
     }
   }
@@ -304,10 +347,19 @@ void mouse_poll(void) {
 
     /* Process event */
     if (ev->type == EV_ABS) {
+      mouse_has_absolute = 1;
       if (ev->code == ABS_X) {
         mouse_x = ev->value;
       } else if (ev->code == ABS_Y) {
         mouse_y = ev->value;
+      }
+    } else if (ev->type == EV_REL) {
+      if (ev->code == REL_X) {
+        mouse_x += (int)ev->value * mouse_scale;
+      } else if (ev->code == REL_Y) {
+        mouse_y += (int)ev->value * mouse_scale;
+      } else if (ev->code == REL_WHEEL) {
+        /* Wheel support can be consumed later by the GUI. */
       }
     } else if (ev->type == EV_KEY) {
       int pressed = (ev->value != 0);
@@ -321,7 +373,43 @@ void mouse_poll(void) {
           mouse_buttons |= 2;
         else
           mouse_buttons &= ~2;
+      } else if (ev->code == BTN_MIDDLE) {
+        if (pressed)
+          mouse_buttons |= 4;
+        else
+          mouse_buttons &= ~4;
+      } else if (ev->code == BTN_TOUCH) {
+        if (pressed)
+          mouse_buttons |= 1;
+        else
+          mouse_buttons &= ~1;
       }
+    }
+
+    if (mouse_has_absolute) {
+      if (mouse_x < 0)
+        mouse_x = 0;
+      if (mouse_y < 0)
+        mouse_y = 0;
+      if (mouse_x > 32767)
+        mouse_x = 32767;
+      if (mouse_y > 32767)
+        mouse_y = 32767;
+    } else {
+      int max_x = mouse_bounds_w - 1;
+      int max_y = mouse_bounds_h - 1;
+      if (max_x < 0)
+        max_x = 0;
+      if (max_y < 0)
+        max_y = 0;
+      if (mouse_x < 0)
+        mouse_x = 0;
+      if (mouse_y < 0)
+        mouse_y = 0;
+      if (mouse_x > max_x)
+        mouse_x = max_x;
+      if (mouse_y > max_y)
+        mouse_y = max_y;
     }
 
     /* Re-add descriptor to available ring */
@@ -345,11 +433,17 @@ void mouse_poll(void) {
 void mouse_get_position(int *x, int *y) {
   mouse_poll();
 
-  /* Scale from 0-32767 to screen dimensions */
-  if (x)
-    *x = (mouse_x * SCREEN_WIDTH) / 32768;
-  if (y)
-    *y = (mouse_y * SCREEN_HEIGHT) / 32768;
+  if (mouse_has_absolute) {
+    if (x)
+      *x = (mouse_x * mouse_bounds_w) / 32768;
+    if (y)
+      *y = (mouse_y * mouse_bounds_h) / 32768;
+  } else {
+    if (x)
+      *x = mouse_x;
+    if (y)
+      *y = mouse_y;
+  }
 }
 
 int mouse_get_buttons(void) {
@@ -362,11 +456,11 @@ int mouse_get_buttons(void) {
 /* ===================================================================== */
 
 int mouse_init(void) {
-  printk(KERN_INFO "MOUSE: Initializing virtio-tablet...\n");
+  printk(KERN_INFO "MOUSE: Initializing virtio pointer device...\n");
 
-  mouse_base = find_virtio_tablet();
+  mouse_base = find_virtio_pointer();
   if (!mouse_base) {
-    printk(KERN_WARNING "MOUSE: No virtio tablet found\n");
+    printk(KERN_WARNING "MOUSE: No virtio pointer device found\n");
     return -1;
   }
 
@@ -455,7 +549,11 @@ int mouse_init(void) {
     return -1;
   }
 
-  printk(KERN_INFO "MOUSE: Virtio tablet initialized!\n");
+  mouse_x = mouse_bounds_w / 2;
+  mouse_y = mouse_bounds_h / 2;
+  mouse_has_absolute = 0;
+
+  printk(KERN_INFO "MOUSE: Virtio pointer initialized!\n");
   return 0;
 }
 
@@ -724,6 +822,30 @@ void input_set_key_callback(void (*callback)(int key)) {
 
 void input_set_gui_key_callback(void (*callback)(int key)) {
   gui_key_callback = callback;
+}
+
+void input_set_mouse_bounds(int width, int height) {
+  if (width > 0) {
+    mouse_bounds_w = width;
+  }
+  if (height > 0) {
+    mouse_bounds_h = height;
+  }
+
+  if (!mouse_has_absolute) {
+    mouse_x = mouse_bounds_w / 2;
+    mouse_y = mouse_bounds_h / 2;
+  }
+}
+
+void input_set_mouse_scale(int scale) {
+  if (scale < 1) {
+    scale = 1;
+  }
+  if (scale > 8) {
+    scale = 8;
+  }
+  mouse_scale = scale;
 }
 
 void input_poll(void) {

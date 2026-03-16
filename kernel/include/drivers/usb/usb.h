@@ -37,6 +37,7 @@ struct usb_device_descriptor {
 } __attribute__((packed));
 
 /* USB Init Functions */
+int xhci_init(phys_addr_t mmio_base);
 int usb_msd_init(struct usb_device *dev);
 int usb_hid_init(struct usb_device *dev);
 

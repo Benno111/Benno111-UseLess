@@ -180,6 +180,14 @@ static inline void xhci_op_write64(uint32_t offset, uint64_t val) {
   *(volatile uint64_t *)(xhci.op_base + offset) = val;
 }
 
+static inline uint32_t xhci_port_read32(int port, uint32_t offset) {
+  return *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset);
+}
+
+static inline void xhci_port_write32(int port, uint32_t offset, uint32_t val) {
+  *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset) = val;
+}
+
 /* ===================================================================== */
 /* Ring Operations */
 /* ===================================================================== */
@@ -319,11 +327,55 @@ static void xhci_enumerate_device(int port) {
   // usb_msd_init(dev);
 }
 
-static void xhci_check_port(int port) {
-  uint32_t portsc = *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10);
+static void xhci_ack_port_changes(int port, uint32_t portsc) {
+  uint32_t ack = portsc &
+                 (XHCI_PORT_CSC | XHCI_PORT_PEC | XHCI_PORT_WRC |
+                  XHCI_PORT_OCC | XHCI_PORT_PRC);
+  if (ack) {
+    xhci_port_write32(port, XHCI_PORTSC, XHCI_PORT_PP | ack);
+  }
+}
 
-  bool connected = (portsc & XHCI_PORT_CCS) != 0;
-  int speed = (portsc >> 10) & 0xF;
+static void xhci_power_port(int port) {
+  uint32_t portsc = xhci_port_read32(port, XHCI_PORTSC);
+  if ((portsc & XHCI_PORT_PP) == 0) {
+    xhci_port_write32(port, XHCI_PORTSC, portsc | XHCI_PORT_PP);
+  }
+}
+
+static void xhci_reset_port_if_needed(int port, uint32_t portsc) {
+  int timeout;
+  uint32_t ack;
+
+  if ((portsc & XHCI_PORT_CCS) == 0 || (portsc & XHCI_PORT_PED) != 0) {
+    return;
+  }
+
+  ack = portsc &
+        (XHCI_PORT_CSC | XHCI_PORT_PEC | XHCI_PORT_WRC | XHCI_PORT_OCC |
+         XHCI_PORT_PRC);
+  xhci_port_write32(port, XHCI_PORTSC, XHCI_PORT_PP | XHCI_PORT_PR | ack);
+
+  timeout = 100000;
+  while ((xhci_port_read32(port, XHCI_PORTSC) & XHCI_PORT_PR) && timeout > 0) {
+    timeout--;
+  }
+}
+
+static void xhci_check_port(int port) {
+  uint32_t portsc;
+  bool connected;
+  int speed;
+
+  xhci_power_port(port);
+
+  portsc = xhci_port_read32(port, XHCI_PORTSC);
+  xhci_ack_port_changes(port, portsc);
+  xhci_reset_port_if_needed(port, portsc);
+
+  portsc = xhci_port_read32(port, XHCI_PORTSC);
+  connected = (portsc & XHCI_PORT_CCS) != 0;
+  speed = (portsc >> 10) & 0xF;
 
   xhci.ports[port].connected = connected;
   xhci.ports[port].speed = speed;
@@ -375,6 +427,13 @@ int xhci_init(phys_addr_t mmio_base) {
   xhci.max_ports = (hcsparams1 >> 24) & 0xFF;
   xhci.max_interrupters = (hcsparams1 >> 8) & 0x7FF;
 
+  if (xhci.max_ports > XHCI_MAX_PORTS) {
+    printk(KERN_WARNING
+           "XHCI: Controller reports %d ports, clamping to %d\n",
+           xhci.max_ports, XHCI_MAX_PORTS);
+    xhci.max_ports = XHCI_MAX_PORTS;
+  }
+
   printk(KERN_INFO "XHCI: Version %x.%x, %d slots, %d ports\n",
          hci_version >> 8, hci_version & 0xFF, xhci.max_slots, xhci.max_ports);
 
@@ -407,7 +466,7 @@ int xhci_init(phys_addr_t mmio_base) {
   uint32_t cmd = xhci_op_read32(XHCI_USBCMD);
   xhci_op_write32(XHCI_USBCMD, cmd | XHCI_CMD_RUN | XHCI_CMD_INTE);
 
-  /* Check ports */
+  /* Sweep all root hub ports so every physical port is powered and probed. */
   for (int i = 0; i < (int)xhci.max_ports; i++) {
     xhci_check_port(i);
   }

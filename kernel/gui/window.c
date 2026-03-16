@@ -296,6 +296,106 @@ static const int clock_cos[60] = {
     205,  189,  171,  150,  128,  104,  79,   53,   26,   0,    -26,  -53,
     -79,  -104, -128, -150, -171, -189, -205, -219, -231, -240, -248, -253};
 
+static void clock_get_time(int *hours24, int *minutes, int *seconds) {
+  int64_t secs;
+
+#ifdef ARCH_X86_64
+  secs = 12 * 3600 + 34 * 60;
+#else
+  volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
+  secs = *pl031_data;
+#endif
+
+  secs += -5 * 3600;
+
+  while (secs < 0) {
+    secs += 24 * 3600;
+  }
+
+  if (hours24)
+    *hours24 = (int)((secs / 3600) % 24);
+  if (minutes)
+    *minutes = (int)((secs / 60) % 60);
+  if (seconds)
+    *seconds = (int)(secs % 60);
+}
+
+static void clock_format_time(char *buf, int hours24, int minutes, int seconds) {
+  buf[0] = '0' + (hours24 / 10);
+  buf[1] = '0' + (hours24 % 10);
+  buf[2] = ':';
+  buf[3] = '0' + (minutes / 10);
+  buf[4] = '0' + (minutes % 10);
+  buf[5] = ':';
+  buf[6] = '0' + (seconds / 10);
+  buf[7] = '0' + (seconds % 10);
+  buf[8] = '\0';
+}
+
+static void draw_clock_face(int cx, int cy, int radius, uint32_t face_color,
+                            uint32_t rim_color, uint32_t tick_color) {
+  gui_draw_circle(cx, cy, radius, face_color, true);
+  gui_draw_circle(cx, cy, radius, rim_color, false);
+  gui_draw_circle(cx, cy, radius - 1, rim_color, false);
+
+  for (int i = 0; i < 60; i++) {
+    int outer = radius - 4;
+    int inner = (i % 5 == 0) ? radius - 14 : radius - 8;
+    int x1 = cx + inner * clock_sin[i] / 256;
+    int y1 = cy + inner * clock_cos[i] / 256;
+    int x2 = cx + outer * clock_sin[i] / 256;
+    int y2 = cy + outer * clock_cos[i] / 256;
+    gui_draw_line(x1, y1, x2, y2, tick_color);
+  }
+}
+
+static void draw_clock_hands(int cx, int cy, int radius, int hours24,
+                             int minutes, int seconds) {
+  int hours12 = hours24 % 12;
+  int h_idx = (hours12 * 5 + minutes / 12) % 60;
+  int hour_len = radius * 52 / 100;
+  int minute_len = radius * 76 / 100;
+  int second_len = radius * 84 / 100;
+
+  int hx = cx + hour_len * clock_sin[h_idx] / 256;
+  int hy = cy + hour_len * clock_cos[h_idx] / 256;
+  int mx = cx + minute_len * clock_sin[minutes] / 256;
+  int my = cy + minute_len * clock_cos[minutes] / 256;
+  int sx = cx + second_len * clock_sin[seconds] / 256;
+  int sy = cy + second_len * clock_cos[seconds] / 256;
+
+  gui_draw_line(cx - 1, cy, hx - 1, hy, 0x202020);
+  gui_draw_line(cx, cy, hx, hy, 0x202020);
+  gui_draw_line(cx + 1, cy, hx + 1, hy, 0x202020);
+
+  gui_draw_line(cx, cy, mx, my, 0x404040);
+  gui_draw_line(cx + 1, cy, mx + 1, my, 0x404040);
+
+  gui_draw_line(cx, cy, sx, sy, 0xD02020);
+  gui_draw_circle(cx, cy, 4, 0xD02020, true);
+}
+
+static void draw_clock_widget(int content_x, int content_y, int content_w,
+                              int content_h, uint32_t panel_bg) {
+  int hours24, minutes, seconds;
+  char time_str[9];
+  int cx = content_x + content_w / 2;
+  int cy = content_y + content_h / 2 - 8;
+  int radius = (content_w < content_h ? content_w : content_h) / 2 - 20;
+
+  if (radius < 28) {
+    radius = 28;
+  }
+
+  clock_get_time(&hours24, &minutes, &seconds);
+  clock_format_time(time_str, hours24, minutes, seconds);
+
+  draw_clock_face(cx, cy, radius, 0xF8FAFC, 0x3B82F6, 0x334155);
+  draw_clock_hands(cx, cy, radius, hours24, minutes, seconds);
+
+  gui_draw_string(cx - 32, cy + radius + 10, time_str, 0xFFFFFF, panel_bg);
+}
+
 /* Initialize snake game */
 static void snake_init(void) {
   snake_len = 4;
@@ -524,6 +624,30 @@ struct display {
 
 static struct display primary_display = {0};
 
+struct gui_clip_state {
+  int enabled;
+  int x0;
+  int y0;
+  int x1;
+  int y1;
+};
+
+static struct gui_clip_state g_clip = {0, 0, 0, 0, 0};
+
+static struct gui_clip_state gui_set_clip_rect(int x, int y, int w, int h) {
+  struct gui_clip_state prev = g_clip;
+
+  g_clip.enabled = 1;
+  g_clip.x0 = x;
+  g_clip.y0 = y;
+  g_clip.x1 = x + w;
+  g_clip.y1 = y + h;
+
+  return prev;
+}
+
+static void gui_restore_clip_rect(struct gui_clip_state prev) { g_clip = prev; }
+
 /* ===================================================================== */
 /* Basic Drawing Functions */
 /* ===================================================================== */
@@ -532,6 +656,9 @@ static inline void draw_pixel(int x, int y, uint32_t color) {
   if (x < 0 || x >= (int)primary_display.width)
     return;
   if (y < 0 || y >= (int)primary_display.height)
+    return;
+  if (g_clip.enabled &&
+      (x < g_clip.x0 || x >= g_clip.x1 || y < g_clip.y0 || y >= g_clip.y1))
     return;
 
   uint32_t *target = primary_display.backbuffer ? primary_display.backbuffer
@@ -640,9 +767,8 @@ static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
 extern const uint8_t font_data[256][16];
 
 void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg) {
-  /* Clip to screen bounds */
-  if (x < 0 || x + FONT_WIDTH > (int)primary_display.width || y < 0 ||
-      y + FONT_HEIGHT > (int)primary_display.height) {
+  if (x >= (int)primary_display.width || y >= (int)primary_display.height ||
+      x + FONT_WIDTH <= 0 || y + FONT_HEIGHT <= 0) {
     return;
   }
 
@@ -665,15 +791,45 @@ void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg) {
       x = start_x;
       y += FONT_HEIGHT;
     } else {
-      /* Only draw if within screen bounds */
-      if (x >= 0 && x + FONT_WIDTH <= (int)primary_display.width && y >= 0 &&
-          y + FONT_HEIGHT <= (int)primary_display.height) {
-        gui_draw_char(x, y, *str, fg, bg);
-      }
+      gui_draw_char(x, y, *str, fg, bg);
       x += FONT_WIDTH;
     }
     str++;
   }
+}
+
+static void append_decimal(char *buf, int *idx, int value) {
+  char digits[16];
+  int count = 0;
+
+  if (value == 0) {
+    buf[(*idx)++] = '0';
+    return;
+  }
+
+  if (value < 0) {
+    buf[(*idx)++] = '-';
+    value = -value;
+  }
+
+  while (value > 0 && count < (int)sizeof(digits)) {
+    digits[count++] = '0' + (value % 10);
+    value /= 10;
+  }
+
+  while (count > 0) {
+    buf[(*idx)++] = digits[--count];
+  }
+}
+
+static void build_resolution_string(char *buf, uint32_t width, uint32_t height) {
+  int idx = 0;
+  append_decimal(buf, &idx, (int)width);
+  buf[idx++] = ' ';
+  buf[idx++] = 'x';
+  buf[idx++] = ' ';
+  append_decimal(buf, &idx, (int)height);
+  buf[idx] = '\0';
 }
 
 /* ===================================================================== */
@@ -721,6 +877,37 @@ static struct window windows[MAX_WINDOWS];
 static struct window *window_stack = NULL; /* Z-order, top is focused */
 static struct window *focused_window = NULL;
 static int next_window_id = 1;
+
+static void build_windows_string(char *buf) {
+  int idx = 0;
+  int count = 0;
+  struct window *iter = window_stack;
+
+  while (iter) {
+    if (iter->visible) {
+      count++;
+    }
+    iter = iter->next;
+  }
+
+  append_decimal(buf, &idx, count);
+  buf[idx++] = ' ';
+  buf[idx++] = 'o';
+  buf[idx++] = 'p';
+  buf[idx++] = 'e';
+  buf[idx++] = 'n';
+  buf[idx++] = ' ';
+  buf[idx++] = 'w';
+  buf[idx++] = 'i';
+  buf[idx++] = 'n';
+  buf[idx++] = 'd';
+  buf[idx++] = 'o';
+  buf[idx++] = 'w';
+  if (count != 1) {
+    buf[idx++] = 's';
+  }
+  buf[idx] = '\0';
+}
 
 /* Create a new window */
 struct window *gui_create_window(const char *title, int x, int y, int w,
@@ -1579,6 +1766,7 @@ static void draw_window(struct window *win) {
 
   int x = win->x, y = win->y;
   int w = win->width, h = win->height;
+  struct gui_clip_state prev_clip = gui_set_clip_rect(x, y, w, h);
 
   /* Draw border */
   gui_draw_rect_outline(x, y, w, h, THEME_BORDER, BORDER_WIDTH);
@@ -1909,6 +2097,19 @@ static void draw_window(struct window *win) {
            win->title[2] == 'o') {
     int yy = content_y + 20;
     int center_x = content_x + content_w / 2;
+    char resolution[32];
+    char windows_info[32];
+#ifdef ARCH_X86_64
+    const char *arch_info = "Architecture:  x86_64";
+#elif defined(ARCH_X86)
+    const char *arch_info = "Architecture:  x86";
+#else
+    const char *arch_info = "Architecture:  ARM64";
+#endif
+
+    build_resolution_string(resolution, primary_display.width,
+                            primary_display.height);
+    build_windows_string(windows_info);
 
     /* OS Logo */
     gui_draw_os_logo(center_x - 21, yy, 3, 0xCDD6F4, 0x89B4FA, THEME_BG);
@@ -1925,32 +2126,34 @@ static void draw_window(struct window *win) {
     /* System info box */
     gui_draw_rect(content_x + 20, yy, content_w - 40, 80, 0x252535);
     yy += 10;
-#ifdef ARCH_X86_64
-    gui_draw_string(content_x + 30, yy, "Architecture:  x86_64", 0xCDD6F4,
-                    0x252535);
-#else
-    gui_draw_string(content_x + 30, yy, "Architecture:  ARM64", 0xCDD6F4,
-                    0x252535);
-#endif
+    gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        Vib Kernel 0.5",
+    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v0.5.0",
                     0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Memory:        252 MB", 0xCDD6F4,
-                    0x252535);
+    gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
+                    0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Display:       1024 x 768", 0xCDD6F4,
-                    0x252535);
+    gui_draw_string(content_x + 30, yy, "Display:       ", 0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + 142, yy, resolution, 0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + 250, yy, windows_info, 0x89B4FA, 0x252535);
     yy += 28;
 
     /* Copyright */
-    gui_draw_string(content_x + 30, yy, "(c) 2026 OS next stage Project", 0x6C7086,
+    gui_draw_string(content_x + 30, yy, "(c) 2027 Benno111", 0x6C7086,
                     THEME_BG);
   }
   /* Settings window */
   else if (win->title[0] == 'S' && win->title[1] == 'e' &&
            win->title[2] == 't') {
     int yy = content_y + 12;
+    char resolution[32];
+    char windows_info[32];
+    extern int intel_hda_is_playing(void);
+
+    build_resolution_string(resolution, primary_display.width,
+                            primary_display.height);
+    build_windows_string(windows_info);
 
     /* Header */
     gui_draw_string(content_x + 12, yy, "System Settings", 0xFFFFFF, THEME_BG);
@@ -1959,24 +2162,31 @@ static void draw_window(struct window *win) {
     /* Display section */
     gui_draw_rect(content_x + 10, yy, content_w - 20, 60, 0x252535);
     gui_draw_string(content_x + 20, yy + 8, "Display", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 28, "Resolution: 1024 x 768", 0xCDD6F4,
+    gui_draw_string(content_x + 20, yy + 28, "Resolution:", 0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + 116, yy + 28, resolution, 0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + 20, yy + 44, "Open Windows:", 0xCDD6F4,
                     0x252535);
-    gui_draw_string(content_x + 20, yy + 44, "Color Depth: 32-bit", 0xCDD6F4,
+    gui_draw_string(content_x + 116, yy + 44, windows_info, 0xCDD6F4,
                     0x252535);
     yy += 70;
 
     /* Sound section */
     gui_draw_rect(content_x + 10, yy, content_w - 20, 44, 0x252535);
     gui_draw_string(content_x + 20, yy + 8, "Sound", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 26, "Audio: Disabled", 0x6C7086,
-                    0x252535);
+    if (intel_hda_is_playing()) {
+      gui_draw_string(content_x + 20, yy + 26, "Audio: Playing via Intel HDA",
+                      0xA6E3A1, 0x252535);
+    } else {
+      gui_draw_string(content_x + 20, yy + 26, "Audio: Intel HDA ready",
+                      0xCDD6F4, 0x252535);
+    }
     yy += 54;
 
     /* Network section */
     gui_draw_rect(content_x + 10, yy, content_w - 20, 44, 0x252535);
     gui_draw_string(content_x + 20, yy + 8, "Network", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 26, "Status: Not connected", 0x6C7086,
-                    0x252535);
+    gui_draw_string(content_x + 20, yy + 26, "Status: virtio-net user NAT",
+                    0xCDD6F4, 0x252535);
     yy += 54;
 
     /* About button */
@@ -1986,53 +2196,7 @@ static void draw_window(struct window *win) {
   /* Clock window */
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
            win->title[2] == 'o') {
-    int center_x = content_x + content_w / 2;
-    int center_y = content_y + content_h / 2;
-    int radius = 60;
-
-    /* Clock face - white circle */
-    for (int dy = -radius; dy <= radius; dy++) {
-      for (int dx = -radius; dx <= radius; dx++) {
-        if (dx * dx + dy * dy <= radius * radius) {
-          uint32_t color = (dx * dx + dy * dy <= (radius - 3) * (radius - 3))
-                               ? 0xFFFFFF
-                               : 0x3B82F6;
-          draw_pixel(center_x + dx, center_y + dy, color);
-        }
-      }
-    }
-
-    /* Hour markers */
-    for (int h = 0; h < 12; h++) {
-      /* Simple markers at 12, 3, 6, 9 positions */
-      int mx = center_x + (h == 3 ? 50 : (h == 9 ? -50 : 0));
-      int my = center_y + (h == 0 ? -50 : (h == 6 ? 50 : 0));
-      if (h == 0 || h == 3 || h == 6 || h == 9) {
-        gui_draw_rect(mx - 3, my - 3, 6, 6, 0x3B82F6);
-      }
-    }
-
-    /* Clock hands - hour (short) pointing to ~10:10 */
-    for (int i = 0; i < 25; i++) {
-      draw_pixel(center_x - i / 2, center_y - i * 3 / 4, 0x222222);
-      draw_pixel(center_x - i / 2 + 1, center_y - i * 3 / 4, 0x222222);
-    }
-    /* Minute hand (long) */
-    for (int i = 0; i < 40; i++) {
-      draw_pixel(center_x + i / 3, center_y - i, 0x444444);
-    }
-    /* Center dot */
-    for (int dy = -3; dy <= 3; dy++) {
-      for (int dx = -3; dx <= 3; dx++) {
-        if (dx * dx + dy * dy <= 9) {
-          draw_pixel(center_x + dx, center_y + dy, 0xEF4444);
-        }
-      }
-    }
-
-    /* Time display below */
-    gui_draw_string(center_x - 28, center_y + radius + 15, "12:10", 0xFFFFFF,
-                    THEME_BG);
+    draw_clock_widget(content_x, content_y, content_w, content_h, THEME_BG);
   }
   /* Game window */
   else if (win->title[0] == 'G' && win->title[1] == 'a' &&
@@ -2359,63 +2523,7 @@ static void draw_window(struct window *win) {
   /* Clock */
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
            win->title[2] == 'o') {
-    int cx = content_x + content_w / 2;
-    int cy = content_y + content_h / 2;
-    int r = (content_w < content_h ? content_w : content_h) / 2 - 16;
-
-    /* Draw Clock Face */
-    gui_draw_circle(cx, cy, r, 0xF0F0F0, true);  /* Face */
-    gui_draw_circle(cx, cy, r, 0x808080, false); /* Outline */
-    gui_draw_circle(cx, cy, 3, 0x000000, true);  /* Center dot */
-
-    /* Hour markings */
-    for (int i = 0; i < 12; i++) {
-      int idx = i * 5;
-      int x1 = cx + (r - 10) * clock_sin[idx] / 256;
-      int y1 = cy + (r - 10) * clock_cos[idx] / 256;
-      int x2 = cx + r * clock_sin[idx] / 256;
-      int y2 = cy + r * clock_cos[idx] / 256;
-      gui_draw_line(x1, y1, x2, y2, 0x303030);
-    }
-
-    /* Get time source appropriate for the current architecture. */
-#ifdef ARCH_X86_64
-    uint64_t secs = 12 * 3600 + 34 * 60;
-#else
-    /* Get time from PL031 RTC at 0x09010000 (QEMU virt) */
-    /* This provides Unix timestamp (seconds since 1970) */
-    volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
-    uint64_t secs = *pl031_data;
-#endif
-
-    /* Apply timezone offset (e.g. -5 for EST) */
-    /* Default to UTC for now, or maybe -5 for user */
-    int tz_offset = -5;
-    secs += tz_offset * 3600;
-
-    int s = secs % 60;
-    int m = (secs / 60) % 60;
-    int h = (secs / 3600) % 12;
-    if (h == 0)
-      h = 12;
-
-    /* Hour Hand */
-    int h_idx = (h * 5 + m / 12) % 60;
-    int hx = cx + (r * 60 / 100) * clock_sin[h_idx] / 256;
-    int hy = cy + (r * 60 / 100) * clock_cos[h_idx] / 256;
-    gui_draw_line(cx, cy, hx, hy, 0x202020); /* Simple line for now */
-    /* Draw thicker by drawing parallel lines? Simple line is fine for low-res
-     */
-
-    /* Minute Hand */
-    int mx = cx + (r * 85 / 100) * clock_sin[m] / 256;
-    int my = cy + (r * 85 / 100) * clock_cos[m] / 256;
-    gui_draw_line(cx, cy, mx, my, 0x404040);
-
-    /* Second Hand */
-    int sx = cx + (r * 90 / 100) * clock_sin[s] / 256;
-    int sy = cy + (r * 90 / 100) * clock_cos[s] / 256;
-    gui_draw_line(cx, cy, sx, sy, 0xD02020); /* Red */
+    draw_clock_widget(content_x, content_y, content_w, content_h, THEME_BG);
   }
 
   /* Background Settings Window */
@@ -2514,6 +2622,8 @@ static void draw_window(struct window *win) {
       gui_draw_line(gx + offset, gy + 10, gx + 10, gy + offset, grip_color);
     }
   }
+
+  gui_restore_clip_rect(prev_clip);
 }
 
 /* ===================================================================== */
