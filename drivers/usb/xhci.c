@@ -159,6 +159,7 @@ struct xhci_device {
 };
 
 static struct xhci_device xhci = {0};
+static int xhci_ready = 0;
 
 /* ===================================================================== */
 /* MMIO Access */
@@ -472,5 +473,20 @@ int xhci_init(phys_addr_t mmio_base) {
   }
 
   printk(KERN_INFO "XHCI: Controller started\n");
+  xhci_ready = 1;
   return 0;
+}
+
+int xhci_is_ready(void) { return xhci_ready; }
+
+int xhci_get_port_count(void) { return (int)xhci.max_ports; }
+
+int xhci_get_connected_count(void) {
+  int count = 0;
+  for (int i = 0; i < (int)xhci.max_ports; i++) {
+    if (xhci.ports[i].connected) {
+      count++;
+    }
+  }
+  return count;
 }

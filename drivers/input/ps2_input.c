@@ -28,6 +28,7 @@
 #define MOUSE_CMD_DEFAULTS 0xF6
 #define MOUSE_CMD_ENABLE 0xF4
 #define MOUSE_CMD_SET_RATE 0xF3
+#define MOUSE_CMD_GET_ID 0xF2
 
 static inline uint8_t inb(uint16_t port) {
   uint8_t ret;
@@ -53,6 +54,9 @@ static int mouse_buttons = 0;
 static int mouse_max_x = 1024;
 static int mouse_max_y = 768;
 static int mouse_scale = 2;
+static int mouse_packet_size = 3;
+static int mouse_has_wheel = 0;
+static int mouse_has_extra_buttons = 0;
 
 static uint8_t mouse_packet[4];
 static int mouse_packet_index = 0;
@@ -141,6 +145,96 @@ static void ps2_mouse_write(uint8_t data) {
   ps2_send_data(data);
 }
 
+static int ps2_mouse_command(uint8_t cmd, uint8_t *response) {
+  int retries = 3;
+
+  while (retries-- > 0) {
+    ps2_flush_output();
+    ps2_mouse_write(cmd);
+    ps2_wait_output();
+
+    if (inb(PS2_DATA_PORT) != 0xFA) {
+      continue;
+    }
+
+    if (response) {
+      ps2_wait_output();
+      *response = inb(PS2_DATA_PORT);
+    }
+    return 0;
+  }
+
+  return -1;
+}
+
+static int ps2_mouse_set_rate(uint8_t rate) {
+  int retries = 3;
+
+  while (retries-- > 0) {
+    ps2_flush_output();
+    ps2_mouse_write(MOUSE_CMD_SET_RATE);
+    ps2_wait_output();
+    if (inb(PS2_DATA_PORT) != 0xFA) {
+      continue;
+    }
+
+    ps2_flush_output();
+    ps2_mouse_write(rate);
+    ps2_wait_output();
+    if (inb(PS2_DATA_PORT) == 0xFA) {
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
+static uint8_t ps2_mouse_get_id(void) {
+  uint8_t id = 0;
+  if (ps2_mouse_command(MOUSE_CMD_GET_ID, &id) == 0) {
+    return id;
+  }
+  return 0;
+}
+
+static void ps2_mouse_detect_extensions(void) {
+  uint8_t id;
+
+  mouse_packet_size = 3;
+  mouse_has_wheel = 0;
+  mouse_has_extra_buttons = 0;
+
+  /* IntelliMouse-compatible sequence: enables 4-byte packets on many touchpads. */
+  if (ps2_mouse_set_rate(200) == 0 && ps2_mouse_set_rate(100) == 0 &&
+      ps2_mouse_set_rate(80) == 0) {
+    id = ps2_mouse_get_id();
+    if (id == 0x03 || id == 0x04) {
+      mouse_packet_size = 4;
+      mouse_has_wheel = 1;
+      mouse_has_extra_buttons = (id == 0x04);
+      printk(KERN_INFO "INPUT: PS/2 extended pointer detected (id=0x%x)\n",
+             id);
+      return;
+    }
+  }
+
+  /* Explorer sequence used by some newer PS/2 touchpads for extra buttons. */
+  if (ps2_mouse_set_rate(200) == 0 && ps2_mouse_set_rate(200) == 0 &&
+      ps2_mouse_set_rate(80) == 0) {
+    id = ps2_mouse_get_id();
+    if (id == 0x04) {
+      mouse_packet_size = 4;
+      mouse_has_wheel = 1;
+      mouse_has_extra_buttons = 1;
+      printk(KERN_INFO "INPUT: PS/2 explorer pointer detected (id=0x%x)\n",
+             id);
+      return;
+    }
+  }
+
+  printk(KERN_INFO "INPUT: PS/2 standard pointer detected\n");
+}
+
 static void dispatch_key(int key) {
   (void)ctrl_pressed;
   (void)alt_pressed;
@@ -163,7 +257,7 @@ static void handle_mouse_byte(uint8_t data) {
     mouse_packet_index = 0;
     return;
   }
-  if (mouse_packet_index < 3) {
+  if (mouse_packet_index < mouse_packet_size) {
     return;
   }
 
@@ -201,6 +295,35 @@ static void handle_mouse_byte(uint8_t data) {
     mouse_buttons |= 2;
   if (flags & 0x04)
     mouse_buttons |= 4;
+
+  if (mouse_packet_size >= 4) {
+    uint8_t ext = mouse_packet[3];
+
+    if (mouse_has_extra_buttons) {
+      if (ext & 0x10)
+        mouse_buttons |= 8;
+      if (ext & 0x20)
+        mouse_buttons |= 16;
+    }
+
+    if (mouse_has_wheel) {
+      int wheel = ext & 0x0F;
+      if (wheel & 0x08)
+        wheel -= 16;
+
+      /* Basic touchpad-friendly scroll fallback: convert wheel to small vertical motion. */
+      if (wheel > 0) {
+        mouse_y -= wheel * 12;
+      } else if (wheel < 0) {
+        mouse_y += (-wheel) * 12;
+      }
+
+      if (mouse_y < 0)
+        mouse_y = 0;
+      if (mouse_y >= mouse_max_y)
+        mouse_y = mouse_max_y - 1;
+    }
+  }
 }
 
 static void handle_keyboard_byte(uint8_t scancode) {
@@ -366,17 +489,18 @@ int input_init(void) {
 
   for (int retry = 0; retry < 3; retry++) {
     ps2_flush_output();
-    ps2_mouse_write(MOUSE_CMD_RESET);
-    for (int i = 0; i < 20000; i++)
+    (void)ps2_mouse_command(MOUSE_CMD_RESET, NULL);
+    for (int i = 0; i < 20000; i++) {
       io_wait();
+    }
     ps2_flush_output();
-    ps2_mouse_write(MOUSE_CMD_DEFAULTS);
+    (void)ps2_mouse_command(MOUSE_CMD_DEFAULTS, NULL);
     ps2_flush_output();
-    ps2_mouse_write(MOUSE_CMD_SET_RATE);
+    (void)ps2_mouse_set_rate(100);
     ps2_flush_output();
-    ps2_mouse_write(100);
+    ps2_mouse_detect_extensions();
     ps2_flush_output();
-    ps2_mouse_write(MOUSE_CMD_ENABLE);
+    (void)ps2_mouse_command(MOUSE_CMD_ENABLE, NULL);
     ps2_flush_output();
   }
 

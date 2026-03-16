@@ -841,6 +841,22 @@ static void build_resolution_string(char *buf, uint32_t width, uint32_t height) 
   buf[idx] = '\0';
 }
 
+static void build_device_ports_string(char *buf, int connected, int total) {
+  int idx = 0;
+  append_decimal(buf, &idx, connected);
+  buf[idx++] = '/';
+  append_decimal(buf, &idx, total);
+  buf[idx++] = ' ';
+  buf[idx++] = 'p';
+  buf[idx++] = 'o';
+  buf[idx++] = 'r';
+  buf[idx++] = 't';
+  if (total != 1) {
+    buf[idx++] = 's';
+  }
+  buf[idx] = '\0';
+}
+
 /* ===================================================================== */
 /* Window System */
 /* ===================================================================== */
@@ -2198,9 +2214,89 @@ static void draw_window(struct window *win) {
                     0xCDD6F4, 0x252535);
     yy += 54;
 
-    /* About button */
+    /* Device Manager button */
     gui_draw_rect(content_x + 10, yy, 100, 28, 0x3B82F6);
-    gui_draw_string(content_x + 24, yy + 6, "About...", 0xFFFFFF, 0x3B82F6);
+    gui_draw_string(content_x + 18, yy + 6, "Devices...", 0xFFFFFF, 0x3B82F6);
+
+    /* About button */
+    gui_draw_rect(content_x + 120, yy, 100, 28, 0x4B5563);
+    gui_draw_string(content_x + 136, yy + 6, "About...", 0xFFFFFF, 0x4B5563);
+  }
+  /* Device Manager window */
+  else if (win->title[0] == 'D' && win->title[1] == 'e' &&
+           win->title[2] == 'v') {
+    int yy = content_y + 12;
+    char resolution[32];
+    char windows_info[32];
+    char usb_ports[32];
+    extern int intel_hda_is_ready(void);
+    extern int intel_hda_is_playing(void);
+    extern int virtio_net_is_ready(void);
+    extern int xhci_is_ready(void);
+    extern int xhci_get_port_count(void);
+    extern int xhci_get_connected_count(void);
+
+    build_resolution_string(resolution, primary_display.width,
+                            primary_display.height);
+    build_windows_string(windows_info);
+    build_device_ports_string(usb_ports, xhci_get_connected_count(),
+                              xhci_get_port_count());
+
+    gui_draw_string(content_x + 12, yy, "Device Manager", 0xFFFFFF, THEME_BG);
+    yy += 28;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Display Adapter", 0x89B4FA,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 28, "Framebuffer compositor active",
+                    0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + content_w - 150, yy + 28, resolution, 0xCDD6F4,
+                    0x252535);
+    yy += 62;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Input Devices", 0x89B4FA,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 28,
+                    "Keyboard + pointer input subsystem online", 0xCDD6F4,
+                    0x252535);
+    gui_draw_string(content_x + content_w - 150, yy + 28, windows_info,
+                    0xA6E3A1, 0x252535);
+    yy += 62;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Audio Controller", 0x89B4FA,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 28,
+                    intel_hda_is_ready() ? "Intel HDA controller present"
+                                         : "Intel HDA controller not detected",
+                    intel_hda_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+    gui_draw_string(content_x + content_w - 150, yy + 28,
+                    intel_hda_is_playing() ? "Playing" : "Idle",
+                    intel_hda_is_playing() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+    yy += 62;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Network Adapter", 0x89B4FA,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 28,
+                    virtio_net_is_ready() ? "virtio-net interface ready"
+                                          : "virtio-net interface offline",
+                    virtio_net_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+    gui_draw_string(content_x + content_w - 150, yy + 28,
+                    virtio_net_is_ready() ? "eth0 / NAT" : "Unavailable",
+                    virtio_net_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+    yy += 62;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "USB Host Controller", 0x89B4FA,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 28,
+                    xhci_is_ready() ? "xHCI controller initialized"
+                                    : "xHCI controller unavailable",
+                    xhci_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+    gui_draw_string(content_x + content_w - 150, yy + 28, usb_ports,
+                    xhci_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
   }
   /* Clock window */
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
@@ -4082,6 +4178,26 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
         }
         break;
+      }
+
+      /* Handle clicks inside Settings window */
+      if (win->title[0] == 'S' && win->title[1] == 'e' &&
+          win->title[2] == 't') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int yy = content_y + 12 + 28 + 70 + 54 + 54;
+
+        if (x >= content_x + 10 && x < content_x + 110 && y >= yy &&
+            y < yy + 28) {
+          gui_create_window("Device Manager", win->x + 40, win->y + 40, 460,
+                            360);
+          break;
+        }
+        if (x >= content_x + 120 && x < content_x + 220 && y >= yy &&
+            y < yy + 28) {
+          gui_create_window("About", 280, 180, 420, 260);
+          break;
+        }
       }
 
       if (win->on_mouse) {

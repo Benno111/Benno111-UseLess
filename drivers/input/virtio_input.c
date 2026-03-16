@@ -105,21 +105,27 @@ typedef struct __attribute__((packed)) {
 
 #define QUEUE_SIZE 16
 #define DESC_F_WRITE 2
+#define MAX_POINTER_DEVS 4
+#define MAX_KEYBOARD_DEVS 4
 
 /* ===================================================================== */
 /* State */
 /* ===================================================================== */
 
-static volatile uint32_t *mouse_base = 0;
-static virtq_desc_t *desc = 0;
-static virtq_avail_t *avail = 0;
-static virtq_used_t *used = 0;
-static virtio_input_event_t *events = 0;
-static uint16_t last_used_idx = 0;
+struct virtio_input_dev {
+  volatile uint32_t *base;
+  virtq_desc_t *desc;
+  virtq_avail_t *avail;
+  virtq_used_t *used;
+  virtio_input_event_t *events;
+  uint16_t last_used_idx;
+  char name[32];
+  uint8_t queue_mem[4096];
+  virtio_input_event_t event_bufs[QUEUE_SIZE];
+} __attribute__((aligned(4096)));
 
-/* Queue memory - must be 4K aligned */
-static uint8_t queue_mem[4096] __attribute__((aligned(4096)));
-static virtio_input_event_t event_bufs[QUEUE_SIZE] __attribute__((aligned(16)));
+static struct virtio_input_dev mouse_devs[MAX_POINTER_DEVS];
+static int mouse_dev_count = 0;
 
 /* Mouse state */
 static int mouse_x = 16384; /* Raw 0-32767 */
@@ -131,15 +137,8 @@ static int mouse_scale = 2;
 static int mouse_has_absolute = 0;
 
 /* Keyboard state */
-static volatile uint32_t *kbd_base = 0;
-static virtq_desc_t *kbd_desc = 0;
-static virtq_avail_t *kbd_avail = 0;
-static virtq_used_t *kbd_used = 0;
-static virtio_input_event_t *kbd_events = 0;
-static uint16_t kbd_last_used_idx = 0;
-static uint8_t kbd_queue_mem[4096] __attribute__((aligned(4096)));
-static virtio_input_event_t kbd_event_bufs[QUEUE_SIZE]
-    __attribute__((aligned(16)));
+static struct virtio_input_dev kbd_devs[MAX_KEYBOARD_DEVS];
+static int kbd_dev_count = 0;
 
 /* Keyboard callback */
 static void (*gui_key_callback)(int key) = 0;
@@ -286,7 +285,29 @@ static int input_name_contains(const char *name, const char *needle) {
   return 0;
 }
 
-static volatile uint32_t *find_virtio_pointer(void) {
+static void read_input_device_name(volatile uint8_t *base8, char *name,
+                                   int name_len) {
+  int j;
+  uint8_t size;
+
+  if (name_len <= 0) {
+    return;
+  }
+
+  base8[VIRTIO_INPUT_CFG_SELECT] = VIRTIO_INPUT_CFG_ID_NAME;
+  base8[VIRTIO_INPUT_CFG_SUBSEL] = 0;
+  mmio_barrier();
+
+  size = base8[VIRTIO_INPUT_CFG_SIZE];
+  for (j = 0; j < name_len - 1 && j < size; j++) {
+    name[j] = base8[VIRTIO_INPUT_CFG_DATA + j];
+  }
+  name[j] = '\0';
+}
+
+static int discover_virtio_pointers(void) {
+  int count = 0;
+
   for (int i = 0; i < 32; i++) {
     volatile uint32_t *base =
         (volatile uint32_t *)(uintptr_t)(VIRTIO_MMIO_BASE +
@@ -302,16 +323,8 @@ static volatile uint32_t *find_virtio_pointer(void) {
       continue;
     }
 
-    /* Check device name for "Tablet" */
-    base8[VIRTIO_INPUT_CFG_SELECT] = VIRTIO_INPUT_CFG_ID_NAME;
-    base8[VIRTIO_INPUT_CFG_SUBSEL] = 0;
-    mmio_barrier();
-
-    uint8_t size = base8[VIRTIO_INPUT_CFG_SIZE];
-    char name[32] = {0};
-    for (int j = 0; j < 31 && j < size; j++) {
-      name[j] = base8[VIRTIO_INPUT_CFG_DATA + j];
-    }
+    char name[32];
+    read_input_device_name(base8, name, sizeof(name));
 
     printk(KERN_INFO "MOUSE: Found input device: %s\n", name);
 
@@ -320,8 +333,96 @@ static volatile uint32_t *find_virtio_pointer(void) {
         input_name_contains(name, "trackpad") ||
         input_name_contains(name, "mouse") ||
         input_name_contains(name, "pointer")) {
-      return base;
+      if (count < MAX_POINTER_DEVS) {
+        mouse_devs[count].base = base;
+        for (int j = 0; j < (int)sizeof(mouse_devs[count].name) - 1 && name[j];
+             j++) {
+          mouse_devs[count].name[j] = name[j];
+          mouse_devs[count].name[j + 1] = '\0';
+        }
+        count++;
+      }
     }
+  }
+
+  return count;
+}
+
+static int init_virtio_input_device(struct virtio_input_dev *dev) {
+  uint64_t desc_addr;
+  uint64_t avail_addr;
+  uint64_t used_addr;
+  uint32_t max_queue;
+
+  /* Reset device */
+  mmio_write32(dev->base + VIRTIO_MMIO_STATUS / 4, 0);
+  while (mmio_read32(dev->base + VIRTIO_MMIO_STATUS / 4) != 0) {
+    asm volatile("nop");
+  }
+
+  mmio_write32(dev->base + VIRTIO_MMIO_STATUS / 4, VIRTIO_STATUS_ACK);
+  mmio_write32(dev->base + VIRTIO_MMIO_STATUS / 4,
+               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+
+  mmio_write32(dev->base + VIRTIO_MMIO_DRIVER_FEATURES / 4, 0);
+  mmio_write32(dev->base + VIRTIO_MMIO_STATUS / 4,
+               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+                   VIRTIO_STATUS_FEATURES_OK);
+
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_SEL / 4, 0);
+
+  max_queue = mmio_read32(dev->base + VIRTIO_MMIO_QUEUE_NUM_MAX / 4);
+  if (max_queue < QUEUE_SIZE) {
+    return -1;
+  }
+
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_NUM / 4, QUEUE_SIZE);
+
+  dev->desc = (virtq_desc_t *)dev->queue_mem;
+  dev->avail =
+      (virtq_avail_t *)(dev->queue_mem + QUEUE_SIZE * sizeof(virtq_desc_t));
+  dev->used = (virtq_used_t *)(dev->queue_mem + 2048);
+  dev->events = dev->event_bufs;
+  dev->last_used_idx = 0;
+
+  desc_addr = (uint64_t)(uintptr_t)dev->desc;
+  avail_addr = (uint64_t)(uintptr_t)dev->avail;
+  used_addr = (uint64_t)(uintptr_t)dev->used;
+
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_DESC_LOW / 4,
+               (uint32_t)desc_addr);
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_DESC_HIGH / 4,
+               (uint32_t)(desc_addr >> 32));
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_AVAIL_LOW / 4,
+               (uint32_t)avail_addr);
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_AVAIL_HIGH / 4,
+               (uint32_t)(avail_addr >> 32));
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_USED_LOW / 4,
+               (uint32_t)used_addr);
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_USED_HIGH / 4,
+               (uint32_t)(used_addr >> 32));
+
+  for (int i = 0; i < QUEUE_SIZE; i++) {
+    dev->desc[i].addr = (uint64_t)(uintptr_t)&dev->events[i];
+    dev->desc[i].len = sizeof(virtio_input_event_t);
+    dev->desc[i].flags = DESC_F_WRITE;
+    dev->desc[i].next = 0;
+  }
+
+  dev->avail->flags = 0;
+  for (int i = 0; i < QUEUE_SIZE; i++) {
+    dev->avail->ring[i] = i;
+  }
+  dev->avail->idx = QUEUE_SIZE;
+
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_READY / 4, 1);
+  mmio_write32(dev->base + VIRTIO_MMIO_STATUS / 4,
+               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+                   VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+  mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
+
+  if (mmio_read32(dev->base + VIRTIO_MMIO_STATUS / 4) & 0x40) {
+    return -1;
   }
 
   return 0;
@@ -332,98 +433,105 @@ static volatile uint32_t *find_virtio_pointer(void) {
 /* ===================================================================== */
 
 void mouse_poll(void) {
-  if (!mouse_base || !used) {
+  if (mouse_dev_count <= 0) {
     return;
   }
 
-  mmio_barrier();
-  uint16_t current_used = used->idx;
+  for (int dev_idx = 0; dev_idx < mouse_dev_count; dev_idx++) {
+    struct virtio_input_dev *dev = &mouse_devs[dev_idx];
+    uint16_t current_used;
 
-  while (last_used_idx != current_used) {
-    uint16_t idx = last_used_idx % QUEUE_SIZE;
-    uint32_t desc_idx = used->ring[idx].id;
-
-    virtio_input_event_t *ev = &events[desc_idx];
-
-    /* Process event */
-    if (ev->type == EV_ABS) {
-      mouse_has_absolute = 1;
-      if (ev->code == ABS_X) {
-        mouse_x = ev->value;
-      } else if (ev->code == ABS_Y) {
-        mouse_y = ev->value;
-      }
-    } else if (ev->type == EV_REL) {
-      if (ev->code == REL_X) {
-        mouse_x += (int)ev->value * mouse_scale;
-      } else if (ev->code == REL_Y) {
-        mouse_y += (int)ev->value * mouse_scale;
-      } else if (ev->code == REL_WHEEL) {
-        /* Wheel support can be consumed later by the GUI. */
-      }
-    } else if (ev->type == EV_KEY) {
-      int pressed = (ev->value != 0);
-      if (ev->code == BTN_LEFT) {
-        if (pressed)
-          mouse_buttons |= 1;
-        else
-          mouse_buttons &= ~1;
-      } else if (ev->code == BTN_RIGHT) {
-        if (pressed)
-          mouse_buttons |= 2;
-        else
-          mouse_buttons &= ~2;
-      } else if (ev->code == BTN_MIDDLE) {
-        if (pressed)
-          mouse_buttons |= 4;
-        else
-          mouse_buttons &= ~4;
-      } else if (ev->code == BTN_TOUCH) {
-        if (pressed)
-          mouse_buttons |= 1;
-        else
-          mouse_buttons &= ~1;
-      }
+    if (!dev->base || !dev->used) {
+      continue;
     }
 
-    if (mouse_has_absolute) {
-      if (mouse_x < 0)
-        mouse_x = 0;
-      if (mouse_y < 0)
-        mouse_y = 0;
-      if (mouse_x > 32767)
-        mouse_x = 32767;
-      if (mouse_y > 32767)
-        mouse_y = 32767;
-    } else {
-      int max_x = mouse_bounds_w - 1;
-      int max_y = mouse_bounds_h - 1;
-      if (max_x < 0)
-        max_x = 0;
-      if (max_y < 0)
-        max_y = 0;
-      if (mouse_x < 0)
-        mouse_x = 0;
-      if (mouse_y < 0)
-        mouse_y = 0;
-      if (mouse_x > max_x)
-        mouse_x = max_x;
-      if (mouse_y > max_y)
-        mouse_y = max_y;
+    mmio_barrier();
+    current_used = dev->used->idx;
+
+    while (dev->last_used_idx != current_used) {
+      uint16_t idx = dev->last_used_idx % QUEUE_SIZE;
+      uint32_t desc_idx = dev->used->ring[idx].id;
+      virtio_input_event_t *ev = &dev->events[desc_idx];
+
+      /* Process event */
+      if (ev->type == EV_ABS) {
+        mouse_has_absolute = 1;
+        if (ev->code == ABS_X) {
+          mouse_x = ev->value;
+        } else if (ev->code == ABS_Y) {
+          mouse_y = ev->value;
+        }
+      } else if (ev->type == EV_REL) {
+        if (ev->code == REL_X) {
+          mouse_x += (int)ev->value * mouse_scale;
+        } else if (ev->code == REL_Y) {
+          mouse_y += (int)ev->value * mouse_scale;
+        } else if (ev->code == REL_WHEEL) {
+          /* Wheel support can be consumed later by the GUI. */
+        }
+      } else if (ev->type == EV_KEY) {
+        int pressed = (ev->value != 0);
+        if (ev->code == BTN_LEFT) {
+          if (pressed)
+            mouse_buttons |= 1;
+          else
+            mouse_buttons &= ~1;
+        } else if (ev->code == BTN_RIGHT) {
+          if (pressed)
+            mouse_buttons |= 2;
+          else
+            mouse_buttons &= ~2;
+        } else if (ev->code == BTN_MIDDLE) {
+          if (pressed)
+            mouse_buttons |= 4;
+          else
+            mouse_buttons &= ~4;
+        } else if (ev->code == BTN_TOUCH) {
+          if (pressed)
+            mouse_buttons |= 1;
+          else
+            mouse_buttons &= ~1;
+        }
+      }
+
+      if (mouse_has_absolute) {
+        if (mouse_x < 0)
+          mouse_x = 0;
+        if (mouse_y < 0)
+          mouse_y = 0;
+        if (mouse_x > 32767)
+          mouse_x = 32767;
+        if (mouse_y > 32767)
+          mouse_y = 32767;
+      } else {
+        int max_x = mouse_bounds_w - 1;
+        int max_y = mouse_bounds_h - 1;
+        if (max_x < 0)
+          max_x = 0;
+        if (max_y < 0)
+          max_y = 0;
+        if (mouse_x < 0)
+          mouse_x = 0;
+        if (mouse_y < 0)
+          mouse_y = 0;
+        if (mouse_x > max_x)
+          mouse_x = max_x;
+        if (mouse_y > max_y)
+          mouse_y = max_y;
+      }
+
+      /* Re-add descriptor to available ring */
+      uint16_t avail_idx = dev->avail->idx % QUEUE_SIZE;
+      dev->avail->ring[avail_idx] = desc_idx;
+      dev->avail->idx++;
+
+      dev->last_used_idx++;
     }
 
-    /* Re-add descriptor to available ring */
-    uint16_t avail_idx = avail->idx % QUEUE_SIZE;
-    avail->ring[avail_idx] = desc_idx;
-    avail->idx++;
-
-    last_used_idx++;
+    mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
+    mmio_write32(dev->base + VIRTIO_MMIO_INTERRUPT_ACK / 4,
+                 mmio_read32(dev->base + VIRTIO_MMIO_INTERRUPT_STATUS / 4));
   }
-
-  /* Notify device */
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
-  mmio_write32(mouse_base + VIRTIO_MMIO_INTERRUPT_ACK / 4,
-               mmio_read32(mouse_base + VIRTIO_MMIO_INTERRUPT_STATUS / 4));
 }
 
 /* ===================================================================== */
@@ -458,102 +566,27 @@ int mouse_get_buttons(void) {
 int mouse_init(void) {
   printk(KERN_INFO "MOUSE: Initializing virtio pointer device...\n");
 
-  mouse_base = find_virtio_pointer();
-  if (!mouse_base) {
+  mouse_dev_count = discover_virtio_pointers();
+  if (mouse_dev_count <= 0) {
     printk(KERN_WARNING "MOUSE: No virtio pointer device found\n");
     return -1;
   }
 
-  /* Reset device */
-  mmio_write32(mouse_base + VIRTIO_MMIO_STATUS / 4, 0);
-  while (mmio_read32(mouse_base + VIRTIO_MMIO_STATUS / 4) != 0) {
-    asm volatile("nop");
-  }
-
-  /* Acknowledge */
-  mmio_write32(mouse_base + VIRTIO_MMIO_STATUS / 4, VIRTIO_STATUS_ACK);
-  mmio_write32(mouse_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
-
-  /* Accept no special features */
-  mmio_write32(mouse_base + VIRTIO_MMIO_DRIVER_FEATURES / 4, 0);
-  mmio_write32(mouse_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                   VIRTIO_STATUS_FEATURES_OK);
-
-  /* Setup queue 0 */
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_SEL / 4, 0);
-
-  uint32_t max_queue = mmio_read32(mouse_base + VIRTIO_MMIO_QUEUE_NUM_MAX / 4);
-  if (max_queue < QUEUE_SIZE) {
-    printk(KERN_WARNING "MOUSE: Queue too small\n");
-    return -1;
-  }
-
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_NUM / 4, QUEUE_SIZE);
-
-  /* Setup queue memory */
-  desc = (virtq_desc_t *)queue_mem;
-  avail = (virtq_avail_t *)(queue_mem + QUEUE_SIZE * sizeof(virtq_desc_t));
-  used = (virtq_used_t *)(queue_mem + 2048);
-  events = event_bufs;
-
-  /* Set queue addresses */
-  uint64_t desc_addr = (uint64_t)(uintptr_t)desc;
-  uint64_t avail_addr = (uint64_t)(uintptr_t)avail;
-  uint64_t used_addr = (uint64_t)(uintptr_t)used;
-
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_DESC_LOW / 4,
-               (uint32_t)desc_addr);
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_DESC_HIGH / 4,
-               (uint32_t)(desc_addr >> 32));
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_AVAIL_LOW / 4,
-               (uint32_t)avail_addr);
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_AVAIL_HIGH / 4,
-               (uint32_t)(avail_addr >> 32));
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_USED_LOW / 4,
-               (uint32_t)used_addr);
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_USED_HIGH / 4,
-               (uint32_t)(used_addr >> 32));
-
-  /* Initialize descriptors */
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    desc[i].addr = (uint64_t)(uintptr_t)&events[i];
-    desc[i].len = sizeof(virtio_input_event_t);
-    desc[i].flags = DESC_F_WRITE;
-    desc[i].next = 0;
-  }
-
-  /* Fill available ring */
-  avail->flags = 0;
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    avail->ring[i] = i;
-  }
-  avail->idx = QUEUE_SIZE;
-
-  /* Queue ready */
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_READY / 4, 1);
-
-  /* Driver OK */
-  mmio_write32(mouse_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                   VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
-
-  /* Notify device */
-  mmio_write32(mouse_base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
-
-  /* Check status */
-  uint32_t status = mmio_read32(mouse_base + VIRTIO_MMIO_STATUS / 4);
-  if (status & 0x40) {
-    printk(KERN_WARNING "MOUSE: Device reported failure!\n");
-    return -1;
+  for (int i = 0; i < mouse_dev_count; i++) {
+    if (init_virtio_input_device(&mouse_devs[i]) != 0) {
+      printk(KERN_WARNING "MOUSE: Failed to initialize %s\n",
+             mouse_devs[i].name[0] ? mouse_devs[i].name : "pointer");
+      mouse_devs[i].base = 0;
+    } else {
+      printk(KERN_INFO "MOUSE: Attached %s\n",
+             mouse_devs[i].name[0] ? mouse_devs[i].name : "pointer");
+    }
   }
 
   mouse_x = mouse_bounds_w / 2;
   mouse_y = mouse_bounds_h / 2;
   mouse_has_absolute = 0;
 
-  printk(KERN_INFO "MOUSE: Virtio pointer initialized!\n");
   return 0;
 }
 
@@ -561,7 +594,9 @@ int mouse_init(void) {
 /* Keyboard Functions */
 /* ===================================================================== */
 
-static volatile uint32_t *find_virtio_keyboard(void) {
+static int discover_virtio_keyboards(void) {
+  int count = 0;
+
   for (int i = 0; i < 32; i++) {
     volatile uint32_t *base =
         (volatile uint32_t *)(uintptr_t)(VIRTIO_MMIO_BASE +
@@ -577,16 +612,8 @@ static volatile uint32_t *find_virtio_keyboard(void) {
       continue;
     }
 
-    /* Check device name for "Keyboard" */
-    base8[VIRTIO_INPUT_CFG_SELECT] = VIRTIO_INPUT_CFG_ID_NAME;
-    base8[VIRTIO_INPUT_CFG_SUBSEL] = 0;
-    mmio_barrier();
-
-    uint8_t size = base8[VIRTIO_INPUT_CFG_SIZE];
-    char name[32] = {0};
-    for (int j = 0; j < 31 && j < size; j++) {
-      name[j] = base8[VIRTIO_INPUT_CFG_DATA + j];
-    }
+    char name[32];
+    read_input_device_name(base8, name, sizeof(name));
 
     printk(KERN_INFO "KEYBOARD: Checking device: %s\n", name);
 
@@ -602,205 +629,147 @@ static volatile uint32_t *find_virtio_keyboard(void) {
     }
 
     if (found_kbd) {
-      printk(KERN_INFO "KEYBOARD: Found: %s\n", name);
-      return base;
+      if (count < MAX_KEYBOARD_DEVS) {
+        kbd_devs[count].base = base;
+        for (int j = 0; j < (int)sizeof(kbd_devs[count].name) - 1 && name[j];
+             j++) {
+          kbd_devs[count].name[j] = name[j];
+          kbd_devs[count].name[j + 1] = '\0';
+        }
+        count++;
+      }
     }
   }
 
-  return 0;
+  return count;
 }
 
 static void keyboard_poll(void) {
-  if (!kbd_base || !kbd_used) {
+  if (kbd_dev_count <= 0) {
     return;
   }
 
-  mmio_barrier();
-  uint16_t current_used = kbd_used->idx;
+  for (int dev_idx = 0; dev_idx < kbd_dev_count; dev_idx++) {
+    struct virtio_input_dev *dev = &kbd_devs[dev_idx];
+    uint16_t current_used;
 
-  while (kbd_last_used_idx != current_used) {
-    uint16_t idx = kbd_last_used_idx % QUEUE_SIZE;
-    uint32_t desc_idx = kbd_used->ring[idx].id;
-
-    virtio_input_event_t *ev = &kbd_events[desc_idx];
-
-    /* Process keyboard event */
-    if (ev->type == EV_KEY) {
-      /* Track shift key state */
-      if (ev->code == 42 || ev->code == 54) { /* Left or Right Shift */
-        shift_held = (ev->value != 0);        /* 1 = pressed, 0 = released */
-      }
-
-      /* Track Ctrl key state */
-      if (ev->code == 29 || ev->code == 97) { /* Left or Right Ctrl */
-        ctrl_held = (ev->value != 0);         /* 1 = pressed, 0 = released */
-      }
-
-      if (ev->value == 1) { /* Key press only */
-        int processed = 0;
-        int vibe_key = 0;
-
-        /* Manual mapping for Special Keys */
-        if (ev->code == 103)
-          vibe_key = 0x100; /* KEY_UP */
-        else if (ev->code == 108)
-          vibe_key = 0x101; /* KEY_DOWN */
-        else if (ev->code == 105)
-          vibe_key = 0x102; /* KEY_LEFT */
-        else if (ev->code == 106)
-          vibe_key = 0x103; /* KEY_RIGHT */
-        else if (ev->code == 29 || ev->code == 97)
-          processed = 1; /* Don't send ctrl as a key, just track state */
-        else if (ev->code == 42 || ev->code == 54)
-          processed = 1; /* Don't send shift as a key, just track state */
-        else if (ev->code == 28)
-          vibe_key = '\n'; /* Enter */
-        else if (ev->code == 57)
-          vibe_key = ' '; /* Space */
-        else if (ev->code == 1)
-          vibe_key = 27; /* Esc */
-
-        if (vibe_key) {
-          if (key_callback)
-            key_callback(vibe_key);
-          if (gui_key_callback)
-            gui_key_callback(vibe_key);
-          processed = 1;
-        }
-
-        if (!processed && ev->code < 128) {
-          char ascii;
-
-          /* Handle Ctrl+key combinations */
-          if (ctrl_held) {
-            /* Ctrl+letter generates control character (1-26) */
-            char base = keycode_to_ascii[ev->code];
-            if (base >= 'a' && base <= 'z') {
-              ascii = base - 'a' + 1; /* Ctrl+a=1, Ctrl+c=3, Ctrl+v=22, etc */
-            } else if (base >= 'A' && base <= 'Z') {
-              ascii = base - 'A' + 1;
-            } else {
-              ascii = 0; /* Don't process other Ctrl combinations */
-            }
-          } else if (shift_held) {
-            ascii = keycode_to_ascii_shifted[ev->code];
-          } else {
-            ascii = keycode_to_ascii[ev->code];
-          }
-
-          /* Send ASCII to both callbacks */
-          if (key_callback && ascii) {
-            key_callback(ascii);
-          }
-          /* Send ASCII to GUI callback too (not raw keycode!) */
-          if (gui_key_callback && ascii) {
-            gui_key_callback(ascii);
-          }
-        }
-      }
+    if (!dev->base || !dev->used) {
+      continue;
     }
 
-    /* Re-add descriptor to available ring */
-    uint16_t avail_idx = kbd_avail->idx % QUEUE_SIZE;
-    kbd_avail->ring[avail_idx] = desc_idx;
-    kbd_avail->idx++;
+    mmio_barrier();
+    current_used = dev->used->idx;
 
-    kbd_last_used_idx++;
+    while (dev->last_used_idx != current_used) {
+      uint16_t idx = dev->last_used_idx % QUEUE_SIZE;
+      uint32_t desc_idx = dev->used->ring[idx].id;
+      virtio_input_event_t *ev = &dev->events[desc_idx];
+
+      /* Process keyboard event */
+      if (ev->type == EV_KEY) {
+        /* Track shift key state */
+        if (ev->code == 42 || ev->code == 54) {
+          shift_held = (ev->value != 0);
+        }
+
+        /* Track Ctrl key state */
+        if (ev->code == 29 || ev->code == 97) {
+          ctrl_held = (ev->value != 0);
+        }
+
+        if (ev->value == 1) {
+          int processed = 0;
+          int vibe_key = 0;
+
+          if (ev->code == 103)
+            vibe_key = 0x100;
+          else if (ev->code == 108)
+            vibe_key = 0x101;
+          else if (ev->code == 105)
+            vibe_key = 0x102;
+          else if (ev->code == 106)
+            vibe_key = 0x103;
+          else if (ev->code == 29 || ev->code == 97)
+            processed = 1;
+          else if (ev->code == 42 || ev->code == 54)
+            processed = 1;
+          else if (ev->code == 28)
+            vibe_key = '\n';
+          else if (ev->code == 57)
+            vibe_key = ' ';
+          else if (ev->code == 1)
+            vibe_key = 27;
+
+          if (vibe_key) {
+            if (key_callback)
+              key_callback(vibe_key);
+            if (gui_key_callback)
+              gui_key_callback(vibe_key);
+            processed = 1;
+          }
+
+          if (!processed && ev->code < 128) {
+            char ascii;
+
+            if (ctrl_held) {
+              char base = keycode_to_ascii[ev->code];
+              if (base >= 'a' && base <= 'z') {
+                ascii = base - 'a' + 1;
+              } else if (base >= 'A' && base <= 'Z') {
+                ascii = base - 'A' + 1;
+              } else {
+                ascii = 0;
+              }
+            } else if (shift_held) {
+              ascii = keycode_to_ascii_shifted[ev->code];
+            } else {
+              ascii = keycode_to_ascii[ev->code];
+            }
+
+            if (key_callback && ascii) {
+              key_callback(ascii);
+            }
+            if (gui_key_callback && ascii) {
+              gui_key_callback(ascii);
+            }
+          }
+        }
+      }
+
+      /* Re-add descriptor to available ring */
+      uint16_t avail_idx = dev->avail->idx % QUEUE_SIZE;
+      dev->avail->ring[avail_idx] = desc_idx;
+      dev->avail->idx++;
+
+      dev->last_used_idx++;
+    }
+
+    mmio_write32(dev->base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
+    mmio_write32(dev->base + VIRTIO_MMIO_INTERRUPT_ACK / 4,
+                 mmio_read32(dev->base + VIRTIO_MMIO_INTERRUPT_STATUS / 4));
   }
-
-  /* Notify device */
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
-  mmio_write32(kbd_base + VIRTIO_MMIO_INTERRUPT_ACK / 4,
-               mmio_read32(kbd_base + VIRTIO_MMIO_INTERRUPT_STATUS / 4));
 }
 
 static int keyboard_init(void) {
   printk(KERN_INFO "KEYBOARD: Initializing virtio-keyboard...\n");
 
-  kbd_base = find_virtio_keyboard();
-  if (!kbd_base) {
+  kbd_dev_count = discover_virtio_keyboards();
+  if (kbd_dev_count <= 0) {
     printk(KERN_WARNING "KEYBOARD: No virtio keyboard found\n");
     return -1;
   }
 
-  /* Reset device */
-  mmio_write32(kbd_base + VIRTIO_MMIO_STATUS / 4, 0);
-  while (mmio_read32(kbd_base + VIRTIO_MMIO_STATUS / 4) != 0) {
-    asm volatile("nop");
+  for (int i = 0; i < kbd_dev_count; i++) {
+    if (init_virtio_input_device(&kbd_devs[i]) != 0) {
+      printk(KERN_WARNING "KEYBOARD: Failed to initialize %s\n",
+             kbd_devs[i].name[0] ? kbd_devs[i].name : "keyboard");
+      kbd_devs[i].base = 0;
+    } else {
+      printk(KERN_INFO "KEYBOARD: Attached %s\n",
+             kbd_devs[i].name[0] ? kbd_devs[i].name : "keyboard");
+    }
   }
 
-  /* Acknowledge */
-  mmio_write32(kbd_base + VIRTIO_MMIO_STATUS / 4, VIRTIO_STATUS_ACK);
-  mmio_write32(kbd_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
-
-  /* Accept no special features */
-  mmio_write32(kbd_base + VIRTIO_MMIO_DRIVER_FEATURES / 4, 0);
-  mmio_write32(kbd_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                   VIRTIO_STATUS_FEATURES_OK);
-
-  /* Setup queue 0 */
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_SEL / 4, 0);
-
-  uint32_t max_queue = mmio_read32(kbd_base + VIRTIO_MMIO_QUEUE_NUM_MAX / 4);
-  if (max_queue < QUEUE_SIZE) {
-    printk(KERN_WARNING "KEYBOARD: Queue too small\n");
-    return -1;
-  }
-
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_NUM / 4, QUEUE_SIZE);
-
-  /* Setup queue memory */
-  kbd_desc = (virtq_desc_t *)kbd_queue_mem;
-  kbd_avail =
-      (virtq_avail_t *)(kbd_queue_mem + QUEUE_SIZE * sizeof(virtq_desc_t));
-  kbd_used = (virtq_used_t *)(kbd_queue_mem + 2048);
-  kbd_events = kbd_event_bufs;
-
-  /* Set queue addresses */
-  uint64_t desc_addr = (uint64_t)(uintptr_t)kbd_desc;
-  uint64_t avail_addr = (uint64_t)(uintptr_t)kbd_avail;
-  uint64_t used_addr = (uint64_t)(uintptr_t)kbd_used;
-
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_DESC_LOW / 4, (uint32_t)desc_addr);
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_DESC_HIGH / 4,
-               (uint32_t)(desc_addr >> 32));
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_AVAIL_LOW / 4,
-               (uint32_t)avail_addr);
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_AVAIL_HIGH / 4,
-               (uint32_t)(avail_addr >> 32));
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_USED_LOW / 4, (uint32_t)used_addr);
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_USED_HIGH / 4,
-               (uint32_t)(used_addr >> 32));
-
-  /* Initialize descriptors */
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    kbd_desc[i].addr = (uint64_t)(uintptr_t)&kbd_events[i];
-    kbd_desc[i].len = sizeof(virtio_input_event_t);
-    kbd_desc[i].flags = DESC_F_WRITE;
-    kbd_desc[i].next = 0;
-  }
-
-  /* Fill available ring */
-  kbd_avail->flags = 0;
-  for (int i = 0; i < QUEUE_SIZE; i++) {
-    kbd_avail->ring[i] = i;
-  }
-  kbd_avail->idx = QUEUE_SIZE;
-
-  /* Queue ready */
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_READY / 4, 1);
-
-  /* Driver OK */
-  mmio_write32(kbd_base + VIRTIO_MMIO_STATUS / 4,
-               VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                   VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
-
-  /* Notify device */
-  mmio_write32(kbd_base + VIRTIO_MMIO_QUEUE_NOTIFY / 4, 0);
-
-  printk(KERN_INFO "KEYBOARD: Virtio keyboard initialized!\n");
   return 0;
 }
 

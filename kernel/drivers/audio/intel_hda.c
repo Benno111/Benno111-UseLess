@@ -565,4 +565,5 @@ void intel_hda_stop(void) {
 }
 
 /* Check if audio is currently playing */
+int intel_hda_is_ready(void) { return hda_regs != 0; }
 int intel_hda_is_playing(void) { return audio_playing; }

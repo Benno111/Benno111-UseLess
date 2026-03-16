@@ -334,3 +334,7 @@ int virtio_net_init(void) {
     
     return 0;
 }
+
+int virtio_net_is_ready(void) {
+    return (net_base != 0 && net_iface != 0);
+}

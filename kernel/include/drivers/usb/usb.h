@@ -38,6 +38,9 @@ struct usb_device_descriptor {
 
 /* USB Init Functions */
 int xhci_init(phys_addr_t mmio_base);
+int xhci_is_ready(void);
+int xhci_get_port_count(void);
+int xhci_get_connected_count(void);
 int usb_msd_init(struct usb_device *dev);
 int usb_hid_init(struct usb_device *dev);
 
