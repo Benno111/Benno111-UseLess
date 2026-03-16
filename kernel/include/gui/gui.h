@@ -34,7 +34,7 @@ void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
 
 /* Input */
 void gui_handle_mouse_event(int x, int y, int buttons);
-void gui_handle_key_event(int keycode, bool pressed);
+void gui_handle_key_event(int keycode);
 void gui_move_mouse(int dx, int dy);
 void gui_draw_cursor(void);
 void gui_open_image_viewer(const char *path);

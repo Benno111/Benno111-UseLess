@@ -37,6 +37,7 @@ static void print_banner(void);
 static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
+static void keyboard_handler(int key);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
 #endif
@@ -120,7 +121,6 @@ static void start_x86_64_bringup(void) {
   extern struct terminal *term_create(int x, int y, int cols, int rows);
   extern void term_set_active(struct terminal * term);
   extern void gui_set_window_userdata(struct window *win, void *data);
-  extern void gui_handle_key_event(int key);
   extern void desktop_manager_init(void);
   extern int vfs_mount(const char *source, const char *target,
                        const char *filesystemtype, unsigned long mountflags,
@@ -129,12 +129,27 @@ static void start_x86_64_bringup(void) {
   extern int ramfs_init(void);
   extern void *limine_get_rsdp(void);
   extern void acpi_init(void *rsdp_ptr);
+  extern int input_init(void);
+  extern void input_poll(void);
+  extern void input_set_key_callback(void (*callback)(int key));
+  extern void input_set_mouse_bounds(int width, int height);
+  extern void input_set_mouse_scale(int scale);
+  extern void mouse_get_position(int *x, int *y);
+  extern int mouse_get_buttons(void);
+  extern void gui_handle_mouse_event(int x, int y, int buttons);
+  extern void gui_handle_key_event(int key);
 
   uint32_t *fb_buffer = 0;
   uint32_t fb_width = 0;
   uint32_t fb_height = 0;
   uint32_t fb_pitch = 0;
   struct window *term_window = 0;
+  int last_mx = -1;
+  int last_my = -1;
+  int last_buttons = -1;
+  int needs_redraw = 1;
+  uint64_t last_refresh = 0;
+  const uint64_t REFRESH_MS = 33;
 
   if (fb_init() != 0) {
     panic("Failed to initialize framebuffer on x86_64!");
@@ -161,6 +176,11 @@ static void start_x86_64_bringup(void) {
                fb_pitch ? fb_pitch : (fb_width * 4)) != 0) {
     panic("Failed to initialize x86_64 GUI bring-up!");
   }
+
+  input_init();
+  input_set_key_callback(keyboard_handler);
+  input_set_mouse_bounds((int)fb_width, (int)fb_height);
+  input_set_mouse_scale(2);
   desktop_manager_init();
 
   term_window = gui_create_window("Terminal", 50, 50, 700, 420);
@@ -175,17 +195,44 @@ static void start_x86_64_bringup(void) {
 
   printk(KERN_INFO "x86_64 minimal GUI ready.\n");
   gui_compose();
+  last_refresh = arch_timer_get_ms();
 
-  {
-    while (1) {
-      extern int uart_getc_nonblock(void);
-      int c = uart_getc_nonblock();
-      if (c >= 0) {
-        gui_handle_key_event(c);
-        gui_compose();
-      }
+  while (1) {
+    extern int uart_getc_nonblock(void);
+    int mx, my, mbuttons;
+    int c;
+    uint64_t now;
 
-      arch_idle();
+    input_poll();
+
+    c = uart_getc_nonblock();
+    if (c >= 0) {
+      gui_handle_key_event(c);
+      needs_redraw = 1;
+    }
+
+    mouse_get_position(&mx, &my);
+    mbuttons = mouse_get_buttons();
+    if (mx != last_mx || my != last_my || mbuttons != last_buttons) {
+      gui_handle_mouse_event(mx, my, mbuttons);
+      last_mx = mx;
+      last_my = my;
+      last_buttons = mbuttons;
+      needs_redraw = 1;
+    }
+
+    now = arch_timer_get_ms();
+    if (now - last_refresh >= REFRESH_MS) {
+      last_refresh = now;
+      needs_redraw = 1;
+    }
+
+    if (needs_redraw) {
+      gui_compose();
+      needs_redraw = 0;
+    }
+
+    for (volatile int i = 0; i < 500; i++) {
     }
   }
 }

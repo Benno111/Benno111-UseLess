@@ -832,6 +832,11 @@ void gui_focus_window(struct window *win) {
 
   win->focused = true;
   focused_window = win;
+
+  if (win->title[0] == 'T' && win->title[1] == 'e' && win->title[2] == 'r' &&
+      win->userdata) {
+    term_set_active((struct terminal *)win->userdata);
+  }
 }
 
 /* Draw a filled circle (for traffic light buttons) */
@@ -3313,10 +3318,6 @@ static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
 /* Draw cursor directly to backbuffer - no save/restore needed since we redraw
  * every frame */
 void gui_draw_cursor(void) {
-#ifdef ARCH_X86_64
-  /* Mouse input is not wired up yet on the x86_64 bring-up path. */
-  return;
-#else
   extern void mouse_get_position(int *x, int *y);
   int cx, cy;
   mouse_get_position(&cx, &cy);
@@ -3347,7 +3348,6 @@ void gui_draw_cursor(void) {
       }
     }
   }
-#endif
 }
 
 void gui_move_mouse(int dx, int dy) {
@@ -3380,10 +3380,12 @@ void gui_handle_key_event(int key) {
     /* Check if it's a Terminal window */
     if (focused_window->title[0] == 'T' && focused_window->title[1] == 'e' &&
         focused_window->title[2] == 'r') {
-      /* Use file-scope terminal declarations */
-      struct terminal *term = term_get_active();
-      printk("KEY: term_get_active=%p, key=%d\n", term, key);
+      struct terminal *term = (struct terminal *)focused_window->userdata;
+      if (!term) {
+        term = term_get_active();
+      }
       if (term) {
+        term_set_active(term);
         term_handle_key(term, key);
       }
     }
