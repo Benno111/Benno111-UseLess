@@ -170,6 +170,22 @@ void fb_show_splash(void)
     fb_draw_string(cx - 40, cy + 70, "Booting...", 0x808080, 0x1E1E2E);
 }
 
+void fb_show_x86_64_bringup_screen(void)
+{
+    if (!framebuffer.initialized) return;
+
+    fb_clear(0x101820);
+
+    fb_draw_string(40, 40, "OS next stage", 0xFFFFFF, 0x101820);
+    fb_draw_string(40, 64, "x86_64 bring-up mode", 0x89B4FA, 0x101820);
+    fb_draw_string(40, 104, "Kernel started successfully.", 0xA6E3A1, 0x101820);
+    fb_draw_string(40, 128, "Framebuffer is active.", 0xCDD6F4, 0x101820);
+    fb_draw_string(40, 152, "GUI/input stack is temporarily disabled", 0xF9E2AF, 0x101820);
+    fb_draw_string(40, 176, "until native x86_64 startup is stabilized.", 0xF9E2AF, 0x101820);
+    fb_draw_string(40, 216, "Serial log should continue on COM1.", 0x94E2D5, 0x101820);
+    fb_draw_string(40, 240, "System is halted in a safe idle loop.", 0x808080, 0x101820);
+}
+
 /* ===================================================================== */
 /* Initialization */
 /* ===================================================================== */
