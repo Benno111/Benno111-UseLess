@@ -7,6 +7,14 @@ Set-Location $repoRoot
 
 $x64Iso = Join-Path $repoRoot "image\vibos-x86_64.iso"
 $arm64Kernel = Join-Path $repoRoot "build\kernel\unixos.elf"
+$x64InputArgs = @(
+    "-usb",
+    "-device", "usb-kbd",
+    "-device", "usb-mouse",
+    "-device", "i8042",
+    "-device", "ps2-keyboard",
+    "-device", "ps2-mouse"
+)
 
 function Write-Header {
     Write-Host ""
@@ -184,7 +192,7 @@ function Start-X64Uefi {
             throw "Could not find native qemu-system-x86_64."
         }
         $fw = Resolve-NativeUefiFirmware
-        Invoke-NativeCommand $Launcher.QemuX64 @(
+        $args = @(
             "-M", "q35",
             "-cpu", "qemu64",
             "-m", "4G",
@@ -192,13 +200,14 @@ function Start-X64Uefi {
             "-serial", "mon:stdio",
             "-bios", $fw,
             "-cdrom", $x64Iso
-        )
+        ) + $x64InputArgs
+        Invoke-NativeCommand $Launcher.QemuX64 $args
         return
     }
 
     $wslIso = Convert-ToWslPath $x64Iso
     $fw = Resolve-WslUefiFirmware $Launcher.Command
-    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -bios '$fw' -cdrom '$wslIso'"
+    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -bios '$fw' -cdrom '$wslIso' -usb -device usb-kbd -device usb-mouse -device i8042 -device ps2-keyboard -device ps2-mouse"
 }
 
 function Start-X64Bios {
@@ -213,19 +222,20 @@ function Start-X64Bios {
         if (-not $Launcher.QemuX64) {
             throw "Could not find native qemu-system-x86_64."
         }
-        Invoke-NativeCommand $Launcher.QemuX64 @(
+        $args = @(
             "-M", "q35",
             "-cpu", "qemu64",
             "-m", "4G",
             "-nographic",
             "-serial", "mon:stdio",
             "-cdrom", $x64Iso
-        )
+        ) + $x64InputArgs
+        Invoke-NativeCommand $Launcher.QemuX64 $args
         return
     }
 
     $wslIso = Convert-ToWslPath $x64Iso
-    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -cdrom '$wslIso'"
+    Invoke-WslCommand $Launcher.Command "qemu-system-x86_64 -M q35 -cpu qemu64 -m 4G -nographic -serial mon:stdio -cdrom '$wslIso' -usb -device usb-kbd -device usb-mouse -device i8042 -device ps2-keyboard -device ps2-mouse"
 }
 
 function Start-Arm64Gui {

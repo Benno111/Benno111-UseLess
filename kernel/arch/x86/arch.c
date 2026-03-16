@@ -90,6 +90,24 @@ void arch_halt(void)
     arch_cpu_idle();
 }
 
+void arch_reboot(void)
+{
+    outb(0xCF9, 0x02);
+    io_wait();
+    outb(0xCF9, 0x06);
+    io_wait();
+    outb(0x64, 0xFE);
+    arch_halt();
+}
+
+void arch_poweroff(void)
+{
+    outw(0x604, 0x2000);
+    outw(0xB004, 0x2000);
+    outw(0x4004, 0x3400);
+    arch_halt();
+}
+
 void arch_idle(void)
 {
     arch_cpu_idle();

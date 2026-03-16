@@ -36,6 +36,7 @@ struct terminal;
 static void print_banner(void);
 static void init_subsystems(void *dtb);
 static void start_init_process(void);
+static void populate_seed_filesystem(void);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
 #endif
@@ -120,6 +121,13 @@ static void start_x86_64_bringup(void) {
   extern void term_set_active(struct terminal * term);
   extern void gui_set_window_userdata(struct window *win, void *data);
   extern void gui_handle_key_event(int key);
+  extern int vfs_mount(const char *source, const char *target,
+                       const char *filesystemtype, unsigned long mountflags,
+                       const void *data);
+  extern int vfs_init(void);
+  extern int ramfs_init(void);
+  extern void *limine_get_rsdp(void);
+  extern void acpi_init(void *rsdp_ptr);
 
   uint32_t *fb_buffer = 0;
   uint32_t fb_width = 0;
@@ -139,6 +147,13 @@ static void start_x86_64_bringup(void) {
   }
 
   kmalloc_init();
+  vfs_init();
+  ramfs_init();
+  if (vfs_mount("ramfs", "/", "ramfs", 0, NULL) != 0) {
+    panic("Failed to mount x86_64 root filesystem!");
+  }
+  acpi_init(limine_get_rsdp());
+  populate_seed_filesystem();
 
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
   if (gui_init(fb_buffer, fb_width, fb_height,
@@ -175,6 +190,126 @@ static void start_x86_64_bringup(void) {
   }
 }
 #endif
+
+static void populate_seed_filesystem(void) {
+  extern int ramfs_create_dir(const char *path, mode_t mode);
+  extern int ramfs_create_file(const char *path, mode_t mode,
+                               const char *content);
+  extern int ramfs_create_file_bytes(const char *path, mode_t mode,
+                                     const uint8_t *data, size_t size);
+  extern int vfs_mkdir(const char *path, mode_t mode);
+
+  extern const unsigned char bootstrap_landscape_jpg[];
+  extern const unsigned int bootstrap_landscape_jpg_len;
+  extern const unsigned char bootstrap_portrait_jpg[];
+  extern const unsigned int bootstrap_portrait_jpg_len;
+  extern const unsigned char bootstrap_square_jpg[];
+  extern const unsigned int bootstrap_square_jpg_len;
+  extern const unsigned char bootstrap_wallpaper_jpg[];
+  extern const unsigned int bootstrap_wallpaper_jpg_len;
+  extern const unsigned char bootstrap_nature_jpg[];
+  extern const unsigned int bootstrap_nature_jpg_len;
+  extern const unsigned char bootstrap_city_jpg[];
+  extern const unsigned int bootstrap_city_jpg_len;
+  extern const unsigned char bootstrap_httpbin_jpg[];
+  extern const unsigned int bootstrap_httpbin_jpg_len;
+  extern const unsigned char hd_wallpaper_landscape_jpg[];
+  extern const unsigned int hd_wallpaper_landscape_jpg_len;
+  extern const unsigned char hd_wallpaper_nature_jpg[];
+  extern const unsigned int hd_wallpaper_nature_jpg_len;
+  extern const unsigned char hd_wallpaper_city_jpg[];
+  extern const unsigned int hd_wallpaper_city_jpg_len;
+  extern const unsigned char bootstrap_test_png[];
+  extern const unsigned int bootstrap_test_png_len;
+
+  ramfs_create_dir("Documents", 0755);
+  ramfs_create_dir("Downloads", 0755);
+  ramfs_create_dir("Pictures", 0755);
+  ramfs_create_dir("System", 0755);
+  ramfs_create_dir("Desktop", 0755);
+
+  ramfs_create_file("/Desktop/notes.txt", 0644,
+                    "Welcome to OS next stage!\n\nThis is your desktop - right-click "
+                    "for options!\n");
+  ramfs_create_file("/Desktop/readme.txt", 0644,
+                    "OS next stage Desktop Manager\n\n- Double-click to open files\n- "
+                    "Right-click for context menu\n");
+
+  vfs_mkdir("/Desktop/Projects", 0755);
+  ramfs_create_file("readme.txt", 0644,
+                    "Welcome to OS next stage!\nThis is a real file in RamFS.");
+  ramfs_create_file("todo.txt", 0644,
+                    "- Implement Browser\n- Fix Bugs\n- Sleep");
+  ramfs_create_file_bytes("sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
+
+  ramfs_create_file_bytes("Pictures/landscape.jpg", 0644,
+                          hd_wallpaper_landscape_jpg,
+                          hd_wallpaper_landscape_jpg_len);
+  ramfs_create_file_bytes("Pictures/portrait.jpg", 0644, bootstrap_portrait_jpg,
+                          bootstrap_portrait_jpg_len);
+  ramfs_create_file_bytes("Pictures/square.jpg", 0644, bootstrap_square_jpg,
+                          bootstrap_square_jpg_len);
+  ramfs_create_file_bytes("Pictures/wallpaper.jpg", 0644,
+                          bootstrap_wallpaper_jpg, bootstrap_wallpaper_jpg_len);
+  ramfs_create_file_bytes("Pictures/nature.jpg", 0644, hd_wallpaper_nature_jpg,
+                          hd_wallpaper_nature_jpg_len);
+  ramfs_create_file_bytes("Pictures/city.jpg", 0644, hd_wallpaper_city_jpg,
+                          hd_wallpaper_city_jpg_len);
+  ramfs_create_file_bytes("Pictures/pig.jpg", 0644, bootstrap_httpbin_jpg,
+                          bootstrap_httpbin_jpg_len);
+  ramfs_create_file_bytes("Pictures/test.png", 0644, bootstrap_test_png,
+                          bootstrap_test_png_len);
+
+  ramfs_create_dir("bin", 0755);
+  ramfs_create_dir("sbin", 0755);
+  ramfs_create_dir("usr", 0755);
+  ramfs_create_dir("usr/bin", 0755);
+
+  ramfs_create_file_bytes("/sbin/init", 0755, init_bin, init_bin_len);
+  ramfs_create_file_bytes("/bin/login", 0755, login_bin, login_bin_len);
+  ramfs_create_file_bytes("/bin/sh", 0755, shell_bin, shell_bin_len);
+
+  ramfs_create_dir("examples", 0755);
+  ramfs_create_file("examples/hello.py", 0644,
+                    "# Hello World in Python for OS next stage\n"
+                    "# Run with: run hello.py\n\n"
+                    "def greet(name):\n"
+                    "    return 'Hello, ' + name + '!'\n\n"
+                    "def main():\n"
+                    "    print('Welcome to OS next stage Python Demo')\n"
+                    "    message = greet('OS next stage User')\n"
+                    "    print(message)\n\n"
+                    "if __name__ == '__main__':\n"
+                    "    main()\n");
+  ramfs_create_file("examples/fibonacci.py", 0644,
+                    "# Fibonacci Sequence in Python\n"
+                    "# Run with: run fibonacci.py\n\n"
+                    "def fibonacci(n):\n"
+                    "    if n <= 0: return []\n"
+                    "    fib = [0, 1]\n"
+                    "    for i in range(2, n):\n"
+                    "        fib.append(fib[i-1] + fib[i-2])\n"
+                    "    return fib\n\n"
+                    "print(fibonacci(10))\n");
+  ramfs_create_file("examples/hello.nano", 0644,
+                    "// Hello World in NanoLang\n"
+                    "// Run with: run hello.nano\n\n"
+                    "fn greet(name: str) -> str {\n"
+                    "    return 'Hello, ' + name + '!';\n"
+                    "}\n\n"
+                    "fn main() {\n"
+                    "    print('Welcome to NanoLang');\n"
+                    "    let msg = greet('OS next stage');\n"
+                    "    print(msg);\n"
+                    "}\n");
+  ramfs_create_file("examples/calculator.nano", 0644,
+                    "// Calculator in NanoLang\n"
+                    "fn add(a: int, b: int) -> int { return a + b; }\n"
+                    "fn main() {\n"
+                    "    print('42 + 7 = ');\n"
+                    "    print(add(42, 7));\n"
+                    "}\n");
+}
 
 /*
  * init_subsystems - Initialize all kernel subsystems
@@ -265,145 +400,10 @@ static void init_subsystems(void *dtb) {
     panic("Failed to mount root filesystem!");
   }
 
-  /* Populate filesystem with sample data */
-  extern int ramfs_create_dir(const char *path, mode_t mode);
-  extern int ramfs_create_file(const char *path, mode_t mode,
-                               const char *content);
-  extern int ramfs_create_file_bytes(const char *path, mode_t mode,
-                                     const uint8_t *data, size_t size);
-
-  ramfs_create_dir("Documents", 0755);
-  ramfs_create_dir("Downloads", 0755);
-  ramfs_create_dir("Pictures", 0755);
-  ramfs_create_dir("System", 0755);
-  ramfs_create_dir("Desktop", 0755);
-
-  /* Seed Desktop with sample files and folders */
-  ramfs_create_file("/Desktop/notes.txt", 0644,
-                    "Welcome to OS next stage!\n\nThis is your desktop - right-click "
-                    "for options!\n");
-  ramfs_create_file("/Desktop/readme.txt", 0644,
-                    "OS next stage Desktop Manager\n\n- Double-click to open files\n- "
-                    "Right-click for context menu\n");
-
-  /* Create a subfolder on Desktop */
-  extern int vfs_mkdir(const char *path, mode_t mode);
-  vfs_mkdir("/Desktop/Projects", 0755);
-  ramfs_create_file("readme.txt", 0644,
-                    "Welcome to OS next stage!\nThis is a real file in RamFS.");
-  ramfs_create_file("todo.txt", 0644,
-                    "- Implement Browser\n- Fix Bugs\n- Sleep");
-  ramfs_create_file_bytes("sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
-
-  /* Add baseline JPEG images to Pictures directory */
-  extern const unsigned char bootstrap_landscape_jpg[];
-  extern const unsigned int bootstrap_landscape_jpg_len;
-  extern const unsigned char bootstrap_portrait_jpg[];
-  extern const unsigned int bootstrap_portrait_jpg_len;
-  extern const unsigned char bootstrap_square_jpg[];
-  extern const unsigned int bootstrap_square_jpg_len;
-  extern const unsigned char bootstrap_wallpaper_jpg[];
-  extern const unsigned int bootstrap_wallpaper_jpg_len;
-  /* Real photos from the internet */
-  extern const unsigned char bootstrap_nature_jpg[];
-  extern const unsigned int bootstrap_nature_jpg_len;
-  extern const unsigned char bootstrap_city_jpg[];
-  extern const unsigned int bootstrap_city_jpg_len;
-  extern const unsigned char bootstrap_httpbin_jpg[];
-  extern const unsigned int bootstrap_httpbin_jpg_len;
-
-  /* HD Wallpapers (high quality) */
-  extern const unsigned char hd_wallpaper_landscape_jpg[];
-  extern const unsigned int hd_wallpaper_landscape_jpg_len;
-  extern const unsigned char hd_wallpaper_nature_jpg[];
-  extern const unsigned int hd_wallpaper_nature_jpg_len;
-  extern const unsigned char hd_wallpaper_city_jpg[];
-  extern const unsigned int hd_wallpaper_city_jpg_len;
-
-  /* Use HD wallpapers for main images */
-  ramfs_create_file_bytes("Pictures/landscape.jpg", 0644,
-                          hd_wallpaper_landscape_jpg,
-                          hd_wallpaper_landscape_jpg_len);
-  ramfs_create_file_bytes("Pictures/portrait.jpg", 0644, bootstrap_portrait_jpg,
-                          bootstrap_portrait_jpg_len);
-  ramfs_create_file_bytes("Pictures/square.jpg", 0644, bootstrap_square_jpg,
-                          bootstrap_square_jpg_len);
-  ramfs_create_file_bytes("Pictures/wallpaper.jpg", 0644,
-                          bootstrap_wallpaper_jpg, bootstrap_wallpaper_jpg_len);
-  /* HD Photos */
-  ramfs_create_file_bytes("Pictures/nature.jpg", 0644, hd_wallpaper_nature_jpg,
-                          hd_wallpaper_nature_jpg_len);
-  ramfs_create_file_bytes("Pictures/city.jpg", 0644, hd_wallpaper_city_jpg,
-                          hd_wallpaper_city_jpg_len);
-  ramfs_create_file_bytes("Pictures/pig.jpg", 0644, bootstrap_httpbin_jpg,
-                          bootstrap_httpbin_jpg_len);
-
-  /* Add PNG test image to Pictures */
-  extern const unsigned char bootstrap_test_png[];
-  extern const unsigned int bootstrap_test_png_len;
-  ramfs_create_file_bytes("Pictures/test.png", 0644, bootstrap_test_png,
-                          bootstrap_test_png_len);
+  populate_seed_filesystem();
 
   /* Mount proc, sys, dev (placeholders) */
   printk(KERN_INFO "  Mounting procfs...\n");
-
-  /* Populate userspace binaries */
-  ramfs_create_dir("bin", 0755);
-  ramfs_create_dir("sbin", 0755);
-  ramfs_create_dir("usr", 0755);
-  ramfs_create_dir("usr/bin", 0755);
-
-  ramfs_create_file_bytes("/sbin/init", 0755, init_bin, init_bin_len);
-  ramfs_create_file_bytes("/bin/login", 0755, login_bin, login_bin_len);
-  ramfs_create_file_bytes("/bin/sh", 0755, shell_bin, shell_bin_len);
-
-  /* Create examples directory with language demo files */
-  ramfs_create_dir("examples", 0755);
-
-  /* Python demo files */
-  ramfs_create_file("examples/hello.py", 0644,
-                    "# Hello World in Python for OS next stage\n"
-                    "# Run with: run hello.py\n\n"
-                    "def greet(name):\n"
-                    "    return 'Hello, ' + name + '!'\n\n"
-                    "def main():\n"
-                    "    print('Welcome to OS next stage Python Demo')\n"
-                    "    message = greet('OS next stage User')\n"
-                    "    print(message)\n\n"
-                    "if __name__ == '__main__':\n"
-                    "    main()\n");
-
-  ramfs_create_file("examples/fibonacci.py", 0644,
-                    "# Fibonacci Sequence in Python\n"
-                    "# Run with: run fibonacci.py\n\n"
-                    "def fibonacci(n):\n"
-                    "    if n <= 0: return []\n"
-                    "    fib = [0, 1]\n"
-                    "    for i in range(2, n):\n"
-                    "        fib.append(fib[i-1] + fib[i-2])\n"
-                    "    return fib\n\n"
-                    "print(fibonacci(10))\n");
-
-  /* NanoLang demo files */
-  ramfs_create_file("examples/hello.nano", 0644,
-                    "// Hello World in NanoLang\n"
-                    "// Run with: run hello.nano\n\n"
-                    "fn greet(name: str) -> str {\n"
-                    "    return 'Hello, ' + name + '!';\n"
-                    "}\n\n"
-                    "fn main() {\n"
-                    "    print('Welcome to NanoLang');\n"
-                    "    let msg = greet('OS next stage');\n"
-                    "    print(msg);\n"
-                    "}\n");
-
-  ramfs_create_file("examples/calculator.nano", 0644,
-                    "// Calculator in NanoLang\n"
-                    "fn add(a: int, b: int) -> int { return a + b; }\n"
-                    "fn main() {\n"
-                    "    print('42 + 7 = ');\n"
-                    "    print(add(42, 7));\n"
-                    "}\n");
 
   printk(KERN_INFO "  Mounting sysfs...\n");
   printk(KERN_INFO "  Mounting devfs...\n");

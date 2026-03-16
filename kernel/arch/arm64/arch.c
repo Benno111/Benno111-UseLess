@@ -455,6 +455,18 @@ void arch_halt(void)
     }
 }
 
+void arch_reboot(void)
+{
+    printk(KERN_WARNING "POWER: reboot not implemented on ARM64, halting\n");
+    arch_halt();
+}
+
+void arch_poweroff(void)
+{
+    printk(KERN_WARNING "POWER: poweroff not implemented on ARM64, halting\n");
+    arch_halt();
+}
+
 void arch_idle(void)
 {
     asm volatile("wfi");

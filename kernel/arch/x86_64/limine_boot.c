@@ -41,6 +41,28 @@ struct limine_framebuffer_request {
     struct limine_framebuffer_response *response;
 };
 
+struct limine_rsdp_response {
+    uint64_t revision;
+    void *address;
+};
+
+struct limine_rsdp_request {
+    uint64_t id[4];
+    uint64_t revision;
+    struct limine_rsdp_response *response;
+};
+
+struct limine_hhdm_response {
+    uint64_t revision;
+    uint64_t offset;
+};
+
+struct limine_hhdm_request {
+    uint64_t id[4];
+    uint64_t revision;
+    struct limine_hhdm_response *response;
+};
+
 /* ========== Limine Requests ========== */
 
 /* Place requests in dedicated section - using direct magic values like working-os */
@@ -61,6 +83,20 @@ __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = {0xc7b1dd30df4c8b88, 0x0a82e883a194f07b,
            0x9d5827dcd881dd75, 0xa3148604f6fab11b},
+    .revision = 0,
+    .response = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_rsdp_request rsdp_request = {
+    .id = {0xc5e77b6b397e7b43, 0x27637845accdcf3c, 0, 0},
+    .revision = 0,
+    .response = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = {0x48dcf1cb8ad2b852, 0x63984e959a98244b, 0, 0},
     .revision = 0,
     .response = 0
 };
@@ -118,6 +154,8 @@ static void serial_puthex(uint64_t val) {
 /* ========== Globals ========== */
 
 static struct limine_framebuffer *g_fb = 0;
+static void *g_rsdp = 0;
+static uint64_t g_hhdm_offset = 0;
 
 /* ========== Framebuffer Info for kernel ========== */
 
@@ -132,6 +170,10 @@ int limine_get_framebuffer(uint32_t **buffer, uint32_t *width,
     if (pitch) *pitch = (uint32_t)g_fb->pitch;
     return 0;
 }
+
+void *limine_get_rsdp(void) { return g_rsdp; }
+
+uint64_t limine_get_hhdm_offset(void) { return g_hhdm_offset; }
 
 /* ========== Direct Screen Test ========== */
 
@@ -237,6 +279,12 @@ void _start(void) {
     }
 
     g_fb = framebuffer_request.response->framebuffers[0];
+    if (rsdp_request.response) {
+        g_rsdp = rsdp_request.response->address;
+    }
+    if (hhdm_request.response) {
+        g_hhdm_offset = hhdm_request.response->offset;
+    }
 
     serial_puts("Framebuffer acquired:\n");
     serial_puts("  Address: ");
@@ -249,6 +297,10 @@ void _start(void) {
     serial_puthex(g_fb->pitch);
     serial_puts("\n  BPP: ");
     serial_puthex(g_fb->bpp);
+    serial_puts("\n  RSDP: ");
+    serial_puthex((uint64_t)g_rsdp);
+    serial_puts("\n  HHDM: ");
+    serial_puthex(g_hhdm_offset);
     serial_puts("\n");
 
     /* Direct screen test to verify framebuffer works */

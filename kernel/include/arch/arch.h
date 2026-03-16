@@ -317,6 +317,16 @@ void arch_cpu_info(char *buf, size_t size);
 void arch_halt(void) __attribute__((noreturn));
 
 /**
+ * arch_reboot - Reset the machine if supported
+ */
+void arch_reboot(void);
+
+/**
+ * arch_poweroff - Power off the machine if supported
+ */
+void arch_poweroff(void);
+
+/**
  * arch_idle - Put CPU in low-power idle state
  */
 void arch_idle(void);

@@ -3,6 +3,7 @@
  */
 
 #include "arch/arch.h"
+#include "acpi.h"
 #include "printk.h"
 #include "types.h"
 
@@ -340,6 +341,45 @@ void arch_halt(void)
     while (1) {
         asm volatile("cli; hlt");
     }
+}
+
+void arch_reboot(void)
+{
+    printk(KERN_INFO "POWER: reboot requested\n");
+
+    if (acpi_reboot() == 0) {
+        for (volatile int i = 0; i < 1000000; i++) {
+        }
+    }
+
+    /* PCI reset control register */
+    outb(0xCF9, 0x02);
+    io_wait();
+    outb(0xCF9, 0x06);
+    io_wait();
+
+    /* Legacy keyboard controller reset */
+    outb(0x64, 0xFE);
+    io_wait();
+
+    arch_halt();
+}
+
+void arch_poweroff(void)
+{
+    printk(KERN_INFO "POWER: shutdown requested\n");
+
+    if (acpi_poweroff() == 0) {
+        for (volatile int i = 0; i < 1000000; i++) {
+        }
+    }
+
+    /* Common QEMU/Bochs/VirtualBox poweroff ports */
+    outw(0x604, 0x2000);
+    outw(0xB004, 0x2000);
+    outw(0x4004, 0x3400);
+
+    arch_halt();
 }
 
 void arch_idle(void)

@@ -2590,7 +2590,7 @@ static void draw_menu_bar(void) {
     int dropdown_x = 8;
     int dropdown_y = MENU_BAR_HEIGHT;
     int dropdown_w = 160;
-    int dropdown_h = 80;
+    int dropdown_h = 104;
 
     /* Dropdown shadow */
     gui_draw_rect(dropdown_x + 3, dropdown_y + 3, dropdown_w, dropdown_h,
@@ -2612,7 +2612,9 @@ static void draw_menu_bar(void) {
 
     gui_draw_string(dropdown_x + 12, dropdown_y + 40, "Settings...", 0xCCCCCC,
                     0x404050);
-    gui_draw_string(dropdown_x + 12, dropdown_y + 58, "Restart", 0xCCCCCC,
+    gui_draw_string(dropdown_x + 12, dropdown_y + 58, "Shutdown", 0xCCCCCC,
+                    0x404050);
+    gui_draw_string(dropdown_x + 12, dropdown_y + 78, "Restart", 0xCCCCCC,
                     0x404050);
   }
 }
@@ -3075,6 +3077,28 @@ static void draw_desktop(void) {
 
   /* Draw desktop icons */
   desktop_draw_icons();
+
+  /* Draw build info in the bottom-right corner above the dock. */
+  {
+#ifdef ARCH_X86_64
+    const char *build_info = "OS next stage v0.5.0 x86_64";
+#elif defined(ARCH_X86)
+    const char *build_info = "OS next stage v0.5.0 x86";
+#else
+    const char *build_info = "OS next stage v0.5.0 ARM64";
+#endif
+    int build_len = 0;
+    while (build_info[build_len]) {
+      build_len++;
+    }
+
+    int text_w = build_len * 8;
+    int text_x = (int)primary_display.width - text_w - 16;
+    int text_y = (int)primary_display.height - DOCK_HEIGHT - 24;
+
+    gui_draw_rect(text_x - 8, text_y - 4, text_w + 16, 16, 0x000000);
+    gui_draw_string(text_x, text_y, build_info, 0xCDD6F4, 0x000000);
+  }
 
   /* Draw menu bar at top (glass effect) */
   draw_menu_bar();
@@ -3578,7 +3602,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     /* Check menu bar dropdown BEFORE desktop icons (dropdown overlaps desktop
      * area) */
-    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 80 &&
+    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 104 &&
         x >= 8 && x < 168) {
       int dropdown_y = MENU_BAR_HEIGHT;
       int rel_y = y - dropdown_y;
@@ -3599,11 +3623,19 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         menu_open = 0;
         return;
       }
-      /* Restart (y+58) */
+      /* Shutdown (y+58) */
       if (rel_y >= 58 && rel_y < 80) {
+        printk("Shutdown requested\\n");
+        extern void arch_poweroff(void);
+        arch_poweroff();
+        menu_open = 0;
+        return;
+      }
+      /* Restart (y+78) */
+      if (rel_y >= 80 && rel_y < 102) {
         printk("Restart requested\\n");
-        extern void arch_halt(void);
-        arch_halt();
+        extern void arch_reboot(void);
+        arch_reboot();
         menu_open = 0;
         return;
       }
@@ -3662,13 +3694,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
   /* Check menu bar and dropdown clicks */
   if (y < MENU_BAR_HEIGHT ||
-      (menu_open && y < MENU_BAR_HEIGHT + 80 && x < 170)) {
+      (menu_open && y < MENU_BAR_HEIGHT + 104 && x < 170)) {
 
     printk("MENU DEBUG: x=%d y=%d menu_open=%d MBH=%d\\n", x, y, menu_open,
            MENU_BAR_HEIGHT);
 
     /* If dropdown is open, check dropdown item clicks */
-    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 80 &&
+    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 104 &&
         x >= 8 && x < 168) {
       int dropdown_y = MENU_BAR_HEIGHT;
       int rel_y = y - dropdown_y;
@@ -3690,11 +3722,19 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         menu_open = 0;
         return;
       }
-      /* Restart (y+58) - expanded range */
+      /* Shutdown (y+58) - expanded range */
       if (rel_y >= 58 && rel_y < 80) {
+        printk("MENU: Shutdown requested\\n");
+        extern void arch_poweroff(void);
+        arch_poweroff();
+        menu_open = 0;
+        return;
+      }
+      /* Restart (y+78) - expanded range */
+      if (rel_y >= 80 && rel_y < 102) {
         printk("MENU: Restart requested\\n");
-        extern void arch_halt(void);
-        arch_halt();
+        extern void arch_reboot(void);
+        arch_reboot();
         menu_open = 0;
         return;
       }
