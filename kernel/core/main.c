@@ -177,23 +177,32 @@ static void start_x86_64_bringup(void) {
   gui_compose();
 
   {
-    int redraw_counter = 0;
+    uint32_t idle_ticks = 0;
     while (1) {
       extern int uart_getc_nonblock(void);
+      int need_redraw = 0;
       int c = uart_getc_nonblock();
       if (c >= 0) {
         gui_handle_key_event(c);
-        gui_compose();
-        redraw_counter = 0;
+        need_redraw = 1;
+        idle_ticks = 0;
       }
 
-      /* Avoid hammering full-screen redraws every iteration on x86_64. */
-      if (++redraw_counter >= 32) {
-        gui_compose();
-        redraw_counter = 0;
+      /*
+       * Keep x86_64 in a conservative event-driven mode.
+       * Redraw on input, and do only an occasional heartbeat refresh so the
+       * compositor doesn't churn continuously and wedge the bring-up path.
+       */
+      if (++idle_ticks >= 8192) {
+        need_redraw = 1;
+        idle_ticks = 0;
       }
 
-      for (volatile int i = 0; i < 150000; i++) {
+      if (need_redraw) {
+        gui_compose();
+      }
+
+      for (volatile int i = 0; i < 200000; i++) {
       }
     }
   }
