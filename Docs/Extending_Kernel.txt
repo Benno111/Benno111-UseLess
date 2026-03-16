@@ -1,8 +1,0 @@
-Extending the Kernel
----------------------
-Possible next steps:
-- IDT & exceptions
-- Paging & memory map
-- Framebuffer graphics
-- Driver subsystem
-- Scheduler & tasks
