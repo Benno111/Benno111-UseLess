@@ -99,3 +99,55 @@ jobs:
             echo "Build failed." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
+
+  draft-release:
+    name: Draft Release
+    needs: [build-and-test-arm64, build-x86_64]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && needs.build-and-test-arm64.result == 'success' && needs.build-x86_64.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Package source snapshot
+        run: |
+          git ls-files -z \
+            | tar --null -czf os-next-stage-files.tar.gz --files-from=-
+
+      - name: Generate release notes
+        run: |
+          cat > release_notes.md << EOF
+          # os-next-stage CI Draft
+
+          Automatic draft release generated from CI.
+
+          ## Build Status
+
+          - ARM64 build and test: success
+          - x86_64 build: success
+
+          ## Source Snapshot
+
+          - \`os-next-stage-files.tar.gz\` - tracked project files from commit \`${{ github.sha }}\`
+
+          ## Branch
+
+          - \`${{ github.ref_name }}\`
+          EOF
+
+      - name: Create or update draft release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ci-draft
+          target_commitish: ${{ github.sha }}
+          name: os-next-stage CI Draft
+          body_path: release_notes.md
+          draft: true
+          prerelease: true
+          files: |
+            os-next-stage-files.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
