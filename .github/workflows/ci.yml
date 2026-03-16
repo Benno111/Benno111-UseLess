@@ -58,19 +58,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             qemu-system-x86 \
+            xorriso \
             make \
             lld \
             llvm
 
-      - name: Build x86_64 kernel
+      - name: Build x86_64 BIOS+UEFI ISO
         run: |
           make -f Makefile.multiarch ARCH=x86_64 clean
-          make -f Makefile.multiarch ARCH=x86_64 kernel
+          make -f Makefile.multiarch ARCH=x86_64 image
 
       - name: Check x86_64 build artifacts
         run: |
           ls -lh build/x86_64/kernel/vibos-x86_64.elf
           file build/x86_64/kernel/vibos-x86_64.elf
+          ls -lh image/vibos-x86_64.iso
+          file image/vibos-x86_64.iso
 
   summary:
     name: Build Summary

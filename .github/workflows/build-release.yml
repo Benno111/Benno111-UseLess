@@ -1,4 +1,4 @@
-name: Build and Release Vib-OS
+name: Build and Release os-next-stage
 
 on:
   push:
@@ -32,7 +32,8 @@ jobs:
             qemu-system-x86 \
             make \
             lld \
-            llvm
+            llvm \
+            xorriso
 
       - name: Build ARM64 kernel
         run: |
@@ -57,15 +58,16 @@ jobs:
 
           tar -czf vibos-arm64.tar.gz -C release/arm64 .
 
-      - name: Build x86_64 kernel
+      - name: Build x86_64 ISO
         run: |
           make -f Makefile.multiarch ARCH=x86_64 clean
-          make -f Makefile.multiarch ARCH=x86_64 kernel
+          make -f Makefile.multiarch ARCH=x86_64 image
 
       - name: Package x86_64 release bundle
         run: |
           mkdir -p release/x86_64
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
+          cp image/vibos-x86_64.iso release/x86_64/vibos-x86_64.iso
 
           cd release/x86_64
           sha256sum * > SHA256SUMS
@@ -85,16 +87,16 @@ jobs:
       - name: Generate release notes
         run: |
           cat > release_notes.md << 'EOF'
-          # Vib-OS ${{ steps.get_version.outputs.version }}
+          # os-next-stage ${{ steps.get_version.outputs.version }}
 
-          A Unix-like operating system with ARM64 and x86_64 support and GUI.
+          os-next-stage operating system with ARM64 and x86_64 support and GUI.
 
           ## Supported Architectures
 
           - ARM64 - Raspberry Pi 4/5, ARM64 UEFI boards, Apple Silicon (via UTM)
           - x86_64 - UEFI-capable PCs and x86_64 virtual machines
 
-          > Note: For a standalone x86_64 UEFI build, see the `vib-os-x86_64/` folder.
+          > Note: For a standalone x86_64 UEFI build, see the `os-next-stage-x86_64/` folder.
 
           ## Downloads
 
@@ -105,8 +107,9 @@ jobs:
             - `SHA256SUMS` - Checksums for verification
 
           ### x86_64
-          - `vibos-x86_64.tar.gz` - x86_64 kernel bundle
+          - `vibos-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
             - `vibos-x86_64.elf` - Kernel binary
+            - `vibos-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
             - `SHA256SUMS` - Checksums for verification
 
           ## Quick Start
@@ -156,7 +159,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          name: Vib-OS ${{ steps.get_version.outputs.version }}
+          name: os-next-stage ${{ steps.get_version.outputs.version }}
           body_path: release_notes.md
           draft: true
           prerelease: false

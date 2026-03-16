@@ -86,7 +86,7 @@ QEMU_FLAGS := -M $(QEMU_MACHINE) -cpu $(QEMU_CPU) -m $(QEMU_MEMORY) \
 # ============================================================================
 
 .PHONY: all clean kernel drivers libc userspace runtimes image qemu qemu-debug test help \
-        x86_64 x86_64-kernel x86_64-image x86_64-qemu x86_64-qemu-debug
+        x86_64 x86_64-kernel x86_64-image x86_64-qemu x86_64-qemu-bios x86_64-qemu-uefi x86_64-qemu-debug
 
 MULTIARCH_MAKEFILE := Makefile.multiarch
 X86_64_ARCH := x86_64
@@ -119,8 +119,10 @@ help:
 	@echo "x86_64 targets:"
 	@echo "  x86_64            - Build x86_64 kernel and image"
 	@echo "  x86_64-kernel     - Build x86_64 kernel only"
-	@echo "  x86_64-image      - Create x86_64 UEFI image"
-	@echo "  x86_64-qemu       - Run x86_64 build in QEMU"
+	@echo "  x86_64-image      - Create hybrid x86_64 BIOS+UEFI ISO"
+	@echo "  x86_64-qemu       - Run x86_64 ISO in QEMU"
+	@echo "  x86_64-qemu-bios  - Run x86_64 ISO with BIOS boot"
+	@echo "  x86_64-qemu-uefi  - Run x86_64 ISO with UEFI boot"
 	@echo "  x86_64-qemu-debug - Run x86_64 build with GDB server"
 	@echo ""
 	@echo "Utility targets:"
@@ -343,6 +345,12 @@ x86_64-image:
 
 x86_64-qemu:
 	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu
+
+x86_64-qemu-bios:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu-bios
+
+x86_64-qemu-uefi:
+	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu-uefi
 
 x86_64-qemu-debug:
 	@$(MAKE) -f $(MULTIARCH_MAKEFILE) ARCH=$(X86_64_ARCH) qemu-debug

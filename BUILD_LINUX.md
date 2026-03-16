@@ -89,13 +89,13 @@ make image
 ## x86_64 Build
 
 ```bash
-# Build x86_64 kernel and UEFI image
+# Build x86_64 kernel and hybrid BIOS+UEFI ISO
 make x86_64
 
 # Build only the x86_64 kernel
 make x86_64-kernel
 
-# Create the x86_64 UEFI image
+# Create the x86_64 hybrid ISO
 make x86_64-image
 ```
 
@@ -116,6 +116,12 @@ make qemu-debug
 
 # x86_64 in QEMU
 make x86_64-qemu
+
+# x86_64 BIOS boot
+make x86_64-qemu-bios
+
+# x86_64 UEFI boot
+make x86_64-qemu-uefi
 
 # x86_64 with GDB server
 make x86_64-qemu-debug

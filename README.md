@@ -372,9 +372,9 @@ make -f Makefile.multiarch ARCH=x86_64 qemu
 3. Insert SD card and power on
 
 #### x86_64 PC
-1. Create bootable USB: `./scripts/create-uefi-image.sh`
-2. Write to USB: `sudo dd if=vibos-uefi.img of=/dev/sdX bs=4M`
-3. Boot from USB (select UEFI boot in BIOS)
+1. Create a hybrid BIOS+UEFI ISO: `make -f Makefile.multiarch ARCH=x86_64 image`
+2. Write `image/vibos-x86_64.iso` to USB with Rufus or `dd`
+3. Boot from the USB in either UEFI or legacy BIOS mode
 
 ### Apple Silicon (M1/M2/M3/M4)
 
