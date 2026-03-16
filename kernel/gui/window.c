@@ -614,6 +614,21 @@ void gui_draw_circle(int cx, int cy, int r, uint32_t color, bool filled) {
   }
 }
 
+static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
+                             uint32_t accent, uint32_t bg) {
+  int s = scale < 1 ? 1 : scale;
+  int outer = 14 * s;
+  int inner = 8 * s;
+
+  gui_draw_rect(x, y, outer, outer, bg);
+  gui_draw_rect_outline(x, y, outer, outer, fg, s);
+  gui_draw_rect(x + 3 * s, y + 3 * s, inner, inner, accent);
+  gui_draw_rect(x + 5 * s, y + 5 * s, 4 * s, 4 * s, bg);
+
+  gui_draw_line(x + 2 * s, y + 2 * s, x + 12 * s, y + 12 * s, fg);
+  gui_draw_line(x + 12 * s, y + 2 * s, x + 2 * s, y + 12 * s, fg);
+}
+
 /* ===================================================================== */
 /* 8x16 Font - use external complete font */
 /* ===================================================================== */
@@ -1890,9 +1905,9 @@ static void draw_window(struct window *win) {
     int yy = content_y + 20;
     int center_x = content_x + content_w / 2;
 
-    /* OS Logo - large @ symbol centered */
-    gui_draw_string(center_x - 20, yy, "@ @", 0x89B4FA, THEME_BG);
-    yy += 32;
+    /* OS Logo */
+    gui_draw_os_logo(center_x - 21, yy, 3, 0xCDD6F4, 0x89B4FA, THEME_BG);
+    yy += 52;
 
     /* OS Name - large and centered */
     gui_draw_string(center_x - 58, yy, "OS next stage", 0xFFFFFF, THEME_BG);
@@ -2517,11 +2532,11 @@ static void draw_menu_bar(void) {
     draw_pixel(x, MENU_BAR_HEIGHT - 1, 0x606060);
   }
 
-  /* Apple logo (using @ as placeholder, bold white) */
-  gui_draw_string(14, 6, "@", 0xFFFFFF, 0x2D2D35);
+  /* OS next stage logo */
+  gui_draw_os_logo(12, 6, 1, 0xFFFFFF, 0x89B4FA, 0x2D2D35);
 
   /* OS next stage name (bold) */
-  gui_draw_string(36, 6, "OS next stage", 0xFFFFFF, 0x303038);
+  gui_draw_string(34, 6, "OS next stage", 0xFFFFFF, 0x303038);
 
   /* Clock on right - compute from PL031 RTC */
   {

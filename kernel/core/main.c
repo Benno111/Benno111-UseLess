@@ -121,6 +121,7 @@ static void start_x86_64_bringup(void) {
   extern void term_set_active(struct terminal * term);
   extern void gui_set_window_userdata(struct window *win, void *data);
   extern void gui_handle_key_event(int key);
+  extern void desktop_manager_init(void);
   extern int vfs_mount(const char *source, const char *target,
                        const char *filesystemtype, unsigned long mountflags,
                        const void *data);
@@ -160,6 +161,7 @@ static void start_x86_64_bringup(void) {
                fb_pitch ? fb_pitch : (fb_width * 4)) != 0) {
     panic("Failed to initialize x86_64 GUI bring-up!");
   }
+  desktop_manager_init();
 
   term_window = gui_create_window("Terminal", 50, 50, 700, 420);
   if (term_window) {
@@ -175,16 +177,23 @@ static void start_x86_64_bringup(void) {
   gui_compose();
 
   {
+    int redraw_counter = 0;
     while (1) {
       extern int uart_getc_nonblock(void);
       int c = uart_getc_nonblock();
       if (c >= 0) {
         gui_handle_key_event(c);
+        gui_compose();
+        redraw_counter = 0;
       }
 
-      gui_compose();
+      /* Avoid hammering full-screen redraws every iteration on x86_64. */
+      if (++redraw_counter >= 32) {
+        gui_compose();
+        redraw_counter = 0;
+      }
 
-      for (volatile int i = 0; i < 50000; i++) {
+      for (volatile int i = 0; i < 150000; i++) {
       }
     }
   }
