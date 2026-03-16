@@ -50,6 +50,9 @@ mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
 
+# Keep both names so the ISO matches the embedded config and the repo's
+# existing naming used elsewhere.
+cp "$KERNEL_PATH" "$ISO_ROOT/boot/kernel.elf"
 cp "$KERNEL_PATH" "$ISO_ROOT/boot/vibos.elf"
 cp "$LIMINE_CFG" "$ISO_ROOT/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/boot/limine.conf"
@@ -78,6 +81,13 @@ xorriso -as mkisofs \
     -o "$ISO_PATH"
 
 "$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+
+log "Validating ISO contents..."
+xorriso -indev "$ISO_PATH" -find /boot/kernel.elf -quit >/dev/null 2>&1
+xorriso -indev "$ISO_PATH" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
+xorriso -indev "$ISO_PATH" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
+xorriso -indev "$ISO_PATH" -find /EFI/BOOT/BOOTX64.EFI -quit >/dev/null 2>&1
+xorriso -indev "$ISO_PATH" -find /limine.conf -quit >/dev/null 2>&1
 
 log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
