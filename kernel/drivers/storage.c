@@ -1,4 +1,6 @@
 #include "drivers/storage.h"
+#include "arch/arch.h"
+#include "mm/vmm.h"
 #include "printk.h"
 
 #define STORAGE_MAX_CONTROLLERS 16
@@ -88,6 +90,12 @@ static void storage_append_decimal(char *dst, int max, int value) {
     dst[idx++] = digits[--count];
   }
   dst[idx] = '\0';
+}
+
+static void storage_append_location(char *buf, int max, const char *prefix,
+                                    int value) {
+  storage_append_string(buf, max, prefix);
+  storage_append_decimal(buf, max, value);
 }
 
 const char *storage_kind_name(storage_kind_t kind) {
@@ -228,6 +236,138 @@ static void storage_record_disk(storage_kind_t kind, int controller_index,
          disk->location);
 }
 
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+static int storage_ide_wait(uint16_t io_base, uint8_t mask, uint8_t value,
+                            int timeout) {
+  while (timeout-- > 0) {
+    uint8_t status = inb(io_base + 7);
+    if ((status & mask) == value)
+      return status;
+    io_wait();
+  }
+  return -1;
+}
+
+static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
+                                      uint8_t drive_select) {
+  uint16_t identify[256];
+  char location[24];
+  int status;
+
+  outb(io_base + 6, (uint8_t)(0xA0 | drive_select));
+  io_wait();
+  outb(io_base + 2, 0);
+  outb(io_base + 3, 0);
+  outb(io_base + 4, 0);
+  outb(io_base + 5, 0);
+  outb(io_base + 7, 0xEC);
+  io_wait();
+
+  status = inb(io_base + 7);
+  if (status == 0)
+    return;
+
+  status = storage_ide_wait(io_base, 0x80, 0x00, 100000);
+  if (status < 0)
+    return;
+
+  if (inb(io_base + 4) != 0 || inb(io_base + 5) != 0)
+    return;
+
+  status = storage_ide_wait(io_base, 0x09, 0x08, 100000);
+  if (status < 0 || !(status & 0x08))
+    return;
+
+  for (int i = 0; i < 256; i++)
+    identify[i] = inw(io_base);
+
+  location[0] = '\0';
+  storage_append_location(location, sizeof(location), "hd", storage_disk_count);
+  storage_record_disk(STORAGE_KIND_IDE, controller_index, drive_select ? 1 : 0,
+                      "IDE Hard Disk", location);
+}
+#endif
+
+static void storage_probe_ide_controller(int controller_index) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  storage_probe_ide_channel(controller_index, 0x1F0, 0x00);
+  storage_probe_ide_channel(controller_index, 0x1F0, 0x10);
+  storage_probe_ide_channel(controller_index, 0x170, 0x00);
+  storage_probe_ide_channel(controller_index, 0x170, 0x10);
+#else
+  (void)controller_index;
+#endif
+}
+
+static void storage_probe_ahci_controller(int controller_index,
+                                          const pci_device_t *dev) {
+  volatile uint32_t *abar;
+  uint32_t ports_implemented;
+  char location[24];
+
+  if (!dev || !dev->bar0)
+    return;
+
+  vmm_map_range(dev->bar0, dev->bar0, 0x2000, VM_DEVICE);
+  abar = (volatile uint32_t *)(uintptr_t)dev->bar0;
+  ports_implemented = abar[0x0C / 4];
+
+  for (int port = 0; port < 32; port++) {
+    volatile uint32_t *port_regs;
+    uint32_t ssts;
+    uint32_t sig;
+    uint32_t det;
+    uint32_t ipm;
+
+    if (!(ports_implemented & (1U << port)))
+      continue;
+
+    port_regs = (volatile uint32_t *)((uintptr_t)abar + 0x100 + port * 0x80);
+    sig = port_regs[0x24 / 4];
+    ssts = port_regs[0x28 / 4];
+    det = ssts & 0x0F;
+    ipm = (ssts >> 8) & 0x0F;
+
+    if (det != 3 || ipm != 1)
+      continue;
+    if (sig == 0xEB140101 || sig == 0x96690101)
+      continue;
+
+    location[0] = '\0';
+    storage_append_location(location, sizeof(location), "sd", storage_disk_count);
+    storage_record_disk(STORAGE_KIND_AHCI, controller_index, port,
+                        "SATA Hard Disk", location);
+  }
+}
+
+static void storage_probe_nvme_controller(int controller_index,
+                                          const pci_device_t *dev) {
+  volatile uint32_t *regs;
+  uint32_t cap_lo;
+  uint32_t cap_hi;
+  uint32_t version;
+  char location[24];
+
+  if (!dev || !dev->bar0)
+    return;
+
+  vmm_map_range(dev->bar0, dev->bar0, 0x1000, VM_DEVICE);
+  regs = (volatile uint32_t *)(uintptr_t)dev->bar0;
+  cap_lo = regs[0x00 / 4];
+  cap_hi = regs[0x04 / 4];
+  version = regs[0x08 / 4];
+
+  if ((cap_lo == 0 && cap_hi == 0) || (cap_lo == 0xFFFFFFFF && cap_hi == 0xFFFFFFFF))
+    return;
+  if (version == 0 || version == 0xFFFFFFFF)
+    return;
+
+  location[0] = '\0';
+  storage_append_location(location, sizeof(location), "nvme", storage_disk_count);
+  storage_record_disk(STORAGE_KIND_NVME, controller_index, 0, "NVMe Disk",
+                      location);
+}
+
 void storage_init(void) {
   if (storage_initialized)
     return;
@@ -250,6 +390,7 @@ void storage_init(void) {
 void storage_register_pci_controller(pci_device_t *dev) {
   storage_kind_t kind;
   const char *name;
+  int controller_index;
 
   if (!storage_initialized)
     storage_init();
@@ -263,6 +404,23 @@ void storage_register_pci_controller(pci_device_t *dev) {
   name = storage_kind_name(kind);
   storage_record_controller(kind, dev->vendor_id, dev->device_id, dev->bus,
                             dev->slot, dev->func, name, "pci");
+  controller_index = storage_controller_count - 1;
+
+  switch (kind) {
+  case STORAGE_KIND_IDE:
+    storage_probe_ide_controller(controller_index);
+    break;
+  case STORAGE_KIND_AHCI:
+    pci_enable_device(dev);
+    storage_probe_ahci_controller(controller_index, dev);
+    break;
+  case STORAGE_KIND_NVME:
+    pci_enable_device(dev);
+    storage_probe_nvme_controller(controller_index, dev);
+    break;
+  default:
+    break;
+  }
 }
 
 void storage_register_platform_controller(const char *name, storage_kind_t kind,

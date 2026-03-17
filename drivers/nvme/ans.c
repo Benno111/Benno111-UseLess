@@ -6,6 +6,7 @@
  */
 
 #include "mm/vmm.h"
+#include "drivers/storage.h"
 #include "printk.h"
 #include "types.h"
 
@@ -121,6 +122,8 @@ int ans_nvme_init(void) {
   printk(KERN_INFO "ANS: NVMe CAP: 0x%llx\n", (unsigned long long)cap);
 
   ans_initialized = true;
+  storage_register_disk_device("Apple NVMe Disk", STORAGE_KIND_APPLE_ANS,
+                               "nvme0");
   printk(KERN_INFO "ANS: NVMe controller initialized\n");
 
   return 0;
