@@ -107,6 +107,11 @@ static int gui_is_installer_mode(void) {
 
 static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
+static char partition_status[96] = "Choose a disk and layout.";
+static int installer_disk_count = 0;
+static int installer_selected_disk = 0;
+static int installer_partition_scheme = 1;
+static char installer_disk_labels[8][80];
 static int window_switcher_frames = 0;
 static char window_switcher_title[64] = "No windows";
 static int secure_attention_open = 0;
@@ -2516,6 +2521,7 @@ static int installer_install_system_image(void) {
   struct file *dir;
   char summary[96];
 
+  installer_refresh_disk_inventory();
   load_system_app_catalog();
   ensure_gui_app_dirs();
 
@@ -2531,6 +2537,7 @@ static int installer_install_system_image(void) {
   dock_loaded = 0;
   load_dock_config();
   desktop_refresh();
+  installer_write_target_config();
 
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
@@ -2548,15 +2555,19 @@ static int installer_install_system_image(void) {
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
+  installer_refresh_disk_inventory();
   int card_x = content_x + 24;
   int card_y = content_y + 22;
   int card_w = content_w - 48;
   int button_w = 180;
+  int tool_button_w = 148;
   int button_h = 34;
   int button_x = content_x + 24;
+  int tool_button_x = button_x + button_w + 12;
   int button_y = content_y + content_h - 64;
   uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
   const char *action_label = "Install System Image";
+  int disk_y = card_y + 102;
 
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
   gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
@@ -2567,30 +2578,98 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   gui_draw_string(card_x + 18, card_y + 66,
                   "It carries a bundled bootable system image payload.",
                   0xA6ADC8, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 102, "Install actions:",
-                  0x89B4FA, 0x232337);
-  gui_draw_string(card_x + 30, card_y + 124,
-                  "- copies /install/system-image to disk", 0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 30, card_y + 144,
-                  "- installs boot files and shell assets", 0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 30, card_y + 164,
-                  "- writes system apps, dock, and shortcuts", 0xE5E7EB,
+  gui_draw_string(card_x + 18, disk_y, "Target disk:", 0x89B4FA, 0x232337);
+  for (int i = 0; i < installer_disk_count && i < 3; i++) {
+    int row_y = disk_y + 18 + i * 26;
+    uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x1B1B2B;
+    gui_draw_rect(card_x + 18, row_y, card_w - 36, 22, row_bg);
+    gui_draw_string(card_x + 28, row_y + 4, installer_disk_labels[i], 0xFFFFFF,
+                    row_bg);
+  }
+  gui_draw_string(card_x + 18, disk_y + 102, "Partition layout:", 0x89B4FA,
                   0x232337);
-  gui_draw_string(card_x + 30, card_y + 184,
-                  "- creates /Applications and desktop shortcuts", 0xE5E7EB,
-                  0x232337);
-  gui_draw_string(card_x + 30, card_y + 204,
-                  "- mirrors to persistent disk mounts when available",
-                  0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 230, "Status:", 0x89B4FA, 0x232337);
-  gui_draw_rect(card_x + 18, card_y + 250, card_w - 36, 34, 0x1B1B2B);
-  gui_draw_string(card_x + 28, card_y + 261, installer_status, 0xFFFFFF,
+  for (int i = 0; i < 3; i++) {
+    int row_y = disk_y + 120 + i * 24;
+    uint32_t row_bg = i == installer_partition_scheme ? 0x3F3F46 : 0x1B1B2B;
+    gui_draw_rect(card_x + 18, row_y, 210, 20, row_bg);
+    gui_draw_string(card_x + 28, row_y + 3,
+                    installer_partition_scheme_name(i), 0xFFFFFF, row_bg);
+  }
+  gui_draw_string(card_x + 244, disk_y + 124,
+                  installer_partition_scheme_desc(installer_partition_scheme),
+                  0xCDD6F4, 0x232337);
+  gui_draw_string(card_x + 244, disk_y + 148,
+                  "Install actions:", 0x89B4FA, 0x232337);
+  gui_draw_string(card_x + 256, disk_y + 168,
+                  "- copies /install/system-image", 0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 256, disk_y + 186,
+                  "- writes boot files and shell assets", 0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 256, disk_y + 204,
+                  "- stores target disk + partition plan", 0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 286, "Status:", 0x89B4FA, 0x232337);
+  gui_draw_rect(card_x + 18, card_y + 306, card_w - 36, 34, 0x1B1B2B);
+  gui_draw_string(card_x + 28, card_y + 317, installer_status, 0xFFFFFF,
                   0x1B1B2B);
 
   gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);
   gui_draw_string(button_x + 24, button_y + 10,
                   installer_has_run ? "Install Complete" : action_label,
                   0xFFFFFF, button_bg);
+  gui_draw_rect(tool_button_x, button_y, tool_button_w, button_h, 0x2563EB);
+  gui_draw_string(tool_button_x + 22, button_y + 10, "Partition Tool",
+                  0xFFFFFF, 0x2563EB);
+}
+
+static void draw_partition_tool_window(int content_x, int content_y, int content_w,
+                                       int content_h) {
+  installer_refresh_disk_inventory();
+
+  gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, content_h - 24,
+                0x232337);
+  gui_draw_string(content_x + 24, content_y + 22, "Partition Tool", 0xFFFFFF,
+                  0x232337);
+  gui_draw_string(content_x + 24, content_y + 44,
+                  "Choose the installer target disk and a partition layout plan.",
+                  0xCDD6F4, 0x232337);
+
+  gui_draw_string(content_x + 24, content_y + 76, "Disks", 0x89B4FA, 0x232337);
+  for (int i = 0; i < installer_disk_count && i < 5; i++) {
+    int row_y = content_y + 94 + i * 28;
+    uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x1B1B2B;
+    gui_draw_rect(content_x + 24, row_y, 230, 24, row_bg);
+    gui_draw_string(content_x + 34, row_y + 5, installer_disk_labels[i],
+                    0xFFFFFF, row_bg);
+  }
+
+  gui_draw_string(content_x + 274, content_y + 76, "Layouts", 0x89B4FA, 0x232337);
+  for (int i = 0; i < 3; i++) {
+    int row_y = content_y + 94 + i * 28;
+    uint32_t row_bg = i == installer_partition_scheme ? 0x3F3F46 : 0x1B1B2B;
+    gui_draw_rect(content_x + 274, row_y, content_w - 298, 24, row_bg);
+    gui_draw_string(content_x + 286, row_y + 5,
+                    installer_partition_scheme_name(i), 0xFFFFFF, row_bg);
+  }
+
+  gui_draw_string(content_x + 274, content_y + 192, "Layout details",
+                  0x89B4FA, 0x232337);
+  gui_draw_string(content_x + 286, content_y + 214,
+                  installer_partition_scheme_desc(installer_partition_scheme),
+                  0xCDD6F4, 0x232337);
+  gui_draw_string(content_x + 286, content_y + 238, "Selected disk:",
+                  0x89B4FA, 0x232337);
+  gui_draw_string(content_x + 286, content_y + 256, installer_selected_disk_label(),
+                  0xFFFFFF, 0x232337);
+
+  gui_draw_rect(content_x + 274, content_y + 286, 150, 30, 0x2563EB);
+  gui_draw_string(content_x + 302, content_y + 295, "Apply Layout", 0xFFFFFF,
+                  0x2563EB);
+
+  gui_draw_string(content_x + 24, content_y + content_h - 82, "Status:",
+                  0x89B4FA, 0x232337);
+  gui_draw_rect(content_x + 24, content_y + content_h - 60, content_w - 48, 28,
+                0x1B1B2B);
+  gui_draw_string(content_x + 34, content_y + content_h - 52, partition_status,
+                  0xFFFFFF, 0x1B1B2B);
 }
 
 static void draw_startup_auth_window(struct window *win, int content_x,
@@ -2644,6 +2723,91 @@ struct fm_state {
   char selected[256];
   int scroll_y;
 };
+
+static const char *installer_partition_scheme_name(int scheme) {
+  switch (scheme) {
+  case 0:
+    return "Single System Partition";
+  case 1:
+    return "EFI + System";
+  case 2:
+    return "EFI + System + Data";
+  default:
+    return "EFI + System";
+  }
+}
+
+static const char *installer_partition_scheme_desc(int scheme) {
+  switch (scheme) {
+  case 0:
+    return "One large partition for a simple disk image install.";
+  case 1:
+    return "Recommended split with an EFI boot partition and OS partition.";
+  case 2:
+    return "EFI, OS, and a separate data partition for user files.";
+  default:
+    return "Recommended split with an EFI boot partition and OS partition.";
+  }
+}
+
+static void installer_refresh_disk_inventory(void) {
+  extern int storage_get_controller_count(void);
+  extern int storage_describe_controller(int index, char *buf, int max);
+  int count = storage_get_controller_count();
+
+  installer_disk_count = 0;
+  for (int i = 0; i < count && installer_disk_count < 8; i++) {
+    if (storage_describe_controller(i, installer_disk_labels[installer_disk_count],
+                                    sizeof(installer_disk_labels[0])) == 0) {
+      installer_disk_count++;
+    }
+  }
+
+  if (installer_disk_count == 0) {
+    str_copy_safe(installer_disk_labels[0], "Auto persistent target",
+                  sizeof(installer_disk_labels[0]));
+    installer_disk_count = 1;
+  }
+
+  if (installer_selected_disk >= installer_disk_count)
+    installer_selected_disk = installer_disk_count - 1;
+  if (installer_selected_disk < 0)
+    installer_selected_disk = 0;
+}
+
+static const char *installer_selected_disk_label(void) {
+  installer_refresh_disk_inventory();
+  if (installer_selected_disk < 0 || installer_selected_disk >= installer_disk_count)
+    return "Auto persistent target";
+  return installer_disk_labels[installer_selected_disk];
+}
+
+static void installer_write_target_config(void) {
+  char manifest[320];
+  int idx = 0;
+  const char *disk = installer_selected_disk_label();
+  const char *scheme = installer_partition_scheme_name(installer_partition_scheme);
+
+  for (const char *p = "disk="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; disk[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = disk[i];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "layout="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; scheme[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = scheme[i];
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file("/System/install-target.cfg", manifest);
+}
+
+static void open_partition_tool_window(int x, int y) {
+  installer_refresh_disk_inventory();
+  gui_create_window("Partition Tool", x, y, 560, 360);
+}
 
 struct image_viewer_state {
   media_image_t image;
@@ -2975,6 +3139,11 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
         extern void gui_open_rename(const char *path);
         gui_open_rename(full_path);
       }
+    }
+
+    /* Partition Tool: 390px offset */
+    if (x >= BORDER_WIDTH + 390 && x < BORDER_WIDTH + 440) {
+      open_partition_tool_window(win->x + 50, win->y + 40);
     }
 
     return;
@@ -3524,6 +3693,10 @@ static void draw_window(struct window *win) {
     gui_draw_rect(content_x + 290, yy + 8, 90, 24, 0x404050);
     gui_draw_string(content_x + 300, yy + 12, "Rename", 0xFFFFFF, 0x404050);
 
+    /* Partition Tool Button */
+    gui_draw_rect(content_x + 390, yy + 8, 50, 24, 0x2563EB);
+    gui_draw_string(content_x + 396, yy + 12, "Disks", 0xFFFFFF, 0x2563EB);
+
     yy += toolbar_h;
 
     struct fm_state *st = (struct fm_state *)win->userdata;
@@ -3556,7 +3729,8 @@ static void draw_window(struct window *win) {
     }
   }
   /* Paint */
-  else if (win->title[0] == 'P' && win->title[1] == 'a') {
+  else if (win->title[0] == 'P' && win->title[1] == 'a' &&
+           win->title[2] == 'i') {
     /* Toolbar */
     gui_draw_rect(content_x, content_y, content_w, 32, 0x404040);
     gui_draw_string(content_x + 8, content_y + 8,
@@ -3626,6 +3800,11 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'I' && win->title[1] == 'n' &&
            win->title[2] == 's' && win->title[3] == 't') {
     draw_installer_window(content_x, content_y, content_w, content_h);
+  }
+  /* Partition Tool */
+  else if (win->title[0] == 'P' && win->title[1] == 'a' &&
+           win->title[2] == 'r') {
+    draw_partition_tool_window(content_x, content_y, content_w, content_h);
   }
   else if ((win->title[0] == 'A' && win->title[1] == 'c' &&
             win->title[2] == 'c') ||
@@ -6050,11 +6229,38 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 's' && win->title[3] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_w = win->width - BORDER_WIDTH * 2;
         int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+        int card_x = content_x + 24;
+        int card_y = content_y + 22;
         int button_x = content_x + 24;
+        int tool_button_x = button_x + 180 + 12;
         int button_y = content_y + content_h - 64;
         int button_w = 180;
         int button_h = 34;
+        int disk_y = card_y + 102;
+
+        installer_refresh_disk_inventory();
+
+        for (int i = 0; i < installer_disk_count && i < 3; i++) {
+          int row_y = disk_y + 18 + i * 26;
+          if (x >= card_x + 18 && x < card_x + content_w - 60 && y >= row_y &&
+              y < row_y + 22) {
+            installer_selected_disk = i;
+            installer_set_status("Installer target disk updated.");
+            return;
+          }
+        }
+
+        for (int i = 0; i < 3; i++) {
+          int row_y = disk_y + 120 + i * 24;
+          if (x >= card_x + 18 && x < card_x + 228 && y >= row_y &&
+              y < row_y + 20) {
+            installer_partition_scheme = i;
+            installer_set_status("Partition layout updated.");
+            return;
+          }
+        }
 
         if (x >= button_x && x < button_x + button_w && y >= button_y &&
             y < button_y + button_h) {
@@ -6066,6 +6272,51 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                   "Install failed. System image could not be written.");
             }
           }
+          return;
+        }
+
+        if (x >= tool_button_x && x < tool_button_x + 148 && y >= button_y &&
+            y < button_y + button_h) {
+          open_partition_tool_window(win->x + 36, win->y + 30);
+          return;
+        }
+      }
+
+      if (win->title[0] == 'P' && win->title[1] == 'a' &&
+          win->title[2] == 'r') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+
+        installer_refresh_disk_inventory();
+        for (int i = 0; i < installer_disk_count && i < 5; i++) {
+          int row_y = content_y + 94 + i * 28;
+          if (x >= content_x + 24 && x < content_x + 254 && y >= row_y &&
+              y < row_y + 24) {
+            installer_selected_disk = i;
+            str_copy_safe(partition_status, "Selected target disk.",
+                          sizeof(partition_status));
+            return;
+          }
+        }
+
+        for (int i = 0; i < 3; i++) {
+          int row_y = content_y + 94 + i * 28;
+          if (x >= content_x + 274 && x < content_x + win->width - 24 &&
+              y >= row_y && y < row_y + 24) {
+            installer_partition_scheme = i;
+            str_copy_safe(partition_status, "Partition layout plan updated.",
+                          sizeof(partition_status));
+            installer_write_target_config();
+            return;
+          }
+        }
+
+        if (x >= content_x + 274 && x < content_x + 424 &&
+            y >= content_y + 286 && y < content_y + 316) {
+          installer_write_target_config();
+          str_copy_safe(partition_status, "Saved disk + layout plan for installer.",
+                        sizeof(partition_status));
           return;
         }
       }
