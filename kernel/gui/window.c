@@ -7,6 +7,7 @@
 #include "build_uuid.h"
 #include "desktop.h"         /* Desktop manager */
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
+#include "drivers/uart.h"
 #include "fs/vfs.h"          /* VFS headers */
 #include "icons.h"           /* Icon bitmaps */
 #include "drivers/storage.h"
@@ -2489,6 +2490,14 @@ static void installer_log_append_path(const char *path, const char *line) {
   write_text_file(path, existing);
 }
 
+static void installer_log_send_to_host(const char *line) {
+  if (!line)
+    return;
+  uart_puts("[INSTALL] ");
+  uart_puts(line);
+  uart_puts("\n");
+}
+
 static void installer_log(const char *line) {
   int idx = 0;
 
@@ -2496,6 +2505,7 @@ static void installer_log(const char *line) {
     return;
 
   printk(KERN_INFO "INSTALL: %s\n", line);
+  installer_log_send_to_host(line);
   while (installer_log_buffer[idx] && idx < (int)sizeof(installer_log_buffer) - 1)
     idx++;
   for (int i = 0; line[i] && idx < (int)sizeof(installer_log_buffer) - 2; i++)
