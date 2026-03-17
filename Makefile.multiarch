@@ -101,6 +101,7 @@ endif
 
 CFLAGS_COMMON := -Wall -Wextra -Wno-unused-function -ffreestanding \
                  -fno-stack-protector -fno-pic -O2 -g
+DEPFLAGS := -MMD -MP
 
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) $(ARCH_CFLAGS) \
                  -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(GENERATED_DIR) \
@@ -178,6 +179,7 @@ CODE_HASH_INPUTS := $(sort $(KERNEL_SOURCES_C) $(KERNEL_SOURCES_ASM) $(DRIVER_SO
 BUILD_METADATA_HEADER := $(GENERATED_DIR)/build_uuid.h
 
 ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
+ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 
 # ============================================================================
 # Main Targets
@@ -286,18 +288,18 @@ $(BUILD_METADATA_HEADER): $(CODE_HASH_INPUTS)
 		printf '%s\n' '#endif'; \
 	} > $(BUILD_METADATA_HEADER)
 
-$(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(BUILD_METADATA_HEADER)
+$(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
 ifeq ($(ARCH),arm64)
 	@# Media files need FP support on ARM64
 	@if echo "$<" | grep -q "/media/"; then \
-		$(CC) $(CFLAGS_COMMON) $(CROSS_TARGET) -mcpu=cortex-a72 -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -fno-builtin -nostdlib -nostdinc -DARCH_ARM64 -c $< -o $@; \
+		$(CC) $(CFLAGS_COMMON) $(DEPFLAGS) $(CROSS_TARGET) -mcpu=cortex-a72 -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(GENERATED_DIR) -fno-builtin -nostdlib -nostdinc -DARCH_ARM64 -c $< -o $@; \
 	else \
-		$(CC) $(CFLAGS_KERNEL) -c $< -o $@; \
+		$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@; \
 	fi
 else
-	@$(CC) $(CFLAGS_KERNEL) -c $< -o $@
+	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 endif
 
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
@@ -305,10 +307,10 @@ $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@echo "[AS] $<"
 	@$(AS) $(ASFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c $(BUILD_METADATA_HEADER)
+$(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
-	@$(CC) $(CFLAGS_KERNEL) -c $< -o $@
+	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
@@ -423,3 +425,5 @@ clean-all:
 	@rm -rf $(ROOT_DIR)/build
 	@rm -rf $(IMAGE_DIR)
 	@echo "[CLEAN] Done"
+
+-include $(ALL_DEPFILES)
