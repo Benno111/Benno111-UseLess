@@ -2195,6 +2195,16 @@ static void dock_add_all_system_apps(void) {
   }
 }
 
+static void dock_add_missing_preinstalled_apps(void) {
+  for (int i = 0; i < app_catalog_count; i++) {
+    const dock_app_def_t *app = &app_catalog[i];
+    if (!app->default_dock)
+      continue;
+    ensure_app_manifest(app);
+    dock_add_item(app);
+  }
+}
+
 static void save_dock_config(void) {
   char buf[512];
   int idx = 0;
@@ -2262,6 +2272,14 @@ static void load_dock_config(void) {
   if (dock_item_count == 0) {
     dock_add_all_system_apps();
     save_dock_config();
+    return;
+  }
+
+  {
+    int before = dock_item_count;
+    dock_add_missing_preinstalled_apps();
+    if (dock_item_count != before)
+      save_dock_config();
   }
 }
 

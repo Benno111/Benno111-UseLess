@@ -7,104 +7,8 @@ on:
     branches: [ main, master, develop ]
 
 jobs:
-  build-arm64:
-    name: Build ARM64 ISO
-    runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up ARM64 build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ccache \
-            gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
-            qemu-system-arm \
-            qemu-system-aarch64 \
-            qemu-efi-aarch64 \
-            qemu-utils \
-            xorriso \
-            make \
-            lld \
-            llvm
-
-      - name: Build ARM64 ISO
-        run: |
-          set -euxo pipefail
-          make -f Makefile.multiarch ARCH=arm64 image
-
-      - name: Check ARM64 build artifacts
-        run: |
-          set -euxo pipefail
-          ls -lh build/arm64/kernel/vibos-arm64.elf
-          file build/arm64/kernel/vibos-arm64.elf
-          ls -lh image/vibos-arm64.iso
-          file image/vibos-arm64.iso
-
-  build-x86_64:
-    name: Build x86_64 ISO
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up x86_64 build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ccache \
-            qemu-system-x86 \
-            qemu-utils \
-            xorriso \
-            make \
-            lld \
-            llvm
-
-      - name: Build x86_64 ISO
-        run: |
-          set -euxo pipefail
-          make -f Makefile.multiarch ARCH=x86_64 image
-
-      - name: Check x86_64 build artifacts
-        run: |
-          set -euxo pipefail
-          ls -lh build/x86_64/kernel/vibos-x86_64.elf
-          file build/x86_64/kernel/vibos-x86_64.elf
-          ls -lh image/vibos-x86_64.iso
-          file image/vibos-x86_64.iso
-
-  summary:
-    name: Build Summary
-    needs: [build-arm64, build-x86_64]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Write summary
-        run: |
-          {
-            echo "## Build Summary"
-            echo
-            echo "| Architecture | Output | Status |"
-            echo "|--------------|--------|--------|"
-            echo "| ARM64 | \`vibos-arm64.iso\` | ${{ needs.build-arm64.result }} |"
-            echo "| x86_64 | \`vibos-x86_64.iso\` | ${{ needs.build-x86_64.result }} |"
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "${{ needs.build-arm64.result }}" = "success" ] && [ "${{ needs.build-x86_64.result }}" = "success" ]; then
-            echo "All builds passed." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          else
-            echo "At least one build failed." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-  draft-release:
+  Build:
     name: Draft Release
     needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
@@ -138,6 +42,11 @@ jobs:
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 image
 
+      - name: Build x86_64 Installer ISO
+        run: |
+          set -euxo pipefail
+          make -f Makefile.multiarch ARCH=x86_64 installer-image
+
       - name: Build ARM64 ISO
         run: |
           set -euxo pipefail
@@ -148,6 +57,8 @@ jobs:
           set -euxo pipefail
           ls -lh image/vibos-x86_64.iso
           file image/vibos-x86_64.iso
+          ls -lh image/vibos-x86_64-installer.iso
+          file image/vibos-x86_64-installer.iso
           ls -lh image/vibos-arm64.iso
           file image/vibos-arm64.iso
 
@@ -162,10 +73,12 @@ jobs:
 
           - ARM64 ISO: success
           - x86_64 ISO: success
+          - x86_64 Installer ISO: success
 
           ## Bootable Media
 
           - \`vibos-x86_64.iso\`
+          - \`vibos-x86_64-installer.iso\`
           - \`vibos-arm64.iso\`
 
           ## Branch
@@ -186,6 +99,7 @@ jobs:
           prerelease: true
           files: |
             image/vibos-x86_64.iso
+            image/vibos-x86_64-installer.iso
             image/vibos-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
