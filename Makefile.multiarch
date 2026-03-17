@@ -26,6 +26,10 @@ SYSROOT := $(BUILD_DIR)/sysroot
 # Detect host OS
 UNAME_S := $(shell uname -s)
 
+# Build tuning
+BUILD_PROFILE ?= dev
+GENERATE_SECTIONS ?= 0
+
 # Use parallel builds by default unless the caller already set -j/--jobs.
 ifeq ($(filter -j% --jobs%,$(MAKEFLAGS)),)
     JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -99,8 +103,14 @@ endif
 # Compiler Flags
 # ============================================================================
 
+ifeq ($(BUILD_PROFILE),release)
+OPT_DEBUG_FLAGS := -O2 -g
+else
+OPT_DEBUG_FLAGS := -O1 -g0
+endif
+
 CFLAGS_COMMON := -Wall -Wextra -Wno-unused-function -ffreestanding \
-                 -fno-stack-protector -fno-pic -O2 -g
+                 -fno-stack-protector -fno-pic $(OPT_DEBUG_FLAGS)
 DEPFLAGS := -MMD -MP
 
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) $(ARCH_CFLAGS) \
@@ -180,6 +190,8 @@ BUILD_METADATA_HEADER := $(GENERATED_DIR)/build_uuid.h
 
 ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
+ASSET_FILES := $(shell find $(ASSETS_DIR) -type f 2>/dev/null)
+ASSET_STAMP := $(BUILD_ASSETS_DIR)/.stamp
 
 # ============================================================================
 # Main Targets
@@ -220,10 +232,15 @@ help:
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
 	@echo "  clean    - Remove build artifacts"
 	@echo ""
+	@echo "Build variables:"
+	@echo "  BUILD_PROFILE=dev|release   (default: dev)"
+	@echo "  GENERATE_SECTIONS=1         write sections.txt after link"
+	@echo ""
 	@echo "Examples:"
 	@echo "  make ARCH=arm64 all"
 	@echo "  make ARCH=x86_64 qemu"
 	@echo "  make ARCH=x86 kernel"
+	@echo "  make ARCH=x86_64 BUILD_PROFILE=release all"
 
 # ============================================================================
 # Directory Setup
@@ -250,14 +267,19 @@ $(BUILD_DIR):
 	@mkdir -p $(BUILD_ASSETS_DIR)
 	@mkdir -p $(IMAGE_DIR)
 
-assets: $(BUILD_DIR)
+assets: $(ASSET_STAMP)
+
+$(ASSET_STAMP): $(ASSET_FILES) | $(BUILD_DIR)
 	@echo "[ASSETS] Syncing repo assets into $(BUILD_ASSETS_DIR)"
 	@if [ -d "$(ASSETS_DIR)" ]; then \
 		rm -rf "$(BUILD_ASSETS_DIR)"; \
 		mkdir -p "$(BUILD_ASSETS_DIR)"; \
 		cp -R "$(ASSETS_DIR)"/. "$(BUILD_ASSETS_DIR)/"; \
+		touch "$(ASSET_STAMP)"; \
 	else \
 		echo "[ASSETS] No assets directory found, skipping"; \
+		mkdir -p "$(BUILD_ASSETS_DIR)"; \
+		touch "$(ASSET_STAMP)"; \
 	fi
 
 # ============================================================================
@@ -315,12 +337,14 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
 	@$(LD) $(LDFLAGS_KERNEL) -o $@ $^
+ifeq ($(GENERATE_SECTIONS),1)
 	@if command -v $(OBJDUMP) >/dev/null 2>&1; then \
 		$(OBJDUMP) -h $@ > $(BUILD_DIR)/kernel/sections.txt; \
 		echo "[INFO] Kernel sections written to $(BUILD_DIR)/kernel/sections.txt"; \
 	else \
 		echo "[INFO] objdump not found, skipping sections dump"; \
 	fi
+endif
 	@echo "[KERNEL] $(ARCH) build complete: $@"
 
 # ============================================================================
