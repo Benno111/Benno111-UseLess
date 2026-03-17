@@ -11,6 +11,7 @@ ISO_ROOT="${BUILD_DIR}/iso_root"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
 LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
+INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
 
 GREEN='\033[0;32m'
@@ -36,6 +37,7 @@ require_cmd() {
 
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_CFG"
+require_file "$INSTALL_LIMINE_CFG"
 require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
@@ -70,9 +72,9 @@ cp "$LIMINE_CFG" "$ISO_ROOT/limine/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/EFI/BOOT/limine.conf"
 cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/kernel.elf"
 cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/vibos.elf"
-cp "$LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
-cp "$LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
-cp "$LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
+cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
+cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
+cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
 
 cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"

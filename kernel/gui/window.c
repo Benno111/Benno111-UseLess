@@ -695,6 +695,120 @@ static inline void draw_pixel(int x, int y, uint32_t color) {
   }
 }
 
+static inline void draw_pixel_alpha(int x, int y, uint32_t color) {
+  if (x < 0 || x >= (int)primary_display.width)
+    return;
+  if (y < 0 || y >= (int)primary_display.height)
+    return;
+  if (g_clip.enabled &&
+      (x < g_clip.x0 || x >= g_clip.x1 || y < g_clip.y0 || y >= g_clip.y1))
+    return;
+
+  uint32_t *target = primary_display.backbuffer ? primary_display.backbuffer
+                                                : primary_display.framebuffer;
+  if (!target)
+    return;
+
+  uint32_t alpha = (color >> 24) & 0xFF;
+  if (alpha == 0) {
+    return;
+  }
+  if (alpha == 0xFF) {
+    target[y * (primary_display.pitch / 4) + x] = color & 0xFFFFFF;
+    return;
+  }
+
+  uint32_t *dst = &target[y * (primary_display.pitch / 4) + x];
+  uint32_t dst_color = *dst;
+  uint32_t src_r = (color >> 16) & 0xFF;
+  uint32_t src_g = (color >> 8) & 0xFF;
+  uint32_t src_b = color & 0xFF;
+  uint32_t dst_r = (dst_color >> 16) & 0xFF;
+  uint32_t dst_g = (dst_color >> 8) & 0xFF;
+  uint32_t dst_b = dst_color & 0xFF;
+  uint32_t inv_alpha = 255 - alpha;
+  uint32_t out_r = (src_r * alpha + dst_r * inv_alpha) / 255;
+  uint32_t out_g = (src_g * alpha + dst_g * inv_alpha) / 255;
+  uint32_t out_b = (src_b * alpha + dst_b * inv_alpha) / 255;
+  *dst = (out_r << 16) | (out_g << 8) | out_b;
+}
+
+static inline uint32_t *gui_draw_target(void) {
+  return primary_display.backbuffer ? primary_display.backbuffer
+                                    : primary_display.framebuffer;
+}
+
+static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color) {
+  for (int row = y; row < y + h; row++) {
+    for (int col = x; col < x + w; col++) {
+      draw_pixel_alpha(col, row, color);
+    }
+  }
+}
+
+static void gui_apply_backdrop_blur(int x, int y, int w, int h, int stride) {
+  uint32_t *target = gui_draw_target();
+  if (!target || w <= 0 || h <= 0)
+    return;
+
+  int pitch = (int)(primary_display.pitch / 4);
+  if (stride < 1)
+    stride = 1;
+
+  for (int row = y; row < y + h; row += stride) {
+    for (int col = x; col < x + w; col += stride) {
+      if (col < 0 || col >= (int)primary_display.width || row < 0 ||
+          row >= (int)primary_display.height)
+        continue;
+
+      uint32_t sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
+      for (int sy = -2; sy <= 2; sy += 2) {
+        for (int sx = -2; sx <= 2; sx += 2) {
+          int sample_x = col + sx;
+          int sample_y = row + sy;
+          if (sample_x < 0 || sample_x >= (int)primary_display.width ||
+              sample_y < 0 || sample_y >= (int)primary_display.height)
+            continue;
+          uint32_t px = target[sample_y * pitch + sample_x];
+          sum_r += (px >> 16) & 0xFF;
+          sum_g += (px >> 8) & 0xFF;
+          sum_b += px & 0xFF;
+          count++;
+        }
+      }
+
+      if (!count)
+        continue;
+
+      uint32_t blurred =
+          (((sum_r / count) & 0xFF) << 16) | (((sum_g / count) & 0xFF) << 8) |
+          ((sum_b / count) & 0xFF);
+
+      for (int fy = 0; fy < stride && row + fy < y + h; fy++) {
+        for (int fx = 0; fx < stride && col + fx < x + w; fx++) {
+          int out_x = col + fx;
+          int out_y = row + fy;
+          if (out_x < 0 || out_x >= (int)primary_display.width || out_y < 0 ||
+              out_y >= (int)primary_display.height)
+            continue;
+          target[out_y * pitch + out_x] = blurred;
+        }
+      }
+    }
+  }
+}
+
+static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
+                                 uint32_t glow, uint32_t border,
+                                 int blur_stride) {
+  gui_apply_backdrop_blur(x, y, w, h, blur_stride);
+  gui_fill_rect_alpha(x, y, w, h, tint);
+  gui_fill_rect_alpha(x, y, w, 1, glow);
+  gui_fill_rect_alpha(x, y, 1, h, glow);
+  gui_fill_rect_alpha(x, y + h - 1, w, 1, border);
+  gui_fill_rect_alpha(x + w - 1, y, 1, h, border);
+}
+
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color) {
   for (int row = y; row < y + h; row++) {
     for (int col = x; col < x + w; col++) {
@@ -806,7 +920,11 @@ void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg) {
     uint8_t line = glyph[row];
     for (int col = 0; col < FONT_WIDTH; col++) {
       uint32_t color = (line & (0x80 >> col)) ? fg : bg;
-      draw_pixel(x + col, y + row, color);
+      if ((color >> 24) != 0) {
+        draw_pixel_alpha(x + col, y + row, color);
+      } else if ((line & (0x80 >> col)) || bg != 0x00000000) {
+        draw_pixel(x + col, y + row, color);
+      }
     }
   }
 }
@@ -2893,25 +3011,25 @@ static void draw_window(struct window *win) {
   int w = win->width, h = win->height;
   struct gui_clip_state prev_clip = gui_set_clip_rect(x, y, w, h);
 
+  gui_draw_glass_panel(x, y, w, h,
+                       win->focused ? 0x6A2C3446 : 0x58303440,
+                       win->focused ? 0x42FFFFFF : 0x24FFFFFF, 0x8C75839A, 2);
+
   /* Draw border */
-  gui_draw_rect_outline(x, y, w, h, THEME_BORDER, BORDER_WIDTH);
+  gui_fill_rect_alpha(x, y, w, BORDER_WIDTH, 0x506C7A92);
+  gui_fill_rect_alpha(x, y + h - BORDER_WIDTH, w, BORDER_WIDTH, 0x3C0C1018);
+  gui_fill_rect_alpha(x, y, BORDER_WIDTH, h, 0x506C7A92);
+  gui_fill_rect_alpha(x + w - BORDER_WIDTH, y, BORDER_WIDTH, h, 0x506C7A92);
+  gui_draw_rect_outline(x, y, w, h, 0x8B8FA1BC, BORDER_WIDTH);
 
   if (win->has_titlebar) {
-    /* Draw title bar - Modern dark with subtle gradient effect */
-    uint32_t titlebar_color =
-        win->focused ? THEME_TITLEBAR : THEME_TITLEBAR_INACTIVE;
-
-    /* Fill titlebar base */
-    gui_draw_rect(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2,
-                  TITLEBAR_HEIGHT, titlebar_color);
-
-    /* Subtle highlight at top (gradient simulation) */
-    gui_draw_rect(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2, 1,
-                  titlebar_color + 0x101010);
-
-    /* Bottom separator line */
-    gui_draw_rect(x + BORDER_WIDTH, y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
-                  w - BORDER_WIDTH * 2, 1, 0x18181B);
+    uint32_t titlebar_bg = win->focused ? 0x344D6488 : 0x2C3B4458;
+    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2,
+                        TITLEBAR_HEIGHT, titlebar_bg);
+    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2,
+                        1, 0x55FFFFFF);
+    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
+                        w - BORDER_WIDTH * 2, 1, 0x440A0D12);
 
     /* Traffic light buttons on LEFT side - Modern rounded */
     int btn_cx = x + BORDER_WIDTH + 16; /* First circle center X */
@@ -2949,7 +3067,7 @@ static void draw_window(struct window *win) {
       title_len++;
     int title_x = x + (w - title_len * 8) / 2;
     gui_draw_string(title_x, y + BORDER_WIDTH + 7, win->title,
-                    win->focused ? 0xFAFAFA : 0x9CA3AF, titlebar_color);
+                    win->focused ? 0xFFF7FBFF : 0xD8DDE6F2, 0x00000000);
   }
 
   /* Draw content area */
@@ -2959,7 +3077,8 @@ static void draw_window(struct window *win) {
   int content_h =
       h - BORDER_WIDTH * 2 - (win->has_titlebar ? TITLEBAR_HEIGHT : 0);
 
-  gui_draw_rect(content_x, content_y, content_w, content_h, THEME_BG);
+  gui_fill_rect_alpha(content_x, content_y, content_w, content_h, 0x98171A26);
+  gui_fill_rect_alpha(content_x, content_y, content_w, 1, 0x28FFFFFF);
 
   /* Draw window-specific content based on title */
   /* Calculator - Modern Design */
@@ -3261,7 +3380,7 @@ static void draw_window(struct window *win) {
     yy += 24;
 
     /* Version */
-    gui_draw_string(center_x - 68, yy, "Version 0.5.0", 0xA6ADC8, THEME_BG);
+    gui_draw_string(center_x - 68, yy, "Version 8.0.0", 0xA6ADC8, THEME_BG);
     yy += 28;
 
     /* System info box */
@@ -3269,7 +3388,7 @@ static void draw_window(struct window *win) {
     yy += 10;
     gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v0.5.0",
+    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v8.0.0",
                     0xCDD6F4, 0x252535);
     yy += 18;
     gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
@@ -3884,24 +4003,17 @@ static void draw_window(struct window *win) {
 static int menu_open = 0; /* 0=closed, 1=Apple menu open */
 
 static void draw_menu_bar(void) {
-  /* Glossy menu bar - gradient from dark to slightly lighter */
-  for (int y = 0; y < MENU_BAR_HEIGHT; y++) {
-    int brightness = 45 + (y * 10) / MENU_BAR_HEIGHT; /* 45 to 55 */
-    uint32_t color = (brightness << 16) | (brightness << 8) | (brightness + 5);
-    for (int x = 0; x < (int)primary_display.width; x++) {
-      draw_pixel(x, y, color);
-    }
-  }
-  /* Bottom highlight line */
-  for (int x = 0; x < (int)primary_display.width; x++) {
-    draw_pixel(x, MENU_BAR_HEIGHT - 1, 0x606060);
-  }
+  gui_draw_glass_panel(0, 0, primary_display.width, MENU_BAR_HEIGHT, 0x7A243246,
+                       0x3FFFFFFF, 0x904D5B72, 2);
+  gui_fill_rect_alpha(0, 0, primary_display.width, 1, 0x5AFFFFFF);
+  gui_fill_rect_alpha(0, MENU_BAR_HEIGHT - 1, primary_display.width, 1,
+                      0x4A10141C);
 
   /* OS next stage logo */
-  gui_draw_os_logo(12, 6, 1, 0xFFFFFF, 0x89B4FA, 0x2D2D35);
+  gui_draw_os_logo(12, 6, 1, 0xFFFFFF, 0x89B4FA, 0x00000000);
 
   /* OS next stage name (bold) */
-  gui_draw_string(34, 6, "OS next stage", 0xFFFFFF, 0x303038);
+  gui_draw_string(34, 6, "OS next stage", 0xFFFFFF, 0x00000000);
 
   /* Clock on right - compute from PL031 RTC */
   {
@@ -3932,7 +4044,7 @@ static void draw_menu_bar(void) {
     time_str[5] = '\0';
 
     gui_draw_string(primary_display.width - 52, 6, time_str, 0xFFFFFF,
-                    0x3E3E55);
+                    0x00000000);
   }
 
   /* WiFi Icon (Static Connected) */
@@ -3973,17 +4085,15 @@ static void draw_menu_bar(void) {
     int dropdown_h = 104;
 
     /* Dropdown shadow */
-    gui_draw_rect(dropdown_x + 3, dropdown_y + 3, dropdown_w, dropdown_h,
-                  0x151520);
+    gui_fill_rect_alpha(dropdown_x + 3, dropdown_y + 3, dropdown_w, dropdown_h,
+                        0x3410151E);
 
-    /* Dropdown background */
-    gui_draw_rect(dropdown_x, dropdown_y, dropdown_w, dropdown_h, 0x404050);
-    gui_draw_rect_outline(dropdown_x, dropdown_y, dropdown_w, dropdown_h,
-                          0x606070, 1);
+    gui_draw_glass_panel(dropdown_x, dropdown_y, dropdown_w, dropdown_h,
+                         0x88303A4C, 0x34FFFFFF, 0x9067758C, 1);
 
     /* Menu items */
     gui_draw_string(dropdown_x + 12, dropdown_y + 10, "About OS", 0xFFFFFF,
-                    0x404050);
+                    0x00000000);
 
     /* Separator line */
     for (int i = dropdown_x + 8; i < dropdown_x + dropdown_w - 8; i++) {
@@ -3991,11 +4101,11 @@ static void draw_menu_bar(void) {
     }
 
     gui_draw_string(dropdown_x + 12, dropdown_y + 40, "Settings...", 0xCCCCCC,
-                    0x404050);
+                    0x00000000);
     gui_draw_string(dropdown_x + 12, dropdown_y + 58, "Shutdown", 0xCCCCCC,
-                    0x404050);
+                    0x00000000);
     gui_draw_string(dropdown_x + 12, dropdown_y + 78, "Restart", 0xCCCCCC,
-                    0x404050);
+                    0x00000000);
   }
 }
 
@@ -4240,13 +4350,15 @@ static void draw_dock(void) {
   int dock_y = base_y;
 
   /* 3. Draw Background behind everything */
+  gui_draw_glass_panel(dock_x - 2, dock_y - 2, dock_w + 4, dock_h + 4,
+                       0x74303B4E, 0x30FFFFFF, 0x9066758D, 2);
   draw_rounded_rect(dock_x - 1, dock_y - 1, dock_w + 2, dock_h + 2, 16,
-                    0x2A2A3A);
-  draw_rounded_rect(dock_x, dock_y, dock_w, dock_h, 15, 0x1E1E28);
+                    0x5A5E6A82);
+  draw_rounded_rect(dock_x, dock_y, dock_w, dock_h, 15, 0x5E1A1F2C);
   /* Highlights */
   for (int i = dock_x + 14; i < dock_x + dock_w - 14; i++) {
-    draw_pixel(i, dock_y + 1, 0x3A3A4A);
-    draw_pixel(i, dock_y + dock_h - 1, 0x14141A);
+    draw_pixel_alpha(i, dock_y + 1, 0x60FFFFFF);
+    draw_pixel_alpha(i, dock_y + dock_h - 1, 0x3A0D1016);
   }
 
   /* 4. Determine Draw Order (Small -> Large) so large icons draw ON TOP of
@@ -4442,11 +4554,11 @@ static void draw_desktop(void) {
   /* Draw build info in the bottom-right corner above the dock. */
   {
 #ifdef ARCH_X86_64
-    const char *build_info = "OS next stage v0.5.0 x86_64";
+    const char *build_info = "OS 8 x86_64";
 #elif defined(ARCH_X86)
-    const char *build_info = "OS next stage v0.5.0 x86";
+    const char *build_info = "OS 8 x86";
 #else
-    const char *build_info = "OS next stage v0.5.0 ARM64";
+    const char *build_info = "OS 8 ARM64";
 #endif
     int build_len = 0;
     while (build_info[build_len]) {

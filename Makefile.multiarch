@@ -340,7 +340,7 @@ endif
 installer-image: kernel
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
-	@ISO_NAME=vibos-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=vibos-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/vibos-x86_64-installer.iso"
 else
 	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
