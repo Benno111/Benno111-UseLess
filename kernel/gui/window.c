@@ -32,6 +32,14 @@ static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride);
 static int startup_flow_active(void);
+static const char *installer_partition_scheme_name(int scheme);
+static const char *installer_partition_scheme_desc(int scheme);
+static void installer_refresh_disk_inventory(void);
+static const char *installer_selected_disk_label(void);
+static void installer_write_target_config(void);
+static void open_partition_tool_window(int x, int y);
+static void draw_partition_tool_window(int content_x, int content_y,
+                                       int content_w, int content_h);
 void compositor_mark_full_redraw(void);
 
 
