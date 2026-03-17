@@ -23,6 +23,8 @@ jobs:
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
             qemu-system-arm \
+            qemu-efi-aarch64 \
+            xorriso \
             make \
             lld \
             llvm
@@ -31,10 +33,17 @@ jobs:
         run: |
           make kernel
 
-      - name: Check build artifacts
+      # 🔥 NEW: build ARM64 ISO
+      - name: Build ARM64 ISO
+        run: |
+          make -f Makefile.multiarch ARCH=arm64 image
+
+      - name: Check ARM64 build artifacts
         run: |
           ls -lh build/kernel/unixos.elf
           file build/kernel/unixos.elf
+          ls -lh image/vibos-arm64.iso
+          file image/vibos-arm64.iso
 
       - name: Test boot (timeout after 10 seconds)
         run: |
@@ -118,14 +127,21 @@ jobs:
           sudo apt-get install -y \
             ccache \
             qemu-system-x86 \
+            qemu-system-arm \
+            qemu-efi-aarch64 \
             xorriso \
             make \
             lld \
             llvm
 
-      - name: Build x86_64 bootable ISO
+      # 🔥 Build BOTH ISOs
+      - name: Build x86_64 ISO
         run: |
           make -f Makefile.multiarch ARCH=x86_64 image
+
+      - name: Build ARM64 ISO
+        run: |
+          make -f Makefile.multiarch ARCH=arm64 image
 
       - name: Generate release notes
         run: |
@@ -141,11 +157,11 @@ jobs:
 
           ## Bootable Media
 
-          - \`vibos-x86_64.iso\` - bootable x86_64 BIOS+UEFI ISO from commit \`${{ github.sha }}\`
+          - \`vibos-x86_64.iso\` - BIOS+UEFI ISO (x86_64)
+          - \`vibos-arm64.iso\` - UEFI ISO (ARM64)
 
-          ## Branch
-
-          - \`${{ github.ref_name }}\`
+          Commit: \`${{ github.sha }}\`
+          Branch: \`${{ github.ref_name }}\`
           EOF
 
       - name: Create or update draft release
@@ -159,5 +175,6 @@ jobs:
           prerelease: true
           files: |
             image/vibos-x86_64.iso
+            image/vibos-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
