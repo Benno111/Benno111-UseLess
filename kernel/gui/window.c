@@ -5,6 +5,7 @@
  */
 
 #include "build_uuid.h"
+#include "arch/arch.h"
 #include "desktop.h"         /* Desktop manager */
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
 #include "drivers/uart.h"
@@ -2614,6 +2615,15 @@ static void installer_target_root_path(char *buf, int max) {
   }
 }
 
+static void installer_partition_root_path(char *buf, int max,
+                                          const char *partition_name) {
+  installer_target_root_path(buf, max);
+  if (!partition_name || !partition_name[0])
+    return;
+  installer_append_to_buf(buf, max, "/");
+  installer_append_to_buf(buf, max, partition_name);
+}
+
 static void installer_ensure_parent_dirs(const char *path) {
   char partial[256];
   int idx = 0;
@@ -2738,13 +2748,54 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
   return 0;
 }
 
-static int installer_install_system_image(void) {
+static int installer_copy_system_image_to_root(const char *target_root,
+                                               int *copied_files,
+                                               int *failed_files) {
   installer_copy_ctx_t ctx = {"/install/system-image", "", 0, 0};
   struct file *dir;
+  char msg[320];
+
+  if (!target_root || !target_root[0])
+    return -1;
+
+  str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
+  if (installer_try_make_dir(target_root) != 0) {
+    str_copy_safe(msg, "install failed: target root creation failed for ",
+                  sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), target_root);
+    installer_log(msg);
+    return -1;
+  }
+
+  dir = vfs_open(ctx.src_root, O_RDONLY, 0);
+  if (!dir) {
+    installer_log("install failed: source payload missing");
+    return -1;
+  }
+
+  str_copy_safe(msg, "copying system image to ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), target_root);
+  installer_log(msg);
+  vfs_readdir(dir, &ctx, installer_copy_tree_callback);
+  vfs_close(dir);
+
+  if (copied_files)
+    *copied_files += ctx.copied_files;
+  if (failed_files)
+    *failed_files += ctx.failed_files;
+  return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
+}
+
+static int installer_install_system_image(void) {
   char summary[96];
   char target_root[96];
+  char efi_root[128];
+  char update_root[128];
   char target_state_path[128];
   int ensured = 0;
+  int copied_files = 0;
+  int failed_files = 0;
+  uint64_t start_ms;
 
   installer_log_clear();
   installer_refresh_disk_inventory();
@@ -2765,30 +2816,32 @@ static int installer_install_system_image(void) {
   load_system_app_catalog();
   ensure_gui_app_dirs();
   installer_target_root_path(target_root, sizeof(target_root));
-  str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
   str_copy_safe(installer_log_target_root, target_root,
                 sizeof(installer_log_target_root));
+  installer_partition_root_path(efi_root, sizeof(efi_root), "EFI");
+  installer_partition_root_path(update_root, sizeof(update_root), "Update");
   installer_log("starting system image install");
   installer_log(target_root);
-  if (installer_try_make_dir(target_root) != 0) {
-    installer_set_status("Install failed. Could not create target root.");
-    installer_log("install failed: target root creation failed");
+
+  if (installer_try_make_dir(target_root) != 0 ||
+      installer_try_make_dir(efi_root) != 0 ||
+      installer_try_make_dir(update_root) != 0) {
+    installer_set_status("Install failed. Could not create target layout.");
+    installer_log("install failed: target layout creation failed");
     return -1;
   }
 
-  dir = vfs_open(ctx.src_root, O_RDONLY, 0);
-  if (!dir) {
-    installer_set_status("System image payload missing from installer ISO.");
-    installer_log("install failed: source payload missing");
+  if (installer_copy_system_image_to_root(efi_root, &copied_files,
+                                          &failed_files) != 0) {
+    installer_set_status("Install failed. EFI image copy failed.");
+    installer_log("install failed: EFI copy failed");
     return -1;
   }
 
-  vfs_readdir(dir, &ctx, installer_copy_tree_callback);
-  vfs_close(dir);
-
-  if (ctx.copied_files <= 0 || ctx.failed_files > 0) {
-    installer_set_status("Install failed. System image copy was incomplete.");
-    installer_log("install failed: system image copy incomplete");
+  if (installer_copy_system_image_to_root(update_root, &copied_files,
+                                          &failed_files) != 0) {
+    installer_set_status("Install failed. Update image copy failed.");
+    installer_log("install failed: update copy failed");
     return -1;
   }
 
@@ -2814,13 +2867,23 @@ static int installer_install_system_image(void) {
   write_text_file(target_state_path,
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
 
+  write_text_file("/System/efi-boot.cfg",
+                  "bootable=1\nloader=limine\nsource=installer\n");
+  {
+    char efi_boot_cfg[192];
+    str_copy_safe(efi_boot_cfg, efi_root, sizeof(efi_boot_cfg));
+    installer_append_to_buf(efi_boot_cfg, sizeof(efi_boot_cfg), "/BOOTABLE.CFG");
+    write_text_file(efi_boot_cfg,
+                    "bootable=1\nloader=limine\nsource=installer\n");
+  }
+
   summary[0] = '\0';
   str_copy_safe(summary, "Installed ", sizeof(summary));
   {
     int idx = 0;
     while (summary[idx] && idx < (int)sizeof(summary) - 1)
       idx++;
-    append_decimal(summary, &idx, ctx.copied_files);
+    append_decimal(summary, &idx, copied_files);
     for (const char *p = " files"; *p && idx < (int)sizeof(summary) - 1; p++)
       summary[idx++] = *p;
     if (ensured > 0 && idx < (int)sizeof(summary) - 18) {
@@ -2832,6 +2895,15 @@ static int installer_install_system_image(void) {
   }
   installer_log("install complete");
   installer_set_status(summary);
+  installer_log("EFI marked bootable");
+  installer_log("rebooting in 3 seconds");
+  start_ms = arch_timer_get_ms();
+  while (arch_timer_get_ms() - start_ms < 3000)
+    ;
+  {
+    extern void arch_reboot(void);
+    arch_reboot();
+  }
   return 0;
 }
 

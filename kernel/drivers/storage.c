@@ -142,7 +142,7 @@ const char *storage_partition_kind_name(storage_partition_kind_t kind) {
   case STORAGE_PARTITION_EFI:
     return "EFI System";
   case STORAGE_PARTITION_SYSTEM:
-    return "System";
+    return "Update";
   case STORAGE_PARTITION_DATA:
     return "Data";
   case STORAGE_PARTITION_SWAP:
@@ -184,7 +184,7 @@ static void storage_default_partition_label(char *buf, int max,
     storage_append_string(buf, max, "EFI");
     break;
   case STORAGE_PARTITION_SYSTEM:
-    storage_append_string(buf, max, "System");
+    storage_append_string(buf, max, "Update");
     break;
   case STORAGE_PARTITION_DATA:
     storage_append_string(buf, max, "Data");
