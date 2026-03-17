@@ -318,9 +318,9 @@ static const uint32_t* dock_icons[] = {
     dock_icon_notes,
     dock_icon_settings,
     dock_icon_clock,
-        dock_icon_snake,
-    dock_icon_help,
-    dock_icon_web,
+    dock_icon_notes,
+    dock_icon_settings,
+    dock_icon_folder,
 };
 #endif
 

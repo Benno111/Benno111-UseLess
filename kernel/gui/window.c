@@ -30,6 +30,7 @@ void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
 /* Terminal functions from terminal.c */
 struct terminal;
 extern struct terminal *term_get_active(void);
+extern struct terminal *term_create(int x, int y, int cols, int rows);
 extern void term_set_active(struct terminal *term);
 extern void term_handle_key(struct terminal *term, int key);
 extern int term_get_input_len(struct terminal *t);
@@ -1208,12 +1209,12 @@ static const uint32_t *icon_data_for_kind(gui_app_kind_t kind) {
   case GUI_APP_CLOCK:
     return dock_icon_clock;
   case GUI_APP_SNAKE:
-    return dock_icon_snake;
+    return dock_icon_notes;
   case GUI_APP_HELP:
-    return dock_icon_help;
+    return dock_icon_settings;
   case GUI_APP_BROWSER:
   case GUI_APP_APPSTORE:
-    return dock_icon_web;
+    return dock_icon_folder;
   }
   return dock_icon_terminal;
 }
@@ -2246,7 +2247,6 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
     } else if (str_ends_with_ci(st->selected, ".py") ||
                str_ends_with_ci(st->selected, ".nano")) {
       /* Python/NanoLang file - open new terminal and run it */
-      extern struct terminal *term_create(int x, int y, int cols, int rows);
       extern void term_set_active(struct terminal * term);
       extern void term_puts(struct terminal * term, const char *str);
       extern void term_execute_command(struct terminal * term, const char *cmd);
