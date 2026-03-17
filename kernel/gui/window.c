@@ -2445,9 +2445,73 @@ static void installer_set_status(const char *message) {
 
 typedef struct {
   const char *src_root;
-  char dst_root[96];
+  char dst_root[256];
   int copied_files;
+  int failed_files;
 } installer_copy_ctx_t;
+
+static char installer_log_buffer[4096];
+static char installer_log_target_root[256];
+
+static void installer_append_to_buf(char *buf, int max, const char *text) {
+  int idx = 0;
+
+  if (!buf || max <= 0 || !text)
+    return;
+  while (buf[idx] && idx < max - 1)
+    idx++;
+  for (int i = 0; text[i] && idx < max - 1; i++)
+    buf[idx++] = text[i];
+  buf[idx] = '\0';
+}
+
+static void installer_log_clear(void) {
+  installer_log_buffer[0] = '\0';
+  installer_log_target_root[0] = '\0';
+}
+
+static void installer_log_append_path(const char *path, const char *line) {
+  char existing[4096];
+  int idx = 0;
+
+  if (!path || !line || !path[0])
+    return;
+
+  existing[0] = '\0';
+  read_text_file(path, existing, sizeof(existing));
+  while (existing[idx] && idx < (int)sizeof(existing) - 1)
+    idx++;
+  for (int i = 0; line[i] && idx < (int)sizeof(existing) - 1; i++)
+    existing[idx++] = line[i];
+  if (idx < (int)sizeof(existing) - 1)
+    existing[idx++] = '\n';
+  existing[idx] = '\0';
+  write_text_file(path, existing);
+}
+
+static void installer_log(const char *line) {
+  int idx = 0;
+
+  if (!line)
+    return;
+
+  printk(KERN_INFO "INSTALL: %s\n", line);
+  while (installer_log_buffer[idx] && idx < (int)sizeof(installer_log_buffer) - 1)
+    idx++;
+  for (int i = 0; line[i] && idx < (int)sizeof(installer_log_buffer) - 2; i++)
+    installer_log_buffer[idx++] = line[i];
+  if (idx < (int)sizeof(installer_log_buffer) - 1)
+    installer_log_buffer[idx++] = '\n';
+  installer_log_buffer[idx] = '\0';
+
+  installer_log_append_path("/System/install.log", line);
+  if (installer_log_target_root[0]) {
+    char target_log[320];
+    str_copy_safe(target_log, installer_log_target_root, sizeof(target_log));
+    installer_append_to_buf(target_log, sizeof(target_log), "/install.log");
+    installer_log_append_path(target_log, line);
+  }
+}
 
 static void installer_normalize_path(const char *src, char *dst, int max) {
   int idx = 0;
@@ -2474,6 +2538,7 @@ static void installer_normalize_path(const char *src, char *dst, int max) {
 static int installer_try_make_dir(const char *path) {
   struct file *existing;
   char normalized[256];
+  int ret;
 
   if (!path || !path[0])
     return 0;
@@ -2486,7 +2551,14 @@ static int installer_try_make_dir(const char *path) {
     return 0;
   }
   installer_ensure_parent_dirs(normalized);
-  return vfs_mkdir(normalized, 0755);
+  ret = vfs_mkdir(normalized, 0755);
+  if (ret < 0) {
+    char msg[320];
+    str_copy_safe(msg, "mkdir failed: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), normalized);
+    installer_log(msg);
+  }
+  return ret;
 }
 
 static void installer_selected_disk_id(char *buf, int max) {
@@ -2556,16 +2628,29 @@ static void installer_ensure_parent_dirs(const char *path) {
 static int installer_copy_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
+  char msg[320];
 
-  if (media_load_file(src_path, &data, &size) != 0)
+  if (media_load_file(src_path, &data, &size) != 0) {
+    str_copy_safe(msg, "read failed: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), src_path);
+    installer_log(msg);
     return -1;
+  }
 
   installer_ensure_parent_dirs(dst_path);
   if (media_install_file(dst_path, data, size) != 0) {
+    str_copy_safe(msg, "write failed: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), dst_path);
+    installer_log(msg);
     media_free_file(data);
     return -1;
   }
 
+  str_copy_safe(msg, "copied ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), src_path);
+  installer_append_to_buf(msg, sizeof(msg), " -> ");
+  installer_append_to_buf(msg, sizeof(msg), dst_path);
+  installer_log(msg);
   media_free_file(data);
   return 0;
 }
@@ -2613,15 +2698,24 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
   dst_path[dst_len] = '\0';
 
   if (type == 4) {
-    installer_try_make_dir(dst_path);
+    if (installer_try_make_dir(dst_path) != 0)
+      copy->failed_files++;
     {
       struct file *dir = vfs_open(src_path, O_RDONLY, 0);
       if (dir) {
-        installer_copy_ctx_t next = {src_path, "", copy->copied_files};
+        installer_copy_ctx_t next = {src_path, "", copy->copied_files,
+                                     copy->failed_files};
         str_copy_safe(next.dst_root, dst_path, sizeof(next.dst_root));
         vfs_readdir(dir, &next, installer_copy_tree_callback);
         copy->copied_files = next.copied_files;
+        copy->failed_files = next.failed_files;
         vfs_close(dir);
+      } else {
+        char msg[320];
+        str_copy_safe(msg, "open dir failed: ", sizeof(msg));
+        installer_append_to_buf(msg, sizeof(msg), src_path);
+        installer_log(msg);
+        copy->failed_files++;
       }
     }
     return 0;
@@ -2629,20 +2723,24 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 
   if (installer_copy_file(src_path, dst_path) == 0)
     copy->copied_files++;
+  else
+    copy->failed_files++;
   return 0;
 }
 
 static int installer_install_system_image(void) {
-  installer_copy_ctx_t ctx = {"/install/system-image", "", 0};
+  installer_copy_ctx_t ctx = {"/install/system-image", "", 0, 0};
   struct file *dir;
   char summary[96];
   char target_root[96];
   char target_state_path[128];
   int ensured = 0;
 
+  installer_log_clear();
   installer_refresh_disk_inventory();
   if (installer_disk_count <= 0) {
     installer_set_status("Install blocked. No real target disk is available.");
+    installer_log("install blocked: no real target disk");
     return -1;
   }
   {
@@ -2650,6 +2748,7 @@ static int installer_install_system_image(void) {
     ensured = storage_ensure_install_partitions(installer_selected_disk);
     if (ensured < 0) {
       installer_set_status("Install blocked. Required system partitions failed.");
+      installer_log("install blocked: required partitions failed");
       return -1;
     }
   }
@@ -2657,16 +2756,31 @@ static int installer_install_system_image(void) {
   ensure_gui_app_dirs();
   installer_target_root_path(target_root, sizeof(target_root));
   str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
-  installer_try_make_dir(target_root);
+  str_copy_safe(installer_log_target_root, target_root,
+                sizeof(installer_log_target_root));
+  installer_log("starting system image install");
+  installer_log(target_root);
+  if (installer_try_make_dir(target_root) != 0) {
+    installer_set_status("Install failed. Could not create target root.");
+    installer_log("install failed: target root creation failed");
+    return -1;
+  }
 
   dir = vfs_open(ctx.src_root, O_RDONLY, 0);
   if (!dir) {
     installer_set_status("System image payload missing from installer ISO.");
+    installer_log("install failed: source payload missing");
     return -1;
   }
 
   vfs_readdir(dir, &ctx, installer_copy_tree_callback);
   vfs_close(dir);
+
+  if (ctx.copied_files <= 0 || ctx.failed_files > 0) {
+    installer_set_status("Install failed. System image copy was incomplete.");
+    installer_log("install failed: system image copy incomplete");
+    return -1;
+  }
 
   dock_loaded = 0;
   load_dock_config();
@@ -2691,13 +2805,14 @@ static int installer_install_system_image(void) {
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed image to ", sizeof(summary));
+  str_copy_safe(summary, "Installed ", sizeof(summary));
   {
     int idx = 0;
     while (summary[idx] && idx < (int)sizeof(summary) - 1)
       idx++;
-    for (int i = 0; target_root[i] && idx < (int)sizeof(summary) - 1; i++)
-      summary[idx++] = target_root[i];
+    append_decimal(summary, &idx, ctx.copied_files);
+    for (const char *p = " files"; *p && idx < (int)sizeof(summary) - 1; p++)
+      summary[idx++] = *p;
     if (ensured > 0 && idx < (int)sizeof(summary) - 18) {
       const char *suffix = " with EFI fixup";
       for (int i = 0; suffix[i] && idx < (int)sizeof(summary) - 1; i++)
@@ -2705,8 +2820,9 @@ static int installer_install_system_image(void) {
     }
     summary[idx] = '\0';
   }
+  installer_log("install complete");
   installer_set_status(summary);
-  return ctx.copied_files > 0 ? 0 : -1;
+  return 0;
 }
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
