@@ -11,6 +11,7 @@
 #include "drivers/pci.h"
 #include "drivers/uart.h"
 #include "fs/vfs.h"
+#include "media/media.h"
 #include "media/seed_assets.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -397,39 +398,37 @@ static void populate_seed_filesystem(void) {
                     "}\n");
 
   if (boot_is_installer_mode()) {
-    ramfs_create_dir("install", 0755);
-    ramfs_create_dir("install/system-image", 0755);
-    ramfs_create_dir("install/system-image/boot", 0755);
-    ramfs_create_dir("install/system-image/EFI", 0755);
-    ramfs_create_dir("install/system-image/EFI/BOOT", 0755);
-    ramfs_create_dir("install/system-image/limine", 0755);
-    ramfs_create_dir("install/system-image/assets", 0755);
-    ramfs_create_file("install/system-image/IMAGE_INFO.txt", 0644,
-                      "OS next stage System Image\n"
-                      "Mounted into the installer runtime from boot payload.\n");
-    ramfs_create_file("install/system-image/limine.conf", 0644,
-                      "TIMEOUT=0\n"
-                      ":OS next stage\n"
-                      "    protocol: limine\n"
-                      "    path: boot():/boot/vibos.elf\n");
-    ramfs_create_file("install/system-image/boot/limine.conf", 0644,
-                      "TIMEOUT=0\n"
-                      ":OS next stage\n"
-                      "    protocol: limine\n"
-                      "    path: boot():/boot/vibos.elf\n");
-    ramfs_create_file("install/system-image/EFI/BOOT/BOOTX64.EFI", 0644,
-                      "LIMINE_EFI_PLACEHOLDER");
+    vfs_mkdir("/install", 0755);
+    vfs_mkdir("/install/system-image", 0755);
+    vfs_mkdir("/install/system-image/boot", 0755);
+    vfs_mkdir("/install/system-image/EFI", 0755);
+    vfs_mkdir("/install/system-image/EFI/BOOT", 0755);
+    vfs_mkdir("/install/system-image/limine", 0755);
+    vfs_mkdir("/install/system-image/assets", 0755);
+    media_install_text_file("/install/system-image/IMAGE_INFO.txt",
+                            "OS next stage System Image\n"
+                            "Mounted into the installer runtime from boot payload.\n");
+    media_install_text_file("/install/system-image/limine.conf",
+                            "TIMEOUT=0\n"
+                            ":OS next stage\n"
+                            "    protocol: limine\n"
+                            "    path: boot():/boot/vibos.elf\n");
+    media_install_text_file("/install/system-image/boot/limine.conf",
+                            "TIMEOUT=0\n"
+                            ":OS next stage\n"
+                            "    protocol: limine\n"
+                            "    path: boot():/boot/vibos.elf\n");
+    media_install_text_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
+                            "LIMINE_EFI_PLACEHOLDER");
 #ifdef ARCH_X86_64
     {
       void *kernel_file = limine_get_kernel_file_addr();
       uint64_t kernel_size = limine_get_kernel_file_size();
       if (kernel_file && kernel_size > 0) {
-        ramfs_create_file_bytes("install/system-image/boot/kernel.elf", 0644,
-                                (const uint8_t *)kernel_file,
-                                (size_t)kernel_size);
-        ramfs_create_file_bytes("install/system-image/boot/vibos.elf", 0644,
-                                (const uint8_t *)kernel_file,
-                                (size_t)kernel_size);
+        media_install_file("/install/system-image/boot/kernel.elf",
+                           (const uint8_t *)kernel_file, (size_t)kernel_size);
+        media_install_file("/install/system-image/boot/vibos.elf",
+                           (const uint8_t *)kernel_file, (size_t)kernel_size);
       }
     }
 #endif
