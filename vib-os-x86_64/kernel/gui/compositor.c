@@ -2222,7 +2222,7 @@ static void draw_menu_bar(void) {
     
     /* Menu items */
     gui_draw_string(dd_x + UI_SCALE_VAL(12), dd_y + UI_SCALE_VAL(10),
-                    "About OS next stage", 0xFFFFFF);
+                    "About OS", 0xFFFFFF);
     fb_fill_rect(dd_x + UI_SCALE_VAL(8), dd_y + UI_SCALE_VAL(30),
                  dd_w - UI_SCALE_VAL(16), UI_SCALE_VAL(1), 0x606070);
     gui_draw_string(dd_x + UI_SCALE_VAL(12), dd_y + UI_SCALE_VAL(38),

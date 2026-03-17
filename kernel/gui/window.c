@@ -27,6 +27,7 @@ void gui_draw_circle(int cx, int cy, int r, uint32_t color, bool filled);
 void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
 
+
 /* Terminal functions from terminal.c */
 struct terminal;
 extern struct terminal *term_get_active(void);
@@ -1161,6 +1162,14 @@ typedef struct {
   int default_dock;
   int visible_in_store;
 } dock_app_def_t;
+
+/* Forward declarations for startup/app-state helpers referenced before their
+ * definitions. */
+static int startup_flow_active(void);
+static void ensure_gui_app_dirs(void);
+static void ensure_app_manifest(const dock_app_def_t *app);
+static void dock_add_item(const dock_app_def_t *app);
+static void save_dock_config(void);
 
 typedef struct {
   const char *id;
@@ -4061,7 +4070,7 @@ static void draw_menu_bar(void) {
                           0x606070, 1);
 
     /* Menu items */
-    gui_draw_string(dropdown_x + 12, dropdown_y + 10, "About OS next stage", 0xFFFFFF,
+    gui_draw_string(dropdown_x + 12, dropdown_y + 10, "About OS", 0xFFFFFF,
                     0x404050);
 
     /* Separator line */
