@@ -16,6 +16,7 @@
 #include "types.h"
 
 struct window *gui_create_file_manager(int x, int y);
+struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
 
 /* Forward declarations for drawing helpers used before their definitions. */
@@ -35,6 +36,9 @@ static int startup_flow_active(void);
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
 static void installer_write_target_config(void);
+static void open_partition_manager_window(int x, int y);
+static void draw_partition_manager_window(int content_x, int content_y,
+                                          int content_w, int content_h);
 void compositor_mark_full_redraw(void);
 
 
@@ -110,6 +114,7 @@ static int gui_is_installer_mode(void) {
 
 static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
+static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
 static char installer_disk_labels[8][80];
@@ -2561,8 +2566,10 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   int card_y = content_y + 22;
   int card_w = content_w - 48;
   int button_w = 180;
+  int manage_w = 150;
   int button_h = 34;
   int button_x = content_x + 24;
+  int manage_x = button_x + button_w + 12;
   int button_y = content_y + content_h - 64;
   uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
   const char *action_label = "Install System Image";
@@ -2604,6 +2611,9 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   gui_draw_string(button_x + 24, button_y + 10,
                   installer_has_run ? "Install Complete" : action_label,
                   0xFFFFFF, button_bg);
+  gui_draw_rect(manage_x, button_y, manage_w, button_h, 0x2563EB);
+  gui_draw_string(manage_x + 18, button_y + 10, "Partition Manager",
+                  0xFFFFFF, 0x2563EB);
 }
 
 static void draw_startup_auth_window(struct window *win, int content_x,
@@ -2703,6 +2713,56 @@ static void installer_write_target_config(void) {
   manifest[idx] = '\0';
 
   write_text_file("/System/install-target.cfg", manifest);
+}
+
+static void open_partition_manager_window(int x, int y) {
+  installer_refresh_disk_inventory();
+  gui_create_window("Partition Manager", x, y, 560, 360);
+}
+
+static void draw_partition_manager_window(int content_x, int content_y,
+                                          int content_w, int content_h) {
+  installer_refresh_disk_inventory();
+
+  gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, content_h - 24,
+                0x232337);
+  gui_draw_string(content_x + 24, content_y + 22, "Partition Manager",
+                  0xFFFFFF, 0x232337);
+  gui_draw_string(content_x + 24, content_y + 44,
+                  "Manage real detected disks and choose the installer target.",
+                  0xCDD6F4, 0x232337);
+
+  gui_draw_string(content_x + 24, content_y + 76, "Detected disks", 0x89B4FA,
+                  0x232337);
+  for (int i = 0; i < installer_disk_count && i < 6; i++) {
+    int row_y = content_y + 96 + i * 28;
+    uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x1B1B2B;
+    gui_draw_rect(content_x + 24, row_y, content_w - 48, 24, row_bg);
+    gui_draw_string(content_x + 36, row_y + 5, installer_disk_labels[i],
+                    0xFFFFFF, row_bg);
+    if (i == installer_selected_disk) {
+      gui_draw_string(content_x + content_w - 170, row_y + 5,
+                      "Installer Target", 0xA6E3A1, row_bg);
+    }
+  }
+
+  gui_draw_string(content_x + 24, content_y + 274, "Selected target:",
+                  0x89B4FA, 0x232337);
+  gui_draw_string(content_x + 150, content_y + 274,
+                  installer_selected_disk_label(), 0xFFFFFF, 0x232337);
+
+  gui_draw_rect(content_x + 24, content_y + 298, 140, 30, 0x2563EB);
+  gui_draw_string(content_x + 42, content_y + 307, "Use For Install",
+                  0xFFFFFF, 0x2563EB);
+  gui_draw_rect(content_x + 176, content_y + 298, 90, 30, 0x3B82F6);
+  gui_draw_string(content_x + 202, content_y + 307, "Refresh", 0xFFFFFF,
+                  0x3B82F6);
+  gui_draw_rect(content_x + 278, content_y + 298, 110, 30, 0x4B5563);
+  gui_draw_string(content_x + 301, content_y + 307, "Open Files", 0xFFFFFF,
+                  0x4B5563);
+
+  gui_draw_string(content_x + 24, content_y + content_h - 52,
+                  partition_manager_status, 0xCDD6F4, 0x232337);
 }
 
 struct image_viewer_state {
@@ -3035,6 +3095,11 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
         extern void gui_open_rename(const char *path);
         gui_open_rename(full_path);
       }
+    }
+
+    /* Partition Manager: 390px offset */
+    if (x >= BORDER_WIDTH + 390 && x < BORDER_WIDTH + 440) {
+      open_partition_manager_window(win->x + 40, win->y + 30);
     }
 
     return;
@@ -3584,6 +3649,10 @@ static void draw_window(struct window *win) {
     gui_draw_rect(content_x + 290, yy + 8, 90, 24, 0x404050);
     gui_draw_string(content_x + 300, yy + 12, "Rename", 0xFFFFFF, 0x404050);
 
+    /* Partition Manager Button */
+    gui_draw_rect(content_x + 390, yy + 8, 50, 24, 0x2563EB);
+    gui_draw_string(content_x + 394, yy + 12, "Disk", 0xFFFFFF, 0x2563EB);
+
     yy += toolbar_h;
 
     struct fm_state *st = (struct fm_state *)win->userdata;
@@ -3687,6 +3756,11 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'I' && win->title[1] == 'n' &&
            win->title[2] == 's' && win->title[3] == 't') {
     draw_installer_window(content_x, content_y, content_w, content_h);
+  }
+  /* Partition Manager */
+  else if (win->title[0] == 'P' && win->title[1] == 'a' &&
+           win->title[2] == 'r' && win->title[3] == 't') {
+    draw_partition_manager_window(content_x, content_y, content_w, content_h);
   }
   else if ((win->title[0] == 'A' && win->title[1] == 'c' &&
             win->title[2] == 'c') ||
@@ -6121,6 +6195,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int card_x = content_x + 24;
         int card_y = content_y + 22;
         int button_x = content_x + 24;
+        int manage_x = button_x + 180 + 12;
         int button_y = content_y + content_h - 64;
         int button_w = 180;
         int button_h = 34;
@@ -6148,6 +6223,57 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                   "Install failed. System image could not be written.");
             }
           }
+          return;
+        }
+
+        if (x >= manage_x && x < manage_x + 150 && y >= button_y &&
+            y < button_y + button_h) {
+          open_partition_manager_window(win->x + 36, win->y + 30);
+          return;
+        }
+      }
+
+      if (win->title[0] == 'P' && win->title[1] == 'a' &&
+          win->title[2] == 'r' && win->title[3] == 't') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+
+        installer_refresh_disk_inventory();
+        for (int i = 0; i < installer_disk_count && i < 6; i++) {
+          int row_y = content_y + 96 + i * 28;
+          if (x >= content_x + 24 && x < content_x + win->width - 24 &&
+              y >= row_y && y < row_y + 24) {
+            installer_selected_disk = i;
+            str_copy_safe(partition_manager_status, "Selected disk updated.",
+                          sizeof(partition_manager_status));
+            return;
+          }
+        }
+
+        if (x >= content_x + 24 && x < content_x + 164 && y >= content_y + 298 &&
+            y < content_y + 328) {
+          installer_write_target_config();
+          str_copy_safe(partition_manager_status,
+                        "Real disk set as installer target.",
+                        sizeof(partition_manager_status));
+          installer_set_status("Installer target disk updated.");
+          return;
+        }
+
+        if (x >= content_x + 176 && x < content_x + 266 &&
+            y >= content_y + 298 && y < content_y + 328) {
+          installer_refresh_disk_inventory();
+          str_copy_safe(partition_manager_status, "Disk list refreshed.",
+                        sizeof(partition_manager_status));
+          return;
+        }
+
+        if (x >= content_x + 278 && x < content_x + 388 &&
+            y >= content_y + 298 && y < content_y + 328) {
+          gui_create_file_manager_path(win->x + 24, win->y + 24, "/");
+          str_copy_safe(partition_manager_status,
+                        "Opened File Manager for disk-related files.",
+                        sizeof(partition_manager_status));
           return;
         }
       }
