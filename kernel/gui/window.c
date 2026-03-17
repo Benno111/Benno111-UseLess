@@ -2751,6 +2751,7 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
+  static const char *installer_system_image_root = "/install/system-image";
   installer_copy_ctx_t ctx = {"/install/system-image", "", 0, 0};
   struct file *dir;
   char msg[320];
@@ -2758,6 +2759,7 @@ static int installer_copy_system_image_to_root(const char *target_root,
   if (!target_root || !target_root[0])
     return -1;
 
+  ctx.src_root = installer_system_image_root;
   str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
   if (installer_try_make_dir(target_root) != 0) {
     str_copy_safe(msg, "install failed: target root creation failed for ",
@@ -2773,7 +2775,9 @@ static int installer_copy_system_image_to_root(const char *target_root,
     return -1;
   }
 
-  str_copy_safe(msg, "copying system image to ", sizeof(msg));
+  str_copy_safe(msg, "copying system image from ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), installer_system_image_root);
+  installer_append_to_buf(msg, sizeof(msg), " to ");
   installer_append_to_buf(msg, sizeof(msg), target_root);
   installer_log(msg);
   vfs_readdir(dir, &ctx, installer_copy_tree_callback);

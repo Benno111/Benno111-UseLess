@@ -1212,6 +1212,8 @@ int storage_has_efi_partition(int disk_index) {
 int storage_ensure_install_partitions(int disk_index) {
   int changed = 0;
   int has_system = 0;
+  int has_data = 0;
+  uint32_t free_mib;
 
   if (disk_index < 0 || disk_index >= storage_disk_count)
     return -1;
@@ -1220,6 +1222,10 @@ int storage_ensure_install_partitions(int disk_index) {
     if (storage_partitions[disk_index][i].present &&
         storage_partitions[disk_index][i].kind == STORAGE_PARTITION_SYSTEM) {
       has_system = 1;
+    }
+    if (storage_partitions[disk_index][i].present &&
+        storage_partitions[disk_index][i].kind == STORAGE_PARTITION_DATA) {
+      has_data = 1;
     }
   }
 
@@ -1236,6 +1242,20 @@ int storage_ensure_install_partitions(int disk_index) {
       system_size = 65536;
     if (storage_create_partition(disk_index, STORAGE_PARTITION_SYSTEM,
                                  system_size) == 0)
+      changed++;
+  }
+
+  free_mib = storage_disks[disk_index].capacity_mib >
+                     storage_partition_used_mib(disk_index)
+                 ? storage_disks[disk_index].capacity_mib -
+                       storage_partition_used_mib(disk_index)
+                 : 0;
+  if (!has_data && free_mib >= 4096) {
+    uint32_t data_size = free_mib;
+    if (data_size > 65536)
+      data_size = 65536;
+    if (storage_create_partition(disk_index, STORAGE_PARTITION_DATA,
+                                 data_size) == 0)
       changed++;
   }
 
