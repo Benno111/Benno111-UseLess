@@ -119,6 +119,17 @@ static int gui_is_installer_mode(void) {
 
 static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
+static int installer_active = 0;
+static int installer_phase = 0;
+static int installer_progress_done = 0;
+static int installer_progress_total = 5;
+static int installer_copied_files = 0;
+static int installer_failed_files = 0;
+static int installer_ensured_changes = 0;
+static uint64_t installer_reboot_deadline_ms = 0;
+static char installer_target_root[96];
+static char installer_efi_root[128];
+static char installer_update_root[128];
 static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
@@ -2790,64 +2801,9 @@ static int installer_copy_system_image_to_root(const char *target_root,
   return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
 }
 
-static int installer_install_system_image(void) {
+static int installer_finalize_install(void) {
   char summary[96];
-  char target_root[96];
-  char efi_root[128];
-  char update_root[128];
   char target_state_path[128];
-  int ensured = 0;
-  int copied_files = 0;
-  int failed_files = 0;
-  uint64_t start_ms;
-
-  installer_log_clear();
-  installer_refresh_disk_inventory();
-  if (installer_disk_count <= 0) {
-    installer_set_status("Install blocked. No real target disk is available.");
-    installer_log("install blocked: no real target disk");
-    return -1;
-  }
-  {
-    extern int storage_ensure_install_partitions(int disk_index);
-    ensured = storage_ensure_install_partitions(installer_selected_disk);
-    if (ensured < 0) {
-      installer_set_status("Install blocked. Required system partitions failed.");
-      installer_log("install blocked: required partitions failed");
-      return -1;
-    }
-  }
-  load_system_app_catalog();
-  ensure_gui_app_dirs();
-  installer_target_root_path(target_root, sizeof(target_root));
-  str_copy_safe(installer_log_target_root, target_root,
-                sizeof(installer_log_target_root));
-  installer_partition_root_path(efi_root, sizeof(efi_root), "EFI");
-  installer_partition_root_path(update_root, sizeof(update_root), "Update");
-  installer_log("starting system image install");
-  installer_log(target_root);
-
-  if (installer_try_make_dir(target_root) != 0 ||
-      installer_try_make_dir(efi_root) != 0 ||
-      installer_try_make_dir(update_root) != 0) {
-    installer_set_status("Install failed. Could not create target layout.");
-    installer_log("install failed: target layout creation failed");
-    return -1;
-  }
-
-  if (installer_copy_system_image_to_root(efi_root, &copied_files,
-                                          &failed_files) != 0) {
-    installer_set_status("Install failed. EFI image copy failed.");
-    installer_log("install failed: EFI copy failed");
-    return -1;
-  }
-
-  if (installer_copy_system_image_to_root(update_root, &copied_files,
-                                          &failed_files) != 0) {
-    installer_set_status("Install failed. Update image copy failed.");
-    installer_log("install failed: update copy failed");
-    return -1;
-  }
 
   dock_loaded = 0;
   load_dock_config();
@@ -2856,7 +2812,8 @@ static int installer_install_system_image(void) {
 
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
-  str_copy_safe(target_state_path, target_root, sizeof(target_state_path));
+  str_copy_safe(target_state_path, installer_target_root,
+                sizeof(target_state_path));
   {
     int idx = 0;
     while (target_state_path[idx] && idx < (int)sizeof(target_state_path) - 1)
@@ -2875,7 +2832,7 @@ static int installer_install_system_image(void) {
                   "bootable=1\nloader=limine\nsource=installer\n");
   {
     char efi_boot_cfg[192];
-    str_copy_safe(efi_boot_cfg, efi_root, sizeof(efi_boot_cfg));
+    str_copy_safe(efi_boot_cfg, installer_efi_root, sizeof(efi_boot_cfg));
     installer_append_to_buf(efi_boot_cfg, sizeof(efi_boot_cfg), "/BOOTABLE.CFG");
     write_text_file(efi_boot_cfg,
                     "bootable=1\nloader=limine\nsource=installer\n");
@@ -2887,10 +2844,10 @@ static int installer_install_system_image(void) {
     int idx = 0;
     while (summary[idx] && idx < (int)sizeof(summary) - 1)
       idx++;
-    append_decimal(summary, &idx, copied_files);
+    append_decimal(summary, &idx, installer_copied_files);
     for (const char *p = " files"; *p && idx < (int)sizeof(summary) - 1; p++)
       summary[idx++] = *p;
-    if (ensured > 0 && idx < (int)sizeof(summary) - 18) {
+    if (installer_ensured_changes > 0 && idx < (int)sizeof(summary) - 18) {
       const char *suffix = " with EFI fixup";
       for (int i = 0; suffix[i] && idx < (int)sizeof(summary) - 1; i++)
         summary[idx++] = suffix[i];
@@ -2900,15 +2857,133 @@ static int installer_install_system_image(void) {
   installer_log("install complete");
   installer_set_status(summary);
   installer_log("EFI marked bootable");
-  installer_log("rebooting in 3 seconds");
-  start_ms = arch_timer_get_ms();
-  while (arch_timer_get_ms() - start_ms < 3000)
-    ;
-  {
-    extern void arch_reboot(void);
-    arch_reboot();
-  }
+  installer_log("reboot scheduled in 3 seconds");
+  installer_has_run = 1;
+  installer_active = 0;
+  installer_phase = 0;
+  installer_reboot_deadline_ms = arch_timer_get_ms() + 3000;
   return 0;
+}
+
+static void installer_start_background_install(void) {
+  installer_log_clear();
+  installer_refresh_disk_inventory();
+  installer_has_run = 0;
+  installer_active = 1;
+  installer_phase = 1;
+  installer_progress_done = 0;
+  installer_progress_total = 5;
+  installer_copied_files = 0;
+  installer_failed_files = 0;
+  installer_ensured_changes = 0;
+  installer_reboot_deadline_ms = 0;
+  installer_target_root[0] = '\0';
+  installer_efi_root[0] = '\0';
+  installer_update_root[0] = '\0';
+  installer_set_status("Preparing install...");
+  installer_log("starting system image install");
+}
+
+static void installer_fail_background(const char *status, const char *log_line) {
+  installer_active = 0;
+  installer_phase = 0;
+  installer_set_status(status);
+  if (log_line)
+    installer_log(log_line);
+}
+
+static void installer_process_background_install(void) {
+  if (installer_reboot_deadline_ms &&
+      arch_timer_get_ms() >= installer_reboot_deadline_ms) {
+    installer_reboot_deadline_ms = 0;
+    {
+      extern void arch_reboot(void);
+      arch_reboot();
+    }
+    return;
+  }
+
+  if (!installer_active)
+    return;
+
+  switch (installer_phase) {
+  case 1:
+    installer_refresh_disk_inventory();
+    if (installer_disk_count <= 0) {
+      installer_fail_background("Install blocked. No real target disk is available.",
+                                "install blocked: no real target disk");
+      return;
+    }
+    installer_set_status("Ensuring target partitions...");
+    installer_progress_done = 1;
+    installer_phase = 2;
+    return;
+  case 2: {
+    extern int storage_ensure_install_partitions(int disk_index);
+    installer_ensured_changes =
+        storage_ensure_install_partitions(installer_selected_disk);
+    if (installer_ensured_changes < 0) {
+      installer_fail_background("Install blocked. Required partitions failed.",
+                                "install blocked: required partitions failed");
+      return;
+    }
+    load_system_app_catalog();
+    ensure_gui_app_dirs();
+    installer_target_root_path(installer_target_root,
+                               sizeof(installer_target_root));
+    installer_partition_root_path(installer_efi_root, sizeof(installer_efi_root),
+                                  "EFI");
+    installer_partition_root_path(installer_update_root,
+                                  sizeof(installer_update_root), "Update");
+    str_copy_safe(installer_log_target_root, installer_target_root,
+                  sizeof(installer_log_target_root));
+    installer_log(installer_target_root);
+    if (installer_try_make_dir(installer_target_root) != 0 ||
+        installer_try_make_dir(installer_efi_root) != 0 ||
+        installer_try_make_dir(installer_update_root) != 0) {
+      installer_fail_background("Install failed. Could not create target layout.",
+                                "install failed: target layout creation failed");
+      return;
+    }
+    installer_set_status("Copying EFI files...");
+    installer_progress_done = 2;
+    installer_phase = 3;
+    return;
+  }
+  case 3:
+    if (installer_copy_system_image_to_root(installer_efi_root,
+                                            &installer_copied_files,
+                                            &installer_failed_files) != 0) {
+      installer_fail_background("Install failed. EFI image copy failed.",
+                                "install failed: EFI copy failed");
+      return;
+    }
+    installer_set_status("Copying update files...");
+    installer_progress_done = 3;
+    installer_phase = 4;
+    return;
+  case 4:
+    if (installer_copy_system_image_to_root(installer_update_root,
+                                            &installer_copied_files,
+                                            &installer_failed_files) != 0) {
+      installer_fail_background("Install failed. Update image copy failed.",
+                                "install failed: update copy failed");
+      return;
+    }
+    installer_set_status("Finalizing boot files...");
+    installer_progress_done = 4;
+    installer_phase = 5;
+    return;
+  case 5:
+    installer_progress_done = 5;
+    if (installer_finalize_install() != 0) {
+      installer_fail_background("Install failed during finalization.",
+                                "install failed: finalization failed");
+    }
+    return;
+  default:
+    return;
+  }
 }
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
@@ -2923,9 +2998,17 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   int button_x = content_x + 24;
   int manage_x = button_x + button_w + 12;
   int button_y = content_y + content_h - 64;
-  uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
-  const char *action_label = "Install System Image";
+  uint32_t button_bg =
+      installer_active ? 0x2563EB : (installer_has_run ? 0x4B5563 : 0x16A34A);
+  const char *action_label =
+      installer_active ? "Installing..." : "Install System Image";
   int disk_y = card_y + 102;
+  int progress_y = card_y + 318;
+  int progress_w = card_w - 36;
+  int fill_w = installer_progress_total > 0
+                   ? (progress_w * installer_progress_done) /
+                         installer_progress_total
+                   : 0;
 
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
   gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
@@ -2958,6 +3041,11 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   gui_draw_rect(card_x + 18, card_y + 274, card_w - 36, 34, 0x1B1B2B);
   gui_draw_string(card_x + 28, card_y + 285, installer_status, 0xFFFFFF,
                   0x1B1B2B);
+  gui_draw_string(card_x + 18, progress_y - 18, "Progress:", 0x89B4FA,
+                  0x232337);
+  gui_draw_rect(card_x + 18, progress_y, progress_w, 14, 0x1B1B2B);
+  if (fill_w > 0)
+    gui_draw_rect(card_x + 18, progress_y, fill_w, 14, 0x22C55E);
 
   gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);
   gui_draw_string(button_x + 24, button_y + 10,
@@ -5658,6 +5746,7 @@ void gui_draw_cursor(void);
 
 void gui_compose(void) {
   g_frame_count++;
+  installer_process_background_install();
 
   /* Draw desktop and taskbar */
   draw_desktop();
@@ -6681,13 +6770,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= button_x && x < button_x + button_w && y >= button_y &&
             y < button_y + button_h) {
-          if (!installer_has_run) {
-            if (installer_install_system_image() == 0) {
-              installer_has_run = 1;
-            } else {
-              installer_set_status(
-                  "Install failed. System image could not be written.");
-            }
+          if (!installer_has_run && !installer_active) {
+            installer_start_background_install();
           }
           return;
         }
