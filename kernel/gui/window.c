@@ -2421,6 +2421,7 @@ static void installer_set_status(const char *message) {
 
 typedef struct {
   const char *src_root;
+  char dst_root[96];
   int copied_files;
 } installer_copy_ctx_t;
 
@@ -2435,6 +2436,49 @@ static int installer_try_make_dir(const char *path) {
     return 0;
   }
   return vfs_mkdir(path, 0755);
+}
+
+static void installer_selected_disk_id(char *buf, int max) {
+  const char *label = installer_selected_disk_label();
+  int idx = 0;
+  int inside = 0;
+
+  if (!buf || max <= 1) {
+    return;
+  }
+
+  buf[0] = '\0';
+  for (int i = 0; label[i] && idx < max - 1; i++) {
+    if (label[i] == '[') {
+      inside = 1;
+      continue;
+    }
+    if (label[i] == ']')
+      break;
+    if (inside)
+      buf[idx++] = label[i];
+  }
+  buf[idx] = '\0';
+
+  if (idx == 0) {
+    str_copy_safe(buf, "disk0", max);
+  }
+}
+
+static void installer_target_root_path(char *buf, int max) {
+  char disk_id[32];
+  installer_selected_disk_id(disk_id, sizeof(disk_id));
+  str_copy_safe(buf, "/Installed", max);
+  {
+    int idx = 0;
+    while (buf[idx] && idx < max - 1)
+      idx++;
+    if (idx < max - 1)
+      buf[idx++] = '/';
+    for (int i = 0; disk_id[i] && idx < max - 1; i++)
+      buf[idx++] = disk_id[i];
+    buf[idx] = '\0';
+  }
 }
 
 static void installer_ensure_parent_dirs(const char *path) {
@@ -2502,8 +2546,11 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
     src_path[src_len++] = name[i];
   src_path[src_len] = '\0';
 
-  dst_path[0] = '/';
-  dst_len = 1;
+  str_copy_safe(dst_path, copy->dst_root, sizeof(dst_path));
+  while (dst_path[dst_len])
+    dst_len++;
+  if (dst_len < (int)sizeof(dst_path) - 1)
+    dst_path[dst_len++] = '/';
   for (int i = 0; i < len && dst_len < (int)sizeof(dst_path) - 1; i++)
     dst_path[dst_len++] = name[i];
   dst_path[dst_len] = '\0';
@@ -2513,7 +2560,8 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
     {
       struct file *dir = vfs_open(src_path, O_RDONLY, 0);
       if (dir) {
-        installer_copy_ctx_t next = {src_path, copy->copied_files};
+        installer_copy_ctx_t next = {src_path, "", copy->copied_files};
+        str_copy_safe(next.dst_root, dst_path, sizeof(next.dst_root));
         vfs_readdir(dir, &next, installer_copy_tree_callback);
         copy->copied_files = next.copied_files;
         vfs_close(dir);
@@ -2528,9 +2576,11 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static int installer_install_system_image(void) {
-  installer_copy_ctx_t ctx = {"/install/system-image", 0};
+  installer_copy_ctx_t ctx = {"/install/system-image", "", 0};
   struct file *dir;
   char summary[96];
+  char target_root[96];
+  char target_state_path[128];
   int ensured = 0;
 
   installer_refresh_disk_inventory();
@@ -2548,6 +2598,9 @@ static int installer_install_system_image(void) {
   }
   load_system_app_catalog();
   ensure_gui_app_dirs();
+  installer_target_root_path(target_root, sizeof(target_root));
+  str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
+  installer_try_make_dir(target_root);
 
   dir = vfs_open(ctx.src_root, O_RDONLY, 0);
   if (!dir) {
@@ -2565,12 +2618,29 @@ static int installer_install_system_image(void) {
 
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
+  str_copy_safe(target_state_path, target_root, sizeof(target_state_path));
+  {
+    int idx = 0;
+    while (target_state_path[idx] && idx < (int)sizeof(target_state_path) - 1)
+      idx++;
+    if (idx < (int)sizeof(target_state_path) - 1)
+      target_state_path[idx++] = '/';
+    for (const char *p = "installer-state.txt";
+         *p && idx < (int)sizeof(target_state_path) - 1; p++)
+      target_state_path[idx++] = *p;
+    target_state_path[idx] = '\0';
+  }
+  write_text_file(target_state_path,
+                  "installed=1\nprofile=system-image\nsource=installer-iso\n");
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed system image files: ", sizeof(summary));
+  str_copy_safe(summary, "Installed image to ", sizeof(summary));
   {
-    int idx = 29;
-    append_decimal(summary, &idx, ctx.copied_files);
+    int idx = 0;
+    while (summary[idx] && idx < (int)sizeof(summary) - 1)
+      idx++;
+    for (int i = 0; target_root[i] && idx < (int)sizeof(summary) - 1; i++)
+      summary[idx++] = target_root[i];
     if (ensured > 0 && idx < (int)sizeof(summary) - 18) {
       const char *suffix = " with EFI fixup";
       for (int i = 0; suffix[i] && idx < (int)sizeof(summary) - 1; i++)
@@ -2728,6 +2798,8 @@ static const char *installer_selected_disk_label(void) {
 
 static void installer_write_target_config(void) {
   char manifest[256];
+  char target_root[96];
+  char target_cfg[128];
   int idx = 0;
   const char *disk = installer_selected_disk_label();
   int partition_count = 0;
@@ -2755,6 +2827,18 @@ static void installer_write_target_config(void) {
   manifest[idx] = '\0';
 
   write_text_file("/System/install-target.cfg", manifest);
+  installer_target_root_path(target_root, sizeof(target_root));
+  str_copy_safe(target_cfg, target_root, sizeof(target_cfg));
+  idx = 0;
+  while (target_cfg[idx] && idx < (int)sizeof(target_cfg) - 1)
+    idx++;
+  if (idx < (int)sizeof(target_cfg) - 1)
+    target_cfg[idx++] = '/';
+  for (const char *p = "install-target.cfg";
+       *p && idx < (int)sizeof(target_cfg) - 1; p++)
+    target_cfg[idx++] = *p;
+  target_cfg[idx] = '\0';
+  write_text_file(target_cfg, manifest);
 }
 
 static void partition_manager_refresh_partitions(void) {
