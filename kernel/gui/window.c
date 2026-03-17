@@ -82,7 +82,7 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 
 static int dock_is_visible(void) {
   extern int boot_is_usb_boot(void);
-  return !boot_is_usb_boot() && !startup_flow_active();
+  return !boot_is_usb_boot();
 }
 
 static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT : 0; }
@@ -1471,7 +1471,7 @@ static void set_startup_status(const char *message) {
 }
 
 static int startup_flow_active(void) {
-  return startup_flow != STARTUP_FLOW_NONE && !session_authenticated;
+  return 0;
 }
 
 static void mask_secret(const char *src, char *dst, int max) {
@@ -1535,43 +1535,6 @@ static void save_account_state(void) {
   write_text_file(GUI_ACCOUNT_PATH, manifest);
 }
 
-static void write_system_version_state(void) {
-  char manifest[192];
-  int idx = 0;
-
-  for (const char *p = "version=0.5.0\n"; *p && idx < (int)sizeof(manifest) - 1;
-       p++)
-    manifest[idx++] = *p;
-  for (const char *p = "build_number=";
-       *p && idx < (int)sizeof(manifest) - 1; p++)
-    manifest[idx++] = *p;
-  for (const char *p = BUILD_NUMBER_STR;
-       *p && idx < (int)sizeof(manifest) - 1; p++)
-    manifest[idx++] = *p;
-  manifest[idx++] = '\n';
-  for (const char *p = "build_uuid="; *p && idx < (int)sizeof(manifest) - 1;
-       p++)
-    manifest[idx++] = *p;
-  for (const char *p = BUILD_UUID; *p && idx < (int)sizeof(manifest) - 1; p++)
-    manifest[idx++] = *p;
-  manifest[idx++] = '\n';
-  manifest[idx] = '\0';
-
-  write_text_file(GUI_VERSION_PATH, manifest);
-}
-
-static uint64_t read_installed_build_number(void) {
-  char manifest[192];
-  char build_buf[32];
-
-  if (read_text_file(GUI_VERSION_PATH, manifest, sizeof(manifest)) < 0)
-    return 0;
-  if (manifest_get_value(manifest, "build_number", build_buf,
-                         sizeof(build_buf)) != 0)
-    return 0;
-  return parse_u64(build_buf);
-}
-
 static void seed_all_system_apps_once(void) {
   char state[192];
   char apps_seeded[8];
@@ -1596,7 +1559,6 @@ static void seed_all_system_apps_once(void) {
   }
   save_dock_config();
   write_text_file(GUI_SETUP_STATE_PATH, "apps_seeded=1\n");
-  write_system_version_state();
 }
 
 static void startup_open_modal_window(void) {
@@ -1621,21 +1583,9 @@ static void ensure_startup_flow(void) {
     return;
 
   seed_all_system_apps_once();
-  load_account_state();
-  session_authenticated = 0;
-  startup_input_username[0] = '\0';
-  startup_input_password[0] = '\0';
-  startup_active_field = 0;
-
-  if (!account_username[0] || !account_password[0]) {
-    startup_flow = STARTUP_FLOW_CREATE_ACCOUNT;
-    set_startup_status("Create your administrator account to continue.");
-  } else {
-    startup_flow = STARTUP_FLOW_LOGIN;
-    set_startup_status("Sign in to unlock the desktop.");
-  }
-
-  startup_open_modal_window();
+  session_authenticated = 1;
+  startup_flow = STARTUP_FLOW_NONE;
+  startup_window = NULL;
 }
 
 static void complete_startup_auth(void) {
@@ -1704,7 +1654,7 @@ static void startup_handle_key(int key) {
   append_input_char(target, 32, key);
 }
 
-int gui_requires_login(void) { return startup_flow_active(); }
+int gui_requires_login(void) { return 0; }
 
 static void ensure_gui_app_dirs(void) {
   vfs_mkdir(GUI_SYSTEM_DIR, 0755);
@@ -2158,7 +2108,6 @@ static int installer_seed_desktop_bundle(void) {
   }
 
   save_dock_config();
-  write_system_version_state();
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=desktop\nsource=installer-iso\n");
   write_text_file("/Desktop/Install Guide.txt",
@@ -2171,8 +2120,6 @@ static int installer_seed_desktop_bundle(void) {
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
-  uint64_t installed_build = read_installed_build_number();
-  uint64_t current_build = BUILD_NUMBER;
   int card_x = content_x + 24;
   int card_y = content_y + 22;
   int card_w = content_w - 48;
@@ -2183,18 +2130,8 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
   const char *action_label = "Install OS";
 
-  if (installed_build > current_build) {
-    button_bg = 0x7F1D1D;
-    action_label = "Downgrade Blocked";
-  } else if (installed_build == current_build && installed_build != 0) {
-    button_bg = 0x4B5563;
-    action_label = "Already Current";
-  } else if (installed_build != 0) {
-    action_label = "Update OS";
-  }
-
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer / Updater",
+  gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
                   0xFFFFFF, 0x232337);
   gui_draw_string(card_x + 18, card_y + 42,
                   "This ISO boots directly into the installer environment.",
@@ -2214,42 +2151,14 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   gui_draw_string(card_x + 30, card_y + 184,
                   "- mirrors to persistent disk mounts when available",
                   0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 210, "ISO Build:", 0x89B4FA, 0x232337);
-  gui_draw_string(card_x + 94, card_y + 210, BUILD_NUMBER_STR, 0xE5E7EB,
-                  0x232337);
-
-  gui_draw_string(card_x + 160, card_y + 210, "Installed:", 0x89B4FA,
-                  0x232337);
-  if (installed_build != 0) {
-    char build_buf[24];
-    int idx = 0;
-    uint64_t temp = installed_build;
-    char rev[24];
-    int rev_idx = 0;
-    if (temp == 0) {
-      build_buf[idx++] = '0';
-    } else {
-      while (temp > 0 && rev_idx < (int)sizeof(rev)) {
-        rev[rev_idx++] = (char)('0' + (temp % 10));
-        temp /= 10;
-      }
-      while (rev_idx > 0)
-        build_buf[idx++] = rev[--rev_idx];
-    }
-    build_buf[idx] = '\0';
-    gui_draw_string(card_x + 236, card_y + 210, build_buf, 0xE5E7EB, 0x232337);
-  } else {
-    gui_draw_string(card_x + 236, card_y + 210, "none", 0x6C7086, 0x232337);
-  }
-
-  gui_draw_string(card_x + 18, card_y + 232, "Status:", 0x89B4FA, 0x232337);
-  gui_draw_rect(card_x + 18, card_y + 252, card_w - 36, 34, 0x1B1B2B);
-  gui_draw_string(card_x + 28, card_y + 263, installer_status, 0xFFFFFF,
+  gui_draw_string(card_x + 18, card_y + 210, "Status:", 0x89B4FA, 0x232337);
+  gui_draw_rect(card_x + 18, card_y + 230, card_w - 36, 34, 0x1B1B2B);
+  gui_draw_string(card_x + 28, card_y + 241, installer_status, 0xFFFFFF,
                   0x1B1B2B);
 
   gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);
   gui_draw_string(button_x + 24, button_y + 10,
-                  installer_has_run ? "Update Complete" : action_label,
+                  installer_has_run ? "Install Complete" : action_label,
                   0xFFFFFF, button_bg);
 }
 
@@ -4536,14 +4445,9 @@ static void draw_desktop(void) {
 #else
     const char *build_info = "OS next stage v0.5.0 ARM64";
 #endif
-    const char *build_number = BUILD_NUMBER_STR;
     int build_len = 0;
     while (build_info[build_len]) {
       build_len++;
-    }
-    int build_num_len = 0;
-    while (build_number[build_num_len]) {
-      build_num_len++;
     }
 
     int text_w = build_len * 8;
@@ -4553,11 +4457,8 @@ static void draw_desktop(void) {
 
     gui_draw_rect(text_x - 8, text_y - 4, text_w + 16, 16, 0x000000);
     gui_draw_string(text_x, text_y, build_info, 0xCDD6F4, 0x000000);
-    gui_draw_rect(text_x - 8, text_y + 12, build_num_len * 8 + 16, 16,
-                  0x000000);
-    gui_draw_string(text_x, text_y + 16, build_number, 0xA6E3A1, 0x000000);
-    gui_draw_rect(text_x - 8, text_y + 28, 36 * 8 + 16, 16, 0x000000);
-    gui_draw_string(text_x, text_y + 32, BUILD_UUID, 0x9CA3AF, 0x000000);
+    gui_draw_rect(text_x - 8, text_y + 12, 36 * 8 + 16, 16, 0x000000);
+    gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0x9CA3AF, 0x000000);
   }
 
   /* Draw menu bar at top (glass effect) */
@@ -5502,26 +5403,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= button_x && x < button_x + button_w && y >= button_y &&
             y < button_y + button_h) {
-          uint64_t installed_build = read_installed_build_number();
-          uint64_t current_build = BUILD_NUMBER;
-
-          if (installed_build > current_build) {
-            installer_set_status("Refusing downgrade: installed build is newer.");
-            return;
-          }
-          if (installed_build == current_build && installed_build != 0) {
-            installer_set_status("Installed system already matches this ISO.");
-            return;
-          }
-
           if (!installer_has_run) {
             if (installer_seed_desktop_bundle() == 0) {
-              installer_set_status(installed_build == 0
-                                       ? "Install finished. Reboot into the updated OS."
-                                       : "Update finished. Reboot into the new build.");
+              installer_set_status(
+                  "Install finished. Reboot into the updated OS.");
               installer_has_run = 1;
             } else {
-              installer_set_status("Install/update failed. No desktop bundle was written.");
+              installer_set_status(
+                  "Install failed. No desktop bundle was written.");
             }
           }
           return;

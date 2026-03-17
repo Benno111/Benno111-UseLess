@@ -116,7 +116,6 @@ static void start_x86_64_bringup(void) {
   extern void kmalloc_init(void);
   extern int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
                       uint32_t pitch);
-  extern int gui_requires_login(void);
   extern struct window *gui_create_window(const char *title, int x, int y,
                                           int w, int h);
   extern void gui_focus_window(struct window *win);
@@ -184,9 +183,7 @@ static void start_x86_64_bringup(void) {
   acpi_init(limine_get_rsdp());
   populate_seed_filesystem();
   storage_init();
-  printk(KERN_WARNING
-         "x86_64: Skipping PCI probe during bring-up until ACPI MCFG-based "
-         "ECAM discovery is implemented.\n");
+  pci_init();
 
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
   if (gui_init(fb_buffer, fb_width, fb_height,
@@ -215,17 +212,14 @@ static void start_x86_64_bringup(void) {
     }
   } else {
     desktop_manager_init();
-
-    if (!gui_requires_login()) {
-      term_window = gui_create_window("Terminal", 50, 50, 700, 420);
-      if (term_window) {
-        struct terminal *term = term_create(52, 80, 80, 20);
-        if (term) {
-          gui_set_window_userdata(term_window, term);
-          term_set_active(term);
-        }
-        gui_focus_window(term_window);
+    term_window = gui_create_window("Terminal", 50, 50, 700, 420);
+    if (term_window) {
+      struct terminal *term = term_create(52, 80, 80, 20);
+      if (term) {
+        gui_set_window_userdata(term_window, term);
+        term_set_active(term);
       }
+      gui_focus_window(term_window);
     }
   }
 

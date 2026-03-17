@@ -39,7 +39,6 @@ void gui_move_mouse(int dx, int dy);
 void gui_draw_cursor(void);
 void gui_open_image_viewer(const char *path);
 int gui_launch_app_by_id(const char *app_id);
-int gui_requires_login(void);
 
 /* ===================================================================== */
 /* Terminal */
