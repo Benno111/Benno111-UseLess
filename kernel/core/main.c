@@ -116,6 +116,7 @@ static void start_x86_64_bringup(void) {
   extern void kmalloc_init(void);
   extern int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
                       uint32_t pitch);
+  extern int gui_requires_login(void);
   extern struct window *gui_create_window(const char *title, int x, int y,
                                           int w, int h);
   extern void gui_focus_window(struct window *win);
@@ -124,13 +125,19 @@ static void start_x86_64_bringup(void) {
   extern void term_set_active(struct terminal * term);
   extern void gui_set_window_userdata(struct window *win, void *data);
   extern void desktop_manager_init(void);
+  extern void pci_init(void);
+  extern void storage_init(void);
+  extern void arch_timer_init(void);
   extern int vfs_mount(const char *source, const char *target,
                        const char *filesystemtype, unsigned long mountflags,
                        const void *data);
   extern void vfs_init(void);
   extern int ramfs_init(void);
   extern void *limine_get_rsdp(void);
+  extern const char *limine_get_kernel_cmdline(void);
   extern void acpi_init(void *rsdp_ptr);
+  extern void boot_parse_cmdline(const char *cmdline);
+  extern int boot_is_installer_mode(void);
   extern int input_init(void);
   extern void input_poll(void);
   extern void input_set_key_callback(void (*callback)(int key));
@@ -146,6 +153,7 @@ static void start_x86_64_bringup(void) {
   uint32_t fb_height = 0;
   uint32_t fb_pitch = 0;
   struct window *term_window = 0;
+  struct window *installer_window = 0;
   int last_mx = -1;
   int last_my = -1;
   int last_buttons = -1;
@@ -164,9 +172,14 @@ static void start_x86_64_bringup(void) {
     panic("No usable framebuffer available on x86_64!");
   }
 
+  boot_parse_cmdline(limine_get_kernel_cmdline());
+
   kmalloc_init();
+  arch_timer_init();
   vfs_init();
   ramfs_init();
+  storage_init();
+  pci_init();
   if (vfs_mount("ramfs", "/", "ramfs", 0, NULL) != 0) {
     panic("Failed to mount x86_64 root filesystem!");
   }
@@ -183,16 +196,35 @@ static void start_x86_64_bringup(void) {
   input_set_key_callback(keyboard_handler);
   input_set_mouse_bounds((int)fb_width, (int)fb_height);
   input_set_mouse_scale(2);
-  desktop_manager_init();
-
-  term_window = gui_create_window("Terminal", 50, 50, 700, 420);
-  if (term_window) {
-    struct terminal *term = term_create(52, 80, 80, 20);
-    if (term) {
-      gui_set_window_userdata(term_window, term);
-      term_set_active(term);
+  if (boot_is_installer_mode()) {
+    int installer_w = 640;
+    int installer_h = 420;
+    int installer_x = (int)(fb_width > (uint32_t)installer_w
+                                ? (fb_width - (uint32_t)installer_w) / 2
+                                : 20);
+    int installer_y = (int)(fb_height > (uint32_t)installer_h
+                                ? (fb_height - (uint32_t)installer_h) / 2
+                                : 20);
+    installer_window =
+        gui_create_window("Installer", installer_x, installer_y, installer_w,
+                          installer_h);
+    if (installer_window) {
+      gui_focus_window(installer_window);
     }
-    gui_focus_window(term_window);
+  } else {
+    desktop_manager_init();
+
+    if (!gui_requires_login()) {
+      term_window = gui_create_window("Terminal", 50, 50, 700, 420);
+      if (term_window) {
+        struct terminal *term = term_create(52, 80, 80, 20);
+        if (term) {
+          gui_set_window_userdata(term_window, term);
+          term_set_active(term);
+        }
+        gui_focus_window(term_window);
+      }
+    }
   }
 
   printk(KERN_INFO "x86_64 minimal GUI ready.\n");
@@ -511,6 +543,8 @@ static void init_subsystems(void *dtb) {
   /* Initialize PCI bus and detect devices (including Audio) */
   printk(KERN_INFO "  Initializing PCI bus...\n");
   extern void pci_init(void);
+  extern void storage_init(void);
+  storage_init();
   pci_init();
 
   /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */

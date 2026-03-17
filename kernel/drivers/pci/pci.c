@@ -5,6 +5,7 @@
  */
 
 #include "drivers/pci.h"
+#include "drivers/storage.h"
 #include "drivers/intel_hda.h"
 #include "drivers/usb/usb.h"
 #include "printk.h"
@@ -145,6 +146,8 @@ void pci_init(void) {
       /* Add to linked list */
       pci_dev->next = device_list;
       device_list = pci_dev;
+
+      storage_register_pci_controller(pci_dev);
 
       /* Check if it's Intel HDA */
       if (vendor == HDA_VENDOR_ID && device == HDA_DEVICE_ID) {

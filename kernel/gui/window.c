@@ -77,6 +77,21 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define COLOR_DOCK_BORDER 0x3F3F46 /* Subtle border */
 #define COLOR_DOCK_GLASS 0x2A2A30  /* Glass effect layer */
 #define DOCK_HEIGHT 70
+
+static int dock_is_visible(void) {
+  extern int boot_is_usb_boot(void);
+  return !boot_is_usb_boot() && !startup_flow_active();
+}
+
+static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT : 0; }
+
+static int gui_is_installer_mode(void) {
+  extern int boot_is_installer_mode(void);
+  return boot_is_installer_mode();
+}
+
+static char installer_status[96] = "Ready to install the desktop bundle.";
+static int installer_has_run = 0;
 /* ===================================================================== */
 /* Wallpaper Manager                                                     */
 /* ===================================================================== */
@@ -1160,6 +1175,9 @@ typedef struct {
 #define GUI_SYSTEM_APPS_DIR "/System/Apps"
 #define GUI_APPS_DIR "/Applications"
 #define GUI_DOCK_CONFIG_PATH "/System/dock.cfg"
+#define GUI_SETUP_STATE_PATH "/System/setup-state.cfg"
+#define GUI_ACCOUNT_PATH "/System/account.cfg"
+#define GUI_VERSION_PATH "/System/version.cfg"
 #define MAX_SYSTEM_APPS 24
 #define MAX_DOCK_ITEMS 16
 #define APP_STORE_CARD_HEIGHT 54
@@ -1186,6 +1204,32 @@ static int app_catalog_loaded = 0;
 static const dock_app_def_t *dock_items[MAX_DOCK_ITEMS];
 static int dock_item_count = 0;
 static int dock_loaded = 0;
+
+typedef enum {
+  STARTUP_FLOW_NONE = 0,
+  STARTUP_FLOW_CREATE_ACCOUNT,
+  STARTUP_FLOW_LOGIN
+} startup_flow_t;
+
+static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
+static int session_authenticated = 1;
+static char account_username[32] = "";
+static char account_password[32] = "";
+static char startup_input_username[32] = "";
+static char startup_input_password[32] = "";
+static int startup_active_field = 0;
+static char startup_status[96] = "";
+static struct window *startup_window = NULL;
+
+static uint64_t parse_u64(const char *text) {
+  uint64_t value = 0;
+  int i = 0;
+  while (text && text[i] >= '0' && text[i] <= '9') {
+    value = value * 10 + (uint64_t)(text[i] - '0');
+    i++;
+  }
+  return value;
+}
 
 static const char *default_dock_ids[] = {"terminal", "files", "calculator",
                                          "notes", "appstore"};
@@ -1412,6 +1456,246 @@ static int app_is_installed(const dock_app_def_t *app) {
   media_free_file(data);
   return 1;
 }
+
+static void set_startup_status(const char *message) {
+  str_copy_safe(startup_status, message, sizeof(startup_status));
+}
+
+static int startup_flow_active(void) {
+  return startup_flow != STARTUP_FLOW_NONE && !session_authenticated;
+}
+
+static void mask_secret(const char *src, char *dst, int max) {
+  int idx = 0;
+  if (!dst || max <= 0)
+    return;
+  while (src && src[idx] && idx < max - 1) {
+    dst[idx] = '*';
+    idx++;
+  }
+  dst[idx] = '\0';
+}
+
+static void append_input_char(char *buf, int max, int key) {
+  int len = 0;
+  if (!buf || max <= 1)
+    return;
+  while (buf[len])
+    len++;
+  if (key == 8) {
+    if (len > 0)
+      buf[len - 1] = '\0';
+    return;
+  }
+  if (key < 32 || key > 126 || len >= max - 1)
+    return;
+  buf[len++] = (char)key;
+  buf[len] = '\0';
+}
+
+static void load_account_state(void) {
+  char manifest[160];
+
+  account_username[0] = '\0';
+  account_password[0] = '\0';
+  if (read_text_file(GUI_ACCOUNT_PATH, manifest, sizeof(manifest)) < 0)
+    return;
+
+  manifest_get_value(manifest, "username", account_username,
+                     sizeof(account_username));
+  manifest_get_value(manifest, "password", account_password,
+                     sizeof(account_password));
+}
+
+static void save_account_state(void) {
+  char manifest[160];
+  int idx = 0;
+
+  for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_username[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = account_username[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "password="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_password[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = account_password[i];
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file(GUI_ACCOUNT_PATH, manifest);
+}
+
+static void write_system_version_state(void) {
+  char manifest[192];
+  int idx = 0;
+
+  for (const char *p = "version=0.5.0\n"; *p && idx < (int)sizeof(manifest) - 1;
+       p++)
+    manifest[idx++] = *p;
+  for (const char *p = "build_number=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (const char *p = BUILD_NUMBER_STR;
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = '\n';
+  for (const char *p = "build_uuid="; *p && idx < (int)sizeof(manifest) - 1;
+       p++)
+    manifest[idx++] = *p;
+  for (const char *p = BUILD_UUID; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file(GUI_VERSION_PATH, manifest);
+}
+
+static uint64_t read_installed_build_number(void) {
+  char manifest[192];
+  char build_buf[32];
+
+  if (read_text_file(GUI_VERSION_PATH, manifest, sizeof(manifest)) < 0)
+    return 0;
+  if (manifest_get_value(manifest, "build_number", build_buf,
+                         sizeof(build_buf)) != 0)
+    return 0;
+  return parse_u64(build_buf);
+}
+
+static void seed_all_system_apps_once(void) {
+  char state[192];
+  char apps_seeded[8];
+
+  load_system_app_catalog();
+  ensure_gui_app_dirs();
+
+  if (read_text_file(GUI_SETUP_STATE_PATH, state, sizeof(state)) >= 0 &&
+      manifest_get_value(state, "apps_seeded", apps_seeded,
+                         sizeof(apps_seeded)) == 0 &&
+      apps_seeded[0] == '1') {
+    return;
+  }
+
+  dock_item_count = 0;
+  dock_loaded = 1;
+  for (int i = 0; i < app_catalog_count; i++) {
+    ensure_app_manifest(&app_catalog[i]);
+    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE) {
+      dock_add_item(&app_catalog[i]);
+    }
+  }
+  save_dock_config();
+  write_text_file(GUI_SETUP_STATE_PATH, "apps_seeded=1\n");
+  write_system_version_state();
+}
+
+static void startup_open_modal_window(void) {
+  int win_w = 520;
+  int win_h = 280;
+  int win_x = ((int)primary_display.width - win_w) / 2;
+  int win_y = ((int)primary_display.height - win_h) / 2;
+  const char *title = startup_flow == STARTUP_FLOW_CREATE_ACCOUNT
+                          ? "Account Setup"
+                          : "Login";
+
+  startup_window = gui_create_window(title, win_x, win_y, win_w, win_h);
+  if (startup_window) {
+    startup_window->has_titlebar = false;
+    startup_window->resizable = false;
+    gui_focus_window(startup_window);
+  }
+}
+
+static void ensure_startup_flow(void) {
+  if (gui_is_installer_mode())
+    return;
+
+  seed_all_system_apps_once();
+  load_account_state();
+  session_authenticated = 0;
+  startup_input_username[0] = '\0';
+  startup_input_password[0] = '\0';
+  startup_active_field = 0;
+
+  if (!account_username[0] || !account_password[0]) {
+    startup_flow = STARTUP_FLOW_CREATE_ACCOUNT;
+    set_startup_status("Create your administrator account to continue.");
+  } else {
+    startup_flow = STARTUP_FLOW_LOGIN;
+    set_startup_status("Sign in to unlock the desktop.");
+  }
+
+  startup_open_modal_window();
+}
+
+static void complete_startup_auth(void) {
+  session_authenticated = 1;
+  startup_flow = STARTUP_FLOW_NONE;
+  set_startup_status("");
+  if (startup_window) {
+    gui_destroy_window(startup_window);
+    startup_window = NULL;
+  }
+}
+
+static void submit_startup_flow(void) {
+  if (startup_flow == STARTUP_FLOW_CREATE_ACCOUNT) {
+    char user_home[96];
+    int idx = 0;
+
+    if (!startup_input_username[0] || !startup_input_password[0]) {
+      set_startup_status("Enter both a username and password.");
+      return;
+    }
+    str_copy_safe(account_username, startup_input_username,
+                  sizeof(account_username));
+    str_copy_safe(account_password, startup_input_password,
+                  sizeof(account_password));
+    vfs_mkdir("/Users", 0755);
+    str_copy_safe(user_home, "/Users/", sizeof(user_home));
+    idx = 7;
+    for (int i = 0; account_username[i] && idx < (int)sizeof(user_home) - 1;
+         i++) {
+      user_home[idx++] = account_username[i];
+    }
+    user_home[idx] = '\0';
+    vfs_mkdir(user_home, 0755);
+    save_account_state();
+    startup_input_password[0] = '\0';
+    startup_active_field = 1;
+    startup_flow = STARTUP_FLOW_LOGIN;
+    set_startup_status("Account created. Log in with your new credentials.");
+    if (startup_window) {
+      str_copy_safe(startup_window->title, "Login", sizeof(startup_window->title));
+    }
+    return;
+  }
+
+  if (str_cmp(startup_input_username, account_username) == 0 &&
+      str_cmp(startup_input_password, account_password) == 0) {
+    complete_startup_auth();
+  } else {
+    set_startup_status("Login failed. Check your username and password.");
+  }
+}
+
+static void startup_handle_key(int key) {
+  char *target = startup_active_field == 0 ? startup_input_username
+                                           : startup_input_password;
+
+  if (key == '\t') {
+    startup_active_field = 1 - startup_active_field;
+    return;
+  }
+  if (key == '\r' || key == '\n') {
+    submit_startup_flow();
+    return;
+  }
+  append_input_char(target, 32, key);
+}
+
+int gui_requires_login(void) { return startup_flow_active(); }
 
 static void ensure_gui_app_dirs(void) {
   vfs_mkdir(GUI_SYSTEM_DIR, 0755);
@@ -1725,6 +2009,8 @@ int gui_launch_app_by_id(const char *app_id) {
   static int spawn_y = 80;
   const dock_app_def_t *app = find_catalog_app(app_id);
 
+  if (startup_flow_active())
+    return -1;
   if (!app)
     return -1;
 
@@ -1833,6 +2119,172 @@ static void draw_app_store(int content_x, int content_y, int content_w,
 
     y += APP_STORE_CARD_HEIGHT + 8;
   }
+}
+
+static void installer_set_status(const char *message) {
+  str_copy_safe(installer_status, message, sizeof(installer_status));
+}
+
+static int installer_seed_desktop_bundle(void) {
+  int created = 0;
+
+  load_system_app_catalog();
+  ensure_gui_app_dirs();
+
+  dock_item_count = 0;
+  dock_loaded = 1;
+
+  for (int i = 0; i < app_catalog_count; i++) {
+    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE) {
+      ensure_app_manifest(&app_catalog[i]);
+    }
+  }
+
+  for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
+    const dock_app_def_t *app = find_catalog_app(default_dock_ids[i]);
+    if (!app)
+      continue;
+    dock_add_item(app);
+    created++;
+  }
+
+  save_dock_config();
+  write_system_version_state();
+  write_text_file("/System/installer-state.txt",
+                  "installed=1\nprofile=desktop\nsource=installer-iso\n");
+  write_text_file("/Desktop/Install Guide.txt",
+                  "OS next stage Installer\n\n"
+                  "The desktop bundle was installed from the installer ISO.\n"
+                  "If a writable persistent disk is mounted at /Persist, /persist,\n"
+                  "/disk, or /mnt/disk, these files are mirrored there too.\n");
+  return created > 0 ? 0 : -1;
+}
+
+static void draw_installer_window(int content_x, int content_y, int content_w,
+                                  int content_h) {
+  uint64_t installed_build = read_installed_build_number();
+  uint64_t current_build = BUILD_NUMBER;
+  int card_x = content_x + 24;
+  int card_y = content_y + 22;
+  int card_w = content_w - 48;
+  int button_w = 180;
+  int button_h = 34;
+  int button_x = content_x + 24;
+  int button_y = content_y + content_h - 64;
+  uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
+  const char *action_label = "Install OS";
+
+  if (installed_build > current_build) {
+    button_bg = 0x7F1D1D;
+    action_label = "Downgrade Blocked";
+  } else if (installed_build == current_build && installed_build != 0) {
+    button_bg = 0x4B5563;
+    action_label = "Already Current";
+  } else if (installed_build != 0) {
+    action_label = "Update OS";
+  }
+
+  gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer / Updater",
+                  0xFFFFFF, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 42,
+                  "This ISO boots directly into the installer environment.",
+                  0xCDD6F4, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 66,
+                  "The dock is disabled while running from this USB image.",
+                  0xA6ADC8, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 102, "Install actions:",
+                  0x89B4FA, 0x232337);
+  gui_draw_string(card_x + 30, card_y + 124,
+                  "- seeds /System/Apps manifests", 0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 30, card_y + 144,
+                  "- writes /System/dock.cfg defaults", 0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 30, card_y + 164,
+                  "- creates /Applications and desktop shortcuts", 0xE5E7EB,
+                  0x232337);
+  gui_draw_string(card_x + 30, card_y + 184,
+                  "- mirrors to persistent disk mounts when available",
+                  0xE5E7EB, 0x232337);
+  gui_draw_string(card_x + 18, card_y + 210, "ISO Build:", 0x89B4FA, 0x232337);
+  gui_draw_string(card_x + 94, card_y + 210, BUILD_NUMBER_STR, 0xE5E7EB,
+                  0x232337);
+
+  gui_draw_string(card_x + 160, card_y + 210, "Installed:", 0x89B4FA,
+                  0x232337);
+  if (installed_build != 0) {
+    char build_buf[24];
+    int idx = 0;
+    uint64_t temp = installed_build;
+    char rev[24];
+    int rev_idx = 0;
+    if (temp == 0) {
+      build_buf[idx++] = '0';
+    } else {
+      while (temp > 0 && rev_idx < (int)sizeof(rev)) {
+        rev[rev_idx++] = (char)('0' + (temp % 10));
+        temp /= 10;
+      }
+      while (rev_idx > 0)
+        build_buf[idx++] = rev[--rev_idx];
+    }
+    build_buf[idx] = '\0';
+    gui_draw_string(card_x + 236, card_y + 210, build_buf, 0xE5E7EB, 0x232337);
+  } else {
+    gui_draw_string(card_x + 236, card_y + 210, "none", 0x6C7086, 0x232337);
+  }
+
+  gui_draw_string(card_x + 18, card_y + 232, "Status:", 0x89B4FA, 0x232337);
+  gui_draw_rect(card_x + 18, card_y + 252, card_w - 36, 34, 0x1B1B2B);
+  gui_draw_string(card_x + 28, card_y + 263, installer_status, 0xFFFFFF,
+                  0x1B1B2B);
+
+  gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);
+  gui_draw_string(button_x + 24, button_y + 10,
+                  installer_has_run ? "Update Complete" : action_label,
+                  0xFFFFFF, button_bg);
+}
+
+static void draw_startup_auth_window(struct window *win, int content_x,
+                                     int content_y, int content_w,
+                                     int content_h) {
+  char masked_password[32];
+  uint32_t user_bg = startup_active_field == 0 ? 0x31314A : 0x232337;
+  uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
+  uint32_t button_bg = 0x2563EB;
+  const char *title =
+      startup_flow == STARTUP_FLOW_CREATE_ACCOUNT ? "Create Your Account"
+                                                  : "Sign In";
+  const char *button_label =
+      startup_flow == STARTUP_FLOW_CREATE_ACCOUNT ? "Create Account" : "Login";
+
+  (void)win;
+  (void)content_h;
+
+  mask_secret(startup_input_password, masked_password, sizeof(masked_password));
+
+  gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
+  gui_draw_string(content_x + 20, content_y + 18, title, 0xFFFFFF, 0x181827);
+
+  gui_draw_string(content_x + 20, content_y + 74, "Username", 0xA6ADC8,
+                  THEME_BG);
+  gui_draw_rect(content_x + 20, content_y + 94, content_w - 40, 34, user_bg);
+  gui_draw_string(content_x + 30, content_y + 106,
+                  startup_input_username[0] ? startup_input_username
+                                            : "enter username",
+                  startup_input_username[0] ? 0xFFFFFF : 0x6C7086, user_bg);
+
+  gui_draw_string(content_x + 20, content_y + 142, "Password", 0xA6ADC8,
+                  THEME_BG);
+  gui_draw_rect(content_x + 20, content_y + 162, content_w - 40, 34, pass_bg);
+  gui_draw_string(content_x + 30, content_y + 174,
+                  masked_password[0] ? masked_password : "enter password",
+                  masked_password[0] ? 0xFFFFFF : 0x6C7086, pass_bg);
+
+  gui_draw_rect(content_x + 20, content_y + 214, 170, 34, button_bg);
+  gui_draw_string(content_x + 34, content_y + 226, button_label, 0xFFFFFF,
+                  button_bg);
+  gui_draw_string(content_x + 210, content_y + 225, startup_status, 0xCDD6F4,
+                  THEME_BG);
 }
 
 static void draw_icon(int x, int y, int size, const unsigned char *icon,
@@ -2820,6 +3272,17 @@ static void draw_window(struct window *win) {
            win->title[2] == 'p' && win->title[3] == ' ') {
     draw_app_store(content_x, content_y, content_w, content_h);
   }
+  /* Installer */
+  else if (win->title[0] == 'I' && win->title[1] == 'n' &&
+           win->title[2] == 's' && win->title[3] == 't') {
+    draw_installer_window(content_x, content_y, content_w, content_h);
+  }
+  else if ((win->title[0] == 'A' && win->title[1] == 'c' &&
+            win->title[2] == 'c') ||
+           (win->title[0] == 'L' && win->title[1] == 'o' &&
+            win->title[2] == 'g')) {
+    draw_startup_auth_window(win, content_x, content_y, content_w, content_h);
+  }
   /* Image Viewer */
   else if (win->title[0] == 'I' && win->title[1] == 'm' &&
            win->title[2] == 'a') {
@@ -2877,7 +3340,7 @@ static void draw_window(struct window *win) {
     yy += 24;
 
     /* Version */
-    gui_draw_string(center_x - 68, yy, "Version 8.0.0", 0xA6ADC8, THEME_BG);
+    gui_draw_string(center_x - 68, yy, "Version 0.5.0", 0xA6ADC8, THEME_BG);
     yy += 28;
 
     /* System info box */
@@ -2885,7 +3348,7 @@ static void draw_window(struct window *win) {
     yy += 10;
     gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v8.0.0",
+    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v0.5.0",
                     0xCDD6F4, 0x252535);
     yy += 18;
     gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
@@ -2963,18 +3426,33 @@ static void draw_window(struct window *win) {
     char resolution[32];
     char windows_info[32];
     char usb_ports[32];
+    char storage_overview[96];
+    char storage_line0[80];
+    char storage_line1[80];
     extern int intel_hda_is_ready(void);
     extern int intel_hda_is_playing(void);
     extern int virtio_net_is_ready(void);
     extern int xhci_is_ready(void);
     extern int xhci_get_port_count(void);
     extern int xhci_get_connected_count(void);
+    extern void storage_build_overview(char *buf, int max);
+    extern int storage_describe_controller(int index, char *buf, int max);
 
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
     build_device_ports_string(usb_ports, xhci_get_connected_count(),
                               xhci_get_port_count());
+    storage_build_overview(storage_overview, sizeof(storage_overview));
+    if (storage_describe_controller(0, storage_line0, sizeof(storage_line0)) !=
+        0) {
+      str_copy_safe(storage_line0, "No disk controllers registered",
+                    sizeof(storage_line0));
+    }
+    if (storage_describe_controller(1, storage_line1, sizeof(storage_line1)) !=
+        0) {
+      storage_line1[0] = '\0';
+    }
 
     gui_draw_string(content_x + 12, yy, "Device Manager", 0xFFFFFF, THEME_BG);
     yy += 28;
@@ -2987,6 +3465,18 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + content_w - 150, yy + 28, resolution, 0xCDD6F4,
                     0x252535);
     yy += 62;
+
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 68, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Storage", 0x89B4FA, 0x252535);
+    gui_draw_string(content_x + 20, yy + 26, storage_overview, 0xCDD6F4,
+                    0x252535);
+    gui_draw_string(content_x + 20, yy + 42, storage_line0, 0xCDD6F4,
+                    0x252535);
+    if (storage_line1[0]) {
+      gui_draw_string(content_x + 20, yy + 56, storage_line1, 0xCDD6F4,
+                      0x252535);
+    }
+    yy += 78;
 
     gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
     gui_draw_string(content_x + 20, yy + 8, "Input Devices", 0x89B4FA,
@@ -3756,7 +4246,11 @@ static void draw_icon_web(int x, int y, int size) {
 
 /* Draw dock with hover animations - using vector icons */
 static void draw_dock(void) {
-  load_dock_config();
+  if (!dock_is_visible())
+    return;
+  if (!gui_is_installer_mode()) {
+    load_dock_config();
+  }
   if (dock_item_count <= 0)
     return;
 
@@ -4023,32 +4517,42 @@ static void draw_desktop(void) {
   /* Draw build info in the bottom-right corner above the dock. */
   {
 #ifdef ARCH_X86_64
-    const char *build_info = "OS next stage v8.0.0 x86_64";
+    const char *build_info = "OS next stage v0.5.0 x86_64";
 #elif defined(ARCH_X86)
-    const char *build_info = "OS next stage v8.0.0 x86";
+    const char *build_info = "OS next stage v0.5.0 x86";
 #else
-    const char *build_info = "OS next stage v8.0.0 ARM64";
+    const char *build_info = "OS next stage v0.5.0 ARM64";
 #endif
+    const char *build_number = BUILD_NUMBER_STR;
     int build_len = 0;
     while (build_info[build_len]) {
       build_len++;
     }
+    int build_num_len = 0;
+    while (build_number[build_num_len]) {
+      build_num_len++;
+    }
 
     int text_w = build_len * 8;
     int text_x = (int)primary_display.width - text_w - 16;
-    int text_y = (int)primary_display.height - DOCK_HEIGHT - 24;
+    int text_y =
+        (int)primary_display.height - dock_reserved_height() - 24;
 
     gui_draw_rect(text_x - 8, text_y - 4, text_w + 16, 16, 0x000000);
     gui_draw_string(text_x, text_y, build_info, 0xCDD6F4, 0x000000);
-    gui_draw_rect(text_x - 8, text_y + 12, 36 * 8 + 16, 16, 0x000000);
-    gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0x9CA3AF, 0x000000);
+    gui_draw_rect(text_x - 8, text_y + 12, build_num_len * 8 + 16, 16,
+                  0x000000);
+    gui_draw_string(text_x, text_y + 16, build_number, 0xA6E3A1, 0x000000);
+    gui_draw_rect(text_x - 8, text_y + 28, 36 * 8 + 16, 16, 0x000000);
+    gui_draw_string(text_x, text_y + 32, BUILD_UUID, 0x9CA3AF, 0x000000);
   }
 
   /* Draw menu bar at top (glass effect) */
   draw_menu_bar();
 
   /* Draw dock at bottom */
-  draw_dock();
+  if (dock_is_visible())
+    draw_dock();
 }
 
 /* ===================================================================== */
@@ -4291,6 +4795,11 @@ void gui_move_mouse(int dx, int dy) {
 void gui_set_mouse_buttons(int buttons) { mouse_buttons = buttons; }
 
 void gui_handle_key_event(int key) {
+  if (startup_flow_active()) {
+    startup_handle_key(key);
+    return;
+  }
+
   /* Check if desktop is doing inline rename - takes priority */
   extern int desktop_is_renaming(void);
   extern int desktop_handle_key(int key);
@@ -4421,6 +4930,33 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   static uint64_t last_click_time = 0;
   static int click_count = 0;
 
+  if (startup_flow_active()) {
+    prev_buttons = buttons;
+    if (left_click && startup_window) {
+      int content_x = startup_window->x + BORDER_WIDTH;
+      int content_y = startup_window->y + BORDER_WIDTH;
+      int content_w = startup_window->width - BORDER_WIDTH * 2;
+
+      gui_focus_window(startup_window);
+      if (x >= content_x + 20 && x < content_x + content_w - 20 &&
+          y >= content_y + 94 && y < content_y + 128) {
+        startup_active_field = 0;
+        return;
+      }
+      if (x >= content_x + 20 && x < content_x + content_w - 20 &&
+          y >= content_y + 162 && y < content_y + 196) {
+        startup_active_field = 1;
+        return;
+      }
+      if (x >= content_x + 20 && x < content_x + 190 && y >= content_y + 214 &&
+          y < content_y + 248) {
+        submit_startup_flow();
+        return;
+      }
+    }
+    return;
+  }
+
   /* Handle window dragging */
   if (dragging_window && left_held) {
     /* Move window with mouse */
@@ -4431,9 +4967,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     if (dragging_window->y < MENU_BAR_HEIGHT)
       dragging_window->y = MENU_BAR_HEIGHT;
     if (dragging_window->y >
-        (int)primary_display.height - DOCK_HEIGHT - TITLEBAR_HEIGHT)
+        (int)primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT)
       dragging_window->y =
-          primary_display.height - DOCK_HEIGHT - TITLEBAR_HEIGHT;
+          primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT;
     if (dragging_window->x < 0)
       dragging_window->x = 0;
     if (dragging_window->x > (int)primary_display.width - 100)
@@ -4522,7 +5058,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
 
     if (!on_window && y > MENU_BAR_HEIGHT &&
-        y < (int)primary_display.height - DOCK_HEIGHT) {
+        y < (int)primary_display.height - dock_reserved_height()) {
       printk(KERN_INFO
              "RIGHT-CLICK on desktop, calling desktop_handle_click\n");
       /* Right-click on desktop - handle in desktop manager */
@@ -4598,7 +5134,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
 
     if (!on_window && y > MENU_BAR_HEIGHT &&
-        y < (int)primary_display.height - DOCK_HEIGHT) {
+        y < (int)primary_display.height - dock_reserved_height()) {
       /* Track double-click */
       int dx = x - last_click_x;
       int dy = y - last_click_y;
@@ -4795,7 +5331,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             win->y = MENU_BAR_HEIGHT;
             win->width = primary_display.width;
             win->height =
-                primary_display.height - MENU_BAR_HEIGHT - DOCK_HEIGHT;
+                primary_display.height - MENU_BAR_HEIGHT -
+                dock_reserved_height();
             win->state = WINDOW_MAXIMIZED;
           }
           return;
@@ -4940,6 +5477,44 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         }
       }
 
+      if (win->title[0] == 'I' && win->title[1] == 'n' &&
+          win->title[2] == 's' && win->title[3] == 't') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+        int button_x = content_x + 24;
+        int button_y = content_y + content_h - 64;
+        int button_w = 180;
+        int button_h = 34;
+
+        if (x >= button_x && x < button_x + button_w && y >= button_y &&
+            y < button_y + button_h) {
+          uint64_t installed_build = read_installed_build_number();
+          uint64_t current_build = BUILD_NUMBER;
+
+          if (installed_build > current_build) {
+            installer_set_status("Refusing downgrade: installed build is newer.");
+            return;
+          }
+          if (installed_build == current_build && installed_build != 0) {
+            installer_set_status("Installed system already matches this ISO.");
+            return;
+          }
+
+          if (!installer_has_run) {
+            if (installer_seed_desktop_bundle() == 0) {
+              installer_set_status(installed_build == 0
+                                       ? "Install finished. Reboot into the updated OS."
+                                       : "Update finished. Reboot into the new build.");
+              installer_has_run = 1;
+            } else {
+              installer_set_status("Install/update failed. No desktop bundle was written.");
+            }
+          }
+          return;
+        }
+      }
+
       if (win->on_mouse) {
         win->on_mouse(win, x - win->x, y - win->y, buttons);
       }
@@ -4948,7 +5523,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   /* Check dock click */
-  load_dock_config();
+  if (!dock_is_visible())
+    return;
+  if (!gui_is_installer_mode()) {
+    load_dock_config();
+  }
   int dock_content_w =
       dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
   int dock_x = (primary_display.width - dock_content_w) / 2;
@@ -4977,6 +5556,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
              uint32_t pitch) {
   printk(KERN_INFO "GUI: Initializing windowing system\n");
+
+  if (gui_is_installer_mode()) {
+    installer_has_run = 0;
+    installer_set_status("Ready to install the desktop bundle.");
+  }
 
   primary_display.framebuffer = framebuffer;
   primary_display.width = width;
@@ -5047,14 +5631,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
                   0x000000); /* Clear previous */
     gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7, 0x000000);
 
-    /* Small delay (busy wait for effect) */
-    for (volatile int d = 0; d < 2000000; d++)
-      ;
   }
-
-  /* Brief pause on "Welcome" */
-  for (volatile int d = 0; d < 3000000; d++)
-    ;
 
   /* ============================================= */
   /* END LOADING SCREEN                           */
@@ -5078,7 +5655,10 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   desktop_manager_init();
 #endif
 
-  load_dock_config();
+  if (!gui_is_installer_mode()) {
+    load_dock_config();
+    ensure_startup_flow();
+  }
 
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
 

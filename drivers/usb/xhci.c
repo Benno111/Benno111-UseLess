@@ -7,6 +7,7 @@
 #include "mm/kmalloc.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "arch/arch.h"
 #include "printk.h"
 #include "types.h"
 
@@ -161,6 +162,45 @@ struct xhci_device {
 static struct xhci_device xhci = {0};
 static int xhci_ready = 0;
 
+static inline void xhci_cpu_relax(void) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  __asm__ volatile("pause");
+#else
+  __asm__ volatile("yield");
+#endif
+}
+
+static int xhci_wait_for_mask(uint32_t offset, uint32_t mask, uint32_t expect,
+                              uint32_t timeout_ms) {
+  uint64_t deadline = arch_timer_get_ms() + timeout_ms;
+  while ((xhci_op_read32(offset) & mask) != expect) {
+    if (arch_timer_get_ms() >= deadline) {
+      return -1;
+    }
+    xhci_cpu_relax();
+  }
+  return 0;
+}
+
+static int xhci_wait_for_port_mask(int port, uint32_t mask, uint32_t expect,
+                                   uint32_t timeout_ms) {
+  uint64_t deadline = arch_timer_get_ms() + timeout_ms;
+  while ((xhci_port_read32(port, XHCI_PORTSC) & mask) != expect) {
+    if (arch_timer_get_ms() >= deadline) {
+      return -1;
+    }
+    xhci_cpu_relax();
+  }
+  return 0;
+}
+
+static void xhci_delay_ms(uint32_t delay_ms) {
+  uint64_t deadline = arch_timer_get_ms() + delay_ms;
+  while (arch_timer_get_ms() < deadline) {
+    xhci_cpu_relax();
+  }
+}
+
 /* ===================================================================== */
 /* MMIO Access */
 /* ===================================================================== */
@@ -231,12 +271,7 @@ static int xhci_reset(void) {
   xhci_op_write32(XHCI_USBCMD, cmd & ~XHCI_CMD_RUN);
 
   /* Wait for halt */
-  int timeout = 1000;
-  while (!(xhci_op_read32(XHCI_USBSTS) & XHCI_STS_HCH) && timeout > 0) {
-    timeout--;
-  }
-
-  if (timeout == 0) {
+  if (xhci_wait_for_mask(XHCI_USBSTS, XHCI_STS_HCH, XHCI_STS_HCH, 100) < 0) {
     printk(KERN_ERR "XHCI: Failed to halt\n");
     return -1;
   }
@@ -244,20 +279,15 @@ static int xhci_reset(void) {
   /* Reset */
   xhci_op_write32(XHCI_USBCMD, XHCI_CMD_HCRST);
 
-  timeout = 1000;
-  while ((xhci_op_read32(XHCI_USBCMD) & XHCI_CMD_HCRST) && timeout > 0) {
-    timeout--;
-  }
-
-  if (timeout == 0) {
+  if (xhci_wait_for_mask(XHCI_USBCMD, XHCI_CMD_HCRST, 0, 250) < 0) {
     printk(KERN_ERR "XHCI: Reset timeout\n");
     return -1;
   }
 
   /* Wait for CNR to clear */
-  timeout = 1000;
-  while ((xhci_op_read32(XHCI_USBSTS) & XHCI_STS_CNR) && timeout > 0) {
-    timeout--;
+  if (xhci_wait_for_mask(XHCI_USBSTS, XHCI_STS_CNR, 0, 250) < 0) {
+    printk(KERN_ERR "XHCI: Controller not ready after reset\n");
+    return -1;
   }
 
   printk(KERN_INFO "XHCI: Reset complete\n");
@@ -345,7 +375,6 @@ static void xhci_power_port(int port) {
 }
 
 static void xhci_reset_port_if_needed(int port, uint32_t portsc) {
-  int timeout;
   uint32_t ack;
 
   if ((portsc & XHCI_PORT_CCS) == 0 || (portsc & XHCI_PORT_PED) != 0) {
@@ -357,9 +386,8 @@ static void xhci_reset_port_if_needed(int port, uint32_t portsc) {
          XHCI_PORT_PRC);
   xhci_port_write32(port, XHCI_PORTSC, XHCI_PORT_PP | XHCI_PORT_PR | ack);
 
-  timeout = 100000;
-  while ((xhci_port_read32(port, XHCI_PORTSC) & XHCI_PORT_PR) && timeout > 0) {
-    timeout--;
+  if (xhci_wait_for_port_mask(port, XHCI_PORT_PR, 0, 100) < 0) {
+    printk(KERN_WARNING "XHCI: Port %d reset timed out\n", port + 1);
   }
 }
 
@@ -466,10 +494,25 @@ int xhci_init(phys_addr_t mmio_base) {
   /* Start controller */
   uint32_t cmd = xhci_op_read32(XHCI_USBCMD);
   xhci_op_write32(XHCI_USBCMD, cmd | XHCI_CMD_RUN | XHCI_CMD_INTE);
+  if (xhci_wait_for_mask(XHCI_USBSTS, XHCI_STS_HCH, 0, 100) < 0) {
+    printk(KERN_ERR "XHCI: Controller failed to start\n");
+    return -1;
+  }
+
+  /* Give laptop root hubs a short settle window before probing ports. */
+  xhci_delay_ms(20);
 
   /* Sweep all root hub ports so every physical port is powered and probed. */
   for (int i = 0; i < (int)xhci.max_ports; i++) {
     xhci_check_port(i);
+  }
+
+  /* A second short pass helps controllers that report connect status late. */
+  xhci_delay_ms(20);
+  for (int i = 0; i < (int)xhci.max_ports; i++) {
+    if (!xhci.ports[i].connected) {
+      xhci_check_port(i);
+    }
   }
 
   printk(KERN_INFO "XHCI: Controller started\n");

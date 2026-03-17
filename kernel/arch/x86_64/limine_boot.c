@@ -63,6 +63,41 @@ struct limine_hhdm_request {
     struct limine_hhdm_response *response;
 };
 
+struct limine_uuid {
+    uint32_t a;
+    uint16_t b;
+    uint16_t c;
+    uint8_t d[8];
+};
+
+struct limine_file {
+    uint64_t revision;
+    void *address;
+    uint64_t size;
+    char *path;
+    char *cmdline;
+    uint32_t media_type;
+    uint32_t unused;
+    uint32_t tftp_ip;
+    uint32_t tftp_port;
+    uint32_t partition_index;
+    uint32_t mbr_disk_id;
+    struct limine_uuid gpt_disk_uuid;
+    struct limine_uuid gpt_part_uuid;
+    struct limine_uuid part_uuid;
+};
+
+struct limine_kernel_file_response {
+    uint64_t revision;
+    struct limine_file *kernel_file;
+};
+
+struct limine_kernel_file_request {
+    uint64_t id[4];
+    uint64_t revision;
+    struct limine_kernel_file_response *response;
+};
+
 /* ========== Limine Requests ========== */
 
 /* Place requests in dedicated section - using direct magic values like working-os */
@@ -97,6 +132,14 @@ static volatile struct limine_rsdp_request rsdp_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_hhdm_request hhdm_request = {
     .id = {0x48dcf1cb8ad2b852, 0x63984e959a98244b, 0, 0},
+    .revision = 0,
+    .response = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_kernel_file_request kernel_file_request = {
+    .id = {0xc7b1dd30df4c8b88, 0x0a82e883a194f07b,
+           0xad97e90e83f1ed67, 0x31eb5d1c5ff23b69},
     .revision = 0,
     .response = 0
 };
@@ -156,6 +199,7 @@ static void serial_puthex(uint64_t val) {
 static struct limine_framebuffer *g_fb = 0;
 static void *g_rsdp = 0;
 static uint64_t g_hhdm_offset = 0;
+static const char *g_kernel_cmdline = 0;
 
 /* ========== Framebuffer Info for kernel ========== */
 
@@ -174,6 +218,8 @@ int limine_get_framebuffer(uint32_t **buffer, uint32_t *width,
 void *limine_get_rsdp(void) { return g_rsdp; }
 
 uint64_t limine_get_hhdm_offset(void) { return g_hhdm_offset; }
+
+const char *limine_get_kernel_cmdline(void) { return g_kernel_cmdline; }
 
 /* ========== Direct Screen Test ========== */
 
@@ -285,6 +331,9 @@ void _start(void) {
     if (hhdm_request.response) {
         g_hhdm_offset = hhdm_request.response->offset;
     }
+    if (kernel_file_request.response && kernel_file_request.response->kernel_file) {
+        g_kernel_cmdline = kernel_file_request.response->kernel_file->cmdline;
+    }
 
     serial_puts("Framebuffer acquired:\n");
     serial_puts("  Address: ");
@@ -301,16 +350,9 @@ void _start(void) {
     serial_puthex((uint64_t)g_rsdp);
     serial_puts("\n  HHDM: ");
     serial_puthex(g_hhdm_offset);
+    serial_puts("\n  Cmdline ptr: ");
+    serial_puthex((uint64_t)g_kernel_cmdline);
     serial_puts("\n");
-
-    /* Direct screen test to verify framebuffer works */
-    serial_puts("Starting direct framebuffer test...\n");
-    draw_test_pattern(g_fb->address, g_fb->width, g_fb->height, g_fb->pitch);
-
-    /* Wait a moment to see the test pattern */
-    for (volatile int i = 0; i < 100000000; i++) {
-        __asm__ volatile("nop");
-    }
 
     serial_puts("Calling kernel_main...\n");
 

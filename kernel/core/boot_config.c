@@ -48,6 +48,24 @@ static struct boot_config boot_cfg = {
     .splash_fg_color = 0xE94560,   /* Accent pink */
     .progress_color = 0x16213E,   /* Progress bar background */
 };
+static bool boot_from_usb = false;
+static bool boot_installer_mode = false;
+
+static int str_contains_token(const char *haystack, const char *needle)
+{
+    int i = 0;
+    int nlen = 0;
+    while (needle[nlen]) nlen++;
+    if (!nlen) return 0;
+
+    while (haystack && haystack[i]) {
+        int j = 0;
+        while (needle[j] && haystack[i + j] == needle[j]) j++;
+        if (j == nlen) return 1;
+        i++;
+    }
+    return 0;
+}
 
 /* ===================================================================== */
 /* Boot Menu */
@@ -236,13 +254,34 @@ void boot_set_default(int target)
 /* Parse boot command line */
 void boot_parse_cmdline(const char *cmdline)
 {
+    if (!cmdline) {
+        cmdline = "";
+    }
+
     /* Copy to config */
     for (int i = 0; i < 255 && cmdline[i]; i++) {
         boot_cfg.kernel_cmdline[i] = cmdline[i];
         boot_cfg.kernel_cmdline[i + 1] = '\0';
     }
+    if (!cmdline[0]) {
+        boot_cfg.kernel_cmdline[0] = '\0';
+    }
     
     /* Parse options */
+    boot_from_usb = false;
+    boot_installer_mode = false;
+    if (str_contains_token(cmdline, "boot=usb") ||
+        str_contains_token(cmdline, "usbboot") ||
+        str_contains_token(cmdline, "root=/dev/sd") ||
+        str_contains_token(cmdline, "root=/dev/usb")) {
+        boot_from_usb = true;
+    }
+    if (str_contains_token(cmdline, "installer") ||
+        str_contains_token(cmdline, "install") ||
+        str_contains_token(cmdline, "mode=installer")) {
+        boot_installer_mode = true;
+    }
+
     const char *p = cmdline;
     while (*p) {
         if (p[0] == 'v' && p[1] == 'e' && p[2] == 'r' && p[3] == 'b') {
@@ -257,6 +296,17 @@ void boot_parse_cmdline(const char *cmdline)
         p++;
     }
     
-    printk(KERN_INFO "BOOT: Cmdline parsed - verbose=%d debug=%d splash=%d\n",
-           boot_cfg.verbose_boot, boot_cfg.debug_mode, boot_cfg.show_splash);
+    printk(KERN_INFO "BOOT: Cmdline parsed - verbose=%d debug=%d splash=%d usb=%d installer=%d\n",
+           boot_cfg.verbose_boot, boot_cfg.debug_mode, boot_cfg.show_splash,
+           boot_from_usb, boot_installer_mode);
+}
+
+int boot_is_usb_boot(void)
+{
+    return boot_from_usb ? 1 : 0;
+}
+
+int boot_is_installer_mode(void)
+{
+    return boot_installer_mode ? 1 : 0;
 }

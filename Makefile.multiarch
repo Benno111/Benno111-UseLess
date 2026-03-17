@@ -183,7 +183,7 @@ ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -212,6 +212,7 @@ help:
 	@echo "  all      - Build kernel and image"
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
+	@echo "  installer-image - Create x86_64 graphical installer ISO"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -273,11 +274,14 @@ $(BUILD_METADATA_HEADER): $(CODE_HASH_INPUTS)
 	else \
 		CODE_HASH=$$(for f in $(CODE_HASH_INPUTS); do shasum -a 256 "$$f"; done | shasum -a 256 | awk '{print $$1}'); \
 	fi; \
+	BUILD_NUMBER=$${BUILD_NUMBER:-$$(date -u +%Y%m%d%H%M 2>/dev/null || echo 0)}; \
 	BUILD_UUID=$$(printf '%s' "$$CODE_HASH" | sed -E 's/^(.{8})(.{4})(.{4})(.{4})(.{12}).*/\1-\2-\3-\4-\5/'); \
 	{ \
 		printf '%s\n' '#ifndef BUILD_UUID_H'; \
 		printf '%s\n' '#define BUILD_UUID_H'; \
 		printf '#define BUILD_CODE_HASH "%s"\n' "$$CODE_HASH"; \
+		printf '#define BUILD_NUMBER %sULL\n' "$$BUILD_NUMBER"; \
+		printf '#define BUILD_NUMBER_STR "%s"\n' "$$BUILD_NUMBER"; \
 		printf '#define BUILD_UUID "%s"\n' "$$BUILD_UUID"; \
 		printf '%s\n' '#endif'; \
 	} > $(BUILD_METADATA_HEADER)
@@ -332,6 +336,16 @@ else ifeq ($(ARCH),x86_64)
 else ifeq ($(ARCH),x86)
 	@bash ./scripts/create-bios-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(RAW_IMAGE)"
+endif
+
+installer-image: kernel
+ifeq ($(ARCH),x86_64)
+	@echo "[IMAGE] Creating x86_64 installer ISO..."
+	@ISO_NAME=vibos-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@echo "[IMAGE] Created: $(IMAGE_DIR)/vibos-x86_64-installer.iso"
+else
+	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
+	@exit 1
 endif
 
 # ============================================================================

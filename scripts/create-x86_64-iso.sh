@@ -6,11 +6,11 @@ set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-ISO_NAME="vibos-x86_64.iso"
+ISO_NAME="${ISO_NAME:-vibos-x86_64.iso}"
 ISO_ROOT="${BUILD_DIR}/iso_root"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
-LIMINE_CFG="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf"
+LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'

@@ -4,6 +4,7 @@
  */
 
 #include "drivers/usb/usb.h"
+#include "drivers/storage.h"
 #include "mm/kmalloc.h"
 #include "printk.h"
 
@@ -47,7 +48,10 @@ static uint32_t usb_msd_tag = 1;
 // Real implementation would interact with xhci to send bulk transfers
 
 int usb_msd_init(struct usb_device *dev) {
+  (void)dev;
   printk(KERN_INFO "USB-MSD: Initializing Mass Storage Device\n");
+  storage_register_platform_controller("USB Mass Storage",
+                                       STORAGE_KIND_USB_MASS_STORAGE, "usb");
   return 0;
 }
 
