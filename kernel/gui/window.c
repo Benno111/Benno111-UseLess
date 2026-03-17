@@ -4,7 +4,7 @@
  * Complete window manager with compositor and widget toolkit.
  */
 
-#include "../core/process.h" /* For Doom launch */
+#include "build_uuid.h"
 #include "desktop.h"         /* Desktop manager */
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
 #include "fs/vfs.h"          /* VFS headers */
@@ -1107,6 +1107,733 @@ static int str_ends_with_ci(const char *name, const char *ext) {
   return 1;
 }
 
+static void str_copy_safe(char *dst, const char *src, int max) {
+  int i = 0;
+  if (!dst || max <= 0)
+    return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+  while (src[i] && i < max - 1) {
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = '\0';
+}
+
+typedef enum {
+  GUI_APP_TERMINAL,
+  GUI_APP_FILES,
+  GUI_APP_CALCULATOR,
+  GUI_APP_NOTES,
+  GUI_APP_SETTINGS,
+  GUI_APP_CLOCK,
+  GUI_APP_SNAKE,
+  GUI_APP_HELP,
+  GUI_APP_BROWSER,
+  GUI_APP_APPSTORE
+} gui_app_kind_t;
+
+typedef struct {
+  char id[32];
+  char label[48];
+  char shortcut_name[48];
+  gui_app_kind_t kind;
+  const uint32_t *icon_data;
+  uint32_t icon_color;
+  int default_dock;
+  int visible_in_store;
+} dock_app_def_t;
+
+typedef struct {
+  const char *id;
+  const char *label;
+  const char *shortcut_name;
+  gui_app_kind_t kind;
+  int default_dock;
+  int visible_in_store;
+} system_app_seed_t;
+
+#define GUI_SYSTEM_DIR "/System"
+#define GUI_SYSTEM_APPS_DIR "/System/Apps"
+#define GUI_APPS_DIR "/Applications"
+#define GUI_DOCK_CONFIG_PATH "/System/dock.cfg"
+#define MAX_SYSTEM_APPS 24
+#define MAX_DOCK_ITEMS 16
+#define APP_STORE_CARD_HEIGHT 54
+
+static const system_app_seed_t app_catalog_seed[] = {
+    {"terminal", "Terminal", "Terminal.app", GUI_APP_TERMINAL, 1, 1},
+    {"files", "Files", "Files.app", GUI_APP_FILES, 1, 1},
+    {"calculator", "Calculator", "Calculator.app", GUI_APP_CALCULATOR, 1, 1},
+    {"notes", "Notes", "Notes.app", GUI_APP_NOTES, 1, 1},
+    {"settings", "Settings", "Settings.app", GUI_APP_SETTINGS, 0, 1},
+    {"clock", "Clock", "Clock.app", GUI_APP_CLOCK, 0, 1},
+    {"snake", "Snake", "Snake.app", GUI_APP_SNAKE, 0, 1},
+    {"help", "Help", "Help.app", GUI_APP_HELP, 0, 1},
+    {"browser", "Browser", "Browser.app", GUI_APP_BROWSER, 0, 1},
+    {"appstore", "App Store", "App Store.app", GUI_APP_APPSTORE, 1, 0},
+};
+
+#define APP_CATALOG_SEED_COUNT                                                \
+  ((int)(sizeof(app_catalog_seed) / sizeof(app_catalog_seed[0])))
+
+static dock_app_def_t app_catalog[MAX_SYSTEM_APPS];
+static int app_catalog_count = 0;
+static int app_catalog_loaded = 0;
+static const dock_app_def_t *dock_items[MAX_DOCK_ITEMS];
+static int dock_item_count = 0;
+static int dock_loaded = 0;
+
+static const char *default_dock_ids[] = {"terminal", "files", "calculator",
+                                         "notes", "appstore"};
+#define DEFAULT_DOCK_COUNT                                                    \
+  ((int)(sizeof(default_dock_ids) / sizeof(default_dock_ids[0])))
+
+static void load_system_app_catalog(void);
+
+static const uint32_t *icon_data_for_kind(gui_app_kind_t kind) {
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    return dock_icon_terminal;
+  case GUI_APP_FILES:
+    return dock_icon_folder;
+  case GUI_APP_CALCULATOR:
+    return dock_icon_calculator;
+  case GUI_APP_NOTES:
+    return dock_icon_notes;
+  case GUI_APP_SETTINGS:
+    return dock_icon_settings;
+  case GUI_APP_CLOCK:
+    return dock_icon_clock;
+  case GUI_APP_SNAKE:
+    return dock_icon_snake;
+  case GUI_APP_HELP:
+    return dock_icon_help;
+  case GUI_APP_BROWSER:
+  case GUI_APP_APPSTORE:
+    return dock_icon_web;
+  }
+  return dock_icon_terminal;
+}
+
+static uint32_t icon_color_for_kind(gui_app_kind_t kind) {
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    return 0x1E1E1E;
+  case GUI_APP_FILES:
+    return 0x3B82F6;
+  case GUI_APP_CALCULATOR:
+    return 0xFF9500;
+  case GUI_APP_NOTES:
+    return 0xFFCC00;
+  case GUI_APP_SETTINGS:
+    return 0x8E8E93;
+  case GUI_APP_CLOCK:
+    return 0x000000;
+  case GUI_APP_SNAKE:
+    return 0x34D399;
+  case GUI_APP_HELP:
+    return 0x3B82F6;
+  case GUI_APP_BROWSER:
+    return 0x0EA5E9;
+  case GUI_APP_APPSTORE:
+    return 0x7C3AED;
+  }
+  return 0x3B82F6;
+}
+
+static const char *kind_to_string(gui_app_kind_t kind) {
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    return "terminal";
+  case GUI_APP_FILES:
+    return "files";
+  case GUI_APP_CALCULATOR:
+    return "calculator";
+  case GUI_APP_NOTES:
+    return "notes";
+  case GUI_APP_SETTINGS:
+    return "settings";
+  case GUI_APP_CLOCK:
+    return "clock";
+  case GUI_APP_SNAKE:
+    return "snake";
+  case GUI_APP_HELP:
+    return "help";
+  case GUI_APP_BROWSER:
+    return "browser";
+  case GUI_APP_APPSTORE:
+    return "appstore";
+  }
+  return "terminal";
+}
+
+static gui_app_kind_t kind_from_string(const char *kind) {
+  if (!kind)
+    return GUI_APP_TERMINAL;
+  if (str_cmp(kind, "files") == 0)
+    return GUI_APP_FILES;
+  if (str_cmp(kind, "calculator") == 0)
+    return GUI_APP_CALCULATOR;
+  if (str_cmp(kind, "notes") == 0)
+    return GUI_APP_NOTES;
+  if (str_cmp(kind, "settings") == 0)
+    return GUI_APP_SETTINGS;
+  if (str_cmp(kind, "clock") == 0)
+    return GUI_APP_CLOCK;
+  if (str_cmp(kind, "snake") == 0)
+    return GUI_APP_SNAKE;
+  if (str_cmp(kind, "help") == 0)
+    return GUI_APP_HELP;
+  if (str_cmp(kind, "browser") == 0)
+    return GUI_APP_BROWSER;
+  if (str_cmp(kind, "appstore") == 0)
+    return GUI_APP_APPSTORE;
+  return GUI_APP_TERMINAL;
+}
+
+static void fill_runtime_app(dock_app_def_t *app, const char *id,
+                             const char *label, const char *shortcut_name,
+                             gui_app_kind_t kind, int default_dock,
+                             int visible_in_store) {
+  str_copy_safe(app->id, id, sizeof(app->id));
+  str_copy_safe(app->label, label, sizeof(app->label));
+  str_copy_safe(app->shortcut_name, shortcut_name, sizeof(app->shortcut_name));
+  app->kind = kind;
+  app->icon_data = icon_data_for_kind(kind);
+  app->icon_color = icon_color_for_kind(kind);
+  app->default_dock = default_dock;
+  app->visible_in_store = visible_in_store;
+}
+
+static const dock_app_def_t *find_catalog_app(const char *id) {
+  load_system_app_catalog();
+  if (!id)
+    return NULL;
+  for (int i = 0; i < app_catalog_count; i++) {
+    if (str_cmp(app_catalog[i].id, id) == 0)
+      return &app_catalog[i];
+  }
+  return NULL;
+}
+
+static int app_manifest_path(const dock_app_def_t *app, char *path, int max) {
+  if (!app || !path || max < 32)
+    return -1;
+  str_copy_safe(path, GUI_APPS_DIR, max);
+  int idx = 0;
+  while (path[idx])
+    idx++;
+  if (idx >= max - 1)
+    return -1;
+  path[idx++] = '/';
+  for (int i = 0; app->id[i] && idx < max - 5; i++) {
+    path[idx++] = app->id[i];
+  }
+  path[idx++] = '.';
+  path[idx++] = 'a';
+  path[idx++] = 'p';
+  path[idx++] = 'p';
+  path[idx] = '\0';
+  return 0;
+}
+
+static int write_text_file(const char *path, const char *content) {
+  return media_install_text_file(path, content);
+}
+
+static int read_text_file(const char *path, char *buf, int max) {
+  uint8_t *data;
+  size_t size;
+
+  if (!path || !buf || max <= 1)
+    return -1;
+
+  if (media_load_file(path, &data, &size) != 0)
+    return -1;
+  if ((int)size >= max)
+    size = (size_t)(max - 1);
+  for (size_t i = 0; i < size; i++) {
+    buf[i] = (char)data[i];
+  }
+  buf[size] = '\0';
+  media_free_file(data);
+  return (int)size;
+}
+
+static int manifest_get_value(const char *manifest, const char *key, char *out,
+                              int max) {
+  int key_len = 0;
+  int i = 0;
+
+  if (!manifest || !key || !out || max <= 0)
+    return -1;
+
+  while (key[key_len])
+    key_len++;
+
+  while (manifest[i]) {
+    int j = 0;
+    while (j < key_len && manifest[i + j] == key[j])
+      j++;
+    if (j == key_len && manifest[i + j] == '=') {
+      int out_idx = 0;
+      i += key_len + 1;
+      while (manifest[i] && manifest[i] != '\n' && manifest[i] != '\r' &&
+             out_idx < max - 1) {
+        out[out_idx++] = manifest[i++];
+      }
+      out[out_idx] = '\0';
+      return 0;
+    }
+    while (manifest[i] && manifest[i] != '\n')
+      i++;
+    if (manifest[i] == '\n')
+      i++;
+  }
+
+  out[0] = '\0';
+  return -1;
+}
+
+static int app_is_installed(const dock_app_def_t *app) {
+  char path[128];
+  uint8_t *data = NULL;
+  size_t size = 0;
+  if (!app)
+    return 0;
+  if (app_manifest_path(app, path, sizeof(path)) != 0)
+    return 0;
+  if (media_load_file(path, &data, &size) != 0)
+    return 0;
+  media_free_file(data);
+  return 1;
+}
+
+static void ensure_gui_app_dirs(void) {
+  vfs_mkdir(GUI_SYSTEM_DIR, 0755);
+  vfs_mkdir(GUI_SYSTEM_APPS_DIR, 0755);
+  vfs_mkdir(GUI_APPS_DIR, 0755);
+  vfs_mkdir("/Desktop", 0755);
+}
+
+static int system_manifest_path_by_id(const char *app_id, char *path, int max) {
+  int idx = 0;
+
+  if (!app_id || !path || max < 32)
+    return -1;
+
+  str_copy_safe(path, GUI_SYSTEM_APPS_DIR, max);
+  while (path[idx])
+    idx++;
+  if (idx >= max - 1)
+    return -1;
+  path[idx++] = '/';
+  for (int i = 0; app_id[i] && idx < max - 5; i++) {
+    path[idx++] = app_id[i];
+  }
+  path[idx++] = '.';
+  path[idx++] = 'a';
+  path[idx++] = 'p';
+  path[idx++] = 'p';
+  path[idx] = '\0';
+  return 0;
+}
+
+static void write_system_app_seed(const system_app_seed_t *seed) {
+  char path[128];
+  char manifest[256];
+  int idx = 0;
+  const char *kind_str;
+
+  if (!seed)
+    return;
+  if (system_manifest_path_by_id(seed->id, path, sizeof(path)) != 0)
+    return;
+  {
+    struct file *existing = vfs_open(path, O_RDONLY, 0);
+    if (existing) {
+      vfs_close(existing);
+      return;
+    }
+  }
+
+  kind_str = kind_to_string(seed->kind);
+  idx = 0;
+
+  str_copy_safe(manifest, "id=", sizeof(manifest));
+  idx = 3;
+  for (int i = 0; seed->id[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = seed->id[i];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "label="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; seed->label[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = seed->label[i];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "shortcut="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; seed->shortcut_name[i] && idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = seed->shortcut_name[i];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "kind="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; kind_str[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = kind_str[i];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "default_dock=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = seed->default_dock ? '1' : '0';
+  manifest[idx++] = '\n';
+
+  for (const char *p = "store="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = seed->visible_in_store ? '1' : '0';
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file(path, manifest);
+}
+
+static int load_system_app_from_manifest(const char *path) {
+  char manifest[256];
+  char id[32];
+  char label[48];
+  char shortcut_name[48];
+  char kind_buf[32];
+  char dock_buf[8];
+  char store_buf[8];
+
+  if (app_catalog_count >= MAX_SYSTEM_APPS)
+    return -1;
+  if (read_text_file(path, manifest, sizeof(manifest)) < 0)
+    return -1;
+  if (manifest_get_value(manifest, "id", id, sizeof(id)) != 0 || !id[0])
+    return -1;
+
+  if (manifest_get_value(manifest, "label", label, sizeof(label)) != 0)
+    str_copy_safe(label, id, sizeof(label));
+  if (manifest_get_value(manifest, "shortcut", shortcut_name,
+                         sizeof(shortcut_name)) != 0) {
+    str_copy_safe(shortcut_name, label, sizeof(shortcut_name));
+  }
+  if (manifest_get_value(manifest, "kind", kind_buf, sizeof(kind_buf)) != 0)
+    str_copy_safe(kind_buf, "terminal", sizeof(kind_buf));
+  if (manifest_get_value(manifest, "default_dock", dock_buf, sizeof(dock_buf)) !=
+      0)
+    str_copy_safe(dock_buf, "0", sizeof(dock_buf));
+  if (manifest_get_value(manifest, "store", store_buf, sizeof(store_buf)) != 0)
+    str_copy_safe(store_buf, "1", sizeof(store_buf));
+
+  fill_runtime_app(&app_catalog[app_catalog_count++], id, label, shortcut_name,
+                   kind_from_string(kind_buf), dock_buf[0] == '1',
+                   store_buf[0] == '1');
+  return 0;
+}
+
+static int system_app_dir_scan(void *ctx, const char *name, int len,
+                               loff_t offset, ino_t ino, unsigned type) {
+  char path[128];
+  int idx = 0;
+
+  (void)ctx;
+  (void)offset;
+  (void)ino;
+  (void)type;
+
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.')) {
+    return 0;
+  }
+  if (!str_ends_with_ci(name, ".app"))
+    return 0;
+
+  str_copy_safe(path, GUI_SYSTEM_APPS_DIR, sizeof(path));
+  while (path[idx])
+    idx++;
+  path[idx++] = '/';
+  for (int i = 0; i < len && idx < (int)sizeof(path) - 1; i++)
+    path[idx++] = name[i];
+  path[idx] = '\0';
+
+  load_system_app_from_manifest(path);
+  return 0;
+}
+
+static void load_system_app_catalog(void) {
+  struct file *dir;
+
+  if (app_catalog_loaded)
+    return;
+
+  app_catalog_loaded = 1;
+  app_catalog_count = 0;
+  ensure_gui_app_dirs();
+
+  for (int i = 0; i < APP_CATALOG_SEED_COUNT; i++) {
+    write_system_app_seed(&app_catalog_seed[i]);
+  }
+
+  dir = vfs_open(GUI_SYSTEM_APPS_DIR, O_RDONLY, 0);
+  if (dir) {
+    vfs_readdir(dir, NULL, system_app_dir_scan);
+    vfs_close(dir);
+  }
+}
+
+static void ensure_app_manifest(const dock_app_def_t *app) {
+  char manifest_path[128];
+  char shortcut_path[128];
+  char manifest[128] = "id=";
+  int idx = 3;
+
+  if (!app)
+    return;
+  ensure_gui_app_dirs();
+
+  for (int i = 0; app->id[i] && idx < (int)sizeof(manifest) - 2; i++) {
+    manifest[idx++] = app->id[i];
+  }
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  if (app_manifest_path(app, manifest_path, sizeof(manifest_path)) == 0) {
+    write_text_file(manifest_path, manifest);
+  }
+
+  str_copy_safe(shortcut_path, "/Desktop/", sizeof(shortcut_path));
+  idx = 9;
+  for (int i = 0; app->shortcut_name[i] && idx < (int)sizeof(shortcut_path) - 1;
+       i++) {
+    shortcut_path[idx++] = app->shortcut_name[i];
+  }
+  shortcut_path[idx] = '\0';
+  write_text_file(shortcut_path, manifest);
+}
+
+static void dock_add_item(const dock_app_def_t *app) {
+  if (!app || dock_item_count >= MAX_DOCK_ITEMS)
+    return;
+  for (int i = 0; i < dock_item_count; i++) {
+    if (dock_items[i] == app)
+      return;
+  }
+  dock_items[dock_item_count++] = app;
+}
+
+static void save_dock_config(void) {
+  char buf[512];
+  int idx = 0;
+  ensure_gui_app_dirs();
+  for (int i = 0; i < dock_item_count && idx < (int)sizeof(buf) - 2; i++) {
+    const char *id = dock_items[i]->id;
+    for (int j = 0; id[j] && idx < (int)sizeof(buf) - 2; j++) {
+      buf[idx++] = id[j];
+    }
+    buf[idx++] = '\n';
+  }
+  buf[idx] = '\0';
+  write_text_file(GUI_DOCK_CONFIG_PATH, buf);
+}
+
+static void load_dock_config(void) {
+  char buf[512];
+  int bytes = -1;
+
+  if (dock_loaded)
+    return;
+
+  load_system_app_catalog();
+  dock_loaded = 1;
+  dock_item_count = 0;
+  ensure_gui_app_dirs();
+
+  for (int i = 0; i < app_catalog_count; i++) {
+    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE ||
+        app_is_installed(&app_catalog[i])) {
+      ensure_app_manifest(&app_catalog[i]);
+    }
+  }
+
+  struct file *file = vfs_open(GUI_DOCK_CONFIG_PATH, O_RDONLY, 0);
+  if (file) {
+    bytes = (int)vfs_read(file, buf, sizeof(buf) - 1);
+    vfs_close(file);
+  }
+
+  if (bytes <= 0) {
+    for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
+      dock_add_item(find_catalog_app(default_dock_ids[i]));
+    }
+    save_dock_config();
+    return;
+  }
+
+  buf[bytes] = '\0';
+  int start = 0;
+  for (int i = 0;; i++) {
+    if (buf[i] == '\n' || buf[i] == '\r' || buf[i] == '\0') {
+      if (i > start) {
+        char id[32];
+        int len = i - start;
+        if (len >= (int)sizeof(id))
+          len = sizeof(id) - 1;
+        for (int j = 0; j < len; j++) {
+          id[j] = buf[start + j];
+        }
+        id[len] = '\0';
+        dock_add_item(find_catalog_app(id));
+      }
+      if (buf[i] == '\0')
+        break;
+      start = i + 1;
+    }
+  }
+
+  if (dock_item_count == 0) {
+    for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
+      dock_add_item(find_catalog_app(default_dock_ids[i]));
+    }
+    save_dock_config();
+  }
+}
+
+static int install_app(const dock_app_def_t *app, int pin_to_dock) {
+  if (!app)
+    return -1;
+  ensure_app_manifest(app);
+  if (pin_to_dock) {
+    load_dock_config();
+    dock_add_item(app);
+    save_dock_config();
+  }
+  desktop_refresh();
+  return 0;
+}
+
+int gui_launch_app_by_id(const char *app_id) {
+  static int spawn_x = 100;
+  static int spawn_y = 80;
+  const dock_app_def_t *app = find_catalog_app(app_id);
+
+  if (!app)
+    return -1;
+
+  switch (app->kind) {
+  case GUI_APP_TERMINAL: {
+    struct window *win =
+        gui_create_window("Terminal", spawn_x, spawn_y, 450, 320);
+    int content_x = spawn_x + BORDER_WIDTH;
+    int content_y = spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+    struct terminal *term = term_create(content_x, content_y, 55, 16);
+    if (win && term) {
+      win->userdata = term;
+      term_set_active(term);
+      term_set_content_pos(term, content_x, content_y);
+    }
+    break;
+  }
+  case GUI_APP_FILES:
+    gui_create_file_manager(spawn_x + 30, spawn_y + 20);
+    break;
+  case GUI_APP_CALCULATOR:
+    gui_create_window("Calculator", spawn_x + 60, spawn_y + 40, 260, 380);
+    break;
+  case GUI_APP_NOTES:
+    gui_open_notepad(NULL);
+    break;
+  case GUI_APP_SETTINGS:
+    gui_create_window("Settings", spawn_x + 20, spawn_y + 30, 380, 320);
+    break;
+  case GUI_APP_CLOCK:
+    gui_create_window("Clock", spawn_x + 50, spawn_y + 40, 260, 200);
+    break;
+  case GUI_APP_SNAKE:
+    snake_init();
+    gui_create_window("Snake", spawn_x + 70, spawn_y + 50, 340, 280);
+    break;
+  case GUI_APP_HELP:
+    gui_create_window("Help", spawn_x + 120, spawn_y + 80, 350, 280);
+    break;
+  case GUI_APP_BROWSER:
+    gui_create_window("Browser", spawn_x + 150, spawn_y + 90, 600, 450);
+    break;
+  case GUI_APP_APPSTORE:
+    gui_create_window("App Store", spawn_x + 40, spawn_y + 30, 520, 390);
+    break;
+  }
+
+  spawn_x = (spawn_x + 40) % 250 + 80;
+  spawn_y = (spawn_y + 30) % 150 + 60;
+  return 0;
+}
+
+static void draw_app_store(int content_x, int content_y, int content_w,
+                           int content_h) {
+  load_system_app_catalog();
+  int y = content_y + 12;
+  (void)content_h;
+
+  gui_draw_string(content_x + 12, y, "App Store", 0xFFFFFF, THEME_BG);
+  y += 18;
+  gui_draw_string(content_x + 12, y,
+                  "Install apps to create shortcuts and pin them to the dock.",
+                  0xA6ADC8, THEME_BG);
+  y += 24;
+
+  for (int i = 0; i < app_catalog_count; i++) {
+    const dock_app_def_t *app = &app_catalog[i];
+    if (!app->visible_in_store)
+      continue;
+
+    uint32_t row_bg = 0x252535;
+    int installed = app_is_installed(app);
+    int button_w = installed ? 72 : 88;
+    int button_x = content_x + content_w - button_w - 18;
+    int row_w = content_w - 24;
+
+    gui_draw_rect(content_x + 12, y, row_w, APP_STORE_CARD_HEIGHT, row_bg);
+    gui_draw_rect(content_x + 24, y + 10, 34, 34, app->icon_color);
+
+    if (app->icon_data) {
+      int icon_size = 24;
+      int icon_x = content_x + 29;
+      int icon_y = y + 15;
+      for (int dy = 0; dy < icon_size; dy++) {
+        for (int dx = 0; dx < icon_size; dx++) {
+          int sx = dx * DOCK_ICON_BITMAP_SIZE / icon_size;
+          int sy = dy * DOCK_ICON_BITMAP_SIZE / icon_size;
+          uint32_t px = app->icon_data[sy * DOCK_ICON_BITMAP_SIZE + sx];
+          if ((px >> 24) > 128) {
+            draw_pixel(icon_x + dx, icon_y + dy, px & 0xFFFFFF);
+          }
+        }
+      }
+    }
+
+    gui_draw_string(content_x + 70, y + 11, app->label, 0xFFFFFF, row_bg);
+    gui_draw_string(content_x + 70, y + 29,
+                    installed ? "Installed" : "Available to install",
+                    installed ? 0xA6E3A1 : 0xA6ADC8, row_bg);
+
+    gui_draw_rect(button_x, y + 13, button_w, 28,
+                  installed ? 0x3B82F6 : 0x22C55E);
+    gui_draw_string(button_x + (installed ? 16 : 14), y + 19,
+                    installed ? "Open" : "Install", 0xFFFFFF,
+                    installed ? 0x3B82F6 : 0x22C55E);
+
+    y += APP_STORE_CARD_HEIGHT + 8;
+  }
+}
+
 static void draw_icon(int x, int y, int size, const unsigned char *icon,
                       uint32_t fg_color, uint32_t bg_color);
 
@@ -2088,6 +2815,11 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 20, content_y + 190, "- Source Code", 0x007AFF,
                     0xFFFFFF);
   }
+  /* App Store */
+  else if (win->title[0] == 'A' && win->title[1] == 'p' &&
+           win->title[2] == 'p' && win->title[3] == ' ') {
+    draw_app_store(content_x, content_y, content_w, content_h);
+  }
   /* Image Viewer */
   else if (win->title[0] == 'I' && win->title[1] == 'm' &&
            win->title[2] == 'a') {
@@ -2145,7 +2877,7 @@ static void draw_window(struct window *win) {
     yy += 24;
 
     /* Version */
-    gui_draw_string(center_x - 68, yy, "Version 0.5.0", 0xA6ADC8, THEME_BG);
+    gui_draw_string(center_x - 68, yy, "Version 8.0.0", 0xA6ADC8, THEME_BG);
     yy += 28;
 
     /* System info box */
@@ -2153,7 +2885,7 @@ static void draw_window(struct window *win) {
     yy += 10;
     gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v0.5.0",
+    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v8.0.0",
                     0xCDD6F4, 0x252535);
     yy += 18;
     gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
@@ -2163,6 +2895,8 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 142, yy, resolution, 0xCDD6F4, 0x252535);
     gui_draw_string(content_x + 250, yy, windows_info, 0x89B4FA, 0x252535);
     yy += 28;
+    gui_draw_string(content_x + 30, yy, BUILD_UUID, 0x6C7086, THEME_BG);
+    yy += 20;
 
     /* Copyright */
     gui_draw_string(content_x + 30, yy, "(c) 2027 Benno111", 0x6C7086,
@@ -2857,9 +3591,6 @@ static void draw_menu_bar(void) {
 /* Dock icons */
 #include "icons.h"
 
-static const char *dock_labels[] = {"Term",  "Files", "Calc",  "Notes", "Set",
-                                    "Clock", "DOOM",  "Snake", "Help",  "Web"};
-#define NUM_DOCK_ICONS 10
 #define DOCK_ICON_SIZE 44  /* Slightly smaller for more icons */
 #define DOCK_ICON_MARGIN 4 /* Padding inside dock pill */
 #define DOCK_PADDING 8     /* Space between icons */
@@ -2904,20 +3635,6 @@ static void draw_rounded_rect(int x, int y, int w, int h, int r,
     }
   }
 }
-
-/* Icon background colors for modern macOS Big Sur style */
-static const uint32_t icon_colors[] = {
-    0x1E1E1E, /* Terminal - dark gray/black */
-    0x3B82F6, /* Files - blue */
-    0xFF9500, /* Calculator - orange */
-    0xFFCC00, /* Notepad - yellow */
-    0x8E8E93, /* Settings - gray */
-    0x000000, /* Clock - black */
-    0xB91C1C, /* DOOM - dark red */
-    0x34D399, /* Snake - teal green */
-    0x3B82F6, /* Help - blue */
-    0x0EA5E9, /* Browser - sky blue */
-};
 
 /* Draw a filled circle */
 static void draw_filled_circle(int cx, int cy, int r, uint32_t color) {
@@ -3001,20 +3718,6 @@ static void draw_icon_clock(int x, int y, int size) {
   draw_filled_circle(cx, cy, 3, 0xFF0000);
 }
 
-/* Draw DOOM icon - simple skull/face */
-static void draw_icon_doom(int x, int y, int size) {
-  int cx = x + size / 2;
-  int cy = y + size / 2;
-  int r = size / 3;
-  /* Face */
-  draw_filled_circle(cx, cy, r, 0xFFFFFF);
-  /* Two eyes */
-  draw_filled_circle(cx - r / 3, cy - r / 4, 4, 0xFF0000);
-  draw_filled_circle(cx + r / 3, cy - r / 4, 4, 0xFF0000);
-  /* Mouth */
-  gui_draw_rect(cx - r / 2, cy + r / 4, r, 4, 0x000000);
-}
-
 /* Draw Snake icon - simple S shape */
 static void draw_icon_snake(int x, int y, int size) {
   int r = size / 8;
@@ -3053,16 +3756,20 @@ static void draw_icon_web(int x, int y, int size) {
 
 /* Draw dock with hover animations - using vector icons */
 static void draw_dock(void) {
+  load_dock_config();
+  if (dock_item_count <= 0)
+    return;
+
   int mouse_active =
       (mouse_y >= (int)primary_display.height - DOCK_HEIGHT - 40);
 
   /* 1. Calculate target sizes for all icons based on magnification */
-  int icon_sizes[NUM_DOCK_ICONS];
-  static int smooth_sizes[NUM_DOCK_ICONS] = {0};
+  int icon_sizes[MAX_DOCK_ITEMS];
+  static int smooth_sizes[MAX_DOCK_ITEMS] = {0};
 
   /* Initial base positions for hit testing (fixed grid for stability) */
   int base_dock_w =
-      NUM_DOCK_ICONS * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
+      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
   int base_dock_x = (primary_display.width - base_dock_w) / 2;
   int base_y = primary_display.height - DOCK_HEIGHT + 6;
 
@@ -3070,7 +3777,7 @@ static void draw_dock(void) {
   int magnify_range = 140; /* Wider range for wave */
   int hovered_idx = -1;
 
-  for (int i = 0; i < NUM_DOCK_ICONS; i++) {
+  for (int i = 0; i < dock_item_count; i++) {
     int target = DOCK_ICON_SIZE;
     /* Use fixed base positions for hit test stability so icons don't run away
      */
@@ -3107,9 +3814,9 @@ static void draw_dock(void) {
 
   /* 2. Calculate dynamic total width */
   int total_content_w = 0;
-  for (int i = 0; i < NUM_DOCK_ICONS; i++) {
+  for (int i = 0; i < dock_item_count; i++) {
     total_content_w += icon_sizes[i];
-    if (i < NUM_DOCK_ICONS - 1)
+    if (i < dock_item_count - 1)
       total_content_w += DOCK_PADDING;
   }
   int dock_w = total_content_w + 32;    /* Padding */
@@ -3129,13 +3836,13 @@ static void draw_dock(void) {
 
   /* 4. Determine Draw Order (Small -> Large) so large icons draw ON TOP of
    * neighbors */
-  int draw_order[NUM_DOCK_ICONS];
-  for (int i = 0; i < NUM_DOCK_ICONS; i++)
+  int draw_order[MAX_DOCK_ITEMS];
+  for (int i = 0; i < dock_item_count; i++)
     draw_order[i] = i;
 
   /* Bubble sort by size (stable) */
-  for (int i = 0; i < NUM_DOCK_ICONS - 1; i++) {
-    for (int j = 0; j < NUM_DOCK_ICONS - i - 1; j++) {
+  for (int i = 0; i < dock_item_count - 1; i++) {
+    for (int j = 0; j < dock_item_count - i - 1; j++) {
       if (icon_sizes[draw_order[j]] > icon_sizes[draw_order[j + 1]]) {
         int temp = draw_order[j];
         draw_order[j] = draw_order[j + 1];
@@ -3150,13 +3857,13 @@ static void draw_dock(void) {
 
   /* Calculate render centers first - strictly left-to-right based on dynamic
    * width */
-  int render_centers[NUM_DOCK_ICONS];
-  for (int i = 0; i < NUM_DOCK_ICONS; i++) {
+  int render_centers[MAX_DOCK_ITEMS];
+  for (int i = 0; i < dock_item_count; i++) {
     render_centers[i] = curr_x + icon_sizes[i] / 2;
     curr_x += icon_sizes[i] + DOCK_PADDING;
   }
 
-  for (int k = 0; k < NUM_DOCK_ICONS; k++) {
+  for (int k = 0; k < dock_item_count; k++) {
     int i = draw_order[k]; /* Draw in sorted order */
     int size = icon_sizes[i];
     int cx = render_centers[i];
@@ -3166,7 +3873,7 @@ static void draw_dock(void) {
     int draw_y = cy - size / 2;
 
     int icon_r = size / 5;
-    uint32_t bg_color = icon_colors[i];
+    uint32_t bg_color = dock_items[i]->icon_color;
 
     /* Icon Background */
     gui_draw_rect(draw_x + icon_r, draw_y, size - 2 * icon_r, size, bg_color);
@@ -3193,8 +3900,8 @@ static void draw_dock(void) {
     }
 
     /* Bitmap Icon */
-    if (i < 10) {
-      const uint32_t *icon_data = dock_icons[i];
+    if (dock_items[i]->icon_data) {
+      const uint32_t *icon_data = dock_items[i]->icon_data;
       int bmp_size = size * 3 / 4;
       int offset = (size - bmp_size) / 2;
       for (int dy = 0; dy < bmp_size; dy++) {
@@ -3218,7 +3925,7 @@ static void draw_dock(void) {
 
   /* Draw label for hovered item on top */
   if (hovered_idx >= 0) {
-    const char *label = dock_labels[hovered_idx];
+    const char *label = dock_items[hovered_idx]->label;
     int idx_x = render_centers[hovered_idx];
 
     int label_len = 0;
@@ -3316,11 +4023,11 @@ static void draw_desktop(void) {
   /* Draw build info in the bottom-right corner above the dock. */
   {
 #ifdef ARCH_X86_64
-    const char *build_info = "OS next stage v0.5.0 x86_64";
+    const char *build_info = "OS next stage v8.0.0 x86_64";
 #elif defined(ARCH_X86)
-    const char *build_info = "OS next stage v0.5.0 x86";
+    const char *build_info = "OS next stage v8.0.0 x86";
 #else
-    const char *build_info = "OS next stage v0.5.0 ARM64";
+    const char *build_info = "OS next stage v8.0.0 ARM64";
 #endif
     int build_len = 0;
     while (build_info[build_len]) {
@@ -3333,6 +4040,8 @@ static void draw_desktop(void) {
 
     gui_draw_rect(text_x - 8, text_y - 4, text_w + 16, 16, 0x000000);
     gui_draw_string(text_x, text_y, build_info, 0xCDD6F4, 0x000000);
+    gui_draw_rect(text_x - 8, text_y + 12, 36 * 8 + 16, 16, 0x000000);
+    gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0x9CA3AF, 0x000000);
   }
 
   /* Draw menu bar at top (glass effect) */
@@ -4200,6 +4909,37 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         }
       }
 
+      /* Handle clicks inside App Store window */
+      if (win->title[0] == 'A' && win->title[1] == 'p' &&
+          win->title[2] == 'p' && win->title[3] == ' ') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_w = win->width - BORDER_WIDTH * 2;
+        int y_row = content_y + 12 + 18 + 24;
+
+        for (int i = 0; i < app_catalog_count; i++) {
+          const dock_app_def_t *app = &app_catalog[i];
+          if (!app->visible_in_store)
+            continue;
+
+          int installed = app_is_installed(app);
+          int button_w = installed ? 72 : 88;
+          int button_x = content_x + content_w - button_w - 18;
+          int button_y = y_row + 13;
+
+          if (x >= button_x && x < button_x + button_w && y >= button_y &&
+              y < button_y + 28) {
+            if (!installed) {
+              install_app(app, 1);
+            }
+            gui_launch_app_by_id(app->id);
+            return;
+          }
+
+          y_row += APP_STORE_CARD_HEIGHT + 8;
+        }
+      }
+
       if (win->on_mouse) {
         win->on_mouse(win, x - win->x, y - win->y, buttons);
       }
@@ -4208,8 +4948,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   /* Check dock click */
+  load_dock_config();
   int dock_content_w =
-      NUM_DOCK_ICONS * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
+      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
   int dock_x = (primary_display.width - dock_content_w) / 2;
   int dock_y = primary_display.height - DOCK_HEIGHT + 6;
   int dock_h = DOCK_HEIGHT - 12;
@@ -4218,107 +4959,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     int icon_x = dock_x + 16;
     int icon_y_start = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
 
-    /* Window spawn position with staggering */
-    static int spawn_x = 100;
-    static int spawn_y = 80;
-
-    for (int i = 0; i < NUM_DOCK_ICONS; i++) {
+    for (int i = 0; i < dock_item_count; i++) {
       if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
           y < icon_y_start + DOCK_ICON_SIZE) {
-        /* Clicked on icon i - create window or run app */
-        switch (i) {
-        case 0: /* Terminal */
-        {
-          struct window *win =
-              gui_create_window("Terminal", spawn_x, spawn_y, 450, 320);
-          /* Create and set active terminal */
-          extern struct terminal *term_create(int x, int y, int cols, int rows);
-          extern void term_set_active(struct terminal * term);
-          extern void term_set_content_pos(struct terminal * t, int x, int y);
-          int content_x = spawn_x + BORDER_WIDTH;
-          int content_y = spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-          struct terminal *term = term_create(content_x, content_y, 55, 16);
-          if (win && term) {
-            win->userdata = term; /* Store terminal in window */
-            term_set_active(term);
-            term_set_content_pos(term, content_x, content_y);
-          }
-          break;
-        }
-        case 1: /* Files */
-          gui_create_file_manager(spawn_x + 30, spawn_y + 20);
-          break;
-        case 2: /* Calculator */
-          gui_create_window("Calculator", spawn_x + 60, spawn_y + 40, 260, 380);
-          break;
-        case 3: /* Notepad */
-          /* Call open with NULL to just open blank */
-          extern void gui_open_notepad(const char *path);
-          gui_open_notepad(NULL);
-          break;
-        case 4: /* Settings */
-          gui_create_window("Settings", spawn_x + 20, spawn_y + 30, 380, 320);
-          break;
-        case 5: /* Clock */
-          gui_create_window("Clock", spawn_x + 50, spawn_y + 40, 260, 200);
-          break;
-        case 6: /* DOOM - Direct call test */
-        {
-          printk("GUI: Direct DOOM call test...\n");
-          extern void *vfs_lookup(const char *path);
-          extern int vfs_read_compat(void *node, void *buf, unsigned int size,
-                                     unsigned int offset);
-          extern int elf_load_at(void *data, unsigned int size,
-                                 uint64_t load_addr, void *info);
-
-          extern void *kapi_get(void);
-
-          void *file = vfs_lookup("/bin/doom");
-          if (!file) {
-            printk("DOOM not found\n");
-            break;
-          }
-
-          char *data = kmalloc(900000);
-          int bytes = vfs_read_compat(file, data, 900000, 0);
-          printk("Read %d bytes\n", bytes);
-
-          typedef struct {
-            uint64_t entry;
-            uint64_t load_base;
-            uint64_t load_size;
-          } elf_info_t;
-          elf_info_t info = {0};
-          if (elf_load_at(data, bytes, 0x44000000, &info) != 0) {
-            printk("ELF load failed\n");
-            kfree(data);
-            break;
-          }
-          kfree(data);
-          printk("Entry at 0x%llx\n", info.entry);
-
-          typedef int (*entry_t)(void *, int, char **);
-          entry_t doom_main = (entry_t)info.entry;
-          void *api = kapi_get();
-          char *argv[] = {"/bin/doom", 0};
-          printk("Calling DOOM directly at 0x%llx...\n", (uint64_t)doom_main);
-          int ret = doom_main(api, 1, argv);
-          printk("DOOM returned %d\n", ret);
-        } break;
-        case 7: /* Snake */
-        {
-          snake_init();
-          gui_create_window("Snake", spawn_x + 70, spawn_y + 50, 340, 280);
-        } break;
-        case 8: /* Help */
-          gui_create_window("Help", spawn_x + 120, spawn_y + 80, 350, 280);
-          break;
-        case 9: /* Browser */
-          gui_create_window("Browser", spawn_x + 150, spawn_y + 90, 600, 450);
-          break;
-        }
-        spawn_x = (spawn_x + 40) % 250 + 80;
-        spawn_y = (spawn_y + 30) % 150 + 60;
+        gui_launch_app_by_id(dock_items[i]->id);
         return;
       }
       icon_x += DOCK_ICON_SIZE + DOCK_PADDING;
@@ -4433,6 +5077,8 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 #ifndef ARCH_X86_64
   desktop_manager_init();
 #endif
+
+  load_dock_config();
 
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
 

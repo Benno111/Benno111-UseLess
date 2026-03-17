@@ -9,15 +9,88 @@
 #include "types.h"
 #include "sandbox/sandbox.h"
 
+static const char *media_persistent_roots[] = {"/Persist", "/persist", "/disk",
+                                               "/mnt/disk"};
+#define MEDIA_PERSISTENT_ROOT_COUNT                                           \
+  ((int)(sizeof(media_persistent_roots) / sizeof(media_persistent_roots[0])))
+
+static int media_strlen(const char *str) {
+  int len = 0;
+  while (str && str[len])
+    len++;
+  return len;
+}
+
+static int media_try_build_persistent_path(const char *path, char *out,
+                                           size_t out_size) {
+  for (int root_idx = 0; root_idx < MEDIA_PERSISTENT_ROOT_COUNT; root_idx++) {
+    const char *root = media_persistent_roots[root_idx];
+    struct file *dir = vfs_open(root, O_RDONLY, 0);
+    if (!dir)
+      continue;
+    vfs_close(dir);
+
+    int idx = 0;
+    for (int i = 0; root[i] && idx < (int)out_size - 1; i++)
+      out[idx++] = root[i];
+    for (int i = 0; path[i] && idx < (int)out_size - 1; i++)
+      out[idx++] = path[i];
+    out[idx] = '\0';
+    return 0;
+  }
+  return -ENOENT;
+}
+
+static void media_ensure_parent_dirs(const char *path) {
+  char partial[256];
+  int idx = 0;
+
+  if (!path)
+    return;
+
+  for (int i = 0; path[i] && idx < (int)sizeof(partial) - 1; i++) {
+    partial[idx++] = path[i];
+    partial[idx] = '\0';
+    if (i > 0 && path[i] == '/') {
+      vfs_mkdir(partial, 0755);
+    }
+  }
+}
+
+static int media_write_raw_file(const char *path, const uint8_t *data,
+                                size_t size) {
+  struct file *f;
+  ssize_t written;
+
+  if (!path || (!data && size > 0))
+    return -EINVAL;
+
+  media_ensure_parent_dirs(path);
+  vfs_unlink(path);
+  f = vfs_open(path, O_CREAT | O_WRONLY, 0644);
+  if (!f)
+    return -ENOENT;
+  written = vfs_write(f, (const char *)data, size);
+  vfs_close(f);
+  return (written < 0) ? (int)written : 0;
+}
+
 /* --------------------------------------------------------------------- */
 /* File loading                                                          */
 /* --------------------------------------------------------------------- */
 
 int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
+  char persistent_path[256];
   if (!path || !out_data || !out_size)
     return -EINVAL;
 
-  struct file *f = vfs_open(path, O_RDONLY, 0);
+  struct file *f = NULL;
+  if (media_try_build_persistent_path(path, persistent_path,
+                                      sizeof(persistent_path)) == 0) {
+    f = vfs_open(persistent_path, O_RDONLY, 0);
+  }
+  if (!f)
+    f = vfs_open(path, O_RDONLY, 0);
   if (!f)
     return -ENOENT;
 
@@ -50,6 +123,27 @@ int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
 void media_free_file(uint8_t *data) {
   if (data)
     kfree(data);
+}
+
+int media_install_file(const char *path, const uint8_t *data, size_t size) {
+  char persistent_path[256];
+  int ret = media_write_raw_file(path, data, size);
+  if (ret < 0)
+    return ret;
+
+  if (media_try_build_persistent_path(path, persistent_path,
+                                      sizeof(persistent_path)) == 0) {
+    media_write_raw_file(persistent_path, data, size);
+  }
+
+  return 0;
+}
+
+int media_install_text_file(const char *path, const char *content) {
+  if (!content)
+    return -EINVAL;
+  return media_install_file(path, (const uint8_t *)content,
+                            (size_t)media_strlen(content));
 }
 
 /* --------------------------------------------------------------------- */

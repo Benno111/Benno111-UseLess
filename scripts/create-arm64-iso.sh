@@ -15,6 +15,11 @@ mkdir -p "${IMAGE_DIR}"
 rm -rf "${STAGING_DIR}"
 mkdir -p "${EFI_DIR}"
 
+if [ -d "${BUILD_DIR}/assets" ]; then
+    mkdir -p "${STAGING_DIR}/assets"
+    cp -R "${BUILD_DIR}/assets"/. "${STAGING_DIR}/assets/"
+fi
+
 if [ ! -f "${KERNEL_ELF}" ]; then
     echo "[ERROR] ARM64 kernel not found: ${KERNEL_ELF}"
     exit 1

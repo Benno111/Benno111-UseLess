@@ -593,9 +593,9 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "\n");
   } else if (str_starts_with(cmd, "uname")) {
 #ifdef ARCH_X86_64
-    term_puts(term, "OS next stage 0.5.0 x86_64 x86_64\n");
+    term_puts(term, "OS next stage 8.0.0 x86_64 x86_64\n");
 #else
-    term_puts(term, "OS next stage 0.5.0 ARM64 aarch64\n");
+    term_puts(term, "OS next stage 8.0.0 ARM64 aarch64\n");
 #endif
   } else if (str_starts_with(cmd, "date")) {
     term_puts(term, "Thu Jan 16 21:35:00 EST 2026\n");
@@ -620,10 +620,10 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "  \\ V /| || |_) |  | |_| |___) |\n");
     term_puts(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
     term_puts(term, "\033[0m\n");
-    term_puts(term, "\033[33mOS:\033[0m      OS next stage 0.5.0\n");
+    term_puts(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
 #ifdef ARCH_X86_64
     term_puts(term, "\033[33mHost:\033[0m    QEMU x86_64 Virtual Machine\n");
-    term_puts(term, "\033[33mKernel:\033[0m  0.5.0-x86_64\n");
+    term_puts(term, "\033[33mKernel:\033[0m  8.0.0-x86_64\n");
     term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
     term_puts(term, "\033[33mShell:\033[0m   vsh 1.0\n");
     term_puts(term, "\033[33mMemory:\033[0m  128 MB kernel heap\n");
@@ -631,7 +631,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "\033[33mGPU:\033[0m     Limine framebuffer\n");
 #else
     term_puts(term, "\033[33mHost:\033[0m    QEMU ARM Virtual Machine\n");
-    term_puts(term, "\033[33mKernel:\033[0m  0.5.0-arm64\n");
+    term_puts(term, "\033[33mKernel:\033[0m  8.0.0-arm64\n");
     term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
     term_puts(term, "\033[33mShell:\033[0m   vsh 1.0\n");
     term_puts(term, "\033[33mMemory:\033[0m  12 MB / 252 MB\n");

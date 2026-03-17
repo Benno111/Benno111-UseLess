@@ -18,6 +18,8 @@ typedef struct {
 
 int media_load_file(const char *path, uint8_t **out_data, size_t *out_size);
 void media_free_file(uint8_t *data);
+int media_install_file(const char *path, const uint8_t *data, size_t size);
+int media_install_text_file(const char *path, const char *content);
 
 int media_decode_jpeg(const uint8_t *data, size_t size, media_image_t *out);
 int media_decode_jpeg_buffer(const uint8_t *data, size_t size,

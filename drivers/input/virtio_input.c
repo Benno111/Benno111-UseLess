@@ -7,6 +7,7 @@
 
 #include "printk.h"
 #include "types.h"
+#include "drivers/trackpad.h"
 
 /* ===================================================================== */
 /* Virtio MMIO registers (QEMU virt machine) */
@@ -126,6 +127,7 @@ struct virtio_input_dev {
 
 static struct virtio_input_dev mouse_devs[MAX_POINTER_DEVS];
 static int mouse_dev_count = 0;
+static int mouse_prefer_named_mouse = 0;
 
 /* Mouse state */
 static int mouse_x = 16384; /* Raw 0-32767 */
@@ -307,6 +309,7 @@ static void read_input_device_name(volatile uint8_t *base8, char *name,
 
 static int discover_virtio_pointers(void) {
   int count = 0;
+  int found_named_mouse = 0;
 
   for (int i = 0; i < 32; i++) {
     volatile uint32_t *base =
@@ -335,16 +338,21 @@ static int discover_virtio_pointers(void) {
         input_name_contains(name, "pointer")) {
       if (count < MAX_POINTER_DEVS) {
         mouse_devs[count].base = base;
+        mouse_devs[count].name[0] = '\0';
         for (int j = 0; j < (int)sizeof(mouse_devs[count].name) - 1 && name[j];
              j++) {
           mouse_devs[count].name[j] = name[j];
           mouse_devs[count].name[j + 1] = '\0';
+        }
+        if (input_name_contains(name, "mouse")) {
+          found_named_mouse = 1;
         }
         count++;
       }
     }
   }
 
+  mouse_prefer_named_mouse = found_named_mouse;
   return count;
 }
 
@@ -444,6 +452,10 @@ void mouse_poll(void) {
     if (!dev->base || !dev->used) {
       continue;
     }
+    if (mouse_prefer_named_mouse &&
+        !input_name_contains(dev->name, "mouse")) {
+      continue;
+    }
 
     mmio_barrier();
     current_used = dev->used->idx;
@@ -539,6 +551,11 @@ void mouse_poll(void) {
 /* ===================================================================== */
 
 void mouse_get_position(int *x, int *y) {
+  if (trackpad_has_pointer()) {
+    trackpad_input_poll();
+    trackpad_get_position(x, y);
+    return;
+  }
   mouse_poll();
 
   if (mouse_has_absolute) {
@@ -555,6 +572,10 @@ void mouse_get_position(int *x, int *y) {
 }
 
 int mouse_get_buttons(void) {
+  if (trackpad_has_pointer()) {
+    trackpad_input_poll();
+    return trackpad_get_buttons();
+  }
   mouse_poll();
   return mouse_buttons;
 }
@@ -565,6 +586,7 @@ int mouse_get_buttons(void) {
 
 int mouse_init(void) {
   printk(KERN_INFO "MOUSE: Initializing virtio pointer device...\n");
+  trackpad_input_init();
 
   mouse_dev_count = discover_virtio_pointers();
   if (mouse_dev_count <= 0) {
@@ -581,6 +603,11 @@ int mouse_init(void) {
       printk(KERN_INFO "MOUSE: Attached %s\n",
              mouse_devs[i].name[0] ? mouse_devs[i].name : "pointer");
     }
+  }
+
+  if (mouse_prefer_named_mouse) {
+    printk(KERN_INFO
+           "MOUSE: Preferring detected mouse device(s) over tablet/touchpad\n");
   }
 
   mouse_x = mouse_bounds_w / 2;
@@ -805,6 +832,7 @@ void input_set_mouse_bounds(int width, int height) {
     mouse_x = mouse_bounds_w / 2;
     mouse_y = mouse_bounds_h / 2;
   }
+  trackpad_input_set_bounds(width, height);
 }
 
 void input_set_mouse_scale(int scale) {
@@ -815,6 +843,7 @@ void input_set_mouse_scale(int scale) {
     scale = 8;
   }
   mouse_scale = scale;
+  trackpad_input_set_scale(scale);
 }
 
 void input_poll(void) {
@@ -827,6 +856,9 @@ void input_poll(void) {
 
   /* Poll virtio keyboard */
   keyboard_poll();
+
+  /* Poll registered I2C/SPI trackpads */
+  trackpad_input_poll();
 
   /* Poll mouse */
   mouse_poll();

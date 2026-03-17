@@ -805,7 +805,7 @@ static int sysmon_app_main(kapi_t *api, int argc, char **argv) {
     /* Display system information */
     api->puts("SYSTEM INFO\n");
     api->puts("-----------\n");
-    api->puts("OS:       OS next stage v0.5.0\n");
+    api->puts("OS:       OS next stage v8.0.0\n");
 #ifdef ARCH_X86_64
     api->puts("Arch:     x86_64\n");
     api->puts("Platform: Limine / PC-compatible VM\n\n");

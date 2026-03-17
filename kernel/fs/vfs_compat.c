@@ -2,22 +2,11 @@
  * Vib-OS VFS Compatibility Layer Implementation
  *
  * Provides simple VibeOS-compatible VFS functions.
- * Includes embedded doom binary for /bin/doom access.
  */
 
 #include "../include/fs/vfs_compat.h"
 #include "../include/printk.h"
 #include "mm/kmalloc.h"
-
-/* Include embedded doom binary */
-#include "../apps/doom_binary.h"
-#define DOOM_BINARY_DATA user_bin_doom_build_doom
-#define DOOM_BINARY_SIZE sizeof(user_bin_doom_build_doom)
-
-/* Include embedded DOOM1.WAD game data */
-#include "../apps/doom1_wad.h"
-#define DOOM_WAD_DATA doom1_wad
-#define DOOM_WAD_SIZE sizeof(doom1_wad)
 
 /* Current working directory */
 static char cwd[256] = "/";
@@ -83,29 +72,6 @@ vfs_node_t *vfs_lookup(const char *path) {
     node->is_dir = 1;
     return node;
   }
-  /* Check for doom binary */
-  else if (strcmp_simple(path, "/bin/doom") == 0) {
-    node->size = DOOM_BINARY_SIZE;
-    node->internal = (void *)DOOM_BINARY_DATA;
-    printk("[VFS] Found /bin/doom (%u bytes)\n", (unsigned)DOOM_BINARY_SIZE);
-    return node;
-  }
-  /* Check for DOOM1.WAD game data - support multiple paths */
-  else if (strcmp_simple(path, "/DOOM1.WAD") == 0 ||
-           strcmp_simple(path, "DOOM1.WAD") == 0 ||
-           strcmp_simple(path, "/data/DOOM1.WAD") == 0 ||
-           strcmp_simple(path, "/games/doom1.wad") == 0 ||
-           strcmp_simple(path, "/games/DOOM1.WAD") == 0 ||
-           strcmp_simple(path, "games/doom1.wad") == 0 ||
-           strcmp_simple(path, "/doom1.wad") == 0 ||
-           strcmp_simple(path, "doom1.wad") == 0) {
-    node->size = DOOM_WAD_SIZE;
-    node->internal = (void *)DOOM_WAD_DATA;
-    printk("[VFS] Found DOOM1.WAD at '%s' (%u bytes)\\n", path,
-           (unsigned)DOOM_WAD_SIZE);
-    return node;
-  }
-
   /* Fallback: Check RAMFS for the file */
   extern int ramfs_lookup_path_info(const char *path, size_t *out_size,
                                     int *out_is_dir, void **out_data);
@@ -138,34 +104,6 @@ void vfs_close_handle(vfs_node_t *node) {
 int vfs_read_compat(vfs_node_t *node, char *buf, size_t size, size_t offset) {
   if (!node || !buf)
     return -1;
-
-  /* Check if this is the doom binary */
-  if (node->internal == (void *)DOOM_BINARY_DATA) {
-    size_t avail = node->size > offset ? node->size - offset : 0;
-    size_t to_read = size < avail ? size : avail;
-
-    if (to_read > 0) {
-      const unsigned char *src = DOOM_BINARY_DATA + offset;
-      for (size_t i = 0; i < to_read; i++) {
-        buf[i] = src[i];
-      }
-    }
-    return (int)to_read;
-  }
-
-  /* Check if this is DOOM1.WAD */
-  if (node->internal == (void *)DOOM_WAD_DATA) {
-    size_t avail = node->size > offset ? node->size - offset : 0;
-    size_t to_read = size < avail ? size : avail;
-
-    if (to_read > 0) {
-      const unsigned char *src = DOOM_WAD_DATA + offset;
-      for (size_t i = 0; i < to_read; i++) {
-        buf[i] = src[i];
-      }
-    }
-    return (int)to_read;
-  }
 
   /* Check if this is a RAMFS node */
   if (node->internal && node->size > 0) {

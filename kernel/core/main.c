@@ -7,6 +7,7 @@
 
 #include "apps/embedded_apps.h"
 #include "arch/arch.h"
+#include "build_uuid.h"
 #include "drivers/pci.h"
 #include "drivers/uart.h"
 #include "fs/vfs.h"
@@ -100,6 +101,7 @@ static void print_banner(void) {
   printk("A Unix-like operating system for ARM64\n");
 #endif
   printk("Copyright (c) 2026 OS next stage Project\n");
+  printk("Build UUID: %s\n", BUILD_UUID);
   printk("\n");
 }
 
@@ -558,7 +560,7 @@ static void *g_active_terminal = 0;
 static void keyboard_handler(int key) {
   /* gui_handle_key_event is now called via gui_key_callback, not here */
 
-  /* Send to KAPI input buffer for non-windowed apps (e.g. Doom) */
+      /* Send to the KAPI input buffer for non-windowed apps. */
   extern void kapi_sys_key_event(int key);
   kapi_sys_key_event(key);
 }

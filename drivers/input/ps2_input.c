@@ -1,5 +1,6 @@
 #include "printk.h"
 #include "types.h"
+#include "drivers/trackpad.h"
 
 #if defined(ARCH_X86) || defined(ARCH_X86_64)
 
@@ -454,6 +455,7 @@ int input_init(void) {
   uint8_t config;
 
   printk(KERN_INFO "INPUT: Initializing PS/2 keyboard and mouse\n");
+  trackpad_input_init();
 
   ps2_flush_output();
   ps2_send_command(PS2_CMD_DISABLE_KB);
@@ -529,6 +531,7 @@ void input_set_mouse_bounds(int width, int height) {
     mouse_max_y = height;
   mouse_x = mouse_max_x / 2;
   mouse_y = mouse_max_y / 2;
+  trackpad_input_set_bounds(width, height);
 }
 
 void input_set_mouse_scale(int scale) {
@@ -537,9 +540,11 @@ void input_set_mouse_scale(int scale) {
   if (scale > 8)
     scale = 8;
   mouse_scale = scale;
+  trackpad_input_set_scale(scale);
 }
 
 void input_poll(void) {
+  trackpad_input_poll();
   for (int i = 0; i < 64; i++) {
     uint8_t status = inb(PS2_STATUS_PORT);
     if (!(status & PS2_STATUS_OUTPUT_FULL)) {
@@ -556,12 +561,20 @@ void input_poll(void) {
 }
 
 void mouse_get_position(int *x, int *y) {
+  if (trackpad_has_pointer()) {
+    trackpad_get_position(x, y);
+    return;
+  }
   if (x)
     *x = mouse_x;
   if (y)
     *y = mouse_y;
 }
 
-int mouse_get_buttons(void) { return mouse_buttons; }
+int mouse_get_buttons(void) {
+  if (trackpad_has_pointer())
+    return trackpad_get_buttons();
+  return mouse_buttons;
+}
 
 #endif

@@ -404,7 +404,7 @@ static void wallpaper_build_cache(void) {
 
 /* Dock icons info - matching test folder */
 static const char *dock_labels[] = {"Terminal", "Files", "Calculator", "Notes", "Settings",
-                                    "Clock", "Snake", "Help", "Browser", "DOOM"};
+                                    "Clock", "Snake", "Help", "Browser"};
 
 /* Icon background colors for macOS Big Sur style dock */
 static const uint32_t dock_icon_colors[] = {
@@ -417,7 +417,6 @@ static const uint32_t dock_icon_colors[] = {
     0x34D399, /* 6 - Snake - teal green */
     0x3B82F6, /* 7 - Help - blue */
     0x0EA5E9, /* 8 - Browser - sky blue */
-    0xCC0000, /* 9 - DOOM - red */
 };
 
 /* ===================================================================== */
@@ -584,8 +583,6 @@ static const uint32_t *get_dock_icon_data(int icon_idx) {
     return dock_icon_help;        /* Help */
   case 8:
     return dock_icon_web;         /* Browser */
-  case 9:
-    return dock_icon_doom;        /* DOOM */
   default:
     return dock_icon_terminal;
   }
@@ -2754,9 +2751,7 @@ static void handle_mouse_click(int x, int y, int button) {
           case 5: analog_clock.visible = !analog_clock.visible; break; /* Clock */
           case 6: snake.visible = !snake.visible; if (snake.visible) snake_init(); break; /* Snake */
           case 7: help_win.visible = !help_win.visible; break;         /* Help */
-          case 8: img_viewer.visible = !img_viewer.visible; bring_window_to_front(WIN_IMAGE_VIEWER); break; /* Images/Browser */
-          case 9: /* DOOM - not implemented */ break;
-          default: break;
+          case 8: img_viewer.visible = !img_viewer.visible; bring_window_to_front(WIN_IMAGE_VIEWER); break; /* Images/Browser */          default: break;
         }
       }
       return;
@@ -3469,3 +3464,4 @@ void gui_main_loop(void) {
     }
   }
 }
+

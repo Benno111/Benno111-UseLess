@@ -64,8 +64,8 @@ int main(int argc, char *argv[]) {
   /* Clear screen */
   printf("\033[2J\033[H");
 
-  printf("Welcome to vib-OS v0.5.0\n");
-  printf("Kernel 0.5.0-arm64 on an aarch64\n\n");
+  printf("Welcome to vib-OS v8.0.0\n");
+  printf("Kernel 8.0.0-arm64 on an aarch64\n\n");
 
   while (1) {
     printf("vib-os login: ");

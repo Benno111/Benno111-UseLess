@@ -50,6 +50,11 @@ mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
 
+if [ -d "${BUILD_DIR}/assets" ]; then
+    mkdir -p "$ISO_ROOT/assets"
+    cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
+fi
+
 # Keep both names so the ISO matches the embedded config and the repo's
 # existing naming used elsewhere.
 cp "$KERNEL_PATH" "$ISO_ROOT/boot/kernel.elf"

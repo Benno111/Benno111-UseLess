@@ -210,6 +210,51 @@ static int str_ends_with(const char *str, const char *suffix) {
   return 1;
 }
 
+static void build_app_id_from_name(const char *name, char *app_id, int max) {
+  int out = 0;
+  for (int i = 0; name[i] && out < max - 1; i++) {
+    char c = name[i];
+    if (c == '.') {
+      break;
+    }
+    if (c >= 'A' && c <= 'Z') {
+      c = (char)(c + 32);
+    }
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+      app_id[out++] = c;
+    }
+  }
+  app_id[out] = '\0';
+}
+
+static int load_app_id_from_shortcut(const char *path, const char *fallback_name,
+                                     char *app_id, int max) {
+  struct file *file = vfs_open(path, O_RDONLY, 0);
+  if (file) {
+    char buf[128];
+    int bytes = vfs_read(file, buf, sizeof(buf) - 1);
+    vfs_close(file);
+    if (bytes > 0) {
+      buf[bytes] = '\0';
+      if (buf[0] == 'i' && buf[1] == 'd' && buf[2] == '=') {
+        int out = 0;
+        for (int i = 3; buf[i] && buf[i] != '\n' && buf[i] != '\r' &&
+                        out < max - 1;
+             i++) {
+          app_id[out++] = buf[i];
+        }
+        app_id[out] = '\0';
+        if (app_id[0]) {
+          return 0;
+        }
+      }
+    }
+  }
+
+  build_app_id_from_name(fallback_name, app_id, max);
+  return app_id[0] ? 0 : -1;
+}
+
 static int get_icon_type(const char *name, int is_dir) {
   if (is_dir)
     return ICON_TYPE_FOLDER;
@@ -810,6 +855,15 @@ static void menu_action_open(void *ctx) {
       if (desktop_icons[i].type == ICON_TYPE_FOLDER) {
         /* Open folder in file manager */
         gui_create_file_manager_path(200, 100, desktop_icons[i].path);
+      } else if (desktop_icons[i].type == ICON_TYPE_APP) {
+        char app_id[64];
+        extern int gui_launch_app_by_id(const char *app_id);
+        if (load_app_id_from_shortcut(desktop_icons[i].path, desktop_icons[i].name,
+                                      app_id, sizeof(app_id)) == 0 &&
+            gui_launch_app_by_id(app_id) == 0) {
+          continue;
+        }
+        gui_open_notepad(desktop_icons[i].path);
       } else if (desktop_icons[i].type == ICON_TYPE_IMAGE) {
         gui_open_image_viewer(desktop_icons[i].path);
       } else if (desktop_icons[i].type == ICON_TYPE_TEXT) {

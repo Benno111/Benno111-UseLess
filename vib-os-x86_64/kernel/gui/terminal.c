@@ -418,9 +418,9 @@ void term_execute(terminal_t *term, const char *cmd) {
     term_puts_t(term, "  \\ V /| || |_) |  | |_| |___) |\n");
     term_puts_t(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
     term_puts_t(term, "\033[0m\n");
-    term_puts_t(term, "\033[33mOS:\033[0m      OS next stage 0.5.0\n");
+    term_puts_t(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
     term_puts_t(term, "\033[33mHost:\033[0m    Bare Metal x86_64\n");
-    term_puts_t(term, "\033[33mKernel:\033[0m  0.5.0-x86_64\n");
+    term_puts_t(term, "\033[33mKernel:\033[0m  8.0.0-x86_64\n");
     term_puts_t(term, "\033[33mUptime:\033[0m  0 mins\n");
     term_puts_t(term, "\033[33mShell:\033[0m   vsh 1.0\n");
     term_puts_t(term, "\033[33mMemory:\033[0m  64 MB heap\n");
