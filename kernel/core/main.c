@@ -184,7 +184,9 @@ static void start_x86_64_bringup(void) {
   acpi_init(limine_get_rsdp());
   populate_seed_filesystem();
   storage_init();
-  pci_init();
+  printk(KERN_WARNING
+         "x86_64: Skipping PCI probe during bring-up until ACPI MCFG-based "
+         "ECAM discovery is implemented.\n");
 
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
   if (gui_init(fb_buffer, fb_width, fb_height,
