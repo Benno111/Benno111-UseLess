@@ -109,6 +109,14 @@ ASFLAGS := $(CROSS_TARGET) $(ARCH_CFLAGS) -I$(KERNEL_DIR)/include
 LDFLAGS_KERNEL := -nostdlib -static -T $(LINKER_SCRIPT) -e $(KERNEL_ENTRY)
 
 # ============================================================================
+# Artifact Names
+# ============================================================================
+
+KERNEL_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).elf
+ISO_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).iso
+RAW_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).img
+
+# ============================================================================
 # QEMU Configuration
 # ============================================================================
 
@@ -140,9 +148,8 @@ KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sandbox -name '*.c' 2>/dev/null)
 # Architecture-specific sources
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/arch/$(ARCH) -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_ASM := $(shell find $(KERNEL_DIR)/arch/$(ARCH) -name '*.S' 2>/dev/null)
-# Assembly files are now architecture-specific only
+
 ifeq ($(ARCH),x86_64)
-    # The Limine build path uses limine_boot.c as the x86_64 entry point.
     KERNEL_SOURCES_ASM := $(filter-out $(KERNEL_DIR)/arch/x86_64/boot.S,$(KERNEL_SOURCES_ASM))
 endif
 
@@ -166,7 +173,6 @@ KERNEL_OBJECTS += $(patsubst $(KERNEL_DIR)/%.S,$(BUILD_DIR)/kernel/%.o,$(KERNEL_
 DRIVER_OBJECTS := $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/drivers/%.o,$(DRIVER_SOURCES))
 
 ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
-KERNEL_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).elf
 
 # ============================================================================
 # Main Targets
@@ -179,6 +185,11 @@ all: kernel image
 	@echo "OS next stage $(ARCH) build complete!"
 	@echo "=========================================="
 	@echo "Kernel: $(KERNEL_BINARY)"
+ifeq ($(ARCH),x86)
+	@echo "Image:  $(RAW_IMAGE)"
+else
+	@echo "Image:  $(ISO_IMAGE)"
+endif
 	@echo "Run 'make qemu' to test in emulator"
 
 help:
@@ -188,8 +199,8 @@ help:
 	@echo "Usage: make [ARCH=<arch>] <target>"
 	@echo ""
 	@echo "Architectures:"
-	@echo "  arm64    - ARM64 (default, Raspberry Pi, Apple Silicon)"
-	@echo "  x86_64   - x86-64 (UEFI boot)"
+	@echo "  arm64    - ARM64 (UEFI boot ISO)"
+	@echo "  x86_64   - x86-64 (UEFI boot ISO)"
 	@echo "  x86      - x86 32-bit (BIOS boot)"
 	@echo ""
 	@echo "Build targets:"
@@ -279,16 +290,14 @@ $(KERNEL_BINARY): $(ALL_OBJECTS)
 image: kernel
 	@echo "[IMAGE] Creating $(ARCH) boot image..."
 ifeq ($(ARCH),arm64)
-	@bash ./scripts/create-boot-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@bash ./scripts/create-arm64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@echo "[IMAGE] Created: $(ISO_IMAGE)"
 else ifeq ($(ARCH),x86_64)
 	@bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@echo "[IMAGE] Created: $(ISO_IMAGE)"
 else ifeq ($(ARCH),x86)
 	@bash ./scripts/create-bios-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-endif
-ifeq ($(ARCH),x86_64)
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/vibos-$(ARCH).iso"
-else
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/vibos-$(ARCH).img"
+	@echo "[IMAGE] Created: $(RAW_IMAGE)"
 endif
 
 # ============================================================================
@@ -298,19 +307,19 @@ endif
 qemu: image
 	@echo "[QEMU] Starting OS next stage $(ARCH) in emulator..."
 ifeq ($(ARCH),arm64)
-	@$(QEMU) $(QEMU_FLAGS) -kernel $(KERNEL_BINARY)
+	@$(MAKE) ARCH=$(ARCH) qemu-uefi
 else ifeq ($(ARCH),x86_64)
-	@$(QEMU) $(QEMU_FLAGS) -cdrom $(IMAGE_DIR)/vibos-$(ARCH).iso
+	@$(QEMU) $(QEMU_FLAGS) -cdrom $(ISO_IMAGE)
 else ifeq ($(ARCH),x86)
-	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(IMAGE_DIR)/vibos-$(ARCH).img
+	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(RAW_IMAGE)
 endif
 
 qemu-bios: image
 	@echo "[QEMU] Starting OS next stage $(ARCH) with BIOS boot..."
 ifeq ($(ARCH),x86_64)
-	@$(QEMU) $(QEMU_FLAGS) -cdrom $(IMAGE_DIR)/vibos-$(ARCH).iso
+	@$(QEMU) $(QEMU_FLAGS) -cdrom $(ISO_IMAGE)
 else ifeq ($(ARCH),x86)
-	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(IMAGE_DIR)/vibos-$(ARCH).img
+	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(RAW_IMAGE)
 else
 	@echo "[QEMU] BIOS boot is not supported for $(ARCH)"
 	@exit 1
@@ -325,8 +334,7 @@ ifeq ($(ARCH),arm64)
 	fi
 	@$(QEMU) $(QEMU_FLAGS) \
 		-drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
-		-drive if=none,id=hd0,format=raw,file=$(IMAGE_DIR)/vibos-$(ARCH).img \
-		-device virtio-blk-device,drive=hd0
+		-cdrom $(ISO_IMAGE)
 else ifeq ($(ARCH),x86_64)
 	@if [ -f /usr/share/OVMF/OVMF_CODE.fd ]; then \
 		FW=/usr/share/OVMF/OVMF_CODE.fd; \
@@ -336,7 +344,7 @@ else ifeq ($(ARCH),x86_64)
 		echo "[ERROR] OVMF firmware not found. Install ovmf."; \
 		exit 1; \
 	fi; \
-	$(QEMU) $(QEMU_FLAGS) -bios $$FW -cdrom $(IMAGE_DIR)/vibos-$(ARCH).iso
+	$(QEMU) $(QEMU_FLAGS) -bios $$FW -cdrom $(ISO_IMAGE)
 else
 	@echo "[QEMU] UEFI boot is not supported for $(ARCH)"
 	@exit 1
@@ -344,12 +352,12 @@ endif
 
 qemu-debug: image
 	@echo "[QEMU] Starting OS next stage $(ARCH) with GDB server on port 1234..."
-ifeq ($(ARCH),x86_64)
-	@$(QEMU) $(QEMU_FLAGS) -cdrom $(IMAGE_DIR)/vibos-$(ARCH).iso -s -S
+ifeq ($(ARCH),arm64)
+	@$(MAKE) ARCH=$(ARCH) qemu-uefi QEMU_FLAGS="$(QEMU_FLAGS) -s -S"
+else ifeq ($(ARCH),x86_64)
+	@$(QEMU) $(QEMU_FLAGS) -cdrom $(ISO_IMAGE) -s -S
 else ifeq ($(ARCH),x86)
-	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(IMAGE_DIR)/vibos-$(ARCH).img -s -S
-else
-	@$(QEMU) $(QEMU_FLAGS) -kernel $(KERNEL_BINARY) -s -S
+	@$(QEMU) $(QEMU_FLAGS) -drive format=raw,file=$(RAW_IMAGE) -s -S
 endif
 
 # ============================================================================
@@ -359,6 +367,7 @@ endif
 clean:
 	@echo "[CLEAN] Removing $(ARCH) build artifacts..."
 	@rm -rf $(BUILD_DIR)
+	@rm -f $(ISO_IMAGE) $(RAW_IMAGE)
 	@echo "[CLEAN] Done"
 
 clean-all:
