@@ -85,6 +85,8 @@ static const char scancode_to_ascii_shift[128] = {
 #define KEY_DOWN 0x101
 #define KEY_LEFT 0x102
 #define KEY_RIGHT 0x103
+#define KEY_WINDOW_SWITCHER 0x110
+#define KEY_CTRL_ALT_DEL 0x111
 
 static void ps2_wait_input(void) {
   int timeout = 100000;
@@ -392,7 +394,10 @@ static void handle_keyboard_byte(uint8_t scancode) {
       alt_pressed = 1;
       return;
     case 0x53:
-      key = '\b';
+      if (ctrl_pressed && alt_pressed)
+        key = KEY_CTRL_ALT_DEL;
+      else
+        key = '\b';
       break;
     case 0x1C:
       key = '\n';
@@ -437,6 +442,10 @@ static void handle_keyboard_byte(uint8_t scancode) {
     break;
   default:
     if (scancode < 128) {
+      if (scancode == 0x0F && alt_pressed) {
+        key = KEY_WINDOW_SWITCHER;
+        break;
+      }
       int use_shift = shift_pressed;
       char base = scancode_to_ascii[scancode];
       if (caps_lock && base >= 'a' && base <= 'z') {

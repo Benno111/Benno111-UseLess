@@ -53,6 +53,7 @@ mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
 mkdir -p "$INSTALL_ROOT/boot"
+mkdir -p "$INSTALL_ROOT/EFI/BOOT"
 mkdir -p "$INSTALL_ROOT/limine"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
@@ -75,6 +76,10 @@ cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/vibos.elf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
+cp "$LIMINE_BIN_DIR/limine-bios.sys" "$INSTALL_ROOT/boot/"
+cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$INSTALL_ROOT/boot/"
+cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$INSTALL_ROOT/boot/"
+cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$INSTALL_ROOT/EFI/BOOT/"
 
 cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
@@ -92,6 +97,10 @@ Primary payload files:
 - /install/system-image/boot/kernel.elf
 - /install/system-image/boot/vibos.elf
 - /install/system-image/limine.conf
+- /install/system-image/boot/limine-bios.sys
+- /install/system-image/boot/limine-bios-cd.bin
+- /install/system-image/boot/limine-uefi-cd.bin
+- /install/system-image/EFI/BOOT/BOOTX64.EFI
 
 If present, repo assets are mirrored under:
 - /install/system-image/assets
@@ -143,6 +152,10 @@ require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/install/system-image/boot/kernel.elf"
 require_iso_path "/install/system-image/boot/vibos.elf"
 require_iso_path "/install/system-image/limine.conf"
+require_iso_path "/install/system-image/boot/limine-bios.sys"
+require_iso_path "/install/system-image/boot/limine-bios-cd.bin"
+require_iso_path "/install/system-image/boot/limine-uefi-cd.bin"
+require_iso_path "/install/system-image/EFI/BOOT/BOOTX64.EFI"
 require_iso_path "/install/system-image/IMAGE_INFO.txt"
 
 log "ISO created successfully: $ISO_PATH"

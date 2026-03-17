@@ -6,7 +6,7 @@
 typedef struct {
   uint32_t width;
   uint32_t height;
-  uint32_t *pixels; /* 0x00RRGGBB */
+  uint32_t *pixels; /* JPEG: 0x00RRGGBB, PNG may use 0xAARRGGBB */
 } media_image_t;
 
 typedef struct {

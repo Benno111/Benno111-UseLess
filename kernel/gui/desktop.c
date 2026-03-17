@@ -30,6 +30,7 @@ extern uint32_t gui_get_screen_height(void);
 extern void gui_open_image_viewer(const char *path);
 extern void gui_open_notepad(const char *path);
 extern void gui_set_window_userdata(struct window *win, void *data);
+extern int gui_draw_system_app_icon(const char *app_id, int x, int y, int size);
 
 /* External terminal functions */
 struct terminal; /* Forward declare */
@@ -418,6 +419,16 @@ static void draw_desktop_icon(desktop_icon_t *icon) {
   case ICON_TYPE_TEXT:
     draw_file_icon(x, y, DESKTOP_ICON_SIZE, 0xFFFFFF);
     break;
+  case ICON_TYPE_APP: {
+    char app_id[64];
+    if (load_app_id_from_shortcut(icon->path, icon->name, app_id,
+                                  sizeof(app_id)) == 0 &&
+        gui_draw_system_app_icon(app_id, x, y, DESKTOP_ICON_SIZE) == 0) {
+      break;
+    }
+    draw_file_icon(x, y, DESKTOP_ICON_SIZE, 0xE0E0E0);
+    break;
+  }
   default:
     draw_file_icon(x, y, DESKTOP_ICON_SIZE, 0xE0E0E0);
     break;

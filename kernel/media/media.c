@@ -371,7 +371,7 @@ int media_decode_png(const uint8_t *data, size_t size, media_image_t *out) {
     return -EINVAL;
   }
 
-  /* Convert RGBA (uint8_t*) to 0x00RRGGBB (uint32_t*) format */
+  /* Convert RGBA (uint8_t*) to 0xAARRGGBB so PNG transparency is preserved. */
   uint32_t *pixels =
       (uint32_t *)kmalloc(pixel_count * sizeof(uint32_t), GFP_KERNEL);
   if (!pixels) {
@@ -383,8 +383,9 @@ int media_decode_png(const uint8_t *data, size_t size, media_image_t *out) {
     uint8_t r = rgba[i * 4 + 0];
     uint8_t g = rgba[i * 4 + 1];
     uint8_t b = rgba[i * 4 + 2];
-    /* Alpha is in rgba[i * 4 + 3] but we ignore it for now */
-    pixels[i] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    uint8_t a = rgba[i * 4 + 3];
+    pixels[i] = ((uint32_t)a << 24) | ((uint32_t)r << 16) |
+                ((uint32_t)g << 8) | b;
   }
 
   kfree(rgba);

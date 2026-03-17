@@ -148,6 +148,10 @@ static void (*gui_key_callback)(int key) = 0;
 /* Modifier key states */
 static int shift_held = 0;
 static int ctrl_held = 0;
+static int alt_held = 0;
+
+#define KEY_WINDOW_SWITCHER 0x110
+#define KEY_CTRL_ALT_DEL 0x111
 
 /* Linux keycode to ASCII mapping (not PS/2 scancodes!) */
 /* virtio-keyboard sends Linux KEY_* codes, not PS/2 scancodes */
@@ -704,6 +708,10 @@ static void keyboard_poll(void) {
           ctrl_held = (ev->value != 0);
         }
 
+        if (ev->code == 56 || ev->code == 100) {
+          alt_held = (ev->value != 0);
+        }
+
         if (ev->value == 1) {
           int processed = 0;
           int vibe_key = 0;
@@ -718,6 +726,8 @@ static void keyboard_poll(void) {
             vibe_key = 0x103;
           else if (ev->code == 29 || ev->code == 97)
             processed = 1;
+          else if (ev->code == 56 || ev->code == 100)
+            processed = 1;
           else if (ev->code == 42 || ev->code == 54)
             processed = 1;
           else if (ev->code == 28)
@@ -726,6 +736,10 @@ static void keyboard_poll(void) {
             vibe_key = ' ';
           else if (ev->code == 1)
             vibe_key = 27;
+          else if (ev->code == 15 && alt_held)
+            vibe_key = KEY_WINDOW_SWITCHER;
+          else if (ev->code == 111 && ctrl_held && alt_held)
+            vibe_key = KEY_CTRL_ALT_DEL;
 
           if (vibe_key) {
             if (key_callback)

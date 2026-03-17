@@ -26,7 +26,13 @@ void gui_draw_line(int x0, int y0, int x1, int y1, uint32_t color);
 void gui_draw_circle(int cx, int cy, int r, uint32_t color, bool filled);
 void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
+int gui_draw_system_app_icon(const char *app_id, int x, int y, int size);
+static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color);
+static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
+                                 uint32_t glow, uint32_t border,
+                                 int blur_stride);
 static int startup_flow_active(void);
+void compositor_mark_full_redraw(void);
 
 
 /* Terminal functions from terminal.c */
@@ -80,6 +86,13 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define COLOR_DOCK_GLASS 0x2A2A30  /* Glass effect layer */
 #define DOCK_HEIGHT 70
 
+#define KEY_WINDOW_SWITCHER 0x110
+#define KEY_CTRL_ALT_DEL 0x111
+#define KEY_UP 0x100
+#define KEY_DOWN 0x101
+#define KEY_LEFT 0x102
+#define KEY_RIGHT 0x103
+
 static int dock_is_visible(void) {
   extern int boot_is_usb_boot(void);
   return !boot_is_usb_boot();
@@ -92,8 +105,16 @@ static int gui_is_installer_mode(void) {
   return boot_is_installer_mode();
 }
 
-static char installer_status[96] = "Ready to install the desktop bundle.";
+static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
+static int window_switcher_frames = 0;
+static char window_switcher_title[64] = "No windows";
+static int secure_attention_open = 0;
+static int secure_attention_selection = 0;
+
+#define SECURE_ACTION_CANCEL 0
+#define SECURE_ACTION_RESTART 1
+#define SECURE_ACTION_SHUTDOWN 2
 /* ===================================================================== */
 /* Wallpaper Manager                                                     */
 /* ===================================================================== */
@@ -738,6 +759,13 @@ static inline uint32_t *gui_draw_target(void) {
                                     : primary_display.framebuffer;
 }
 
+static inline void draw_image_pixel(int x, int y, uint32_t color) {
+  if ((color >> 24) != 0)
+    draw_pixel_alpha(x, y, color);
+  else
+    draw_pixel(x, y, color);
+}
+
 static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color) {
   for (int row = y; row < y + h; row++) {
     for (int col = x; col < x + w; col++) {
@@ -931,12 +959,13 @@ void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg) {
 
 void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg) {
   int start_x = x;
+  uint32_t effective_bg = ((bg >> 24) != 0) ? bg : 0x00000000;
   while (*str) {
     if (*str == '\n') {
       x = start_x;
       y += FONT_HEIGHT;
     } else {
-      gui_draw_char(x, y, *str, fg, bg);
+      gui_draw_char(x, y, *str, fg, effective_bg);
       x += FONT_WIDTH;
     }
     str++;
@@ -1187,6 +1216,177 @@ void gui_focus_window(struct window *win) {
   }
 }
 
+static void copy_window_title(char *dst, const char *src) {
+  int i = 0;
+  if (!dst)
+    return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+  for (; i < 63 && src[i]; i++) {
+    dst[i] = src[i];
+  }
+  dst[i] = '\0';
+}
+
+static int count_visible_windows(void) {
+  int count = 0;
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (win->visible)
+      count++;
+  }
+  return count;
+}
+
+static struct window *find_next_switchable_window(void) {
+  struct window *first_visible = NULL;
+  int seen_focused = 0;
+
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (!win->visible)
+      continue;
+    if (!first_visible)
+      first_visible = win;
+    if (seen_focused)
+      return win;
+    if (win == focused_window)
+      seen_focused = 1;
+  }
+
+  return first_visible;
+}
+
+static void activate_window_switcher(void) {
+  if (count_visible_windows() <= 0)
+    return;
+
+  struct window *target = find_next_switchable_window();
+  if (!target)
+    return;
+
+  gui_focus_window(target);
+  copy_window_title(window_switcher_title, target->title);
+  window_switcher_frames = 75;
+  compositor_mark_full_redraw();
+}
+
+static void execute_secure_attention_action(int action) {
+  if (action == SECURE_ACTION_CANCEL) {
+    secure_attention_open = 0;
+    compositor_mark_full_redraw();
+    return;
+  }
+
+  if (action == SECURE_ACTION_RESTART) {
+    extern void arch_reboot(void);
+    arch_reboot();
+    return;
+  }
+
+  if (action == SECURE_ACTION_SHUTDOWN) {
+    extern void arch_poweroff(void);
+    arch_poweroff();
+    return;
+  }
+}
+
+static void open_secure_attention(void) {
+  secure_attention_open = 1;
+  secure_attention_selection = SECURE_ACTION_CANCEL;
+  window_switcher_frames = 0;
+  compositor_mark_full_redraw();
+}
+
+static int secure_attention_button_hit(int x, int y) {
+  int panel_w = 420;
+  int panel_h = 220;
+  int panel_x = ((int)primary_display.width - panel_w) / 2;
+  int panel_y = ((int)primary_display.height - panel_h) / 2;
+  int button_y = panel_y + 156;
+  int button_w = 108;
+  int button_h = 34;
+  int button_gap = 18;
+  int start_x = panel_x + (panel_w - (button_w * 3 + button_gap * 2)) / 2;
+
+  for (int i = 0; i < 3; i++) {
+    int bx = start_x + i * (button_w + button_gap);
+    if (x >= bx && x < bx + button_w && y >= button_y && y < button_y + button_h)
+      return i;
+  }
+
+  return -1;
+}
+
+static void draw_window_switcher_overlay(void) {
+  if (window_switcher_frames <= 0)
+    return;
+
+  int panel_w = 360;
+  int panel_h = 136;
+  int panel_x = ((int)primary_display.width - panel_w) / 2;
+  int panel_y = MENU_BAR_HEIGHT + 36;
+  char info[64];
+
+  gui_fill_rect_alpha(0, 0, primary_display.width, primary_display.height,
+                      0x18000000);
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0x9A303A50,
+                       0x38FFFFFF, 0x90728298, 2);
+  gui_draw_string(panel_x + 22, panel_y + 20, "Window Switcher", 0xFFFFFF,
+                  0x00000000);
+  gui_draw_string(panel_x + 22, panel_y + 56, window_switcher_title, 0xEAF2FF,
+                  0x00000000);
+
+  build_windows_string(info);
+  gui_draw_string(panel_x + 22, panel_y + 88, info, 0xB8C4D8, 0x00000000);
+  gui_draw_string(panel_x + 22, panel_y + 108, "Press Alt+Tab again to cycle",
+                  0x95A4BC, 0x00000000);
+}
+
+static void draw_secure_attention_overlay(void) {
+  if (!secure_attention_open)
+    return;
+
+  int panel_w = 420;
+  int panel_h = 220;
+  int panel_x = ((int)primary_display.width - panel_w) / 2;
+  int panel_y = ((int)primary_display.height - panel_h) / 2;
+  int button_y = panel_y + 156;
+  int button_w = 108;
+  int button_h = 34;
+  int button_gap = 18;
+  int start_x = panel_x + (panel_w - (button_w * 3 + button_gap * 2)) / 2;
+  const char *labels[3] = {"Cancel", "Restart", "Shut Down"};
+
+  gui_fill_rect_alpha(0, 0, primary_display.width, primary_display.height,
+                      0x58000000);
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0xAE2A3448,
+                       0x42FFFFFF, 0xA07E8CA2, 2);
+
+  gui_draw_string(panel_x + 24, panel_y + 24, "Ctrl+Alt+Delete", 0xFFFFFF,
+                  0x00000000);
+  gui_draw_string(panel_x + 24, panel_y + 64, "System controls", 0xD7E3F6,
+                  0x00000000);
+  gui_draw_string(panel_x + 24, panel_y + 92,
+                  "Choose an action for this session.", 0xB6C3D8, 0x00000000);
+
+  if (focused_window && focused_window->visible) {
+    gui_draw_string(panel_x + 24, panel_y + 118, "Active window:", 0x8FA0BA,
+                    0x00000000);
+    gui_draw_string(panel_x + 126, panel_y + 118, focused_window->title,
+                    0xEFF5FF, 0x00000000);
+  }
+
+  for (int i = 0; i < 3; i++) {
+    int bx = start_x + i * (button_w + button_gap);
+    uint32_t fill = (i == secure_attention_selection) ? 0xB04E6DA0 : 0x70404A5E;
+    uint32_t border = (i == secure_attention_selection) ? 0xC4D8E7FF : 0x8E7A8BA4;
+    gui_draw_glass_panel(bx, button_y, button_w, button_h, fill, 0x26FFFFFF,
+                         border, 1);
+    gui_draw_string(bx + 18, button_y + 10, labels[i], 0xFFFFFF, 0x00000000);
+  }
+}
+
 /* Draw a filled circle (for traffic light buttons) */
 static void draw_circle(int cx, int cy, int r, uint32_t color) {
   for (int y = -r; y <= r; y++) {
@@ -1288,6 +1488,7 @@ static void ensure_gui_app_dirs(void);
 static void ensure_app_manifest(const dock_app_def_t *app);
 static void dock_add_item(const dock_app_def_t *app);
 static void save_dock_config(void);
+static void dock_add_all_system_apps(void);
 
 typedef struct {
   const char *id;
@@ -1358,11 +1559,6 @@ static uint64_t parse_u64(const char *text) {
   return value;
 }
 
-static const char *default_dock_ids[] = {"terminal", "files", "calculator",
-                                         "notes", "appstore"};
-#define DEFAULT_DOCK_COUNT                                                    \
-  ((int)(sizeof(default_dock_ids) / sizeof(default_dock_ids[0])))
-
 static void load_system_app_catalog(void);
 
 static const uint32_t *icon_data_for_kind(gui_app_kind_t kind) {
@@ -1415,6 +1611,9 @@ static uint32_t icon_color_for_kind(gui_app_kind_t kind) {
   }
   return 0x3B82F6;
 }
+
+static void draw_system_app_icon_kind(gui_app_kind_t kind, int x, int y,
+                                      int size);
 
 static const char *kind_to_string(gui_app_kind_t kind) {
   switch (kind) {
@@ -1671,10 +1870,8 @@ static void seed_all_system_apps_once(void) {
   dock_loaded = 1;
   for (int i = 0; i < app_catalog_count; i++) {
     ensure_app_manifest(&app_catalog[i]);
-    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE) {
-      dock_add_item(&app_catalog[i]);
-    }
   }
+  dock_add_all_system_apps();
   save_dock_config();
   write_text_file(GUI_SETUP_STATE_PATH, "apps_seeded=1\n");
 }
@@ -1991,6 +2188,13 @@ static void dock_add_item(const dock_app_def_t *app) {
   dock_items[dock_item_count++] = app;
 }
 
+static void dock_add_all_system_apps(void) {
+  for (int i = 0; i < app_catalog_count; i++) {
+    ensure_app_manifest(&app_catalog[i]);
+    dock_add_item(&app_catalog[i]);
+  }
+}
+
 static void save_dock_config(void) {
   char buf[512];
   int idx = 0;
@@ -2019,10 +2223,7 @@ static void load_dock_config(void) {
   ensure_gui_app_dirs();
 
   for (int i = 0; i < app_catalog_count; i++) {
-    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE ||
-        app_is_installed(&app_catalog[i])) {
-      ensure_app_manifest(&app_catalog[i]);
-    }
+    ensure_app_manifest(&app_catalog[i]);
   }
 
   struct file *file = vfs_open(GUI_DOCK_CONFIG_PATH, O_RDONLY, 0);
@@ -2032,9 +2233,7 @@ static void load_dock_config(void) {
   }
 
   if (bytes <= 0) {
-    for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
-      dock_add_item(find_catalog_app(default_dock_ids[i]));
-    }
+    dock_add_all_system_apps();
     save_dock_config();
     return;
   }
@@ -2061,9 +2260,7 @@ static void load_dock_config(void) {
   }
 
   if (dock_item_count == 0) {
-    for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
-      dock_add_item(find_catalog_app(default_dock_ids[i]));
-    }
+    dock_add_all_system_apps();
     save_dock_config();
   }
 }
@@ -2167,21 +2364,7 @@ static void draw_app_store(int content_x, int content_y, int content_w,
     gui_draw_rect(content_x + 12, y, row_w, APP_STORE_CARD_HEIGHT, row_bg);
     gui_draw_rect(content_x + 24, y + 10, 34, 34, app->icon_color);
 
-    if (app->icon_data) {
-      int icon_size = 24;
-      int icon_x = content_x + 29;
-      int icon_y = y + 15;
-      for (int dy = 0; dy < icon_size; dy++) {
-        for (int dx = 0; dx < icon_size; dx++) {
-          int sx = dx * DOCK_ICON_BITMAP_SIZE / icon_size;
-          int sy = dy * DOCK_ICON_BITMAP_SIZE / icon_size;
-          uint32_t px = app->icon_data[sy * DOCK_ICON_BITMAP_SIZE + sx];
-          if ((px >> 24) > 128) {
-            draw_pixel(icon_x + dx, icon_y + dy, px & 0xFFFFFF);
-          }
-        }
-      }
-    }
+    draw_system_app_icon_kind(app->kind, content_x + 29, y + 15, 24);
 
     gui_draw_string(content_x + 70, y + 11, app->label, 0xFFFFFF, row_bg);
     gui_draw_string(content_x + 70, y + 29,
@@ -2202,38 +2385,147 @@ static void installer_set_status(const char *message) {
   str_copy_safe(installer_status, message, sizeof(installer_status));
 }
 
-static int installer_seed_desktop_bundle(void) {
-  int created = 0;
+typedef struct {
+  const char *src_root;
+  int copied_files;
+} installer_copy_ctx_t;
+
+static int installer_try_make_dir(const char *path) {
+  struct file *existing;
+
+  if (!path || !path[0])
+    return 0;
+  existing = vfs_open(path, O_RDONLY, 0);
+  if (existing) {
+    vfs_close(existing);
+    return 0;
+  }
+  return vfs_mkdir(path, 0755);
+}
+
+static void installer_ensure_parent_dirs(const char *path) {
+  char partial[256];
+  int idx = 0;
+
+  if (!path)
+    return;
+
+  for (int i = 0; path[i] && idx < (int)sizeof(partial) - 1; i++) {
+    partial[idx++] = path[i];
+    partial[idx] = '\0';
+    if (i > 0 && path[i] == '/')
+      installer_try_make_dir(partial);
+  }
+}
+
+static int installer_copy_file(const char *src_path, const char *dst_path) {
+  uint8_t *data = NULL;
+  size_t size = 0;
+
+  if (media_load_file(src_path, &data, &size) != 0)
+    return -1;
+
+  installer_ensure_parent_dirs(dst_path);
+  if (media_install_file(dst_path, data, size) != 0) {
+    media_free_file(data);
+    return -1;
+  }
+
+  media_free_file(data);
+  return 0;
+}
+
+static int installer_copy_tree_callback(void *ctx, const char *name, int len,
+                                        loff_t offset, ino_t ino,
+                                        unsigned type) {
+  installer_copy_ctx_t *copy = (installer_copy_ctx_t *)ctx;
+  char src_path[256];
+  char dst_path[256];
+  int src_len = 0;
+  int dst_len = 0;
+
+  (void)offset;
+  (void)ino;
+
+  if (!copy || !name || len <= 0)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+  if (len == 14 && name[0] == 'I' && name[1] == 'M' && name[2] == 'A' &&
+      name[3] == 'G' && name[4] == 'E' && name[5] == '_' &&
+      name[6] == 'I' && name[7] == 'N' && name[8] == 'F' &&
+      name[9] == 'O' && name[10] == '.' && name[11] == 't' &&
+      name[12] == 'x' && name[13] == 't')
+    return 0;
+
+  str_copy_safe(src_path, copy->src_root, sizeof(src_path));
+  while (src_path[src_len])
+    src_len++;
+  if (src_len < (int)sizeof(src_path) - 1)
+    src_path[src_len++] = '/';
+  for (int i = 0; i < len && src_len < (int)sizeof(src_path) - 1; i++)
+    src_path[src_len++] = name[i];
+  src_path[src_len] = '\0';
+
+  dst_path[0] = '/';
+  dst_len = 1;
+  for (int i = 0; i < len && dst_len < (int)sizeof(dst_path) - 1; i++)
+    dst_path[dst_len++] = name[i];
+  dst_path[dst_len] = '\0';
+
+  if (type == 4) {
+    installer_try_make_dir(dst_path);
+    {
+      struct file *dir = vfs_open(src_path, O_RDONLY, 0);
+      if (dir) {
+        installer_copy_ctx_t next = {src_path, copy->copied_files};
+        vfs_readdir(dir, &next, installer_copy_tree_callback);
+        copy->copied_files = next.copied_files;
+        vfs_close(dir);
+      }
+    }
+    return 0;
+  }
+
+  if (installer_copy_file(src_path, dst_path) == 0)
+    copy->copied_files++;
+  return 0;
+}
+
+static int installer_install_system_image(void) {
+  installer_copy_ctx_t ctx = {"/install/system-image", 0};
+  struct file *dir;
+  char summary[96];
 
   load_system_app_catalog();
   ensure_gui_app_dirs();
 
-  dock_item_count = 0;
-  dock_loaded = 1;
-
-  for (int i = 0; i < app_catalog_count; i++) {
-    if (app_catalog[i].default_dock || app_catalog[i].kind == GUI_APP_APPSTORE) {
-      ensure_app_manifest(&app_catalog[i]);
-    }
+  dir = vfs_open(ctx.src_root, O_RDONLY, 0);
+  if (!dir) {
+    installer_set_status("System image payload missing from installer ISO.");
+    return -1;
   }
 
-  for (int i = 0; i < DEFAULT_DOCK_COUNT; i++) {
-    const dock_app_def_t *app = find_catalog_app(default_dock_ids[i]);
-    if (!app)
-      continue;
-    dock_add_item(app);
-    created++;
-  }
+  vfs_readdir(dir, &ctx, installer_copy_tree_callback);
+  vfs_close(dir);
 
-  save_dock_config();
+  dock_loaded = 0;
+  load_dock_config();
+  desktop_refresh();
+
   write_text_file("/System/installer-state.txt",
-                  "installed=1\nprofile=desktop\nsource=installer-iso\n");
-  write_text_file("/Desktop/Install Guide.txt",
-                  "OS next stage Installer\n\n"
-                  "The desktop bundle was installed from the installer ISO.\n"
-                  "If a writable persistent disk is mounted at /Persist, /persist,\n"
-                  "/disk, or /mnt/disk, these files are mirrored there too.\n");
-  return created > 0 ? 0 : -1;
+                  "installed=1\nprofile=system-image\nsource=installer-iso\n");
+
+  summary[0] = '\0';
+  str_copy_safe(summary, "Installed system image files: ", sizeof(summary));
+  {
+    int idx = 29;
+    append_decimal(summary, &idx, ctx.copied_files);
+    summary[idx] = '\0';
+  }
+  installer_set_status(summary);
+  return ctx.copied_files > 0 ? 0 : -1;
 }
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
@@ -2246,7 +2538,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   int button_x = content_x + 24;
   int button_y = content_y + content_h - 64;
   uint32_t button_bg = installer_has_run ? 0x4B5563 : 0x16A34A;
-  const char *action_label = "Install OS";
+  const char *action_label = "Install System Image";
 
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
   gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
@@ -2255,16 +2547,16 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                   "This ISO boots directly into the installer environment.",
                   0xCDD6F4, 0x232337);
   gui_draw_string(card_x + 18, card_y + 66,
-                  "It also carries a bundled system image payload to install.",
+                  "It carries a bundled bootable system image payload.",
                   0xA6ADC8, 0x232337);
   gui_draw_string(card_x + 18, card_y + 102, "Install actions:",
                   0x89B4FA, 0x232337);
   gui_draw_string(card_x + 30, card_y + 124,
-                  "- installs the bundled system image", 0xE5E7EB, 0x232337);
+                  "- copies /install/system-image to disk", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, card_y + 144,
-                  "- seeds /System/Apps manifests", 0xE5E7EB, 0x232337);
+                  "- installs boot files and shell assets", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, card_y + 164,
-                  "- writes /System/dock.cfg defaults", 0xE5E7EB,
+                  "- writes system apps, dock, and shortcuts", 0xE5E7EB,
                   0x232337);
   gui_draw_string(card_x + 30, card_y + 184,
                   "- creates /Applications and desktop shortcuts", 0xE5E7EB,
@@ -2841,7 +3133,7 @@ static void draw_image_viewer(struct window *win, int content_x, int content_y,
     for (int x = 0; x < draw_w; x++) {
       int src_x = (x * img_w) / draw_w;
       uint32_t color = st->image.pixels[src_y * img_w + src_x];
-      draw_pixel(offset_x + x, offset_y + y, color);
+      draw_image_pixel(offset_x + x, offset_y + y, color);
     }
   }
 }
@@ -3932,7 +4224,7 @@ static void draw_window(struct window *win) {
                   src_y < (int)thumb_img->height) {
                 uint32_t pixel =
                     thumb_img->pixels[src_y * thumb_img->width + src_x];
-                draw_pixel(tx + px, ty + py, pixel);
+                draw_image_pixel(tx + px, ty + py, pixel);
               }
             }
           }
@@ -4168,111 +4460,207 @@ static void draw_filled_circle(int cx, int cy, int r, uint32_t color) {
   }
 }
 
-/* Draw Terminal icon - simple bold >_ */
+/* Draw Terminal icon */
 static void draw_icon_terminal(int x, int y, int size) {
-  int m = size / 5;
-  int cx = x + size / 3;
-  int cy = y + size / 2;
-  /* Bold > shape */
-  for (int t = -2; t <= 2; t++) {
-    gui_draw_line(cx - m / 2, cy - m + t, cx + m / 2, cy + t, 0x00FF00);
-    gui_draw_line(cx + m / 2, cy + t, cx - m / 2, cy + m + t, 0x00FF00);
-  }
-  /* Solid underscore */
-  gui_draw_rect(x + size / 2 + 2, cy + m / 2, size / 4, 4, 0xFFFFFF);
+  int pad = size / 8;
+  int inner_x = x + pad;
+  int inner_y = y + pad;
+  int inner_w = size - pad * 2;
+  int inner_h = size - pad * 2;
+  gui_draw_rect(inner_x, inner_y, inner_w, inner_h, 0x10161F);
+  gui_draw_rect_outline(inner_x, inner_y, inner_w, inner_h, 0xC9D6E8, 1);
+  gui_draw_rect(inner_x, inner_y, inner_w, 3, 0x1F2937);
+  gui_draw_rect(inner_x + 4, inner_y + 5, 2, 2, 0xEF4444);
+  gui_draw_rect(inner_x + 8, inner_y + 5, 2, 2, 0xF59E0B);
+  gui_draw_rect(inner_x + 12, inner_y + 5, 2, 2, 0x22C55E);
+  gui_draw_line(x + size / 3, y + size / 2 - size / 8, x + size / 2 - 2,
+                y + size / 2, 0x86EFAC);
+  gui_draw_line(x + size / 3, y + size / 2 + size / 8, x + size / 2 - 2,
+                y + size / 2, 0x86EFAC);
+  gui_draw_rect(x + size / 2 + 1, y + size * 2 / 3, size / 5, 2, 0xE5E7EB);
 }
 
-/* Draw Files icon - simple bold folder */
+/* Draw Files icon */
 static void draw_icon_files(int x, int y, int size) {
   int m = size / 6;
-  /* Main folder body */
-  gui_draw_rect(x + m, y + m * 2, size - m * 2, size - m * 3, 0xFFFFFF);
-  /* Tab on top */
-  gui_draw_rect(x + m, y + m, size / 3, m + 2, 0xFFFFFF);
+  gui_draw_rect(x + m, y + m * 2, size - m * 2, size - m * 3, 0xF8D56A);
+  gui_draw_rect(x + m + 1, y + m * 2 + 2, size - m * 2 - 2, size / 4,
+                0xFFE59A);
+  gui_draw_rect(x + m, y + m, size / 3, m + 3, 0xF6C84F);
+  gui_draw_rect_outline(x + m, y + m * 2, size - m * 2, size - m * 3,
+                        0xB9851C, 1);
 }
 
-/* Draw Calculator icon - simple = symbol */
+/* Draw Calculator icon */
 static void draw_icon_calc(int x, int y, int size) {
-  int m = size / 5;
-  /* Simple = symbol - two horizontal bars */
-  gui_draw_rect(x + m, y + size / 2 - m / 2 - 3, size - m * 2, 4, 0xFFFFFF);
-  gui_draw_rect(x + m, y + size / 2 + m / 2, size - m * 2, 4, 0xFFFFFF);
+  int pad = size / 7;
+  int cell = size / 6;
+  gui_draw_rect(x + pad, y + pad, size - pad * 2, size - pad * 2, 0xF3F4F6);
+  gui_draw_rect_outline(x + pad, y + pad, size - pad * 2, size - pad * 2,
+                        0x9CA3AF, 1);
+  gui_draw_rect(x + pad + 3, y + pad + 3, size - pad * 2 - 6, cell + 4,
+                0x1F2937);
+  gui_draw_rect(x + pad + 6, y + pad + cell + 11, cell, cell, 0xCBD5E1);
+  gui_draw_rect(x + pad + 6 + cell + 3, y + pad + cell + 11, cell, cell,
+                0xCBD5E1);
+  gui_draw_rect(x + pad + 6, y + pad + cell * 2 + 14, cell, cell, 0xCBD5E1);
+  gui_draw_rect(x + pad + 6 + cell + 3, y + pad + cell * 2 + 14, cell, cell,
+                0xF59E0B);
+  gui_draw_rect(x + pad + size / 2 - 4, y + size / 2 - 3, size / 3, 3,
+                0x111827);
+  gui_draw_rect(x + pad + size / 2 - 4, y + size / 2 + 4, size / 3, 3,
+                0x111827);
 }
 
-/* Draw Notes icon - simple paper */
+/* Draw Notes icon */
 static void draw_icon_notes(int x, int y, int size) {
   int m = size / 6;
-  /* Paper rectangle */
-  gui_draw_rect(x + m, y + m / 2, size - m * 2, size - m, 0xFFFFFF);
-  /* 3 simple lines */
-  gui_draw_rect(x + m * 2, y + m * 2, size - m * 4, 2, 0x888800);
-  gui_draw_rect(x + m * 2, y + m * 3, size - m * 4, 2, 0x888800);
-  gui_draw_rect(x + m * 2, y + m * 4, size - m * 4, 2, 0x888800);
+  gui_draw_rect(x + m, y + m / 2, size - m * 2, size - m, 0xFFF8D8);
+  gui_draw_rect_outline(x + m, y + m / 2, size - m * 2, size - m, 0xD1B74C, 1);
+  gui_draw_rect(x + size - m * 2 - 2, y + m / 2, m + 2, m + 2, 0xFDE68A);
+  gui_draw_line(x + size - m * 2 - 2, y + m / 2 + m + 2, x + size - m, y + m / 2,
+                0xD1B74C);
+  for (int i = 0; i < 4; i++) {
+    gui_draw_rect(x + m * 2, y + m * 2 + i * (m + 1), size - m * 4, 2,
+                  0x9CA3AF);
+  }
 }
 
-/* Draw Settings icon - simple gear */
+/* Draw Settings icon */
 static void draw_icon_settings(int x, int y, int size) {
   int cx = x + size / 2;
   int cy = y + size / 2;
   int r = size / 4;
-  /* Center circle */
-  draw_filled_circle(cx, cy, r, 0xFFFFFF);
-  /* 4 rectangles as gear teeth */
-  gui_draw_rect(cx - 2, cy - r - 4, 5, 5, 0xFFFFFF);
-  gui_draw_rect(cx + r, cy - 2, 5, 5, 0xFFFFFF);
-  gui_draw_rect(cx - 2, cy + r, 5, 5, 0xFFFFFF);
-  gui_draw_rect(cx - r - 4, cy - 2, 5, 5, 0xFFFFFF);
+  int tooth = size / 10;
+  draw_filled_circle(cx, cy, r + 3, 0xE5E7EB);
+  for (int i = 0; i < 8; i++) {
+    int tx = cx;
+    int ty = cy;
+    if (i == 0) ty -= r + tooth;
+    if (i == 1) { tx += r / 2 + tooth / 2; ty -= r / 2 + tooth / 2; }
+    if (i == 2) tx += r + tooth;
+    if (i == 3) { tx += r / 2 + tooth / 2; ty += r / 2 + tooth / 2; }
+    if (i == 4) ty += r + tooth;
+    if (i == 5) { tx -= r / 2 + tooth / 2; ty += r / 2 + tooth / 2; }
+    if (i == 6) tx -= r + tooth;
+    if (i == 7) { tx -= r / 2 + tooth / 2; ty -= r / 2 + tooth / 2; }
+    draw_filled_circle(tx, ty, tooth / 2 + 1, 0xD1D5DB);
+  }
+  draw_filled_circle(cx, cy, r - 1, 0x9CA3AF);
+  draw_filled_circle(cx, cy, r / 2, 0xF8FAFC);
 }
 
-/* Draw Clock icon - simple circle + hands */
+/* Draw Clock icon */
 static void draw_icon_clock(int x, int y, int size) {
   int cx = x + size / 2;
   int cy = y + size / 2;
   int r = size / 3;
-  /* White face */
+  draw_filled_circle(cx, cy, r + 2, 0xE2E8F0);
   draw_filled_circle(cx, cy, r, 0xFFFFFF);
-  /* Simple hour hand */
-  gui_draw_rect(cx - 1, cy - r + 4, 3, r - 4, 0x000000);
-  /* Simple minute hand */
-  gui_draw_rect(cx, cy - 2, r - 2, 3, 0x555555);
-  /* Center */
-  draw_filled_circle(cx, cy, 3, 0xFF0000);
+  gui_draw_line(cx, cy, cx, cy - r + 4, 0x111827);
+  gui_draw_line(cx, cy, cx + r / 2, cy + r / 4, 0x475569);
+  draw_filled_circle(cx, cy, 2, 0xEF4444);
 }
 
-/* Draw Snake icon - simple S shape */
+/* Draw Snake icon */
 static void draw_icon_snake(int x, int y, int size) {
-  int r = size / 8;
-  /* Body - 3 circles */
-  draw_filled_circle(x + size / 4, y + size / 2, r, 0xFFFFFF);
-  draw_filled_circle(x + size / 2, y + size / 2 - r, r, 0xFFFFFF);
-  draw_filled_circle(x + size * 3 / 4, y + size / 2, r + 2, 0x00FF00);
-  /* Eye */
-  draw_filled_circle(x + size * 3 / 4 + 2, y + size / 2 - 2, 2, 0x000000);
+  int body = size / 7;
+  draw_filled_circle(x + size / 4, y + size * 2 / 3, body, 0xA7F3D0);
+  draw_filled_circle(x + size / 2, y + size / 2, body + 1, 0x6EE7B7);
+  draw_filled_circle(x + size * 3 / 4 - 2, y + size / 3, body + 2, 0x22C55E);
+  gui_draw_line(x + size / 4, y + size * 2 / 3, x + size / 2, y + size / 2,
+                0x22C55E);
+  gui_draw_line(x + size / 2, y + size / 2, x + size * 3 / 4 - 2, y + size / 3,
+                0x22C55E);
+  draw_filled_circle(x + size * 3 / 4 + 1, y + size / 3 - 2, 1, 0x111827);
 }
 
-/* Draw Help icon - simple ? */
+/* Draw Help icon */
 static void draw_icon_help(int x, int y, int size) {
   int cx = x + size / 2;
   int cy = y + size / 2;
   int r = size / 3;
-  /* White circle */
+  draw_filled_circle(cx, cy, r + 2, 0xDBEAFE);
   draw_filled_circle(cx, cy, r, 0xFFFFFF);
-  /* Blue ? - just stem and dot */
-  gui_draw_rect(cx - 2, cy - r / 2, 5, r / 2 + 2, 0x007AFF);
-  draw_filled_circle(cx, cy + r / 3, 3, 0x007AFF);
+  gui_draw_rect(cx - 2, cy - r / 2, 4, r / 2, 0x2563EB);
+  gui_draw_rect(cx - 1, cy - r / 2 - 3, r / 2 + 1, 3, 0x2563EB);
+  draw_filled_circle(cx, cy + r / 2 - 1, 2, 0x2563EB);
 }
 
-/* Draw Web icon - simple globe */
+/* Draw Browser/App Store icon */
 static void draw_icon_web(int x, int y, int size) {
   int cx = x + size / 2;
   int cy = y + size / 2;
   int r = size / 3;
-  /* White circle */
-  draw_filled_circle(cx, cy, r, 0xFFFFFF);
-  /* Horizontal line */
-  gui_draw_rect(cx - r + 2, cy - 1, r * 2 - 4, 3, 0x3399FF);
-  /* Vertical line */
-  gui_draw_rect(cx - 1, cy - r + 2, 3, r * 2 - 4, 0x3399FF);
+  draw_filled_circle(cx, cy, r + 2, 0xDBEAFE);
+  draw_filled_circle(cx, cy, r, 0xF8FAFC);
+  gui_draw_line(cx - r + 4, cy, cx + r - 4, cy, 0x0EA5E9);
+  gui_draw_line(cx, cy - r + 4, cx, cy + r - 4, 0x0EA5E9);
+  gui_draw_line(cx - r / 2, cy - r + 5, cx + r / 2, cy + r - 5, 0x38BDF8);
+}
+
+static void draw_icon_appstore(int x, int y, int size) {
+  int bag_x = x + size / 5;
+  int bag_y = y + size / 4;
+  int bag_w = size - size * 2 / 5;
+  int bag_h = size - size / 3;
+  draw_filled_circle(x + size / 2, y + size / 2, size / 3 + 2, 0xEDE9FE);
+  gui_draw_rect(bag_x, bag_y, bag_w, bag_h, 0x8B5CF6);
+  gui_draw_rect_outline(bag_x, bag_y, bag_w, bag_h, 0xC4B5FD, 1);
+  gui_draw_line(x + size / 2 - size / 8, bag_y, x + size / 2 + size / 8, bag_y,
+                0xE9D5FF);
+  gui_draw_line(x + size / 2 - size / 8, bag_y, x + size / 2 - size / 10,
+                bag_y - size / 10, 0xE9D5FF);
+  gui_draw_line(x + size / 2 + size / 8, bag_y, x + size / 2 + size / 10,
+                bag_y - size / 10, 0xE9D5FF);
+  gui_draw_line(x + size / 2 - size / 10, y + size / 2, x + size / 2 + size / 10,
+                y + size / 2, 0xFFFFFF);
+  gui_draw_line(x + size / 2, y + size / 2 - size / 10, x + size / 2,
+                y + size / 2 + size / 10, 0xFFFFFF);
+}
+
+static void draw_system_app_icon_kind(gui_app_kind_t kind, int x, int y,
+                                      int size) {
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    draw_icon_terminal(x, y, size);
+    break;
+  case GUI_APP_FILES:
+    draw_icon_files(x, y, size);
+    break;
+  case GUI_APP_CALCULATOR:
+    draw_icon_calc(x, y, size);
+    break;
+  case GUI_APP_NOTES:
+    draw_icon_notes(x, y, size);
+    break;
+  case GUI_APP_SETTINGS:
+    draw_icon_settings(x, y, size);
+    break;
+  case GUI_APP_CLOCK:
+    draw_icon_clock(x, y, size);
+    break;
+  case GUI_APP_SNAKE:
+    draw_icon_snake(x, y, size);
+    break;
+  case GUI_APP_HELP:
+    draw_icon_help(x, y, size);
+    break;
+  case GUI_APP_BROWSER:
+    draw_icon_web(x, y, size);
+    break;
+  case GUI_APP_APPSTORE:
+    draw_icon_appstore(x, y, size);
+    break;
+  }
+}
+
+int gui_draw_system_app_icon(const char *app_id, int x, int y, int size) {
+  const dock_app_def_t *app = find_catalog_app(app_id);
+  if (!app)
+    return -1;
+  draw_system_app_icon_kind(app->kind, x, y, size);
+  return 0;
 }
 
 /* Draw dock with hover animations - using vector icons */
@@ -4353,8 +4741,8 @@ static void draw_dock(void) {
   gui_draw_glass_panel(dock_x - 2, dock_y - 2, dock_w + 4, dock_h + 4,
                        0x74303B4E, 0x30FFFFFF, 0x9066758D, 2);
   draw_rounded_rect(dock_x - 1, dock_y - 1, dock_w + 2, dock_h + 2, 16,
-                    0x5A5E6A82);
-  draw_rounded_rect(dock_x, dock_y, dock_w, dock_h, 15, 0x5E1A1F2C);
+                    0x3A72819A);
+  draw_rounded_rect(dock_x, dock_y, dock_w, dock_h, 15, 0x18343F54);
   /* Highlights */
   for (int i = dock_x + 14; i < dock_x + dock_w - 14; i++) {
     draw_pixel_alpha(i, dock_y + 1, 0x60FFFFFF);
@@ -4426,28 +4814,8 @@ static void draw_dock(void) {
       draw_pixel(x, draw_y + 3, bg_color + 0x202020);
     }
 
-    /* Bitmap Icon */
-    if (dock_items[i]->icon_data) {
-      const uint32_t *icon_data = dock_items[i]->icon_data;
-      int bmp_size = size * 3 / 4;
-      int offset = (size - bmp_size) / 2;
-      for (int dy = 0; dy < bmp_size; dy++) {
-        for (int dx = 0; dx < bmp_size; dx++) {
-          int sx = dx * DOCK_ICON_BITMAP_SIZE / bmp_size;
-          int sy = dy * DOCK_ICON_BITMAP_SIZE / bmp_size;
-          if (sx >= DOCK_ICON_BITMAP_SIZE)
-            sx = DOCK_ICON_BITMAP_SIZE - 1;
-          if (sy >= DOCK_ICON_BITMAP_SIZE)
-            sy = DOCK_ICON_BITMAP_SIZE - 1;
-
-          uint32_t px = icon_data[sy * DOCK_ICON_BITMAP_SIZE + sx];
-          if ((px >> 24) > 128) {
-            draw_pixel(draw_x + offset + dx, draw_y + offset + dy,
-                       px & 0xFFFFFF);
-          }
-        }
-      }
-    }
+    draw_system_app_icon_kind(dock_items[i]->kind, draw_x + size / 8,
+                              draw_y + size / 8, size * 3 / 4);
   }
 
   /* Draw label for hovered item on top */
@@ -4570,10 +4938,8 @@ static void draw_desktop(void) {
     int text_y =
         (int)primary_display.height - dock_reserved_height() - 24;
 
-    gui_draw_rect(text_x - 8, text_y - 4, text_w + 16, 16, 0x000000);
-    gui_draw_string(text_x, text_y, build_info, 0xCDD6F4, 0x000000);
-    gui_draw_rect(text_x - 8, text_y + 12, 36 * 8 + 16, 16, 0x000000);
-    gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0x9CA3AF, 0x000000);
+    gui_draw_string(text_x, text_y, build_info, 0xD9E4F4, 0x00000000);
+    gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0xAEB9CB, 0x00000000);
   }
 
   /* Draw menu bar at top (glass effect) */
@@ -4694,6 +5060,12 @@ void gui_compose(void) {
   for (int i = count - 1; i >= 0; i--) {
     draw_window(draw_order[i]);
   }
+
+  draw_window_switcher_overlay();
+  draw_secure_attention_overlay();
+
+  if (window_switcher_frames > 0)
+    window_switcher_frames--;
 
   /* Draw cursor to backbuffer BEFORE blit */
   gui_draw_cursor();
@@ -4829,6 +5201,38 @@ void gui_handle_key_event(int key) {
     return;
   }
 
+  if (key == KEY_CTRL_ALT_DEL) {
+    open_secure_attention();
+    return;
+  }
+
+  if (secure_attention_open) {
+    if (key == 27) {
+      execute_secure_attention_action(SECURE_ACTION_CANCEL);
+      return;
+    }
+    if (key == '\t' || key == KEY_RIGHT) {
+      secure_attention_selection = (secure_attention_selection + 1) % 3;
+      compositor_mark_full_redraw();
+      return;
+    }
+    if (key == KEY_LEFT) {
+      secure_attention_selection = (secure_attention_selection + 2) % 3;
+      compositor_mark_full_redraw();
+      return;
+    }
+    if (key == '\n' || key == '\r' || key == ' ') {
+      execute_secure_attention_action(secure_attention_selection);
+      return;
+    }
+    return;
+  }
+
+  if (key == KEY_WINDOW_SWITCHER) {
+    activate_window_switcher();
+    return;
+  }
+
   /* Check if desktop is doing inline rename - takes priority */
   extern int desktop_is_renaming(void);
   extern int desktop_handle_key(int key);
@@ -4912,6 +5316,96 @@ static struct window *dragging_window = 0;
 static int drag_offset_x = 0, drag_offset_y = 0;
 static int prev_buttons = 0;
 
+#define SNAP_EDGE_THRESHOLD 28
+
+static void snap_window_to_zone(struct window *win, int mouse_x_pos,
+                                int mouse_y_pos) {
+  int screen_w;
+  int screen_h;
+  int work_y;
+  int work_h;
+
+  if (!win)
+    return;
+
+  screen_w = (int)primary_display.width;
+  screen_h = (int)primary_display.height;
+  work_y = MENU_BAR_HEIGHT;
+  work_h = screen_h - MENU_BAR_HEIGHT - dock_reserved_height();
+
+  if (mouse_y_pos <= work_y + SNAP_EDGE_THRESHOLD) {
+    if (win->state != WINDOW_MAXIMIZED) {
+      win->saved_x = win->x;
+      win->saved_y = win->y;
+      win->saved_width = win->width;
+      win->saved_height = win->height;
+    }
+    win->x = 0;
+    win->y = work_y;
+    win->width = screen_w;
+    win->height = work_h;
+    win->state = WINDOW_MAXIMIZED;
+    return;
+  }
+
+  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
+      mouse_y_pos <= work_y + work_h / 2) {
+    win->x = 0;
+    win->y = work_y;
+    win->width = screen_w / 2;
+    win->height = work_h / 2;
+    win->state = WINDOW_NORMAL;
+    return;
+  }
+
+  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
+      mouse_y_pos <= work_y + work_h / 2) {
+    win->x = screen_w / 2;
+    win->y = work_y;
+    win->width = screen_w - win->x;
+    win->height = work_h / 2;
+    win->state = WINDOW_NORMAL;
+    return;
+  }
+
+  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
+      mouse_y_pos >= work_y + work_h - SNAP_EDGE_THRESHOLD) {
+    win->x = 0;
+    win->y = work_y + work_h / 2;
+    win->width = screen_w / 2;
+    win->height = work_h - work_h / 2;
+    win->state = WINDOW_NORMAL;
+    return;
+  }
+
+  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
+      mouse_y_pos >= work_y + work_h - SNAP_EDGE_THRESHOLD) {
+    win->x = screen_w / 2;
+    win->y = work_y + work_h / 2;
+    win->width = screen_w - win->x;
+    win->height = work_h - work_h / 2;
+    win->state = WINDOW_NORMAL;
+    return;
+  }
+
+  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD) {
+    win->x = 0;
+    win->y = work_y;
+    win->width = screen_w / 2;
+    win->height = work_h;
+    win->state = WINDOW_NORMAL;
+    return;
+  }
+
+  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD) {
+    win->x = screen_w / 2;
+    win->y = work_y;
+    win->width = screen_w - win->x;
+    win->height = work_h;
+    win->state = WINDOW_NORMAL;
+  }
+}
+
 /* Resizing state */
 static struct window *resizing_window = 0;
 #define RESIZE_NONE 0
@@ -4986,8 +5480,33 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     return;
   }
 
+  if (secure_attention_open) {
+    prev_buttons = buttons;
+    if (left_click) {
+      int hit = secure_attention_button_hit(x, y);
+      if (hit >= 0) {
+        secure_attention_selection = hit;
+        execute_secure_attention_action(hit);
+      } else {
+        execute_secure_attention_action(SECURE_ACTION_CANCEL);
+      }
+    }
+    return;
+  }
+
   /* Handle window dragging */
   if (dragging_window && left_held) {
+    if (dragging_window->state == WINDOW_MAXIMIZED) {
+      dragging_window->x = dragging_window->saved_x;
+      dragging_window->y = dragging_window->saved_y;
+      dragging_window->width = dragging_window->saved_width;
+      dragging_window->height = dragging_window->saved_height;
+      dragging_window->state = WINDOW_NORMAL;
+      drag_offset_x = dragging_window->width / 2;
+      if (drag_offset_x < 40)
+        drag_offset_x = 40;
+    }
+
     /* Move window with mouse */
     dragging_window->x = x - drag_offset_x;
     dragging_window->y = y - drag_offset_y;
@@ -5063,6 +5582,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   if (left_release) {
+    if (dragging_window) {
+      snap_window_to_zone(dragging_window, x, y);
+    }
     dragging_window = 0;
     resizing_window = 0;
     resize_edge = RESIZE_NONE;
@@ -5519,13 +6041,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         if (x >= button_x && x < button_x + button_w && y >= button_y &&
             y < button_y + button_h) {
           if (!installer_has_run) {
-            if (installer_seed_desktop_bundle() == 0) {
-              installer_set_status(
-                  "Install finished. Reboot into the updated OS.");
+            if (installer_install_system_image() == 0) {
               installer_has_run = 1;
             } else {
               installer_set_status(
-                  "Install failed. No desktop bundle was written.");
+                  "Install failed. System image could not be written.");
             }
           }
           return;
@@ -5576,7 +6096,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
   if (gui_is_installer_mode()) {
     installer_has_run = 0;
-    installer_set_status("Ready to install the desktop bundle.");
+    installer_set_status("Ready to install the system image.");
   }
 
   primary_display.framebuffer = framebuffer;
@@ -6176,7 +6696,7 @@ static void image_viewer_on_draw(struct window *win) {
 
       if (src_x >= 0 && src_x < orig_w && src_y >= 0 && src_y < orig_h) {
         uint32_t pixel = g_imgview.image.pixels[src_y * orig_w + src_x];
-        draw_pixel(screen_x, screen_y, pixel);
+        draw_image_pixel(screen_x, screen_y, pixel);
       }
     }
   }
