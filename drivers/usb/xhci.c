@@ -162,6 +162,34 @@ struct xhci_device {
 static struct xhci_device xhci = {0};
 static int xhci_ready = 0;
 
+/* ===================================================================== */
+/* MMIO Access */
+/* ===================================================================== */
+
+static inline uint32_t xhci_cap_read32(uint32_t offset) {
+  return *(volatile uint32_t *)(xhci.base + offset);
+}
+
+static inline uint32_t xhci_op_read32(uint32_t offset) {
+  return *(volatile uint32_t *)(xhci.op_base + offset);
+}
+
+static inline void xhci_op_write32(uint32_t offset, uint32_t val) {
+  *(volatile uint32_t *)(xhci.op_base + offset) = val;
+}
+
+static inline void xhci_op_write64(uint32_t offset, uint64_t val) {
+  *(volatile uint64_t *)(xhci.op_base + offset) = val;
+}
+
+static inline uint32_t xhci_port_read32(int port, uint32_t offset) {
+  return *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset);
+}
+
+static inline void xhci_port_write32(int port, uint32_t offset, uint32_t val) {
+  *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset) = val;
+}
+
 static inline void xhci_cpu_relax(void) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   __asm__ volatile("pause");
@@ -199,34 +227,6 @@ static void xhci_delay_ms(uint32_t delay_ms) {
   while (arch_timer_get_ms() < deadline) {
     xhci_cpu_relax();
   }
-}
-
-/* ===================================================================== */
-/* MMIO Access */
-/* ===================================================================== */
-
-static inline uint32_t xhci_cap_read32(uint32_t offset) {
-  return *(volatile uint32_t *)(xhci.base + offset);
-}
-
-static inline uint32_t xhci_op_read32(uint32_t offset) {
-  return *(volatile uint32_t *)(xhci.op_base + offset);
-}
-
-static inline void xhci_op_write32(uint32_t offset, uint32_t val) {
-  *(volatile uint32_t *)(xhci.op_base + offset) = val;
-}
-
-static inline void xhci_op_write64(uint32_t offset, uint64_t val) {
-  *(volatile uint64_t *)(xhci.op_base + offset) = val;
-}
-
-static inline uint32_t xhci_port_read32(int port, uint32_t offset) {
-  return *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset);
-}
-
-static inline void xhci_port_write32(int port, uint32_t offset, uint32_t val) {
-  *(volatile uint32_t *)(xhci.op_base + 0x400 + port * 0x10 + offset) = val;
 }
 
 /* ===================================================================== */
@@ -298,7 +298,7 @@ static int xhci_setup_rings(void) {
   /* Allocate DCBAA */
   xhci.dcbaa_phys = pmm_alloc_page();
   xhci.dcbaa = (uint64_t *)xhci.dcbaa_phys;
-  for (int i = 0; i <= xhci.max_slots; i++) {
+  for (uint32_t i = 0; i <= xhci.max_slots; i++) {
     xhci.dcbaa[i] = 0;
   }
 
