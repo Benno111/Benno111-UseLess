@@ -2759,14 +2759,14 @@ static const char *installer_partition_scheme_desc(int scheme) {
 }
 
 static void installer_refresh_disk_inventory(void) {
-  extern int storage_get_controller_count(void);
-  extern int storage_describe_controller(int index, char *buf, int max);
-  int count = storage_get_controller_count();
+  extern int storage_get_disk_count(void);
+  extern int storage_describe_disk(int index, char *buf, int max);
+  int count = storage_get_disk_count();
 
   installer_disk_count = 0;
   for (int i = 0; i < count && installer_disk_count < 8; i++) {
-    if (storage_describe_controller(i, installer_disk_labels[installer_disk_count],
-                                    sizeof(installer_disk_labels[0])) == 0) {
+    if (storage_describe_disk(i, installer_disk_labels[installer_disk_count],
+                              sizeof(installer_disk_labels[0])) == 0) {
       installer_disk_count++;
     }
   }
@@ -3966,6 +3966,7 @@ static void draw_window(struct window *win) {
     char storage_overview[96];
     char storage_line0[80];
     char storage_line1[80];
+    char disk_overview[80];
     extern int intel_hda_is_ready(void);
     extern int intel_hda_is_playing(void);
     extern int virtio_net_is_ready(void);
@@ -3973,6 +3974,7 @@ static void draw_window(struct window *win) {
     extern int xhci_get_port_count(void);
     extern int xhci_get_connected_count(void);
     extern void storage_build_overview(char *buf, int max);
+    extern void storage_build_disk_overview(char *buf, int max);
     extern int storage_describe_controller(int index, char *buf, int max);
 
     build_resolution_string(resolution, primary_display.width,
@@ -3981,6 +3983,7 @@ static void draw_window(struct window *win) {
     build_device_ports_string(usb_ports, xhci_get_connected_count(),
                               xhci_get_port_count());
     storage_build_overview(storage_overview, sizeof(storage_overview));
+    storage_build_disk_overview(disk_overview, sizeof(disk_overview));
     if (storage_describe_controller(0, storage_line0, sizeof(storage_line0)) !=
         0) {
       str_copy_safe(storage_line0, "No disk controllers registered",
@@ -4007,6 +4010,8 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 20, yy + 8, "Storage", 0x89B4FA, 0x252535);
     gui_draw_string(content_x + 20, yy + 26, storage_overview, 0xCDD6F4,
                     0x252535);
+    gui_draw_string(content_x + content_w - 170, yy + 26, disk_overview,
+                    0xA6E3A1, 0x252535);
     gui_draw_string(content_x + 20, yy + 42, storage_line0, 0xCDD6F4,
                     0x252535);
     if (storage_line1[0]) {

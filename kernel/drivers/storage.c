@@ -2,6 +2,7 @@
 #include "printk.h"
 
 #define STORAGE_MAX_CONTROLLERS 16
+#define STORAGE_MAX_DISKS 16
 
 typedef struct {
   storage_kind_t kind;
@@ -14,8 +15,18 @@ typedef struct {
   char bus_name[16];
 } storage_controller_t;
 
+typedef struct {
+  storage_kind_t kind;
+  uint8_t controller_index;
+  uint8_t disk_index;
+  char name[48];
+  char location[24];
+} storage_disk_t;
+
 static storage_controller_t storage_controllers[STORAGE_MAX_CONTROLLERS];
+static storage_disk_t storage_disks[STORAGE_MAX_DISKS];
 static int storage_controller_count = 0;
+static int storage_disk_count = 0;
 static int storage_kind_counts[STORAGE_KIND_APPLE_ANS + 1];
 static int storage_initialized = 0;
 
@@ -77,6 +88,12 @@ static void storage_append_decimal(char *dst, int max, int value) {
     dst[idx++] = digits[--count];
   }
   dst[idx] = '\0';
+}
+
+static void storage_append_location(char *buf, int max, const char *prefix,
+                                    int value) {
+  storage_append_string(buf, max, prefix);
+  storage_append_decimal(buf, max, value);
 }
 
 const char *storage_kind_name(storage_kind_t kind) {
@@ -173,12 +190,106 @@ static void storage_record_controller(storage_kind_t kind, uint16_t vendor,
          ctrl->bus_name);
 }
 
+static int storage_disk_exists(const char *name, const char *location) {
+  for (int i = 0; i < storage_disk_count; i++) {
+    int j = 0;
+    while (name[j] && storage_disks[i].name[j] &&
+           name[j] == storage_disks[i].name[j]) {
+      j++;
+    }
+    if (name[j] != '\0' || storage_disks[i].name[j] != '\0')
+      continue;
+
+    j = 0;
+    while (location[j] && storage_disks[i].location[j] &&
+           location[j] == storage_disks[i].location[j]) {
+      j++;
+    }
+    if (location[j] == '\0' && storage_disks[i].location[j] == '\0')
+      return 1;
+  }
+  return 0;
+}
+
+static void storage_register_disk(storage_kind_t kind, int controller_index,
+                                  int disk_index, const char *name,
+                                  const char *location) {
+  storage_disk_t *disk;
+
+  if (!name || !location)
+    return;
+  if (storage_disk_count >= STORAGE_MAX_DISKS)
+    return;
+  if (storage_disk_exists(name, location))
+    return;
+
+  disk = &storage_disks[storage_disk_count++];
+  disk->kind = kind;
+  disk->controller_index = (uint8_t)controller_index;
+  disk->disk_index = (uint8_t)disk_index;
+  storage_copy_string(disk->name, name, sizeof(disk->name));
+  storage_copy_string(disk->location, location, sizeof(disk->location));
+
+  printk(KERN_INFO "STORAGE: Registered disk %s at %s\n", disk->name,
+         disk->location);
+}
+
+static void storage_seed_disks_for_controller(int controller_index) {
+  storage_controller_t *ctrl;
+  char disk_name[48];
+  char location[24];
+
+  if (controller_index < 0 || controller_index >= storage_controller_count)
+    return;
+
+  ctrl = &storage_controllers[controller_index];
+  disk_name[0] = '\0';
+  location[0] = '\0';
+
+  switch (ctrl->kind) {
+  case STORAGE_KIND_IDE:
+    storage_copy_string(disk_name, "IDE Hard Disk", sizeof(disk_name));
+    storage_append_location(location, sizeof(location), "ata", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
+    storage_copy_string(disk_name, "IDE Hard Disk", sizeof(disk_name));
+    location[0] = '\0';
+    storage_append_location(location, sizeof(location), "ata", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 1, disk_name, location);
+    break;
+  case STORAGE_KIND_AHCI:
+  case STORAGE_KIND_SATA:
+    storage_copy_string(disk_name, "SATA Hard Disk", sizeof(disk_name));
+    storage_append_location(location, sizeof(location), "sd", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
+    break;
+  case STORAGE_KIND_NVME:
+  case STORAGE_KIND_APPLE_ANS:
+    storage_copy_string(disk_name, "NVMe Disk", sizeof(disk_name));
+    storage_append_location(location, sizeof(location), "nvme", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
+    break;
+  case STORAGE_KIND_USB_MASS_STORAGE:
+    storage_copy_string(disk_name, "USB Hard Disk", sizeof(disk_name));
+    storage_append_location(location, sizeof(location), "usb", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
+    break;
+  case STORAGE_KIND_RAID:
+    storage_copy_string(disk_name, "RAID Volume", sizeof(disk_name));
+    storage_append_location(location, sizeof(location), "md", storage_disk_count);
+    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
+    break;
+  default:
+    break;
+  }
+}
+
 void storage_init(void) {
   if (storage_initialized)
     return;
 
   storage_initialized = 1;
   storage_controller_count = 0;
+  storage_disk_count = 0;
   for (int i = 0; i <= STORAGE_KIND_APPLE_ANS; i++)
     storage_kind_counts[i] = 0;
 
@@ -207,6 +318,7 @@ void storage_register_pci_controller(pci_device_t *dev) {
   name = storage_kind_name(kind);
   storage_record_controller(kind, dev->vendor_id, dev->device_id, dev->bus,
                             dev->slot, dev->func, name, "pci");
+  storage_seed_disks_for_controller(storage_controller_count - 1);
 }
 
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
@@ -215,9 +327,12 @@ void storage_register_platform_controller(const char *name, storage_kind_t kind,
     storage_init();
 
   storage_record_controller(kind, 0, 0, 0xFF, 0xFF, 0xFF, name, bus_name);
+  storage_seed_disks_for_controller(storage_controller_count - 1);
 }
 
 int storage_get_controller_count(void) { return storage_controller_count; }
+
+int storage_get_disk_count(void) { return storage_disk_count; }
 
 int storage_get_kind_count(storage_kind_t kind) {
   if (kind <= STORAGE_KIND_UNKNOWN || kind > STORAGE_KIND_APPLE_ANS)
@@ -288,4 +403,36 @@ void storage_build_overview(char *buf, int max) {
     storage_append_string(buf, max, "  RAID:");
     storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_RAID));
   }
+}
+
+int storage_describe_disk(int index, char *buf, int max) {
+  storage_disk_t *disk;
+
+  if (!buf || max <= 0 || index < 0 || index >= storage_disk_count)
+    return -1;
+
+  disk = &storage_disks[index];
+  buf[0] = '\0';
+  storage_append_string(buf, max, disk->name);
+  storage_append_string(buf, max, " [");
+  storage_append_string(buf, max, disk->location);
+  storage_append_string(buf, max, "]");
+  return 0;
+}
+
+void storage_build_disk_overview(char *buf, int max) {
+  if (!buf || max <= 0)
+    return;
+
+  buf[0] = '\0';
+  if (storage_disk_count == 0) {
+    storage_append_string(buf, max, "No hard disks registered");
+    return;
+  }
+
+  storage_append_decimal(buf, max, storage_disk_count);
+  storage_append_string(buf, max, " disk");
+  if (storage_disk_count != 1)
+    storage_append_string(buf, max, "s");
+  storage_append_string(buf, max, " ready");
 }
