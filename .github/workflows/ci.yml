@@ -10,6 +10,7 @@ jobs:
   build-arm64:
     name: Build ARM64 ISO
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code
@@ -47,6 +48,7 @@ jobs:
   build-x86_64:
     name: Build x86_64 ISO
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code
@@ -81,7 +83,7 @@ jobs:
     name: Build Summary
     needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
-    if: always()
+    if: github.event_name == 'pull_request' && always()
 
     steps:
       - name: Write summary
@@ -106,9 +108,8 @@ jobs:
 
   draft-release:
     name: Draft Release
-    needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && needs.build-arm64.result == 'success' && needs.build-x86_64.result == 'success'
+    if: github.event_name == 'push'
     permissions:
       contents: write
 
