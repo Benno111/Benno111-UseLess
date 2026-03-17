@@ -7,8 +7,8 @@ on:
     branches: [ main, master, develop ]
 
 jobs:
-  build-and-test-arm64:
-    name: Build and Diagnose ARM64
+  build-arm64:
+    name: Build ARM64 ISO
     runs-on: ubuntu-latest
 
     steps:
@@ -27,43 +27,24 @@ jobs:
             qemu-efi-aarch64 \
             qemu-utils \
             xorriso \
-            parted \
-            gdisk \
-            dosfstools \
-            mtools \
-            util-linux \
-            e2fsprogs \
             make \
             lld \
             llvm
 
-      - name: Print Makefile image section
-        run: |
-          nl -ba Makefile.multiarch | sed -n '240,320p'
-
-      - name: Build ARM64 kernel
+      - name: Build ARM64 ISO
         run: |
           set -euxo pipefail
-          make -f Makefile.multiarch ARCH=arm64 kernel
+          make -f Makefile.multiarch ARCH=arm64 image
 
-      - name: Check ARM64 kernel artifact
+      - name: Check ARM64 build artifacts
         run: |
-          set -euxo pipefail
           ls -lh build/arm64/kernel/vibos-arm64.elf
           file build/arm64/kernel/vibos-arm64.elf
-
-      - name: Build ARM64 image (trace)
-        run: |
-          set -euxo pipefail
-          make --trace -f Makefile.multiarch ARCH=arm64 image
-
-      - name: Check ARM64 image artifact
-        run: |
-          ls -lh image/unixos.img
-          file image/unixos.img
+          ls -lh image/vibos-arm64.iso
+          file image/vibos-arm64.iso
 
   build-x86_64:
-    name: Build x86_64
+    name: Build x86_64 ISO
     runs-on: ubuntu-latest
 
     steps:
@@ -78,12 +59,6 @@ jobs:
             qemu-system-x86 \
             qemu-utils \
             xorriso \
-            parted \
-            gdisk \
-            dosfstools \
-            mtools \
-            util-linux \
-            e2fsprogs \
             make \
             lld \
             llvm
@@ -95,7 +70,6 @@ jobs:
 
       - name: Check x86_64 build artifacts
         run: |
-          set -euxo pipefail
           ls -lh build/x86_64/kernel/vibos-x86_64.elf
           file build/x86_64/kernel/vibos-x86_64.elf
           ls -lh image/vibos-x86_64.iso
@@ -103,7 +77,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [build-and-test-arm64, build-x86_64]
+    needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
     if: always()
 
@@ -115,12 +89,12 @@ jobs:
             echo
             echo "| Architecture | Output | Status |"
             echo "|--------------|--------|--------|"
-            echo "| ARM64 | \`unixos.img\` | ${{ needs.build-and-test-arm64.result }} |"
+            echo "| ARM64 | \`vibos-arm64.iso\` | ${{ needs.build-arm64.result }} |"
             echo "| x86_64 | \`vibos-x86_64.iso\` | ${{ needs.build-x86_64.result }} |"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "${{ needs.build-and-test-arm64.result }}" = "success" ] && [ "${{ needs.build-x86_64.result }}" = "success" ]; then
+          if [ "${{ needs.build-arm64.result }}" = "success" ] && [ "${{ needs.build-x86_64.result }}" = "success" ]; then
             echo "All builds passed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
@@ -130,9 +104,9 @@ jobs:
 
   draft-release:
     name: Draft Release
-    needs: [build-and-test-arm64, build-x86_64]
+    needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && needs.build-and-test-arm64.result == 'success' && needs.build-x86_64.result == 'success'
+    if: github.event_name == 'push' && needs.build-arm64.result == 'success' && needs.build-x86_64.result == 'success'
     permissions:
       contents: write
 
@@ -153,24 +127,16 @@ jobs:
             qemu-efi-aarch64 \
             qemu-utils \
             xorriso \
-            parted \
-            gdisk \
-            dosfstools \
-            mtools \
-            util-linux \
-            e2fsprogs \
             make \
             lld \
             llvm
 
-      # ✅ x86 first (as requested)
       - name: Build x86_64 ISO
         run: |
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 image
 
-      # ✅ ARM64 after
-      - name: Build ARM64 image
+      - name: Build ARM64 ISO
         run: |
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=arm64 image
@@ -179,8 +145,8 @@ jobs:
         run: |
           ls -lh image/vibos-x86_64.iso
           file image/vibos-x86_64.iso
-          ls -lh image/unixos.img
-          file image/unixos.img
+          ls -lh image/vibos-arm64.iso
+          file image/vibos-arm64.iso
 
       - name: Generate release notes
         run: |
@@ -191,13 +157,13 @@ jobs:
 
           ## Build Status
 
-          - ARM64: success
-          - x86_64: success
+          - ARM64 ISO: success
+          - x86_64 ISO: success
 
           ## Bootable Media
 
           - \`vibos-x86_64.iso\`
-          - \`unixos.img\`
+          - \`vibos-arm64.iso\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -217,6 +183,6 @@ jobs:
           prerelease: true
           files: |
             image/vibos-x86_64.iso
-            image/unixos.img
+            image/vibos-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
