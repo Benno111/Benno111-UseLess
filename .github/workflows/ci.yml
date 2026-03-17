@@ -10,7 +10,6 @@ jobs:
 
   Build:
     name: Draft Release
-    needs: [build-arm64, build-x86_64]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && needs.build-arm64.result == 'success' && needs.build-x86_64.result == 'success'
     permissions:
