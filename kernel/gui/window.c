@@ -9,6 +9,7 @@
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
 #include "fs/vfs.h"          /* VFS headers */
 #include "icons.h"           /* Icon bitmaps */
+#include "drivers/storage.h"
 #include "media/media.h"
 #include "mm/kmalloc.h"
 #include "printk.h"
@@ -39,6 +40,7 @@ static void installer_write_target_config(void);
 static void open_partition_manager_window(int x, int y);
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
+static void partition_manager_refresh_partitions(void);
 void compositor_mark_full_redraw(void);
 
 
@@ -118,6 +120,9 @@ static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
 static char installer_disk_labels[8][80];
+static int partition_manager_partition_count = 0;
+static int partition_manager_selected_partition = 0;
+static char partition_manager_labels[8][96];
 static int window_switcher_frames = 0;
 static char window_switcher_title[64] = "No windows";
 static int secure_attention_open = 0;
@@ -2526,11 +2531,20 @@ static int installer_install_system_image(void) {
   installer_copy_ctx_t ctx = {"/install/system-image", 0};
   struct file *dir;
   char summary[96];
+  int ensured = 0;
 
   installer_refresh_disk_inventory();
   if (installer_disk_count <= 0) {
     installer_set_status("Install blocked. No real target disk is available.");
     return -1;
+  }
+  {
+    extern int storage_ensure_install_partitions(int disk_index);
+    ensured = storage_ensure_install_partitions(installer_selected_disk);
+    if (ensured < 0) {
+      installer_set_status("Install blocked. Required system partitions failed.");
+      return -1;
+    }
   }
   load_system_app_catalog();
   ensure_gui_app_dirs();
@@ -2557,6 +2571,11 @@ static int installer_install_system_image(void) {
   {
     int idx = 29;
     append_decimal(summary, &idx, ctx.copied_files);
+    if (ensured > 0 && idx < (int)sizeof(summary) - 18) {
+      const char *suffix = " with EFI fixup";
+      for (int i = 0; suffix[i] && idx < (int)sizeof(summary) - 1; i++)
+        summary[idx++] = suffix[i];
+    }
     summary[idx] = '\0';
   }
   installer_set_status(summary);
@@ -2711,32 +2730,77 @@ static void installer_write_target_config(void) {
   char manifest[256];
   int idx = 0;
   const char *disk = installer_selected_disk_label();
+  int partition_count = 0;
 
   for (const char *p = "disk="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
   for (int i = 0; disk[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = disk[i];
   manifest[idx++] = '\n';
+  {
+    extern int storage_get_partition_count(int disk_index);
+    extern int storage_has_efi_partition(int disk_index);
+    partition_count = storage_get_partition_count(installer_selected_disk);
+    for (const char *p = "partitions=";
+         *p && idx < (int)sizeof(manifest) - 1; p++)
+      manifest[idx++] = *p;
+    append_decimal(manifest, &idx, partition_count);
+    manifest[idx++] = '\n';
+    for (const char *p = "efi="; *p && idx < (int)sizeof(manifest) - 1; p++)
+      manifest[idx++] = *p;
+    append_decimal(manifest, &idx,
+                   storage_has_efi_partition(installer_selected_disk) ? 1 : 0);
+    manifest[idx++] = '\n';
+  }
   manifest[idx] = '\0';
 
   write_text_file("/System/install-target.cfg", manifest);
 }
 
+static void partition_manager_refresh_partitions(void) {
+  extern int storage_get_partition_count(int disk_index);
+  extern int storage_describe_partition(int disk_index, int partition_index,
+                                        char *buf, int max);
+  partition_manager_partition_count = 0;
+  for (int i = 0; i < storage_get_partition_count(installer_selected_disk) &&
+                  partition_manager_partition_count < 8;
+       i++) {
+    if (storage_describe_partition(installer_selected_disk, i,
+                                   partition_manager_labels
+                                       [partition_manager_partition_count],
+                                   sizeof(partition_manager_labels[0])) == 0) {
+      partition_manager_partition_count++;
+    }
+  }
+  if (partition_manager_partition_count == 0) {
+    str_copy_safe(partition_manager_labels[0], "No partitions on selected disk",
+                  sizeof(partition_manager_labels[0]));
+    partition_manager_selected_partition = 0;
+    return;
+  }
+  if (partition_manager_selected_partition >= partition_manager_partition_count)
+    partition_manager_selected_partition = partition_manager_partition_count - 1;
+  if (partition_manager_selected_partition < 0)
+    partition_manager_selected_partition = 0;
+}
+
 static void open_partition_manager_window(int x, int y) {
   installer_refresh_disk_inventory();
+  partition_manager_refresh_partitions();
   gui_create_window("Partition Manager", x, y, 560, 360);
 }
 
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h) {
   installer_refresh_disk_inventory();
+  partition_manager_refresh_partitions();
 
   gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, content_h - 24,
                 0x232337);
   gui_draw_string(content_x + 24, content_y + 22, "Partition Manager",
                   0xFFFFFF, 0x232337);
   gui_draw_string(content_x + 24, content_y + 44,
-                  "Manage real detected disks and choose the installer target.",
+                  "Create, edit, delete, and auto-layout partitions.",
                   0xCDD6F4, 0x232337);
 
   gui_draw_string(content_x + 24, content_y + 76, "Detected disks", 0x89B4FA,
@@ -2758,14 +2822,44 @@ static void draw_partition_manager_window(int content_x, int content_y,
   gui_draw_string(content_x + 150, content_y + 274,
                   installer_selected_disk_label(), 0xFFFFFF, 0x232337);
 
-  gui_draw_rect(content_x + 24, content_y + 298, 140, 30, 0x2563EB);
+  gui_draw_string(content_x + 24, content_y + 176, "Partitions", 0x89B4FA,
+                  0x232337);
+  for (int i = 0; i < partition_manager_partition_count && i < 4; i++) {
+    int row_y = content_y + 196 + i * 22;
+    uint32_t row_bg =
+        i == partition_manager_selected_partition ? 0x3B304A : 0x181826;
+    gui_draw_rect(content_x + 24, row_y, content_w - 48, 18, row_bg);
+    gui_draw_string(content_x + 34, row_y + 4, partition_manager_labels[i],
+                    0xFFFFFF, row_bg);
+  }
+
+  gui_draw_rect(content_x + 24, content_y + 298, 120, 30, 0x2563EB);
   gui_draw_string(content_x + 42, content_y + 307, "Use For Install",
                   0xFFFFFF, 0x2563EB);
-  gui_draw_rect(content_x + 176, content_y + 298, 90, 30, 0x3B82F6);
-  gui_draw_string(content_x + 202, content_y + 307, "Refresh", 0xFFFFFF,
+  gui_draw_rect(content_x + 152, content_y + 298, 78, 30, 0x0F766E);
+  gui_draw_string(content_x + 170, content_y + 307, "New EFI", 0xFFFFFF,
+                  0x0F766E);
+  gui_draw_rect(content_x + 238, content_y + 298, 94, 30, 0x166534);
+  gui_draw_string(content_x + 250, content_y + 307, "New System", 0xFFFFFF,
+                  0x166534);
+  gui_draw_rect(content_x + 340, content_y + 298, 84, 30, 0x1D4ED8);
+  gui_draw_string(content_x + 356, content_y + 307, "New Data", 0xFFFFFF,
+                  0x1D4ED8);
+  gui_draw_rect(content_x + 432, content_y + 298, 96, 30, 0x7C2D12);
+  gui_draw_string(content_x + 450, content_y + 307, "Delete", 0xFFFFFF,
+                  0x7C2D12);
+
+  gui_draw_rect(content_x + 24, content_y + 332, 100, 30, 0x6D28D9);
+  gui_draw_string(content_x + 40, content_y + 341, "Edit Sel.", 0xFFFFFF,
+                  0x6D28D9);
+  gui_draw_rect(content_x + 132, content_y + 332, 110, 30, 0x3B82F6);
+  gui_draw_string(content_x + 154, content_y + 341, "Auto Layout", 0xFFFFFF,
                   0x3B82F6);
-  gui_draw_rect(content_x + 278, content_y + 298, 110, 30, 0x4B5563);
-  gui_draw_string(content_x + 301, content_y + 307, "Open Files", 0xFFFFFF,
+  gui_draw_rect(content_x + 250, content_y + 332, 90, 30, 0x3B82F6);
+  gui_draw_string(content_x + 276, content_y + 341, "Refresh", 0xFFFFFF,
+                  0x3B82F6);
+  gui_draw_rect(content_x + 348, content_y + 332, 110, 30, 0x4B5563);
+  gui_draw_string(content_x + 371, content_y + 341, "Open Files", 0xFFFFFF,
                   0x4B5563);
 
   gui_draw_string(content_x + 24, content_y + content_h - 52,
@@ -6244,8 +6338,17 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 'r' && win->title[3] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        extern int storage_create_partition(int disk_index,
+                                            storage_partition_kind_t kind,
+                                            uint32_t size_mib);
+        extern int storage_update_partition(int disk_index, int partition_index,
+                                            storage_partition_kind_t kind,
+                                            uint32_t size_mib);
+        extern int storage_delete_partition(int disk_index, int partition_index);
+        extern int storage_ensure_install_partitions(int disk_index);
 
         installer_refresh_disk_inventory();
+        partition_manager_refresh_partitions();
         for (int i = 0; i < installer_disk_count && i < 6; i++) {
           int row_y = content_y + 96 + i * 28;
           if (x >= content_x + 24 && x < content_x + win->width - 24 &&
@@ -6257,7 +6360,18 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
         }
 
-        if (x >= content_x + 24 && x < content_x + 164 && y >= content_y + 298 &&
+        for (int i = 0; i < partition_manager_partition_count && i < 4; i++) {
+          int row_y = content_y + 196 + i * 22;
+          if (x >= content_x + 24 && x < content_x + win->width - 24 &&
+              y >= row_y && y < row_y + 18) {
+            partition_manager_selected_partition = i;
+            str_copy_safe(partition_manager_status, "Selected partition updated.",
+                          sizeof(partition_manager_status));
+            return;
+          }
+        }
+
+        if (x >= content_x + 24 && x < content_x + 144 && y >= content_y + 298 &&
             y < content_y + 328) {
           installer_write_target_config();
           str_copy_safe(partition_manager_status,
@@ -6267,16 +6381,107 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           return;
         }
 
-        if (x >= content_x + 176 && x < content_x + 266 &&
+        if (x >= content_x + 152 && x < content_x + 230 &&
             y >= content_y + 298 && y < content_y + 328) {
+          if (storage_create_partition(installer_selected_disk,
+                                       STORAGE_PARTITION_EFI, 256) == 0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status, "EFI partition created.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status, "EFI partition creation failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 238 && x < content_x + 332 &&
+            y >= content_y + 298 && y < content_y + 328) {
+          if (storage_create_partition(installer_selected_disk,
+                                       STORAGE_PARTITION_SYSTEM, 8192) == 0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status, "System partition created.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status,
+                          "System partition creation failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 340 && x < content_x + 424 &&
+            y >= content_y + 298 && y < content_y + 328) {
+          if (storage_create_partition(installer_selected_disk,
+                                       STORAGE_PARTITION_DATA, 4096) == 0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status, "Data partition created.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status, "Data partition creation failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 432 && x < content_x + 528 &&
+            y >= content_y + 298 && y < content_y + 328) {
+          if (partition_manager_partition_count > 0 &&
+              storage_delete_partition(installer_selected_disk,
+                                       partition_manager_selected_partition) ==
+                  0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status, "Partition deleted.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status, "Partition delete failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 24 && x < content_x + 124 &&
+            y >= content_y + 332 && y < content_y + 362) {
+          if (partition_manager_partition_count > 0 &&
+              storage_update_partition(installer_selected_disk,
+                                       partition_manager_selected_partition,
+                                       STORAGE_PARTITION_DATA, 6144) == 0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status,
+                          "Selected partition edited to Data 6144 MiB.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status, "Partition edit failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 132 && x < content_x + 242 &&
+            y >= content_y + 332 && y < content_y + 362) {
+          if (storage_ensure_install_partitions(installer_selected_disk) >= 0) {
+            partition_manager_refresh_partitions();
+            str_copy_safe(partition_manager_status,
+                          "Auto layout ensured EFI and System partitions.",
+                          sizeof(partition_manager_status));
+          } else {
+            str_copy_safe(partition_manager_status, "Auto layout failed.",
+                          sizeof(partition_manager_status));
+          }
+          return;
+        }
+
+        if (x >= content_x + 250 && x < content_x + 340 &&
+            y >= content_y + 332 && y < content_y + 362) {
           installer_refresh_disk_inventory();
+          partition_manager_refresh_partitions();
           str_copy_safe(partition_manager_status, "Disk list refreshed.",
                         sizeof(partition_manager_status));
           return;
         }
 
-        if (x >= content_x + 278 && x < content_x + 388 &&
-            y >= content_y + 298 && y < content_y + 328) {
+        if (x >= content_x + 348 && x < content_x + 458 &&
+            y >= content_y + 332 && y < content_y + 362) {
           gui_create_file_manager_path(win->x + 24, win->y + 24, "/");
           str_copy_safe(partition_manager_status,
                         "Opened File Manager for disk-related files.",

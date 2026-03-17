@@ -15,6 +15,14 @@ typedef enum {
   STORAGE_KIND_APPLE_ANS
 } storage_kind_t;
 
+typedef enum {
+  STORAGE_PARTITION_UNKNOWN = 0,
+  STORAGE_PARTITION_EFI,
+  STORAGE_PARTITION_SYSTEM,
+  STORAGE_PARTITION_DATA,
+  STORAGE_PARTITION_SWAP
+} storage_partition_kind_t;
+
 void storage_init(void);
 void storage_register_pci_controller(pci_device_t *dev);
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
@@ -31,5 +39,17 @@ const char *storage_kind_name(storage_kind_t kind);
 int storage_get_disk_count(void);
 int storage_describe_disk(int index, char *buf, int max);
 void storage_build_disk_overview(char *buf, int max);
+int storage_get_partition_count(int disk_index);
+int storage_describe_partition(int disk_index, int partition_index, char *buf,
+                               int max);
+int storage_create_partition(int disk_index, storage_partition_kind_t kind,
+                             uint32_t size_mib);
+int storage_update_partition(int disk_index, int partition_index,
+                             storage_partition_kind_t kind,
+                             uint32_t size_mib);
+int storage_delete_partition(int disk_index, int partition_index);
+int storage_has_efi_partition(int disk_index);
+int storage_ensure_install_partitions(int disk_index);
+const char *storage_partition_kind_name(storage_partition_kind_t kind);
 
 #endif

@@ -5,6 +5,7 @@
 
 #define STORAGE_MAX_CONTROLLERS 16
 #define STORAGE_MAX_DISKS 16
+#define STORAGE_MAX_PARTITIONS 8
 
 typedef struct {
   storage_kind_t kind;
@@ -21,12 +22,22 @@ typedef struct {
   storage_kind_t kind;
   uint8_t controller_index;
   uint8_t disk_index;
+  uint32_t capacity_mib;
   char name[48];
   char location[24];
 } storage_disk_t;
 
+typedef struct {
+  int present;
+  storage_partition_kind_t kind;
+  uint32_t size_mib;
+  char label[32];
+} storage_partition_t;
+
 static storage_controller_t storage_controllers[STORAGE_MAX_CONTROLLERS];
 static storage_disk_t storage_disks[STORAGE_MAX_DISKS];
+static storage_partition_t storage_partitions[STORAGE_MAX_DISKS]
+                                            [STORAGE_MAX_PARTITIONS];
 static int storage_controller_count = 0;
 static int storage_disk_count = 0;
 static int storage_kind_counts[STORAGE_KIND_APPLE_ANS + 1];
@@ -96,6 +107,88 @@ static void storage_append_location(char *buf, int max, const char *prefix,
                                     int value) {
   storage_append_string(buf, max, prefix);
   storage_append_decimal(buf, max, value);
+}
+
+static uint32_t storage_default_capacity_mib(storage_kind_t kind) {
+  switch (kind) {
+  case STORAGE_KIND_IDE:
+    return 32768;
+  case STORAGE_KIND_AHCI:
+  case STORAGE_KIND_SATA:
+    return 131072;
+  case STORAGE_KIND_NVME:
+  case STORAGE_KIND_APPLE_ANS:
+    return 262144;
+  case STORAGE_KIND_USB_MASS_STORAGE:
+    return 8192;
+  default:
+    return 16384;
+  }
+}
+
+const char *storage_partition_kind_name(storage_partition_kind_t kind) {
+  switch (kind) {
+  case STORAGE_PARTITION_EFI:
+    return "EFI System";
+  case STORAGE_PARTITION_SYSTEM:
+    return "System";
+  case STORAGE_PARTITION_DATA:
+    return "Data";
+  case STORAGE_PARTITION_SWAP:
+    return "Swap";
+  default:
+    return "Unknown";
+  }
+}
+
+static uint32_t storage_partition_used_mib(int disk_index) {
+  uint32_t total = 0;
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present)
+      total += storage_partitions[disk_index][i].size_mib;
+  }
+  return total;
+}
+
+static int storage_find_free_partition_slot(int disk_index) {
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      return i;
+  }
+  return -1;
+}
+
+static void storage_default_partition_label(char *buf, int max,
+                                            storage_partition_kind_t kind,
+                                            int index) {
+  if (!buf || max <= 0)
+    return;
+  buf[0] = '\0';
+  switch (kind) {
+  case STORAGE_PARTITION_EFI:
+    storage_append_string(buf, max, "EFI");
+    break;
+  case STORAGE_PARTITION_SYSTEM:
+    storage_append_string(buf, max, "System");
+    break;
+  case STORAGE_PARTITION_DATA:
+    storage_append_string(buf, max, "Data");
+    break;
+  case STORAGE_PARTITION_SWAP:
+    storage_append_string(buf, max, "Swap");
+    break;
+  default:
+    storage_append_string(buf, max, "Partition");
+    break;
+  }
+  if (index > 0) {
+    storage_append_string(buf, max, " ");
+    storage_append_decimal(buf, max, index + 1);
+  }
 }
 
 const char *storage_kind_name(storage_kind_t kind) {
@@ -232,6 +325,7 @@ static void storage_record_disk(storage_kind_t kind, int controller_index,
   disk->kind = kind;
   disk->controller_index = (uint8_t)controller_index;
   disk->disk_index = (uint8_t)disk_index;
+  disk->capacity_mib = storage_default_capacity_mib(kind);
   storage_copy_string(disk->name, name, sizeof(disk->name));
   storage_copy_string(disk->location, location, sizeof(disk->location));
 
@@ -546,16 +640,24 @@ void storage_build_overview(char *buf, int max) {
 
 int storage_describe_disk(int index, char *buf, int max) {
   storage_disk_t *disk;
+  uint32_t free_mib;
 
   if (!buf || max <= 0 || index < 0 || index >= storage_disk_count)
     return -1;
 
   disk = &storage_disks[index];
+  free_mib = disk->capacity_mib > storage_partition_used_mib(index)
+                 ? disk->capacity_mib - storage_partition_used_mib(index)
+                 : 0;
   buf[0] = '\0';
   storage_append_string(buf, max, disk->name);
   storage_append_string(buf, max, " [");
   storage_append_string(buf, max, disk->location);
-  storage_append_string(buf, max, "]");
+  storage_append_string(buf, max, "] ");
+  storage_append_decimal(buf, max, (int)disk->capacity_mib);
+  storage_append_string(buf, max, " MiB total, ");
+  storage_append_decimal(buf, max, (int)free_mib);
+  storage_append_string(buf, max, " MiB free");
   return 0;
 }
 
@@ -574,4 +676,185 @@ void storage_build_disk_overview(char *buf, int max) {
   if (storage_disk_count != 1)
     storage_append_string(buf, max, "s");
   storage_append_string(buf, max, " ready");
+}
+
+int storage_get_partition_count(int disk_index) {
+  int count = 0;
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present)
+      count++;
+  }
+  return count;
+}
+
+int storage_describe_partition(int disk_index, int partition_index, char *buf,
+                               int max) {
+  int seen = 0;
+  storage_partition_t *part = NULL;
+
+  if (!buf || max <= 0 || disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    if (seen == partition_index) {
+      part = &storage_partitions[disk_index][i];
+      break;
+    }
+    seen++;
+  }
+
+  if (!part)
+    return -1;
+
+  buf[0] = '\0';
+  storage_append_string(buf, max, part->label);
+  storage_append_string(buf, max, " (");
+  storage_append_string(buf, max, storage_partition_kind_name(part->kind));
+  storage_append_string(buf, max, ", ");
+  storage_append_decimal(buf, max, (int)part->size_mib);
+  storage_append_string(buf, max, " MiB)");
+  return 0;
+}
+
+int storage_create_partition(int disk_index, storage_partition_kind_t kind,
+                             uint32_t size_mib) {
+  int slot;
+  int ordinal = 0;
+  char label[32];
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+  if (size_mib == 0)
+    return -1;
+  if (storage_partition_used_mib(disk_index) + size_mib >
+      storage_disks[disk_index].capacity_mib)
+    return -1;
+
+  slot = storage_find_free_partition_slot(disk_index);
+  if (slot < 0)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present &&
+        storage_partitions[disk_index][i].kind == kind) {
+      ordinal++;
+    }
+  }
+
+  storage_default_partition_label(label, sizeof(label), kind, ordinal);
+  storage_partitions[disk_index][slot].present = 1;
+  storage_partitions[disk_index][slot].kind = kind;
+  storage_partitions[disk_index][slot].size_mib = size_mib;
+  storage_copy_string(storage_partitions[disk_index][slot].label, label,
+                      sizeof(storage_partitions[disk_index][slot].label));
+  printk(KERN_INFO "STORAGE: Created %s partition on disk %s (%u MiB)\n",
+         storage_partition_kind_name(kind), storage_disks[disk_index].location,
+         size_mib);
+  return 0;
+}
+
+int storage_update_partition(int disk_index, int partition_index,
+                             storage_partition_kind_t kind,
+                             uint32_t size_mib) {
+  int seen = 0;
+  storage_partition_t *part = NULL;
+  uint32_t used_without_part;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count || size_mib == 0)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    if (seen == partition_index) {
+      part = &storage_partitions[disk_index][i];
+      break;
+    }
+    seen++;
+  }
+  if (!part)
+    return -1;
+
+  used_without_part = storage_partition_used_mib(disk_index) - part->size_mib;
+  if (used_without_part + size_mib > storage_disks[disk_index].capacity_mib)
+    return -1;
+
+  part->kind = kind;
+  part->size_mib = size_mib;
+  storage_default_partition_label(part->label, sizeof(part->label), kind,
+                                  partition_index);
+  printk(KERN_INFO "STORAGE: Updated partition %d on disk %s\n", partition_index,
+         storage_disks[disk_index].location);
+  return 0;
+}
+
+int storage_delete_partition(int disk_index, int partition_index) {
+  int seen = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    if (seen == partition_index) {
+      storage_partitions[disk_index][i].present = 0;
+      storage_partitions[disk_index][i].kind = STORAGE_PARTITION_UNKNOWN;
+      storage_partitions[disk_index][i].size_mib = 0;
+      storage_partitions[disk_index][i].label[0] = '\0';
+      printk(KERN_INFO "STORAGE: Deleted partition %d on disk %s\n",
+             partition_index, storage_disks[disk_index].location);
+      return 0;
+    }
+    seen++;
+  }
+  return -1;
+}
+
+int storage_has_efi_partition(int disk_index) {
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present &&
+        storage_partitions[disk_index][i].kind == STORAGE_PARTITION_EFI)
+      return 1;
+  }
+  return 0;
+}
+
+int storage_ensure_install_partitions(int disk_index) {
+  int changed = 0;
+  int has_system = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present &&
+        storage_partitions[disk_index][i].kind == STORAGE_PARTITION_SYSTEM) {
+      has_system = 1;
+    }
+  }
+
+  if (!storage_has_efi_partition(disk_index)) {
+    if (storage_create_partition(disk_index, STORAGE_PARTITION_EFI, 256) == 0)
+      changed++;
+  }
+
+  if (!has_system) {
+    uint32_t system_size = storage_disks[disk_index].capacity_mib / 2;
+    if (system_size < 8192)
+      system_size = 8192;
+    if (system_size > 65536)
+      system_size = 65536;
+    if (storage_create_partition(disk_index, STORAGE_PARTITION_SYSTEM,
+                                 system_size) == 0)
+      changed++;
+  }
+
+  return changed;
 }
