@@ -342,8 +342,8 @@ static int stub_ttf_adv(int c, int s) { (void)c; (void)s; return 0; }
 static int stub_ttf_kern(int c1, int c2, int s) { (void)c1; (void)c2; (void)s; return 0; }
 static void stub_ttf_metrics(int s, int *a, int *d, int *lg) { (void)s; (void)a; (void)d; (void)lg; }
 static int stub_usb_info(int i, uint16_t *v, uint16_t *p, char *n, int nl) { (void)i; (void)v; (void)p; (void)n; (void)nl; return 0; }
-static size_t stub_klog_read(char *b, size_t o, size_t s) { (void)b; (void)o; (void)s; return 0; }
-static size_t stub_klog_size(void) { return 0; }
+static size_t kapi_klog_read(char *b, size_t o, size_t s) { return printk_log_read(b, o, s); }
+static size_t kapi_klog_size(void) { return printk_log_size(); }
 static uint32_t *stub_backbuf(void) { return NULL; }
 static int stub_dma_copy(void *d, const void *s, uint32_t l) { (void)d; (void)s; (void)l; return -1; }
 static int stub_dma_2d(void *d, uint32_t dp, const void *s, uint32_t sp, uint32_t w, uint32_t h) { (void)d; (void)dp; (void)s; (void)sp; (void)w; (void)h; return -1; }
@@ -534,8 +534,8 @@ void kapi_init(kapi_t *api) {
     api->usb_device_info = stub_usb_info;
 
     /* Kernel log */
-    api->klog_read = stub_klog_read;
-    api->klog_size = stub_klog_size;
+    api->klog_read = kapi_klog_read;
+    api->klog_size = kapi_klog_size;
 
     /* HW double buffer */
     api->fb_has_hw_double_buffer = stub_int;

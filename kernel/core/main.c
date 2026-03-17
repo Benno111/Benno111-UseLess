@@ -553,8 +553,16 @@ static void init_subsystems(void *dtb) {
 
   /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */
   printk(KERN_INFO "  Initializing GPU driver...\n");
+  extern int intel_gfx_is_ready(void);
+  extern int intel_gfx_has_framebuffer(void);
+  extern const char *intel_gfx_get_name(void);
   extern int virtio_gpu_init(pci_device_t * pci);
   extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
+  if (intel_gfx_is_ready()) {
+    printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
+           intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
+  }
+
   pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
   if (gpu) {
     if (virtio_gpu_init(gpu) == 0) {
@@ -562,7 +570,7 @@ static void init_subsystems(void *dtb) {
     } else {
       printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
     }
-  } else {
+  } else if (!intel_gfx_is_ready()) {
     printk(KERN_INFO "  GPU: No virtio-gpu found (software rendering)\n");
   }
 

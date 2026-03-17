@@ -11,8 +11,12 @@
 /* ===================================================================== */
 
 #define PRINTK_BUFFER_SIZE  1024
+#define PRINTK_LOG_BUFFER_SIZE 65536
 
 static char printk_buffer[PRINTK_BUFFER_SIZE];
+static char printk_log_buffer[PRINTK_LOG_BUFFER_SIZE];
+static size_t printk_log_start = 0;
+static size_t printk_log_count = 0;
 
 /* ===================================================================== */
 /* Helper functions for number formatting */
@@ -216,6 +220,23 @@ static int kvsnprintf(char *buf, size_t size, const char *fmt, va_list args)
     return p - buf;
 }
 
+static void printk_log_append(const char *buf, size_t len)
+{
+    if (!buf || len == 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        size_t pos = (printk_log_start + printk_log_count) % PRINTK_LOG_BUFFER_SIZE;
+        printk_log_buffer[pos] = buf[i];
+        if (printk_log_count < PRINTK_LOG_BUFFER_SIZE) {
+            printk_log_count++;
+        } else {
+            printk_log_start = (printk_log_start + 1) % PRINTK_LOG_BUFFER_SIZE;
+        }
+    }
+}
+
 /* ===================================================================== */
 /* Public functions */
 /* ===================================================================== */
@@ -235,7 +256,10 @@ int vprintk(const char *fmt, va_list args)
     
     /* Format the message */
     len = kvsnprintf(printk_buffer, PRINTK_BUFFER_SIZE, p, args);
-    
+
+    /* Keep a separate in-kernel log buffer in addition to UART output. */
+    printk_log_append(printk_buffer, (size_t)len);
+
     /* Output to console (UART for now) */
     uart_puts(printk_buffer);
     
@@ -262,9 +286,37 @@ int early_printk(const char *fmt, ...)
     va_start(args, fmt);
     ret = kvsnprintf(printk_buffer, PRINTK_BUFFER_SIZE, fmt, args);
     va_end(args);
-    
+
+    printk_log_append(printk_buffer, (size_t)ret);
+
     /* Direct UART output, no buffering */
     uart_puts(printk_buffer);
     
     return ret;
+}
+
+size_t printk_log_size(void)
+{
+    return printk_log_count;
+}
+
+size_t printk_log_read(char *buf, size_t offset, size_t size)
+{
+    size_t available;
+
+    if (!buf || size == 0 || offset >= printk_log_count) {
+        return 0;
+    }
+
+    available = printk_log_count - offset;
+    if (size > available) {
+        size = available;
+    }
+
+    for (size_t i = 0; i < size; i++) {
+        size_t pos = (printk_log_start + offset + i) % PRINTK_LOG_BUFFER_SIZE;
+        buf[i] = printk_log_buffer[pos];
+    }
+
+    return size;
 }

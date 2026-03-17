@@ -5,6 +5,7 @@
  */
 
 #include "drivers/pci.h"
+#include "drivers/intel_gfx.h"
 #include "drivers/storage.h"
 #include "drivers/intel_hda.h"
 #include "drivers/usb/usb.h"
@@ -154,6 +155,14 @@ void pci_init(void) {
         printk("PCI: Found Inteal HDA Audio Controller!\n");
         printk("PCI: HDA BAR0=0x%llx, IRQ=%d\n", pci_dev->bar0, pci_dev->irq);
         intel_hda_init(pci_dev);
+      }
+
+      /* Check if it's Intel integrated graphics */
+      if (vendor == INTEL_GPU_VENDOR_ID && pci_dev->class_code == 0x03) {
+        printk("PCI: Found Intel integrated graphics controller\n");
+        printk("PCI: Intel GPU BAR0=0x%llx BAR2=0x%llx IRQ=%d\n",
+               pci_dev->bar0, pci_dev->bar2, pci_dev->irq);
+        intel_gfx_init(pci_dev);
       }
 
       /* Check if it's virtio-gpu */
