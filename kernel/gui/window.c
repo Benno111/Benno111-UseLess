@@ -2449,18 +2449,44 @@ typedef struct {
   int copied_files;
 } installer_copy_ctx_t;
 
+static void installer_normalize_path(const char *src, char *dst, int max) {
+  int idx = 0;
+
+  if (!dst || max <= 0)
+    return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+
+  while (src[idx] && idx < max - 1) {
+    dst[idx] = src[idx];
+    idx++;
+  }
+  dst[idx] = '\0';
+
+  while (idx > 1 && dst[idx - 1] == '/') {
+    dst[idx - 1] = '\0';
+    idx--;
+  }
+}
+
 static int installer_try_make_dir(const char *path) {
   struct file *existing;
+  char normalized[256];
 
   if (!path || !path[0])
     return 0;
-  existing = vfs_open(path, O_RDONLY, 0);
+  installer_normalize_path(path, normalized, sizeof(normalized));
+  if (!normalized[0])
+    return 0;
+  existing = vfs_open(normalized, O_RDONLY, 0);
   if (existing) {
     vfs_close(existing);
     return 0;
   }
-  installer_ensure_parent_dirs(path);
-  return vfs_mkdir(path, 0755);
+  installer_ensure_parent_dirs(normalized);
+  return vfs_mkdir(normalized, 0755);
 }
 
 static void installer_selected_disk_id(char *buf, int max) {
@@ -2509,14 +2535,20 @@ static void installer_target_root_path(char *buf, int max) {
 static void installer_ensure_parent_dirs(const char *path) {
   char partial[256];
   int idx = 0;
+  int last_non_slash = 0;
 
   if (!path)
     return;
 
+  while (path[last_non_slash])
+    last_non_slash++;
+  while (last_non_slash > 1 && path[last_non_slash - 1] == '/')
+    last_non_slash--;
+
   for (int i = 0; path[i] && idx < (int)sizeof(partial) - 1; i++) {
     partial[idx++] = path[i];
     partial[idx] = '\0';
-    if (i > 0 && path[i] == '/')
+    if (i > 0 && path[i] == '/' && i < last_non_slash - 1)
       installer_try_make_dir(partial);
   }
 }
