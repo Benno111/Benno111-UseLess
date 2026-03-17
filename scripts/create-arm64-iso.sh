@@ -3,6 +3,8 @@ set -euo pipefail
 
 BUILD_DIR="${1:?missing build dir}"
 IMAGE_DIR="${2:?missing image dir}"
+VALIDATE_ISO="${VALIDATE_ISO:-0}"
+REBUILD_ISO_ROOT="${REBUILD_ISO_ROOT:-0}"
 
 KERNEL_ELF="${BUILD_DIR}/kernel/vibos-arm64.elf"
 ISO_PATH="${IMAGE_DIR}/vibos-arm64.iso"
@@ -12,12 +14,14 @@ EFI_DIR="${STAGING_DIR}/EFI/BOOT"
 BOOTAA64_EFI="${EFI_DIR}/BOOTAA64.EFI"
 
 mkdir -p "${IMAGE_DIR}"
-rm -rf "${STAGING_DIR}"
+if [ "${REBUILD_ISO_ROOT}" = "1" ]; then
+    rm -rf "${STAGING_DIR}"
+fi
 mkdir -p "${EFI_DIR}"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "${STAGING_DIR}/assets"
-    cp -R "${BUILD_DIR}/assets"/. "${STAGING_DIR}/assets/"
+    cp -Ru "${BUILD_DIR}/assets"/. "${STAGING_DIR}/assets/"
 fi
 
 if [ ! -f "${KERNEL_ELF}" ]; then
@@ -40,7 +44,7 @@ if ! command -v xorriso >/dev/null 2>&1; then
 fi
 
 echo "[IMAGE] Staging ARM64 UEFI ISO tree..."
-cp "${KERNEL_ELF}" "${STAGING_DIR}/vibos-arm64.elf"
+cp -u "${KERNEL_ELF}" "${STAGING_DIR}/vibos-arm64.elf"
 
 echo "[IMAGE] Converting kernel ELF to BOOTAA64.EFI using ${OBJCOPY}..."
 "${OBJCOPY}" \
@@ -57,5 +61,10 @@ xorriso -as mkisofs \
     -e EFI/BOOT/BOOTAA64.EFI \
     -no-emul-boot \
     "${STAGING_DIR}"
+
+if [ "${VALIDATE_ISO}" = "1" ]; then
+    echo "[IMAGE] Validating ARM64 ISO contents..."
+    xorriso -indev "${ISO_PATH}" -find /EFI/BOOT/BOOTAA64.EFI -exec lsdl >/dev/null
+fi
 
 echo "[IMAGE] ARM64 ISO created: ${ISO_PATH}"
