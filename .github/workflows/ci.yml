@@ -37,27 +37,8 @@ jobs:
             lld \
             llvm
 
-      - name: Show tool availability
-        run: |
-          set -eux
-          command -v make
-          command -v qemu-img || true
-          command -v qemu-system-aarch64 || true
-          command -v parted || true
-          command -v sgdisk || true
-          command -v mkfs.vfat || true
-          command -v mcopy || true
-          command -v losetup || true
-          command -v mount || true
-          command -v umount || true
-          command -v truncate || true
-          command -v dd || true
-          command -v clang || true
-          command -v ld.lld || true
-
       - name: Print Makefile image section
         run: |
-          echo "===== Makefile.multiarch around image target ====="
           nl -ba Makefile.multiarch | sed -n '240,320p'
 
       - name: Build ARM64 kernel
@@ -70,54 +51,16 @@ jobs:
           set -euxo pipefail
           ls -lh build/arm64/kernel/vibos-arm64.elf
           file build/arm64/kernel/vibos-arm64.elf
-          ls -lh build/arm64/kernel/sections.txt || true
 
-      - name: Build ARM64 image with tracing
-        id: arm64_image
+      - name: Build ARM64 image (trace)
         run: |
           set -euxo pipefail
           make --trace -f Makefile.multiarch ARCH=arm64 image
 
       - name: Check ARM64 image artifact
-        if: success()
         run: |
-          set -euxo pipefail
           ls -lh image/unixos.img
           file image/unixos.img
-
-      - name: ARM64 failure diagnostics
-        if: failure()
-        run: |
-          set +e
-          echo "===== workspace ====="
-          pwd
-          ls -lah
-          echo "===== build dir ====="
-          find build -maxdepth 4 -type f | sort || true
-          echo "===== image dir ====="
-          find image -maxdepth 3 -type f | sort || true
-          echo "===== loop devices ====="
-          sudo losetup -a || true
-          echo "===== mounts ====="
-          mount || true
-          echo "===== disk usage ====="
-          df -h || true
-          echo "===== image file status ====="
-          ls -lh image/unixos.img || true
-          file image/unixos.img || true
-          echo "===== Makefile image section again ====="
-          nl -ba Makefile.multiarch | sed -n '240,320p'
-
-      - name: Upload ARM64 diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: arm64-diagnostics
-          path: |
-            build/arm64/kernel/vibos-arm64.elf
-            build/arm64/kernel/sections.txt
-            image/unixos.img
-          if-no-files-found: ignore
 
   build-x86_64:
     name: Build x86_64
@@ -158,13 +101,6 @@ jobs:
           ls -lh image/vibos-x86_64.iso
           file image/vibos-x86_64.iso
 
-      - name: Upload x86_64 artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vibos-x86_64-iso
-          path: image/vibos-x86_64.iso
-
   summary:
     name: Build Summary
     needs: [build-and-test-arm64, build-x86_64]
@@ -188,7 +124,7 @@ jobs:
             echo "All builds passed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
-            echo "At least one build failed. Check the ARM64 trace output and Makefile lines around 281." >> "$GITHUB_STEP_SUMMARY"
+            echo "At least one build failed." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -227,11 +163,13 @@ jobs:
             lld \
             llvm
 
+      # ✅ x86 first (as requested)
       - name: Build x86_64 ISO
         run: |
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 image
 
+      # ✅ ARM64 after
       - name: Build ARM64 image
         run: |
           set -euxo pipefail
@@ -239,7 +177,6 @@ jobs:
 
       - name: Verify release files
         run: |
-          set -euxo pipefail
           ls -lh image/vibos-x86_64.iso
           file image/vibos-x86_64.iso
           ls -lh image/unixos.img
@@ -254,20 +191,18 @@ jobs:
 
           ## Build Status
 
-          - ARM64 build and image: success
-          - x86_64 build and ISO: success
+          - ARM64: success
+          - x86_64: success
 
           ## Bootable Media
 
-          - \`vibos-x86_64.iso\` - bootable x86_64 BIOS+UEFI ISO
-          - \`unixos.img\` - bootable ARM64 disk image
+          - \`vibos-x86_64.iso\`
+          - \`unixos.img\`
 
           ## Branch
-
           - \`${{ github.ref_name }}\`
 
           ## Commit
-
           - \`${{ github.sha }}\`
           EOF
 
