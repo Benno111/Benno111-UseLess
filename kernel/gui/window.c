@@ -4466,6 +4466,12 @@ static void draw_wallpaper(void) {
   int end_y = primary_display.height;
   int height = end_y - start_y;
   int width = primary_display.width;
+  uint32_t *target =
+      primary_display.backbuffer ? primary_display.backbuffer
+                                 : primary_display.framebuffer;
+
+  if (!target)
+    return;
 
   /* Check if we need to reload (wallpaper changed) */
   if (wallpaper_cached_idx != current_wallpaper) {
@@ -4487,8 +4493,7 @@ static void draw_wallpaper(void) {
     uint32_t scale_y = (img_h << 16) / height;
 
     for (int y = start_y; y < end_y; y++) {
-      uint32_t *line =
-          primary_display.backbuffer + y * (primary_display.pitch / 4);
+      uint32_t *line = target + y * (primary_display.pitch / 4);
       uint32_t src_y = ((y - start_y) * scale_y) >> 16;
       if (src_y >= img_h)
         src_y = img_h - 1;
@@ -4506,8 +4511,7 @@ static void draw_wallpaper(void) {
 
   /* Gradient wallpaper - use wallpaper_get_pixel */
   for (int y = start_y; y < end_y; y++) {
-    uint32_t *line =
-        primary_display.backbuffer + y * (primary_display.pitch / 4);
+    uint32_t *line = target + y * (primary_display.pitch / 4);
     uint32_t color = wallpaper_get_pixel(0, y - start_y, height);
 
     for (int x = 0; x < width; x++) {
@@ -5653,6 +5657,10 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
   /* Allocate backbuffer for double-buffering */
   primary_display.backbuffer = kmalloc(pitch * height);
+  if (!primary_display.backbuffer) {
+    printk(KERN_WARNING
+           "GUI: Backbuffer allocation failed, rendering directly to framebuffer\n");
+  }
 
   /* Clear windows */
   for (int i = 0; i < MAX_WINDOWS; i++) {
