@@ -24,13 +24,12 @@ jobs:
 
       - name: Set up build environment
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             ccache \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            qemu-system-arm \
-            qemu-system-x86 \
             make \
             lld \
             llvm \

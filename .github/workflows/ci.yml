@@ -18,15 +18,12 @@ jobs:
 
       - name: Set up ARM64 build environment
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             ccache \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            qemu-system-arm \
-            qemu-system-aarch64 \
-            qemu-efi-aarch64 \
-            qemu-utils \
             xorriso \
             make \
             lld \
@@ -56,11 +53,10 @@ jobs:
 
       - name: Set up x86_64 build environment
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             ccache \
-            qemu-system-x86 \
-            qemu-utils \
             xorriso \
             make \
             lld \
@@ -119,16 +115,12 @@ jobs:
 
       - name: Set up release build environment
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             ccache \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            qemu-system-x86 \
-            qemu-system-arm \
-            qemu-system-aarch64 \
-            qemu-efi-aarch64 \
-            qemu-utils \
             xorriso \
             make \
             lld \
