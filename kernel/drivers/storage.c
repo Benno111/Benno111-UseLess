@@ -23,6 +23,9 @@ typedef struct {
   uint8_t controller_index;
   uint8_t disk_index;
   uint32_t capacity_mib;
+  storage_disk_read_fn_t read_fn;
+  storage_disk_write_fn_t write_fn;
+  void *backend_ctx;
   char name[48];
   char location[24];
 } storage_disk_t;
@@ -31,6 +34,8 @@ typedef struct {
   int present;
   storage_partition_kind_t kind;
   uint32_t size_mib;
+  uint32_t start_lba;
+  uint32_t sector_count;
   char label[32];
 } storage_partition_t;
 
@@ -42,6 +47,12 @@ static int storage_controller_count = 0;
 static int storage_disk_count = 0;
 static int storage_kind_counts[STORAGE_KIND_APPLE_ANS + 1];
 static int storage_initialized = 0;
+
+static void storage_load_mbr_partitions(int disk_index);
+
+#define STORAGE_SECTOR_SIZE 512
+#define STORAGE_MBR_PARTITION_OFFSET 446
+#define STORAGE_MBR_SIGNATURE_OFFSET 510
 
 static void storage_copy_string(char *dst, const char *src, int max) {
   int i = 0;
@@ -191,6 +202,37 @@ static void storage_default_partition_label(char *buf, int max,
   }
 }
 
+static uint32_t storage_mib_to_sectors(uint32_t size_mib) {
+  return size_mib * 2048U;
+}
+
+static uint8_t storage_partition_mbr_type(storage_partition_kind_t kind) {
+  switch (kind) {
+  case STORAGE_PARTITION_EFI:
+    return 0xEF;
+  case STORAGE_PARTITION_SYSTEM:
+    return 0x83;
+  case STORAGE_PARTITION_DATA:
+    return 0x83;
+  case STORAGE_PARTITION_SWAP:
+    return 0x82;
+  default:
+    return 0x83;
+  }
+}
+
+static void storage_write_le32(uint8_t *dst, uint32_t value) {
+  dst[0] = (uint8_t)(value & 0xFF);
+  dst[1] = (uint8_t)((value >> 8) & 0xFF);
+  dst[2] = (uint8_t)((value >> 16) & 0xFF);
+  dst[3] = (uint8_t)((value >> 24) & 0xFF);
+}
+
+static uint32_t storage_read_le32(const uint8_t *src) {
+  return (uint32_t)src[0] | ((uint32_t)src[1] << 8) |
+         ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+}
+
 const char *storage_kind_name(storage_kind_t kind) {
   switch (kind) {
   case STORAGE_KIND_IDE:
@@ -326,11 +368,35 @@ static void storage_record_disk(storage_kind_t kind, int controller_index,
   disk->controller_index = (uint8_t)controller_index;
   disk->disk_index = (uint8_t)disk_index;
   disk->capacity_mib = storage_default_capacity_mib(kind);
+  disk->read_fn = NULL;
+  disk->write_fn = NULL;
+  disk->backend_ctx = NULL;
   storage_copy_string(disk->name, name, sizeof(disk->name));
   storage_copy_string(disk->location, location, sizeof(disk->location));
 
   printk(KERN_INFO "STORAGE: Registered disk %s at %s\n", disk->name,
          disk->location);
+  if (kind == STORAGE_KIND_IDE)
+    storage_load_mbr_partitions(storage_disk_count - 1);
+}
+
+static int storage_find_disk_by_location(const char *location) {
+  int i;
+
+  if (!location)
+    return -1;
+
+  for (i = 0; i < storage_disk_count; i++) {
+    int j = 0;
+    while (location[j] && storage_disks[i].location[j] &&
+           location[j] == storage_disks[i].location[j]) {
+      j++;
+    }
+    if (location[j] == '\0' && storage_disks[i].location[j] == '\0')
+      return i;
+  }
+
+  return -1;
 }
 
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
@@ -345,11 +411,107 @@ static int storage_ide_wait(uint16_t io_base, uint8_t mask, uint8_t value,
   return -1;
 }
 
+static int storage_ide_disk_geometry(const storage_disk_t *disk,
+                                     uint16_t *io_base,
+                                     uint8_t *drive_select) {
+  if (!disk || !io_base || !drive_select || disk->kind != STORAGE_KIND_IDE)
+    return -1;
+
+  switch (disk->disk_index) {
+  case 0:
+    *io_base = 0x1F0;
+    *drive_select = 0x00;
+    return 0;
+  case 1:
+    *io_base = 0x1F0;
+    *drive_select = 0x10;
+    return 0;
+  case 2:
+    *io_base = 0x170;
+    *drive_select = 0x00;
+    return 0;
+  case 3:
+    *io_base = 0x170;
+    *drive_select = 0x10;
+    return 0;
+  default:
+    return -1;
+  }
+}
+
+static int storage_ide_read_sector(const storage_disk_t *disk, uint32_t lba,
+                                   void *buffer) {
+  uint16_t io_base;
+  uint8_t drive_select;
+  int status;
+  uint16_t *words = (uint16_t *)buffer;
+
+  if (!buffer || storage_ide_disk_geometry(disk, &io_base, &drive_select) != 0)
+    return -1;
+  if (lba > 0x0FFFFFFF)
+    return -1;
+
+  outb(io_base + 6,
+       (uint8_t)(0xE0 | drive_select | ((lba >> 24) & 0x0F)));
+  io_wait();
+  outb(io_base + 1, 0);
+  outb(io_base + 2, 1);
+  outb(io_base + 3, (uint8_t)(lba & 0xFF));
+  outb(io_base + 4, (uint8_t)((lba >> 8) & 0xFF));
+  outb(io_base + 5, (uint8_t)((lba >> 16) & 0xFF));
+  outb(io_base + 7, 0x20);
+
+  status = storage_ide_wait(io_base, 0x88, 0x08, 100000);
+  if (status < 0 || (status & 0x01))
+    return -1;
+
+  for (int i = 0; i < 256; i++)
+    words[i] = inw(io_base);
+  return 0;
+}
+
+static int storage_ide_write_sector(const storage_disk_t *disk, uint32_t lba,
+                                    const void *buffer) {
+  uint16_t io_base;
+  uint8_t drive_select;
+  int status;
+  const uint16_t *words = (const uint16_t *)buffer;
+
+  if (!buffer || storage_ide_disk_geometry(disk, &io_base, &drive_select) != 0)
+    return -1;
+  if (lba > 0x0FFFFFFF)
+    return -1;
+
+  outb(io_base + 6,
+       (uint8_t)(0xE0 | drive_select | ((lba >> 24) & 0x0F)));
+  io_wait();
+  outb(io_base + 1, 0);
+  outb(io_base + 2, 1);
+  outb(io_base + 3, (uint8_t)(lba & 0xFF));
+  outb(io_base + 4, (uint8_t)((lba >> 8) & 0xFF));
+  outb(io_base + 5, (uint8_t)((lba >> 16) & 0xFF));
+  outb(io_base + 7, 0x30);
+
+  status = storage_ide_wait(io_base, 0x88, 0x08, 100000);
+  if (status < 0 || (status & 0x01))
+    return -1;
+
+  for (int i = 0; i < 256; i++)
+    outw(io_base, words[i]);
+  outb(io_base + 7, 0xE7);
+  status = storage_ide_wait(io_base, 0x80, 0x00, 100000);
+  if (status < 0 || (status & 0x01))
+    return -1;
+  return 0;
+}
+
 static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
-                                      uint8_t drive_select) {
+                                      uint8_t drive_select, uint8_t ide_index) {
   uint16_t identify[256];
   char location[24];
   int status;
+  uint32_t total_sectors;
+  int disk_slot;
 
   outb(io_base + 6, (uint8_t)(0xA0 | drive_select));
   io_wait();
@@ -380,17 +542,23 @@ static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
 
   location[0] = '\0';
   storage_append_location(location, sizeof(location), "hd", storage_disk_count);
-  storage_record_disk(STORAGE_KIND_IDE, controller_index, drive_select ? 1 : 0,
+  storage_record_disk(STORAGE_KIND_IDE, controller_index, ide_index,
                       "IDE Hard Disk", location);
+  total_sectors = (uint32_t)identify[60] | ((uint32_t)identify[61] << 16);
+  disk_slot = storage_find_disk_by_location(location);
+  if (disk_slot >= 0 && total_sectors > 0) {
+    storage_disks[disk_slot].capacity_mib =
+        total_sectors / 2048U ? total_sectors / 2048U : 1;
+  }
 }
 #endif
 
 static void storage_probe_ide_controller(int controller_index) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
-  storage_probe_ide_channel(controller_index, 0x1F0, 0x00);
-  storage_probe_ide_channel(controller_index, 0x1F0, 0x10);
-  storage_probe_ide_channel(controller_index, 0x170, 0x00);
-  storage_probe_ide_channel(controller_index, 0x170, 0x10);
+  storage_probe_ide_channel(controller_index, 0x1F0, 0x00, 0);
+  storage_probe_ide_channel(controller_index, 0x1F0, 0x10, 1);
+  storage_probe_ide_channel(controller_index, 0x170, 0x00, 2);
+  storage_probe_ide_channel(controller_index, 0x170, 0x10, 3);
 #else
   (void)controller_index;
 #endif
@@ -463,6 +631,163 @@ static void storage_probe_nvme_controller(int controller_index,
   storage_append_location(location, sizeof(location), "nvme", storage_disk_count);
   storage_record_disk(STORAGE_KIND_NVME, controller_index, 0, "NVMe Disk",
                       location);
+}
+
+static int storage_disk_read_sector(int disk_index, uint32_t lba, void *buffer) {
+  if (disk_index < 0 || disk_index >= storage_disk_count || !buffer)
+    return -1;
+
+  if (storage_disks[disk_index].read_fn) {
+    return storage_disks[disk_index].read_fn(lba, 1, buffer,
+                                             storage_disks[disk_index].backend_ctx);
+  }
+
+  switch (storage_disks[disk_index].kind) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  case STORAGE_KIND_IDE:
+    return storage_ide_read_sector(&storage_disks[disk_index], lba, buffer);
+#endif
+  default:
+    return -1;
+  }
+}
+
+static int storage_disk_write_sector(int disk_index, uint32_t lba,
+                                     const void *buffer) {
+  if (disk_index < 0 || disk_index >= storage_disk_count || !buffer)
+    return -1;
+
+  if (storage_disks[disk_index].write_fn) {
+    return storage_disks[disk_index].write_fn(
+        lba, 1, buffer, storage_disks[disk_index].backend_ctx);
+  }
+
+  switch (storage_disks[disk_index].kind) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  case STORAGE_KIND_IDE:
+    return storage_ide_write_sector(&storage_disks[disk_index], lba, buffer);
+#endif
+  default:
+    return -1;
+  }
+}
+
+static void storage_recompute_partition_layout(int disk_index) {
+  uint32_t next_lba = 2048;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present) {
+      storage_partitions[disk_index][i].start_lba = 0;
+      storage_partitions[disk_index][i].sector_count = 0;
+      continue;
+    }
+    storage_partitions[disk_index][i].start_lba = next_lba;
+    storage_partitions[disk_index][i].sector_count =
+        storage_mib_to_sectors(storage_partitions[disk_index][i].size_mib);
+    next_lba += storage_partitions[disk_index][i].sector_count;
+  }
+}
+
+static int storage_commit_mbr_partitions(int disk_index) {
+  uint8_t sector[STORAGE_SECTOR_SIZE];
+  int present_count = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present)
+      present_count++;
+  }
+  if (present_count > 4)
+    return -1;
+
+  storage_recompute_partition_layout(disk_index);
+  for (int i = 0; i < STORAGE_SECTOR_SIZE; i++)
+    sector[i] = 0;
+
+  for (int i = 0, entry = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    uint8_t *mbr_entry;
+    storage_partition_t *part;
+
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    part = &storage_partitions[disk_index][i];
+    mbr_entry = &sector[STORAGE_MBR_PARTITION_OFFSET + entry * 16];
+    mbr_entry[0] = (entry == 0 && part->kind == STORAGE_PARTITION_EFI) ? 0x80 : 0x00;
+    mbr_entry[1] = 0xFE;
+    mbr_entry[2] = 0xFF;
+    mbr_entry[3] = 0xFF;
+    mbr_entry[4] = storage_partition_mbr_type(part->kind);
+    mbr_entry[5] = 0xFE;
+    mbr_entry[6] = 0xFF;
+    mbr_entry[7] = 0xFF;
+    storage_write_le32(&mbr_entry[8], part->start_lba);
+    storage_write_le32(&mbr_entry[12], part->sector_count);
+    entry++;
+  }
+
+  sector[STORAGE_MBR_SIGNATURE_OFFSET] = 0x55;
+  sector[STORAGE_MBR_SIGNATURE_OFFSET + 1] = 0xAA;
+  return storage_disk_write_sector(disk_index, 0, sector);
+}
+
+static void storage_load_mbr_partitions(int disk_index) {
+  uint8_t sector[STORAGE_SECTOR_SIZE];
+  int part_slot = 0;
+
+  if (storage_disk_read_sector(disk_index, 0, sector) != 0)
+    return;
+  if (sector[STORAGE_MBR_SIGNATURE_OFFSET] != 0x55 ||
+      sector[STORAGE_MBR_SIGNATURE_OFFSET + 1] != 0xAA)
+    return;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    storage_partitions[disk_index][i].present = 0;
+    storage_partitions[disk_index][i].kind = STORAGE_PARTITION_UNKNOWN;
+    storage_partitions[disk_index][i].size_mib = 0;
+    storage_partitions[disk_index][i].start_lba = 0;
+    storage_partitions[disk_index][i].sector_count = 0;
+    storage_partitions[disk_index][i].label[0] = '\0';
+  }
+
+  for (int entry = 0; entry < 4 && part_slot < STORAGE_MAX_PARTITIONS; entry++) {
+    const uint8_t *mbr_entry = &sector[STORAGE_MBR_PARTITION_OFFSET + entry * 16];
+    uint8_t type = mbr_entry[4];
+    uint32_t start_lba = storage_read_le32(&mbr_entry[8]);
+    uint32_t sector_count = storage_read_le32(&mbr_entry[12]);
+    storage_partition_kind_t kind = STORAGE_PARTITION_UNKNOWN;
+    uint32_t size_mib;
+
+    if (type == 0 || sector_count == 0)
+      continue;
+    if (type == 0xEF)
+      kind = STORAGE_PARTITION_EFI;
+    else if (type == 0x82)
+      kind = STORAGE_PARTITION_SWAP;
+    else if (type == 0x83)
+      kind = (part_slot == 0 && start_lba <= 4096) ? STORAGE_PARTITION_SYSTEM
+                                                    : STORAGE_PARTITION_DATA;
+    else
+      kind = STORAGE_PARTITION_DATA;
+
+    size_mib = sector_count / 2048U;
+    if (size_mib == 0)
+      size_mib = 1;
+
+    storage_partitions[disk_index][part_slot].present = 1;
+    storage_partitions[disk_index][part_slot].kind = kind;
+    storage_partitions[disk_index][part_slot].size_mib = size_mib;
+    storage_partitions[disk_index][part_slot].start_lba = start_lba;
+    storage_partitions[disk_index][part_slot].sector_count = sector_count;
+    storage_default_partition_label(storage_partitions[disk_index][part_slot].label,
+                                    sizeof(storage_partitions[disk_index][part_slot].label),
+                                    kind, part_slot);
+    part_slot++;
+  }
 }
 
 static void storage_load_pci_driver(storage_kind_t kind, int controller_index,
@@ -561,6 +886,35 @@ void storage_register_disk_device(const char *name, storage_kind_t kind,
     storage_init();
 
   storage_record_disk(kind, 0xFF, storage_disk_count, name, location);
+}
+
+int storage_register_disk_backend(const char *location,
+                                  storage_disk_read_fn_t read_fn,
+                                  storage_disk_write_fn_t write_fn,
+                                  void *ctx) {
+  int disk_index;
+
+  if (!storage_initialized)
+    storage_init();
+
+  disk_index = storage_find_disk_by_location(location);
+  if (disk_index < 0)
+    return -1;
+
+  storage_disks[disk_index].read_fn = read_fn;
+  storage_disks[disk_index].write_fn = write_fn;
+  storage_disks[disk_index].backend_ctx = ctx;
+  if (read_fn)
+    storage_load_mbr_partitions(disk_index);
+  return 0;
+}
+
+int storage_disk_supports_partition_writes(int disk_index) {
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+  if (storage_disks[disk_index].write_fn)
+    return 1;
+  return storage_disks[disk_index].kind == STORAGE_KIND_IDE;
 }
 
 int storage_get_controller_count(void) { return storage_controller_count; }
@@ -725,6 +1079,7 @@ int storage_create_partition(int disk_index, storage_partition_kind_t kind,
   int slot;
   int ordinal = 0;
   char label[32];
+  storage_partition_t old_parts[STORAGE_MAX_PARTITIONS];
 
   if (disk_index < 0 || disk_index >= storage_disk_count)
     return -1;
@@ -737,6 +1092,9 @@ int storage_create_partition(int disk_index, storage_partition_kind_t kind,
   slot = storage_find_free_partition_slot(disk_index);
   if (slot < 0)
     return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++)
+    old_parts[i] = storage_partitions[disk_index][i];
 
   for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
     if (storage_partitions[disk_index][i].present &&
@@ -751,6 +1109,11 @@ int storage_create_partition(int disk_index, storage_partition_kind_t kind,
   storage_partitions[disk_index][slot].size_mib = size_mib;
   storage_copy_string(storage_partitions[disk_index][slot].label, label,
                       sizeof(storage_partitions[disk_index][slot].label));
+  if (storage_commit_mbr_partitions(disk_index) != 0) {
+    for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++)
+      storage_partitions[disk_index][i] = old_parts[i];
+    return -1;
+  }
   printk(KERN_INFO "STORAGE: Created %s partition on disk %s (%u MiB)\n",
          storage_partition_kind_name(kind), storage_disks[disk_index].location,
          size_mib);
@@ -763,9 +1126,13 @@ int storage_update_partition(int disk_index, int partition_index,
   int seen = 0;
   storage_partition_t *part = NULL;
   uint32_t used_without_part;
+  storage_partition_t old_parts[STORAGE_MAX_PARTITIONS];
 
   if (disk_index < 0 || disk_index >= storage_disk_count || size_mib == 0)
     return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++)
+    old_parts[i] = storage_partitions[disk_index][i];
 
   for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
     if (!storage_partitions[disk_index][i].present)
@@ -787,6 +1154,11 @@ int storage_update_partition(int disk_index, int partition_index,
   part->size_mib = size_mib;
   storage_default_partition_label(part->label, sizeof(part->label), kind,
                                   partition_index);
+  if (storage_commit_mbr_partitions(disk_index) != 0) {
+    for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++)
+      storage_partitions[disk_index][i] = old_parts[i];
+    return -1;
+  }
   printk(KERN_INFO "STORAGE: Updated partition %d on disk %s\n", partition_index,
          storage_disks[disk_index].location);
   return 0;
@@ -794,9 +1166,13 @@ int storage_update_partition(int disk_index, int partition_index,
 
 int storage_delete_partition(int disk_index, int partition_index) {
   int seen = 0;
+  storage_partition_t old_parts[STORAGE_MAX_PARTITIONS];
 
   if (disk_index < 0 || disk_index >= storage_disk_count)
     return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++)
+    old_parts[i] = storage_partitions[disk_index][i];
 
   for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
     if (!storage_partitions[disk_index][i].present)
@@ -805,7 +1181,14 @@ int storage_delete_partition(int disk_index, int partition_index) {
       storage_partitions[disk_index][i].present = 0;
       storage_partitions[disk_index][i].kind = STORAGE_PARTITION_UNKNOWN;
       storage_partitions[disk_index][i].size_mib = 0;
+      storage_partitions[disk_index][i].start_lba = 0;
+      storage_partitions[disk_index][i].sector_count = 0;
       storage_partitions[disk_index][i].label[0] = '\0';
+      if (storage_commit_mbr_partitions(disk_index) != 0) {
+        for (int j = 0; j < STORAGE_MAX_PARTITIONS; j++)
+          storage_partitions[disk_index][j] = old_parts[j];
+        return -1;
+      }
       printk(KERN_INFO "STORAGE: Deleted partition %d on disk %s\n",
              partition_index, storage_disks[disk_index].location);
       return 0;

@@ -23,12 +23,22 @@ typedef enum {
   STORAGE_PARTITION_SWAP
 } storage_partition_kind_t;
 
+typedef int (*storage_disk_read_fn_t)(uint64_t lba, uint32_t count,
+                                      void *buffer, void *ctx);
+typedef int (*storage_disk_write_fn_t)(uint64_t lba, uint32_t count,
+                                       const void *buffer, void *ctx);
+
 void storage_init(void);
 void storage_register_pci_controller(pci_device_t *dev);
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
                                           const char *bus_name);
 void storage_register_disk_device(const char *name, storage_kind_t kind,
                                   const char *location);
+int storage_register_disk_backend(const char *location,
+                                  storage_disk_read_fn_t read_fn,
+                                  storage_disk_write_fn_t write_fn,
+                                  void *ctx);
+int storage_disk_supports_partition_writes(int disk_index);
 
 int storage_get_controller_count(void);
 int storage_get_kind_count(storage_kind_t kind);

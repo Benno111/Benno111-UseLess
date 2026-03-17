@@ -41,6 +41,7 @@ static void open_partition_manager_window(int x, int y);
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
 static void partition_manager_refresh_partitions(void);
+static void installer_ensure_parent_dirs(const char *path);
 void compositor_mark_full_redraw(void);
 
 
@@ -1083,6 +1084,29 @@ static struct window windows[MAX_WINDOWS];
 static struct window *window_stack = NULL; /* Z-order, top is focused */
 static struct window *focused_window = NULL;
 static int next_window_id = 1;
+
+static int window_title_equals(const struct window *win, const char *title) {
+  int i = 0;
+
+  if (!win || !title)
+    return 0;
+
+  while (win->title[i] && title[i]) {
+    if (win->title[i] != title[i])
+      return 0;
+    i++;
+  }
+
+  return win->title[i] == '\0' && title[i] == '\0';
+}
+
+static int window_close_disabled(const struct window *win) {
+  return gui_is_installer_mode() && window_title_equals(win, "Installer");
+}
+
+static int window_minimize_disabled(const struct window *win) {
+  return gui_is_installer_mode() && window_title_equals(win, "Installer");
+}
 
 static void build_windows_string(char *buf) {
   int idx = 0;
@@ -2435,6 +2459,7 @@ static int installer_try_make_dir(const char *path) {
     vfs_close(existing);
     return 0;
   }
+  installer_ensure_parent_dirs(path);
   return vfs_mkdir(path, 0755);
 }
 
@@ -2876,6 +2901,7 @@ static void open_partition_manager_window(int x, int y) {
 
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h) {
+  extern int storage_disk_supports_partition_writes(int disk_index);
   installer_refresh_disk_inventory();
   partition_manager_refresh_partitions();
 
@@ -2886,6 +2912,11 @@ static void draw_partition_manager_window(int content_x, int content_y,
   gui_draw_string(content_x + 24, content_y + 44,
                   "Create, edit, delete, and auto-layout partitions.",
                   0xCDD6F4, 0x232337);
+  gui_draw_string(content_x + 24, content_y + 58,
+                  storage_disk_supports_partition_writes(installer_selected_disk)
+                      ? "Selected disk supports on-disk partition writes."
+                      : "Selected disk has no real partition-write backend yet.",
+                  0xF9E2AF, 0x232337);
 
   gui_draw_string(content_x + 24, content_y + 76, "Detected disks", 0x89B4FA,
                   0x232337);
@@ -3657,19 +3688,32 @@ static void draw_window(struct window *win) {
     int btn_r = 6;                                       /* Button radius */
 
     /* Close button - Red */
-    draw_circle(btn_cx, btn_cy, btn_r, COLOR_BTN_CLOSE);
-    /* Draw X icon */
-    for (int i = -2; i <= 2; i++) {
-      draw_pixel(btn_cx + i, btn_cy + i, 0x7F1D1D);
-      draw_pixel(btn_cx + i, btn_cy - i, 0x7F1D1D);
+    if (window_close_disabled(win)) {
+      draw_circle(btn_cx, btn_cy, btn_r, 0x6B7280);
+      for (int i = -2; i <= 2; i++) {
+        draw_pixel(btn_cx + i, btn_cy + i, 0x374151);
+        draw_pixel(btn_cx + i, btn_cy - i, 0x374151);
+      }
+    } else {
+      draw_circle(btn_cx, btn_cy, btn_r, COLOR_BTN_CLOSE);
+      for (int i = -2; i <= 2; i++) {
+        draw_pixel(btn_cx + i, btn_cy + i, 0x7F1D1D);
+        draw_pixel(btn_cx + i, btn_cy - i, 0x7F1D1D);
+      }
     }
 
     /* Minimize button - Amber */
     btn_cx += 18;
-    draw_circle(btn_cx, btn_cy, btn_r, COLOR_BTN_MINIMIZE);
-    /* Draw - icon */
-    for (int i = -2; i <= 2; i++) {
-      draw_pixel(btn_cx + i, btn_cy, 0x78350F);
+    if (window_minimize_disabled(win)) {
+      draw_circle(btn_cx, btn_cy, btn_r, 0x6B7280);
+      for (int i = -2; i <= 2; i++) {
+        draw_pixel(btn_cx + i, btn_cy, 0x374151);
+      }
+    } else {
+      draw_circle(btn_cx, btn_cy, btn_r, COLOR_BTN_MINIMIZE);
+      for (int i = -2; i <= 2; i++) {
+        draw_pixel(btn_cx + i, btn_cy, 0x78350F);
+      }
     }
 
     /* Zoom button - Green */
@@ -6191,7 +6235,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int close_cx = win->x + BORDER_WIDTH + 18;
         if ((x - close_cx) * (x - close_cx) + (y - btn_cy) * (y - btn_cy) <=
             btn_r * btn_r) {
-          gui_destroy_window(win);
+          if (!window_close_disabled(win))
+            gui_destroy_window(win);
           return;
         }
 
@@ -6199,8 +6244,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int min_cx = close_cx + 20;
         if ((x - min_cx) * (x - min_cx) + (y - btn_cy) * (y - btn_cy) <=
             btn_r * btn_r) {
-          win->visible = false;
-          win->state = WINDOW_MINIMIZED;
+          if (!window_minimize_disabled(win)) {
+            win->visible = false;
+            win->state = WINDOW_MINIMIZED;
+          }
           return;
         }
 
