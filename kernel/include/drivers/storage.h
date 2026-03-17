@@ -19,6 +19,8 @@ void storage_init(void);
 void storage_register_pci_controller(pci_device_t *dev);
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
                                           const char *bus_name);
+void storage_register_disk_device(const char *name, storage_kind_t kind,
+                                  const char *location);
 
 int storage_get_controller_count(void);
 int storage_get_kind_count(storage_kind_t kind);

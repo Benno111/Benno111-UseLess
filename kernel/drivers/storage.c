@@ -90,12 +90,6 @@ static void storage_append_decimal(char *dst, int max, int value) {
   dst[idx] = '\0';
 }
 
-static void storage_append_location(char *buf, int max, const char *prefix,
-                                    int value) {
-  storage_append_string(buf, max, prefix);
-  storage_append_decimal(buf, max, value);
-}
-
 const char *storage_kind_name(storage_kind_t kind) {
   switch (kind) {
   case STORAGE_KIND_IDE:
@@ -211,9 +205,9 @@ static int storage_disk_exists(const char *name, const char *location) {
   return 0;
 }
 
-static void storage_register_disk(storage_kind_t kind, int controller_index,
-                                  int disk_index, const char *name,
-                                  const char *location) {
+static void storage_record_disk(storage_kind_t kind, int controller_index,
+                                int disk_index, const char *name,
+                                const char *location) {
   storage_disk_t *disk;
 
   if (!name || !location)
@@ -232,55 +226,6 @@ static void storage_register_disk(storage_kind_t kind, int controller_index,
 
   printk(KERN_INFO "STORAGE: Registered disk %s at %s\n", disk->name,
          disk->location);
-}
-
-static void storage_seed_disks_for_controller(int controller_index) {
-  storage_controller_t *ctrl;
-  char disk_name[48];
-  char location[24];
-
-  if (controller_index < 0 || controller_index >= storage_controller_count)
-    return;
-
-  ctrl = &storage_controllers[controller_index];
-  disk_name[0] = '\0';
-  location[0] = '\0';
-
-  switch (ctrl->kind) {
-  case STORAGE_KIND_IDE:
-    storage_copy_string(disk_name, "IDE Hard Disk", sizeof(disk_name));
-    storage_append_location(location, sizeof(location), "ata", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
-    storage_copy_string(disk_name, "IDE Hard Disk", sizeof(disk_name));
-    location[0] = '\0';
-    storage_append_location(location, sizeof(location), "ata", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 1, disk_name, location);
-    break;
-  case STORAGE_KIND_AHCI:
-  case STORAGE_KIND_SATA:
-    storage_copy_string(disk_name, "SATA Hard Disk", sizeof(disk_name));
-    storage_append_location(location, sizeof(location), "sd", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
-    break;
-  case STORAGE_KIND_NVME:
-  case STORAGE_KIND_APPLE_ANS:
-    storage_copy_string(disk_name, "NVMe Disk", sizeof(disk_name));
-    storage_append_location(location, sizeof(location), "nvme", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
-    break;
-  case STORAGE_KIND_USB_MASS_STORAGE:
-    storage_copy_string(disk_name, "USB Hard Disk", sizeof(disk_name));
-    storage_append_location(location, sizeof(location), "usb", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
-    break;
-  case STORAGE_KIND_RAID:
-    storage_copy_string(disk_name, "RAID Volume", sizeof(disk_name));
-    storage_append_location(location, sizeof(location), "md", storage_disk_count);
-    storage_register_disk(ctrl->kind, controller_index, 0, disk_name, location);
-    break;
-  default:
-    break;
-  }
 }
 
 void storage_init(void) {
@@ -318,7 +263,6 @@ void storage_register_pci_controller(pci_device_t *dev) {
   name = storage_kind_name(kind);
   storage_record_controller(kind, dev->vendor_id, dev->device_id, dev->bus,
                             dev->slot, dev->func, name, "pci");
-  storage_seed_disks_for_controller(storage_controller_count - 1);
 }
 
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
@@ -327,7 +271,14 @@ void storage_register_platform_controller(const char *name, storage_kind_t kind,
     storage_init();
 
   storage_record_controller(kind, 0, 0, 0xFF, 0xFF, 0xFF, name, bus_name);
-  storage_seed_disks_for_controller(storage_controller_count - 1);
+}
+
+void storage_register_disk_device(const char *name, storage_kind_t kind,
+                                  const char *location) {
+  if (!storage_initialized)
+    storage_init();
+
+  storage_record_disk(kind, 0xFF, storage_disk_count, name, location);
 }
 
 int storage_get_controller_count(void) { return storage_controller_count; }

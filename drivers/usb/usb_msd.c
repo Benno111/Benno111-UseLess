@@ -52,6 +52,8 @@ int usb_msd_init(struct usb_device *dev) {
   printk(KERN_INFO "USB-MSD: Initializing Mass Storage Device\n");
   storage_register_platform_controller("USB Mass Storage",
                                        STORAGE_KIND_USB_MASS_STORAGE, "usb");
+  storage_register_disk_device("USB Mass Storage Disk",
+                               STORAGE_KIND_USB_MASS_STORAGE, "usb0");
   return 0;
 }
 

@@ -2528,6 +2528,10 @@ static int installer_install_system_image(void) {
   char summary[96];
 
   installer_refresh_disk_inventory();
+  if (installer_disk_count <= 0) {
+    installer_set_status("Install blocked. No real target disk is available.");
+    return -1;
+  }
   load_system_app_catalog();
   ensure_gui_app_dirs();
 
@@ -2682,9 +2686,10 @@ static void installer_refresh_disk_inventory(void) {
   }
 
   if (installer_disk_count == 0) {
-    str_copy_safe(installer_disk_labels[0], "Auto persistent target",
+    str_copy_safe(installer_disk_labels[0], "No real disks detected",
                   sizeof(installer_disk_labels[0]));
-    installer_disk_count = 1;
+    installer_selected_disk = 0;
+    return;
   }
 
   if (installer_selected_disk >= installer_disk_count)
@@ -2695,8 +2700,10 @@ static void installer_refresh_disk_inventory(void) {
 
 static const char *installer_selected_disk_label(void) {
   installer_refresh_disk_inventory();
+  if (installer_disk_count == 0)
+    return "No real disks detected";
   if (installer_selected_disk < 0 || installer_selected_disk >= installer_disk_count)
-    return "Auto persistent target";
+    return "No real disks detected";
   return installer_disk_labels[installer_selected_disk];
 }
 
