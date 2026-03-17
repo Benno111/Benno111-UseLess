@@ -6210,10 +6210,6 @@ static void image_viewer_on_draw(struct window *win) {
   int btn_y = tb_y + (tb_h - btn_size) / 2;
   int btn_x = tb_x + 16;
 
-  /* Button icons (using ASCII for now) */
-  const char *icons[] = {"<", ">", "R", "L", "+", "-", "F", "X"};
-  const char *labels[] = {"Prev",  "Next",  "Rot R", "Rot L",
-                          "Zoom+", "Zoom-", "Fit",   "Full"};
   uint32_t btn_bg = 0x374151;
   uint32_t btn_hover = 0x4B5563;
   uint32_t icon_color = 0xE5E7EB;
@@ -6306,7 +6302,7 @@ static void image_viewer_on_draw(struct window *win) {
     if (rot >= 10)
       info[idx++] = '0' + (rot / 10) % 10;
     info[idx++] = '0' + rot % 10;
-    info[idx++] = 176; /* degree symbol approximation */
+    info[idx++] = (char)176; /* degree symbol approximation */
   }
   info[idx] = '\0';
 

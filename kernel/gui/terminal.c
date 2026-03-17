@@ -444,6 +444,8 @@ static void build_path(struct terminal *term, const char *input, char *out,
 /* Helper for ls command */
 static int ls_callback(void *ctx, const char *name, int len, loff_t offset,
                        ino_t ino, unsigned type) {
+  (void)offset;
+  (void)ino;
   struct terminal *term = (struct terminal *)ctx;
 
   char buf[256];
