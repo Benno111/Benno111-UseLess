@@ -371,6 +371,31 @@ static void storage_probe_nvme_controller(int controller_index,
                       location);
 }
 
+static void storage_load_pci_driver(storage_kind_t kind, int controller_index,
+                                    pci_device_t *dev) {
+  switch (kind) {
+  case STORAGE_KIND_IDE:
+    printk(KERN_INFO "STORAGE: Loading IDE driver for %02x:%02x.%x\n", dev->bus,
+           dev->slot, dev->func);
+    storage_probe_ide_controller(controller_index);
+    break;
+  case STORAGE_KIND_AHCI:
+    printk(KERN_INFO "STORAGE: Loading AHCI driver for %02x:%02x.%x\n",
+           dev->bus, dev->slot, dev->func);
+    pci_enable_device(dev);
+    storage_probe_ahci_controller(controller_index, dev);
+    break;
+  case STORAGE_KIND_NVME:
+    printk(KERN_INFO "STORAGE: Loading NVMe driver for %02x:%02x.%x\n",
+           dev->bus, dev->slot, dev->func);
+    pci_enable_device(dev);
+    storage_probe_nvme_controller(controller_index, dev);
+    break;
+  default:
+    break;
+  }
+}
+
 void storage_init(void) {
   if (storage_initialized)
     return;
@@ -393,6 +418,8 @@ void storage_init(void) {
 void storage_register_pci_controller(pci_device_t *dev) {
   storage_kind_t kind;
   const char *name;
+  int existing_index;
+  int planned_index;
   int controller_index;
 
   if (!storage_initialized)
@@ -405,28 +432,24 @@ void storage_register_pci_controller(pci_device_t *dev) {
     return;
 
   name = storage_kind_name(kind);
-  controller_index = storage_record_controller(kind, dev->vendor_id,
-                                               dev->device_id, dev->bus,
-                                               dev->slot, dev->func, name,
-                                               "pci");
+  existing_index =
+      storage_find_controller_index(kind, dev->bus, dev->slot, dev->func, name);
+  if (existing_index >= 0) {
+    controller_index = existing_index;
+  } else {
+    if (storage_controller_count >= STORAGE_MAX_CONTROLLERS)
+      return;
+    planned_index = storage_controller_count;
+    storage_load_pci_driver(kind, planned_index, dev);
+    controller_index = storage_record_controller(kind, dev->vendor_id,
+                                                 dev->device_id, dev->bus,
+                                                 dev->slot, dev->func, name,
+                                                 "pci");
+    return;
+  }
   if (controller_index < 0)
     return;
-
-  switch (kind) {
-  case STORAGE_KIND_IDE:
-    storage_probe_ide_controller(controller_index);
-    break;
-  case STORAGE_KIND_AHCI:
-    pci_enable_device(dev);
-    storage_probe_ahci_controller(controller_index, dev);
-    break;
-  case STORAGE_KIND_NVME:
-    pci_enable_device(dev);
-    storage_probe_nvme_controller(controller_index, dev);
-    break;
-  default:
-    break;
-  }
+  storage_load_pci_driver(kind, controller_index, dev);
 }
 
 void storage_register_platform_controller(const char *name, storage_kind_t kind,
