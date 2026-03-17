@@ -200,6 +200,8 @@ static struct limine_framebuffer *g_fb = 0;
 static void *g_rsdp = 0;
 static uint64_t g_hhdm_offset = 0;
 static const char *g_kernel_cmdline = 0;
+static void *g_kernel_file_addr = 0;
+static uint64_t g_kernel_file_size = 0;
 
 /* ========== Framebuffer Info for kernel ========== */
 
@@ -220,6 +222,10 @@ void *limine_get_rsdp(void) { return g_rsdp; }
 uint64_t limine_get_hhdm_offset(void) { return g_hhdm_offset; }
 
 const char *limine_get_kernel_cmdline(void) { return g_kernel_cmdline; }
+
+void *limine_get_kernel_file_addr(void) { return g_kernel_file_addr; }
+
+uint64_t limine_get_kernel_file_size(void) { return g_kernel_file_size; }
 
 /* ========== Direct Screen Test ========== */
 
@@ -333,6 +339,8 @@ void _start(void) {
     }
     if (kernel_file_request.response && kernel_file_request.response->kernel_file) {
         g_kernel_cmdline = kernel_file_request.response->kernel_file->cmdline;
+        g_kernel_file_addr = kernel_file_request.response->kernel_file->address;
+        g_kernel_file_size = kernel_file_request.response->kernel_file->size;
     }
 
     serial_puts("Framebuffer acquired:\n");
