@@ -2137,23 +2137,26 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                   "This ISO boots directly into the installer environment.",
                   0xCDD6F4, 0x232337);
   gui_draw_string(card_x + 18, card_y + 66,
-                  "The dock is disabled while running from this USB image.",
+                  "It also carries a bundled system image payload to install.",
                   0xA6ADC8, 0x232337);
   gui_draw_string(card_x + 18, card_y + 102, "Install actions:",
                   0x89B4FA, 0x232337);
   gui_draw_string(card_x + 30, card_y + 124,
-                  "- seeds /System/Apps manifests", 0xE5E7EB, 0x232337);
+                  "- installs the bundled system image", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, card_y + 144,
-                  "- writes /System/dock.cfg defaults", 0xE5E7EB, 0x232337);
+                  "- seeds /System/Apps manifests", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, card_y + 164,
-                  "- creates /Applications and desktop shortcuts", 0xE5E7EB,
+                  "- writes /System/dock.cfg defaults", 0xE5E7EB,
                   0x232337);
   gui_draw_string(card_x + 30, card_y + 184,
+                  "- creates /Applications and desktop shortcuts", 0xE5E7EB,
+                  0x232337);
+  gui_draw_string(card_x + 30, card_y + 204,
                   "- mirrors to persistent disk mounts when available",
                   0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 210, "Status:", 0x89B4FA, 0x232337);
-  gui_draw_rect(card_x + 18, card_y + 230, card_w - 36, 34, 0x1B1B2B);
-  gui_draw_string(card_x + 28, card_y + 241, installer_status, 0xFFFFFF,
+  gui_draw_string(card_x + 18, card_y + 230, "Status:", 0x89B4FA, 0x232337);
+  gui_draw_rect(card_x + 18, card_y + 250, card_w - 36, 34, 0x1B1B2B);
+  gui_draw_string(card_x + 28, card_y + 261, installer_status, 0xFFFFFF,
                   0x1B1B2B);
 
   gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);

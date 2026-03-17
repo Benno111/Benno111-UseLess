@@ -183,7 +183,15 @@ static void start_x86_64_bringup(void) {
   acpi_init(limine_get_rsdp());
   populate_seed_filesystem();
   storage_init();
-  pci_init();
+  /*
+   * Keep x86_64 bring-up conservative: the generic PCI path is still tied to
+   * assumptions that are not reliable across all Limine/QEMU/real-hardware
+   * boots, and bad ECAM/MMIO probing here can destabilize boot before the GUI
+   * is up. Leave storage/platform init on, but defer PCI enumeration until the
+   * x86_64 PCI path is made platform-aware.
+   */
+  printk(KERN_WARNING
+         "x86_64: PCI probe deferred during early bring-up for boot stability\n");
 
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
   if (gui_init(fb_buffer, fb_width, fb_height,

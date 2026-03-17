@@ -11,6 +11,7 @@ ISO_ROOT="${BUILD_DIR}/iso_root"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
 LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
+INSTALL_ROOT="${ISO_ROOT}/install/system-image"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -49,10 +50,14 @@ log "Preparing ISO root at $ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
+mkdir -p "$INSTALL_ROOT/boot"
+mkdir -p "$INSTALL_ROOT/limine"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
     cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
+    mkdir -p "$INSTALL_ROOT/assets"
+    cp -R "${BUILD_DIR}/assets"/. "$INSTALL_ROOT/assets/"
 fi
 
 # Keep both names so the ISO matches the embedded config and the repo's
@@ -63,11 +68,35 @@ cp "$LIMINE_CFG" "$ISO_ROOT/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/boot/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/limine/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/EFI/BOOT/limine.conf"
+cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/kernel.elf"
+cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/vibos.elf"
+cp "$LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
+cp "$LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
+cp "$LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
 
 cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
+
+cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
+OS next stage System Image
+
+This ISO contains:
+- a bootable installer environment
+- a bundled system image payload at /install/system-image
+
+Primary payload files:
+- /install/system-image/boot/kernel.elf
+- /install/system-image/boot/vibos.elf
+- /install/system-image/limine.conf
+
+If present, repo assets are mirrored under:
+- /install/system-image/assets
+
+The installer GUI boots from the top-level ISO files and installs the bundled
+desktop/system layout represented by this image payload.
+EOF
 
 ISO_PATH="${IMAGE_DIR}/${ISO_NAME}"
 rm -f "$ISO_PATH"
@@ -109,6 +138,10 @@ require_iso_path "/EFI/BOOT/BOOTX64.EFI"
 require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
+require_iso_path "/install/system-image/boot/kernel.elf"
+require_iso_path "/install/system-image/boot/vibos.elf"
+require_iso_path "/install/system-image/limine.conf"
+require_iso_path "/install/system-image/IMAGE_INFO.txt"
 
 log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
