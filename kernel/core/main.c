@@ -178,13 +178,13 @@ static void start_x86_64_bringup(void) {
   arch_timer_init();
   vfs_init();
   ramfs_init();
-  storage_init();
-  pci_init();
   if (vfs_mount("ramfs", "/", "ramfs", 0, NULL) != 0) {
     panic("Failed to mount x86_64 root filesystem!");
   }
   acpi_init(limine_get_rsdp());
   populate_seed_filesystem();
+  storage_init();
+  pci_init();
 
   printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
   if (gui_init(fb_buffer, fb_width, fb_height,
