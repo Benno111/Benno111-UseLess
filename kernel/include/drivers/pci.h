@@ -74,30 +74,34 @@ void pci_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
 /* Added helper functions for GPU/virtio drivers */
 static inline uint8_t pci_read8(uint8_t bus, uint8_t slot, uint8_t func,
                                 uint16_t offset) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) | offset;
-  return *(volatile uint8_t *)addr;
+  uint32_t value = pci_read32(bus, slot, func, (uint8_t)(offset & ~0x3));
+  return (uint8_t)((value >> ((offset & 0x3) * 8)) & 0xFF);
 }
 
 static inline uint16_t pci_read16(uint8_t bus, uint8_t slot, uint8_t func,
                                   uint16_t offset) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) | offset;
-  return *(volatile uint16_t *)addr;
+  uint32_t value = pci_read32(bus, slot, func, (uint8_t)(offset & ~0x3));
+  return (uint16_t)((value >> ((offset & 0x2) * 8)) & 0xFFFF);
 }
 
 static inline void pci_write8(uint8_t bus, uint8_t slot, uint8_t func,
                               uint16_t offset, uint8_t value) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) | offset;
-  *(volatile uint8_t *)addr = value;
+  uint8_t aligned = (uint8_t)(offset & ~0x3);
+  uint32_t shift = (offset & 0x3) * 8;
+  uint32_t current = pci_read32(bus, slot, func, aligned);
+  current &= ~(0xFFU << shift);
+  current |= ((uint32_t)value << shift);
+  pci_write32(bus, slot, func, aligned, current);
 }
 
 static inline void pci_write16(uint8_t bus, uint8_t slot, uint8_t func,
                                uint16_t offset, uint16_t value) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) | offset;
-  *(volatile uint16_t *)addr = value;
+  uint8_t aligned = (uint8_t)(offset & ~0x3);
+  uint32_t shift = (offset & 0x2) * 8;
+  uint32_t current = pci_read32(bus, slot, func, aligned);
+  current &= ~(0xFFFFU << shift);
+  current |= ((uint32_t)value << shift);
+  pci_write32(bus, slot, func, aligned, current);
 }
 
 /* Enable device memory and bus mastering */

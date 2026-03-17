@@ -141,9 +141,9 @@ static storage_kind_t storage_classify_pci(const pci_device_t *dev) {
   return STORAGE_KIND_UNKNOWN;
 }
 
-static int storage_controller_exists(storage_kind_t kind, uint8_t bus,
-                                     uint8_t slot, uint8_t func,
-                                     const char *name) {
+static int storage_find_controller_index(storage_kind_t kind, uint8_t bus,
+                                         uint8_t slot, uint8_t func,
+                                         const char *name) {
   for (int i = 0; i < storage_controller_count; i++) {
     storage_controller_t *ctrl = &storage_controllers[i];
     if (name && ctrl->bus_name[0] && ctrl->bus == 0xFF && ctrl->slot == 0xFF &&
@@ -152,28 +152,30 @@ static int storage_controller_exists(storage_kind_t kind, uint8_t bus,
       while (name[j] && ctrl->name[j] && name[j] == ctrl->name[j])
         j++;
       if (name[j] == '\0' && ctrl->name[j] == '\0')
-        return 1;
+        return i;
     }
     if (ctrl->kind == kind && ctrl->bus == bus && ctrl->slot == slot &&
         ctrl->func == func) {
-      return 1;
+      return i;
     }
   }
-  return 0;
+  return -1;
 }
 
-static void storage_record_controller(storage_kind_t kind, uint16_t vendor,
-                                      uint16_t device, uint8_t bus,
-                                      uint8_t slot, uint8_t func,
-                                      const char *name, const char *bus_name) {
+static int storage_record_controller(storage_kind_t kind, uint16_t vendor,
+                                     uint16_t device, uint8_t bus,
+                                     uint8_t slot, uint8_t func,
+                                     const char *name, const char *bus_name) {
   storage_controller_t *ctrl;
+  int existing;
 
   if (kind <= STORAGE_KIND_UNKNOWN || kind > STORAGE_KIND_APPLE_ANS)
-    return;
+    return -1;
+  existing = storage_find_controller_index(kind, bus, slot, func, name);
+  if (existing >= 0)
+    return existing;
   if (storage_controller_count >= STORAGE_MAX_CONTROLLERS)
-    return;
-  if (storage_controller_exists(kind, bus, slot, func, name))
-    return;
+    return -1;
 
   ctrl = &storage_controllers[storage_controller_count++];
   ctrl->kind = kind;
@@ -190,6 +192,7 @@ static void storage_record_controller(storage_kind_t kind, uint16_t vendor,
 
   printk(KERN_INFO "STORAGE: Registered %s controller via %s\n", ctrl->name,
          ctrl->bus_name);
+  return storage_controller_count - 1;
 }
 
 static int storage_disk_exists(const char *name, const char *location) {
@@ -402,9 +405,12 @@ void storage_register_pci_controller(pci_device_t *dev) {
     return;
 
   name = storage_kind_name(kind);
-  storage_record_controller(kind, dev->vendor_id, dev->device_id, dev->bus,
-                            dev->slot, dev->func, name, "pci");
-  controller_index = storage_controller_count - 1;
+  controller_index = storage_record_controller(kind, dev->vendor_id,
+                                               dev->device_id, dev->bus,
+                                               dev->slot, dev->func, name,
+                                               "pci");
+  if (controller_index < 0)
+    return;
 
   switch (kind) {
   case STORAGE_KIND_IDE:
@@ -428,7 +434,8 @@ void storage_register_platform_controller(const char *name, storage_kind_t kind,
   if (!storage_initialized)
     storage_init();
 
-  storage_record_controller(kind, 0, 0, 0xFF, 0xFF, 0xFF, name, bus_name);
+  (void)storage_record_controller(kind, 0, 0, 0xFF, 0xFF, 0xFF, name,
+                                  bus_name);
 }
 
 void storage_register_disk_device(const char *name, storage_kind_t kind,
