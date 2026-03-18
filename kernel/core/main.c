@@ -40,10 +40,6 @@ static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
-
-#ifdef ARCH_X86_64
-#include "installer_payload.h"
-#endif
 static void keyboard_handler(int key);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
@@ -375,6 +371,14 @@ static void populate_installer_payload(void) {
   extern int boot_is_installer_mode(void);
   extern void *limine_get_kernel_file_addr(void);
   extern uint64_t limine_get_kernel_file_size(void);
+  extern const unsigned char installer_payload_bootx64_efi[];
+  extern const unsigned char installer_payload_bootx64_efi_end[];
+  extern const unsigned char installer_payload_limine_bios_sys[];
+  extern const unsigned char installer_payload_limine_bios_sys_end[];
+  extern const unsigned char installer_payload_limine_bios_cd_bin[];
+  extern const unsigned char installer_payload_limine_bios_cd_bin_end[];
+  extern const unsigned char installer_payload_limine_uefi_cd_bin[];
+  extern const unsigned char installer_payload_limine_uefi_cd_bin_end[];
   static const char *installed_limine_cfg =
       "# Limine Configuration File\n"
       "# OS next stage x64\n"
@@ -385,13 +389,33 @@ static void populate_installer_payload(void) {
       "/OS next stage\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n";
+  static const char *installer_limine_cfg =
+      "# Limine Configuration File\n"
+      "# OS next stage x64 installer ISO\n"
+      "\n"
+      "timeout: 0\n"
+      "default_entry: 1\n"
+      "\n"
+      "/OS next stage Installer\n"
+      "    protocol: limine\n"
+      "    kernel_path: boot():/boot/main.sys\n"
+      "    cmdline: boot=usb mode=installer\n";
   static const char *image_info =
       "OS next stage System Image\n"
       "\n"
       "This installer boot seeds a bundled system image at\n"
       "/install/system-image so the GUI installer can copy it to disk.\n";
+  static const char *setup_info =
+      "OS next stage Installer Media\n"
+      "\n"
+      "This directory mirrors the bootable installer media contents while\n"
+      "running in setup mode.\n";
   const uint8_t *kernel_image;
   size_t kernel_size;
+  size_t bootx64_efi_size;
+  size_t limine_bios_sys_size;
+  size_t limine_bios_cd_size;
+  size_t limine_uefi_cd_size;
 
   if (!boot_is_installer_mode())
     return;
@@ -402,8 +426,41 @@ static void populate_installer_payload(void) {
     printk(KERN_ERR "INSTALL: kernel image unavailable for installer payload\n");
     return;
   }
+  bootx64_efi_size = (size_t)(installer_payload_bootx64_efi_end -
+                              installer_payload_bootx64_efi);
+  limine_bios_sys_size = (size_t)(installer_payload_limine_bios_sys_end -
+                                  installer_payload_limine_bios_sys);
+  limine_bios_cd_size = (size_t)(installer_payload_limine_bios_cd_bin_end -
+                                 installer_payload_limine_bios_cd_bin);
+  limine_uefi_cd_size = (size_t)(installer_payload_limine_uefi_cd_bin_end -
+                                 installer_payload_limine_uefi_cd_bin);
 
-  if (media_install_file("/install/system-image/boot/main.sys", kernel_image,
+  if (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
+          0 ||
+      media_install_file("/setup/boot/bootloader.sys", kernel_image,
+                         kernel_size) != 0 ||
+      media_install_text_file("/setup/limine.conf", installer_limine_cfg) !=
+          0 ||
+      media_install_text_file("/setup/boot/limine.conf", installer_limine_cfg) !=
+          0 ||
+      media_install_text_file("/setup/limine/limine.conf",
+                              installer_limine_cfg) != 0 ||
+      media_install_text_file("/setup/EFI/BOOT/limine.conf",
+                              installer_limine_cfg) != 0 ||
+      media_install_file("/setup/boot/limine-bios.sys",
+                         installer_payload_limine_bios_sys,
+                         limine_bios_sys_size) != 0 ||
+      media_install_file("/setup/boot/limine-bios-cd.bin",
+                         installer_payload_limine_bios_cd_bin,
+                         limine_bios_cd_size) != 0 ||
+      media_install_file("/setup/boot/limine-uefi-cd.bin",
+                         installer_payload_limine_uefi_cd_bin,
+                         limine_uefi_cd_size) != 0 ||
+      media_install_file("/setup/EFI/BOOT/BOOTX64.EFI",
+                         installer_payload_bootx64_efi,
+                         bootx64_efi_size) != 0 ||
+      media_install_text_file("/setup/SETUP_INFO.txt", setup_info) != 0 ||
+      media_install_file("/install/system-image/boot/main.sys", kernel_image,
                          kernel_size) != 0 ||
       media_install_file("/install/system-image/boot/bootloader.sys",
                          kernel_image, kernel_size) != 0 ||
@@ -417,23 +474,50 @@ static void populate_installer_payload(void) {
                               installed_limine_cfg) != 0 ||
       media_install_file("/install/system-image/boot/limine-bios.sys",
                          installer_payload_limine_bios_sys,
-                         installer_payload_limine_bios_sys_len) != 0 ||
+                         limine_bios_sys_size) != 0 ||
       media_install_file("/install/system-image/boot/limine-bios-cd.bin",
                          installer_payload_limine_bios_cd_bin,
-                         installer_payload_limine_bios_cd_bin_len) != 0 ||
+                         limine_bios_cd_size) != 0 ||
       media_install_file("/install/system-image/boot/limine-uefi-cd.bin",
                          installer_payload_limine_uefi_cd_bin,
-                         installer_payload_limine_uefi_cd_bin_len) != 0 ||
+                         limine_uefi_cd_size) != 0 ||
       media_install_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
                          installer_payload_bootx64_efi,
-                         installer_payload_bootx64_efi_len) != 0 ||
+                         bootx64_efi_size) != 0 ||
+      media_install_file("/setup/install/system-image/boot/main.sys",
+                         kernel_image, kernel_size) != 0 ||
+      media_install_file("/setup/install/system-image/boot/bootloader.sys",
+                         kernel_image, kernel_size) != 0 ||
+      media_install_text_file("/setup/install/system-image/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/setup/install/system-image/boot/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/setup/install/system-image/limine/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/setup/install/system-image/EFI/BOOT/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_file("/setup/install/system-image/boot/limine-bios.sys",
+                         installer_payload_limine_bios_sys,
+                         limine_bios_sys_size) != 0 ||
+      media_install_file("/setup/install/system-image/boot/limine-bios-cd.bin",
+                         installer_payload_limine_bios_cd_bin,
+                         limine_bios_cd_size) != 0 ||
+      media_install_file("/setup/install/system-image/boot/limine-uefi-cd.bin",
+                         installer_payload_limine_uefi_cd_bin,
+                         limine_uefi_cd_size) != 0 ||
+      media_install_file("/setup/install/system-image/EFI/BOOT/BOOTX64.EFI",
+                         installer_payload_bootx64_efi,
+                         bootx64_efi_size) != 0 ||
       media_install_text_file("/install/system-image/IMAGE_INFO.txt",
+                              image_info) != 0 ||
+      media_install_text_file("/setup/install/system-image/IMAGE_INFO.txt",
                               image_info) != 0) {
-    printk(KERN_ERR "INSTALL: failed to seed bundled system image payload\n");
+    printk(KERN_ERR "INSTALL: failed to seed setup media payload\n");
     return;
   }
 
   printk(KERN_INFO "INSTALL: bundled system image payload seeded in RAMFS\n");
+  printk(KERN_INFO "INSTALL: setup media exposed at /setup/\n");
 #endif
 }
 

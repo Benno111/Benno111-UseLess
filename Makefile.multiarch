@@ -189,25 +189,7 @@ KERNEL_OBJECTS += $(patsubst $(KERNEL_DIR)/%.S,$(BUILD_DIR)/kernel/%.o,$(KERNEL_
 DRIVER_OBJECTS := $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/drivers/%.o,$(DRIVER_SOURCES))
 CODE_HASH_INPUTS := $(sort $(KERNEL_SOURCES_C) $(KERNEL_SOURCES_ASM) $(DRIVER_SOURCES) $(ROOT_DIR)/Makefile.multiarch)
 BUILD_METADATA_HEADER := $(GENERATED_DIR)/build_uuid.h
-GENERATED_OBJECTS :=
-
-ifeq ($(ARCH),x86_64)
-INSTALLER_PAYLOAD_C := $(GENERATED_DIR)/installer_payload.c
-INSTALLER_PAYLOAD_H := $(GENERATED_DIR)/installer_payload.h
-INSTALLER_PAYLOAD_OBJECT := $(BUILD_DIR)/generated/installer_payload.o
-INSTALLER_PAYLOAD_INPUTS := \
-	$(ROOT_DIR)/scripts/embed_installer_payload.py \
-	$(ROOT_DIR)/vib-os-x86_64/limine/bin/BOOTX64.EFI \
-	$(ROOT_DIR)/vib-os-x86_64/limine/bin/limine-bios.sys \
-	$(ROOT_DIR)/vib-os-x86_64/limine/bin/limine-bios-cd.bin \
-	$(ROOT_DIR)/vib-os-x86_64/limine/bin/limine-uefi-cd.bin
-GENERATED_OBJECTS += $(INSTALLER_PAYLOAD_OBJECT)
-CODE_HASH_INPUTS += $(INSTALLER_PAYLOAD_INPUTS)
-endif
-
-PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python3)
-
-ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS) $(GENERATED_OBJECTS)
+ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 
 # ============================================================================
@@ -348,19 +330,6 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
-
-ifeq ($(ARCH),x86_64)
-$(INSTALLER_PAYLOAD_C) $(INSTALLER_PAYLOAD_H): $(INSTALLER_PAYLOAD_INPUTS) | $(BUILD_DIR)
-	@echo "[GEN] Embedding x86_64 installer payload"
-	@$(PYTHON) $(ROOT_DIR)/scripts/embed_installer_payload.py "$(ROOT_DIR)" "$(GENERATED_DIR)"
-
-$(BUILD_DIR)/kernel/core/main.o: $(INSTALLER_PAYLOAD_H)
-
-$(INSTALLER_PAYLOAD_OBJECT): $(INSTALLER_PAYLOAD_C) $(INSTALLER_PAYLOAD_H)
-	@mkdir -p $(dir $@)
-	@echo "[CC] $(INSTALLER_PAYLOAD_C)"
-	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $(INSTALLER_PAYLOAD_C) -o $@
-endif
 
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
