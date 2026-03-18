@@ -40,6 +40,7 @@ static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
+static void import_staged_system_image(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
 static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
@@ -290,6 +291,7 @@ static void start_x86_64_bringup(void) {
 static void populate_seed_filesystem(void) {
   populate_seed_tree_at("");
   populate_installer_payload();
+  import_staged_system_image();
 }
 
 static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
@@ -532,6 +534,13 @@ static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
   vfs_readdir(dir, &ctx, copy_tree_callback);
   vfs_close(dir);
   return 0;
+}
+
+static void import_staged_system_image(void) {
+  if (copy_tree_to_prefix("/install/system-image", "/", 0) == 0) {
+    printk(KERN_INFO
+           "INSTALL: imported staged /install/system-image into live root\n");
+  }
 }
 
 static void populate_installer_payload(void) {
