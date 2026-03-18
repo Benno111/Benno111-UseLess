@@ -40,6 +40,14 @@ static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
+static void populate_seed_tree_at(const char *prefix);
+static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
+                           const char *path);
+static void seed_make_dir(const char *prefix, const char *path);
+static void seed_write_text(const char *prefix, const char *path, mode_t mode,
+                            const char *content);
+static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
+                             const uint8_t *data, size_t size);
 static void keyboard_handler(int key);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
@@ -275,95 +283,140 @@ static void start_x86_64_bringup(void) {
 #endif
 
 static void populate_seed_filesystem(void) {
-  extern int ramfs_create_dir(const char *path, mode_t mode);
-  extern int ramfs_create_file(const char *path, mode_t mode,
-                               const char *content);
-  extern int ramfs_create_file_bytes(const char *path, mode_t mode,
-                                     const uint8_t *data, size_t size);
-  extern int vfs_mkdir(const char *path, mode_t mode);
+  populate_seed_tree_at("");
+  populate_installer_payload();
+}
 
+static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
+                           const char *path) {
+  size_t idx = 0;
+  const char *use_prefix = prefix ? prefix : "";
+  const char *use_path = path ? path : "";
+
+  if (!dst || dst_size == 0)
+    return -1;
+
+  if (!use_prefix[0]) {
+    if (use_path[0] != '/' && idx < dst_size - 1)
+      dst[idx++] = '/';
+  } else {
+    for (size_t i = 0; use_prefix[i] && idx < dst_size - 1; i++)
+      dst[idx++] = use_prefix[i];
+    if (idx > 0 && dst[idx - 1] == '/' && use_path[0] == '/')
+      use_path++;
+    else if (idx > 0 && dst[idx - 1] != '/' && use_path[0] != '/' &&
+             idx < dst_size - 1)
+      dst[idx++] = '/';
+  }
+
+  for (size_t i = 0; use_path[i] && idx < dst_size - 1; i++)
+    dst[idx++] = use_path[i];
+  dst[idx] = '\0';
+  return 0;
+}
+
+static void seed_make_dir(const char *prefix, const char *path) {
+  char full_path[256];
+
+  if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
+    return;
+  vfs_mkdir(full_path, 0755);
+}
+
+static void seed_write_text(const char *prefix, const char *path, mode_t mode,
+                            const char *content) {
+  char full_path[256];
+  (void)mode;
+
+  if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
+    return;
+  media_install_text_file(full_path, content);
+}
+
+static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
+                             const uint8_t *data, size_t size) {
+  char full_path[256];
+  (void)mode;
+
+  if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
+    return;
+  media_install_file(full_path, data, size);
+}
+
+static void populate_seed_tree_at(const char *prefix) {
   extern const unsigned char bootstrap_test_png[];
   extern const unsigned int bootstrap_test_png_len;
-  extern int boot_is_installer_mode(void);
-#ifdef ARCH_X86_64
-  extern void *limine_get_kernel_file_addr(void);
-  extern uint64_t limine_get_kernel_file_size(void);
-#endif
 
-  ramfs_create_dir("Documents", 0755);
-  ramfs_create_dir("Downloads", 0755);
-  ramfs_create_dir("Pictures", 0755);
-  ramfs_create_dir("System", 0755);
-  ramfs_create_dir("Desktop", 0755);
+  seed_make_dir(prefix, "Documents");
+  seed_make_dir(prefix, "Downloads");
+  seed_make_dir(prefix, "Pictures");
+  seed_make_dir(prefix, "System");
+  seed_make_dir(prefix, "Desktop");
+  seed_make_dir(prefix, "/Desktop/Projects");
 
-  ramfs_create_file("/Desktop/notes.txt", 0644,
-                    "Welcome to OS next stage!\n\nThis is your desktop - right-click "
-                    "for options!\n");
-  ramfs_create_file("/Desktop/readme.txt", 0644,
-                    "OS next stage Desktop Manager\n\n- Double-click to open files\n- "
-                    "Right-click for context menu\n");
+  seed_write_text(prefix, "/Desktop/notes.txt", 0644,
+                  "Welcome to OS next stage!\n\nThis is your desktop - right-click "
+                  "for options!\n");
+  seed_write_text(prefix, "/Desktop/readme.txt", 0644,
+                  "OS next stage Desktop Manager\n\n- Double-click to open files\n- "
+                  "Right-click for context menu\n");
+  seed_write_text(prefix, "readme.txt", 0644,
+                  "Welcome to OS next stage!\nThis is a real file in RamFS.");
+  seed_write_text(prefix, "todo.txt", 0644,
+                  "- Implement Browser\n- Fix Bugs\n- Sleep");
+  seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
+  seed_write_bytes(prefix, "Pictures/test.png", 0644, bootstrap_test_png,
+                   bootstrap_test_png_len);
 
-  vfs_mkdir("/Desktop/Projects", 0755);
-  ramfs_create_file("readme.txt", 0644,
-                    "Welcome to OS next stage!\nThis is a real file in RamFS.");
-  ramfs_create_file("todo.txt", 0644,
-                    "- Implement Browser\n- Fix Bugs\n- Sleep");
-  ramfs_create_file_bytes("sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
+  seed_make_dir(prefix, "bin");
+  seed_make_dir(prefix, "sbin");
+  seed_make_dir(prefix, "usr");
+  seed_make_dir(prefix, "usr/bin");
 
-  ramfs_create_file_bytes("Pictures/test.png", 0644, bootstrap_test_png,
-                          bootstrap_test_png_len);
+  seed_write_bytes(prefix, "/sbin/init", 0755, init_bin, init_bin_len);
+  seed_write_bytes(prefix, "/bin/login", 0755, login_bin, login_bin_len);
+  seed_write_bytes(prefix, "/bin/sh", 0755, shell_bin, shell_bin_len);
 
-  ramfs_create_dir("bin", 0755);
-  ramfs_create_dir("sbin", 0755);
-  ramfs_create_dir("usr", 0755);
-  ramfs_create_dir("usr/bin", 0755);
-
-  ramfs_create_file_bytes("/sbin/init", 0755, init_bin, init_bin_len);
-  ramfs_create_file_bytes("/bin/login", 0755, login_bin, login_bin_len);
-  ramfs_create_file_bytes("/bin/sh", 0755, shell_bin, shell_bin_len);
-
-  ramfs_create_dir("examples", 0755);
-  ramfs_create_file("examples/hello.py", 0644,
-                    "# Hello World in Python for OS next stage\n"
-                    "# Run with: run hello.py\n\n"
-                    "def greet(name):\n"
-                    "    return 'Hello, ' + name + '!'\n\n"
-                    "def main():\n"
-                    "    print('Welcome to OS next stage Python Demo')\n"
-                    "    message = greet('OS next stage User')\n"
-                    "    print(message)\n\n"
-                    "if __name__ == '__main__':\n"
-                    "    main()\n");
-  ramfs_create_file("examples/fibonacci.py", 0644,
-                    "# Fibonacci Sequence in Python\n"
-                    "# Run with: run fibonacci.py\n\n"
-                    "def fibonacci(n):\n"
-                    "    if n <= 0: return []\n"
-                    "    fib = [0, 1]\n"
-                    "    for i in range(2, n):\n"
-                    "        fib.append(fib[i-1] + fib[i-2])\n"
-                    "    return fib\n\n"
-                    "print(fibonacci(10))\n");
-  ramfs_create_file("examples/hello.nano", 0644,
-                    "// Hello World in NanoLang\n"
-                    "// Run with: run hello.nano\n\n"
-                    "fn greet(name: str) -> str {\n"
-                    "    return 'Hello, ' + name + '!';\n"
-                    "}\n\n"
-                    "fn main() {\n"
-                    "    print('Welcome to NanoLang');\n"
-                    "    let msg = greet('OS next stage');\n"
-                    "    print(msg);\n"
-                    "}\n");
-  ramfs_create_file("examples/calculator.nano", 0644,
-                    "// Calculator in NanoLang\n"
-                    "fn add(a: int, b: int) -> int { return a + b; }\n"
-                    "fn main() {\n"
-                    "    print('42 + 7 = ');\n"
-                    "    print(add(42, 7));\n"
-                    "}\n");
-
-  populate_installer_payload();
+  seed_make_dir(prefix, "examples");
+  seed_write_text(prefix, "examples/hello.py", 0644,
+                  "# Hello World in Python for OS next stage\n"
+                  "# Run with: run hello.py\n\n"
+                  "def greet(name):\n"
+                  "    return 'Hello, ' + name + '!'\n\n"
+                  "def main():\n"
+                  "    print('Welcome to OS next stage Python Demo')\n"
+                  "    message = greet('OS next stage User')\n"
+                  "    print(message)\n\n"
+                  "if __name__ == '__main__':\n"
+                  "    main()\n");
+  seed_write_text(prefix, "examples/fibonacci.py", 0644,
+                  "# Fibonacci Sequence in Python\n"
+                  "# Run with: run fibonacci.py\n\n"
+                  "def fibonacci(n):\n"
+                  "    if n <= 0: return []\n"
+                  "    fib = [0, 1]\n"
+                  "    for i in range(2, n):\n"
+                  "        fib.append(fib[i-1] + fib[i-2])\n"
+                  "    return fib\n\n"
+                  "print(fibonacci(10))\n");
+  seed_write_text(prefix, "examples/hello.nano", 0644,
+                  "// Hello World in NanoLang\n"
+                  "// Run with: run hello.nano\n\n"
+                  "fn greet(name: str) -> str {\n"
+                  "    return 'Hello, ' + name + '!';\n"
+                  "}\n\n"
+                  "fn main() {\n"
+                  "    print('Welcome to NanoLang');\n"
+                  "    let msg = greet('OS next stage');\n"
+                  "    print(msg);\n"
+                  "}\n");
+  seed_write_text(prefix, "examples/calculator.nano", 0644,
+                  "// Calculator in NanoLang\n"
+                  "fn add(a: int, b: int) -> int { return a + b; }\n"
+                  "fn main() {\n"
+                  "    print('42 + 7 = ');\n"
+                  "    print(add(42, 7));\n"
+                  "}\n");
 }
 
 static void populate_installer_payload(void) {
@@ -434,6 +487,14 @@ static void populate_installer_payload(void) {
                                  installer_payload_limine_bios_cd_bin);
   limine_uefi_cd_size = (size_t)(installer_payload_limine_uefi_cd_bin_end -
                                  installer_payload_limine_uefi_cd_bin);
+
+  seed_make_dir("", "/install");
+  seed_make_dir("", "/install/system-image");
+  seed_make_dir("", "/setup");
+  seed_make_dir("", "/setup/install");
+  seed_make_dir("", "/setup/install/system-image");
+  populate_seed_tree_at("/install/system-image");
+  populate_seed_tree_at("/setup/install/system-image");
 
   if (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
           0 ||
