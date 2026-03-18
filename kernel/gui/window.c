@@ -6394,13 +6394,15 @@ static int resize_start_win_x = 0, resize_start_win_y = 0;
 void gui_handle_mouse_event(int x, int y, int buttons) {
   int prev_x = mouse_x;
   int prev_y = mouse_y;
+  int old_buttons = prev_buttons;
   mouse_x = x;
   mouse_y = y;
+  prev_buttons = buttons;
 
-  int left_click = (buttons & 1) && !(prev_buttons & 1); /* Just pressed */
+  int left_click = (buttons & 1) && !(old_buttons & 1); /* Just pressed */
   int left_held = (buttons & 1);
-  int left_release = !(buttons & 1) && (prev_buttons & 1);
-  int right_click = (buttons & 2) && !(prev_buttons & 2); /* Right button */
+  int left_release = !(buttons & 1) && (old_buttons & 1);
+  int right_click = (buttons & 2) && !(old_buttons & 2); /* Right button */
 
   /* Handle context menu hover - ALWAYS call when menu visible */
   int menu_vis = desktop_is_context_menu_visible();
@@ -6418,7 +6420,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   static int click_count = 0;
 
   if (startup_flow_active()) {
-    prev_buttons = buttons;
     if (left_click && startup_window) {
       int content_x = startup_window->x + BORDER_WIDTH;
       int content_y = startup_window->y + BORDER_WIDTH;
@@ -6445,7 +6446,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   if (secure_attention_open) {
-    prev_buttons = buttons;
     if (left_click) {
       int hit = secure_attention_button_hit(x, y);
       if (hit >= 0) {
@@ -6553,8 +6553,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     resizing_window = 0;
     resize_edge = RESIZE_NONE;
   }
-
-  prev_buttons = buttons;
 
   /* Handle desktop right-click (context menu) - check BEFORE left_click gate */
   if (right_click) {

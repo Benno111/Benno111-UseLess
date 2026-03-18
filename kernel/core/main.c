@@ -11,6 +11,7 @@
 #include "drivers/pci.h"
 #include "drivers/uart.h"
 #include "fs/vfs.h"
+#include "media/media.h"
 #include "media/seed_assets.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -38,6 +39,11 @@ static void print_banner(void);
 static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
+static void populate_installer_payload(void);
+
+#ifdef ARCH_X86_64
+#include "installer_payload.h"
+#endif
 static void keyboard_handler(int key);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
@@ -361,6 +367,74 @@ static void populate_seed_filesystem(void) {
                     "    print(add(42, 7));\n"
                     "}\n");
 
+  populate_installer_payload();
+}
+
+static void populate_installer_payload(void) {
+#ifdef ARCH_X86_64
+  extern int boot_is_installer_mode(void);
+  extern void *limine_get_kernel_file_addr(void);
+  extern uint64_t limine_get_kernel_file_size(void);
+  static const char *installed_limine_cfg =
+      "# Limine Configuration File\n"
+      "# OS next stage x64\n"
+      "\n"
+      "timeout: 0\n"
+      "default_entry: 1\n"
+      "\n"
+      "/OS next stage\n"
+      "    protocol: limine\n"
+      "    kernel_path: boot():/boot/main.sys\n";
+  static const char *image_info =
+      "OS next stage System Image\n"
+      "\n"
+      "This installer boot seeds a bundled system image at\n"
+      "/install/system-image so the GUI installer can copy it to disk.\n";
+  const uint8_t *kernel_image;
+  size_t kernel_size;
+
+  if (!boot_is_installer_mode())
+    return;
+
+  kernel_image = (const uint8_t *)limine_get_kernel_file_addr();
+  kernel_size = (size_t)limine_get_kernel_file_size();
+  if (!kernel_image || kernel_size == 0) {
+    printk(KERN_ERR "INSTALL: kernel image unavailable for installer payload\n");
+    return;
+  }
+
+  if (media_install_file("/install/system-image/boot/main.sys", kernel_image,
+                         kernel_size) != 0 ||
+      media_install_file("/install/system-image/boot/bootloader.sys",
+                         kernel_image, kernel_size) != 0 ||
+      media_install_text_file("/install/system-image/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/install/system-image/boot/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/install/system-image/limine/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_text_file("/install/system-image/EFI/BOOT/limine.conf",
+                              installed_limine_cfg) != 0 ||
+      media_install_file("/install/system-image/boot/limine-bios.sys",
+                         installer_payload_limine_bios_sys,
+                         installer_payload_limine_bios_sys_len) != 0 ||
+      media_install_file("/install/system-image/boot/limine-bios-cd.bin",
+                         installer_payload_limine_bios_cd_bin,
+                         installer_payload_limine_bios_cd_bin_len) != 0 ||
+      media_install_file("/install/system-image/boot/limine-uefi-cd.bin",
+                         installer_payload_limine_uefi_cd_bin,
+                         installer_payload_limine_uefi_cd_bin_len) != 0 ||
+      media_install_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
+                         installer_payload_bootx64_efi,
+                         installer_payload_bootx64_efi_len) != 0 ||
+      media_install_text_file("/install/system-image/IMAGE_INFO.txt",
+                              image_info) != 0) {
+    printk(KERN_ERR "INSTALL: failed to seed bundled system image payload\n");
+    return;
+  }
+
+  printk(KERN_INFO "INSTALL: bundled system image payload seeded in RAMFS\n");
+#endif
 }
 
 /*
