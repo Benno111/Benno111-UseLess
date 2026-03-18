@@ -373,7 +373,7 @@ make -f Makefile.multiarch ARCH=x86_64 qemu
 
 #### x86_64 PC
 1. Create a hybrid BIOS+UEFI ISO: `make -f Makefile.multiarch ARCH=x86_64 image`
-2. Write `image/vibos-x86_64.iso` to USB with Rufus or `dd`
+2. Write `image/os8-x86_64.iso` to USB with Rufus or `dd`
 3. Boot from the USB in either UEFI or legacy BIOS mode
 
 ### Apple Silicon (M1/M2/M3/M4)

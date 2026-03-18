@@ -148,6 +148,18 @@ KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/apps -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/drivers -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sync -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sandbox -name '*.c' 2>/dev/null)
+KERNEL_SOURCES_C := $(filter-out \
+	$(KERNEL_DIR)/media/bootstrap_landscape_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_portrait_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_square_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_wallpaper_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_nature_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_city_jpg.c \
+	$(KERNEL_DIR)/media/bootstrap_httpbin_jpg.c \
+	$(KERNEL_DIR)/media/hd_wallpaper_landscape.c \
+	$(KERNEL_DIR)/media/hd_wallpaper_nature.c \
+	$(KERNEL_DIR)/media/hd_wallpaper_city.c, \
+	$(KERNEL_SOURCES_C))
 
 # Architecture-specific sources
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/arch/$(ARCH) -name '*.c' 2>/dev/null)
@@ -252,12 +264,23 @@ $(BUILD_DIR):
 
 assets: $(BUILD_DIR)
 	@echo "[ASSETS] Syncing repo assets into $(BUILD_ASSETS_DIR)"
+	@rm -rf "$(BUILD_ASSETS_DIR)"
+	@mkdir -p "$(BUILD_ASSETS_DIR)"
 	@if [ -d "$(ASSETS_DIR)" ]; then \
-		rm -rf "$(BUILD_ASSETS_DIR)"; \
-		mkdir -p "$(BUILD_ASSETS_DIR)"; \
 		cp -R "$(ASSETS_DIR)"/. "$(BUILD_ASSETS_DIR)/"; \
 	else \
-		echo "[ASSETS] No assets directory found, skipping"; \
+		echo "[ASSETS] No repo assets directory found, continuing with generated assets"; \
+	fi
+	@if [ -d "$(KERNEL_DIR)/media/bootstrap_images" ]; then \
+		mkdir -p "$(BUILD_ASSETS_DIR)/wallpapers"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/landscape.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/nature.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/city.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/city.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/portrait.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/portrait.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/square.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/square.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/wallpaper.jpg"; \
+	else \
+		echo "[ASSETS] No bootstrap wallpaper source directory found"; \
 	fi
 
 # ============================================================================

@@ -86,9 +86,9 @@ elif [ -f "$BUILD_DIR/kernel/unixos.elf" ]; then
 @echo -off
 echo UnixOS Boot Loader
 echo Loading kernel...
-\EFI\BOOT\kernel.elf
+\EFI\BOOT\main.sys
 EOF
-    cp "$BUILD_DIR/kernel/unixos.elf" "$EFI_MOUNT/EFI/BOOT/kernel.elf" 2>/dev/null || {
+    cp "$BUILD_DIR/kernel/unixos.elf" "$EFI_MOUNT/EFI/BOOT/main.sys" 2>/dev/null || {
         log "Kernel not yet built, creating placeholder..."
         echo "UnixOS kernel placeholder" > "$EFI_MOUNT/EFI/BOOT/kernel.txt"
     }
@@ -103,7 +103,7 @@ cat > "$EFI_MOUNT/EFI/BOOT/boot.json" << EOF
     "name": "UnixOS",
     "version": "0.1.0",
     "arch": "arm64",
-    "kernel": "kernel.elf",
+    "kernel": "main.sys",
     "cmdline": "console=serial0 root=/dev/nvme0n1p2"
 }
 EOF

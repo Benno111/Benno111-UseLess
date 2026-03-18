@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-$x64Iso = Join-Path $repoRoot "image\vibos-x86_64.iso"
+$x64Iso = Join-Path $repoRoot "image\os8-x86_64.iso"
 $arm64Kernel = Join-Path $repoRoot "build\kernel\unixos.elf"
 
 function Write-Header {

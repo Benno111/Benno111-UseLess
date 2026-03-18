@@ -281,26 +281,6 @@ static void populate_seed_filesystem(void) {
                                      const uint8_t *data, size_t size);
   extern int vfs_mkdir(const char *path, mode_t mode);
 
-  extern const unsigned char bootstrap_landscape_jpg[];
-  extern const unsigned int bootstrap_landscape_jpg_len;
-  extern const unsigned char bootstrap_portrait_jpg[];
-  extern const unsigned int bootstrap_portrait_jpg_len;
-  extern const unsigned char bootstrap_square_jpg[];
-  extern const unsigned int bootstrap_square_jpg_len;
-  extern const unsigned char bootstrap_wallpaper_jpg[];
-  extern const unsigned int bootstrap_wallpaper_jpg_len;
-  extern const unsigned char bootstrap_nature_jpg[];
-  extern const unsigned int bootstrap_nature_jpg_len;
-  extern const unsigned char bootstrap_city_jpg[];
-  extern const unsigned int bootstrap_city_jpg_len;
-  extern const unsigned char bootstrap_httpbin_jpg[];
-  extern const unsigned int bootstrap_httpbin_jpg_len;
-  extern const unsigned char hd_wallpaper_landscape_jpg[];
-  extern const unsigned int hd_wallpaper_landscape_jpg_len;
-  extern const unsigned char hd_wallpaper_nature_jpg[];
-  extern const unsigned int hd_wallpaper_nature_jpg_len;
-  extern const unsigned char hd_wallpaper_city_jpg[];
-  extern const unsigned int hd_wallpaper_city_jpg_len;
   extern const unsigned char bootstrap_test_png[];
   extern const unsigned int bootstrap_test_png_len;
   extern int boot_is_installer_mode(void);
@@ -329,21 +309,6 @@ static void populate_seed_filesystem(void) {
                     "- Implement Browser\n- Fix Bugs\n- Sleep");
   ramfs_create_file_bytes("sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
 
-  ramfs_create_file_bytes("Pictures/landscape.jpg", 0644,
-                          hd_wallpaper_landscape_jpg,
-                          hd_wallpaper_landscape_jpg_len);
-  ramfs_create_file_bytes("Pictures/portrait.jpg", 0644, bootstrap_portrait_jpg,
-                          bootstrap_portrait_jpg_len);
-  ramfs_create_file_bytes("Pictures/square.jpg", 0644, bootstrap_square_jpg,
-                          bootstrap_square_jpg_len);
-  ramfs_create_file_bytes("Pictures/wallpaper.jpg", 0644,
-                          bootstrap_wallpaper_jpg, bootstrap_wallpaper_jpg_len);
-  ramfs_create_file_bytes("Pictures/nature.jpg", 0644, hd_wallpaper_nature_jpg,
-                          hd_wallpaper_nature_jpg_len);
-  ramfs_create_file_bytes("Pictures/city.jpg", 0644, hd_wallpaper_city_jpg,
-                          hd_wallpaper_city_jpg_len);
-  ramfs_create_file_bytes("Pictures/pig.jpg", 0644, bootstrap_httpbin_jpg,
-                          bootstrap_httpbin_jpg_len);
   ramfs_create_file_bytes("Pictures/test.png", 0644, bootstrap_test_png,
                           bootstrap_test_png_len);
 
@@ -412,12 +377,12 @@ static void populate_seed_filesystem(void) {
                             "TIMEOUT=0\n"
                             ":OS next stage\n"
                             "    protocol: limine\n"
-                            "    path: boot():/boot/vibos.elf\n");
+                            "    path: boot():/boot/bootloader.sys\n");
     media_install_text_file("/install/system-image/boot/limine.conf",
                             "TIMEOUT=0\n"
                             ":OS next stage\n"
                             "    protocol: limine\n"
-                            "    path: boot():/boot/vibos.elf\n");
+                            "    path: boot():/boot/bootloader.sys\n");
     media_install_text_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
                             "LIMINE_EFI_PLACEHOLDER");
 #ifdef ARCH_X86_64
@@ -425,9 +390,9 @@ static void populate_seed_filesystem(void) {
       void *kernel_file = limine_get_kernel_file_addr();
       uint64_t kernel_size = limine_get_kernel_file_size();
       if (kernel_file && kernel_size > 0) {
-        media_install_file("/install/system-image/boot/kernel.elf",
+        media_install_file("/install/system-image/boot/main.sys",
                            (const uint8_t *)kernel_file, (size_t)kernel_size);
-        media_install_file("/install/system-image/boot/vibos.elf",
+        media_install_file("/install/system-image/boot/bootloader.sys",
                            (const uint8_t *)kernel_file, (size_t)kernel_size);
       }
     }
@@ -597,26 +562,23 @@ static void init_subsystems(void *dtb) {
   extern const char *intel_gfx_get_name(void);
   extern int virtio_gpu_init(pci_device_t * pci);
   extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
-  extern void gui_configure_gpu_rendering(int enabled);
+  extern void gui_refresh_hardware_acceleration_policy(void);
   if (intel_gfx_is_ready()) {
     printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
            intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
-    if (intel_gfx_has_framebuffer()) {
-      gui_configure_gpu_rendering(1);
-    }
   }
 
   pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
   if (gpu) {
     if (virtio_gpu_init(gpu) == 0) {
       printk(KERN_INFO "  GPU: virtio-gpu initialized with 3D acceleration\n");
-      gui_configure_gpu_rendering(1);
     } else {
       printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
     }
   } else if (!intel_gfx_is_ready()) {
     printk(KERN_INFO "  GPU: No virtio-gpu found (software rendering)\n");
   }
+  gui_refresh_hardware_acceleration_policy();
 
   printk(KERN_INFO "  Loading keyboard driver...\n");
   printk(KERN_INFO "  Loading NVMe driver...\n");

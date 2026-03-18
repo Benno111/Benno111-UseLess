@@ -53,12 +53,12 @@ jobs:
       - name: Verify release files
         run: |
           set -euxo pipefail
-          ls -lh image/vibos-x86_64.iso
-          file image/vibos-x86_64.iso
+          ls -lh image/os8-x86_64.iso
+          file image/os8-x86_64.iso
           ls -lh image/vibos-x86_64-installer.iso
           file image/vibos-x86_64-installer.iso
-          ls -lh image/vibos-arm64.iso
-          file image/vibos-arm64.iso
+          ls -lh image/os-arm64.iso
+          file image/os-arm64.iso
 
       - name: Generate release notes
         run: |
@@ -75,9 +75,9 @@ jobs:
 
           ## Bootable Media
 
-          - \`vibos-x86_64.iso\`
+          - \`os8-x86_64.iso\`
           - \`vibos-x86_64-installer.iso\`
-          - \`vibos-arm64.iso\`
+          - \`os-arm64.iso\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -96,9 +96,9 @@ jobs:
           draft: true
           prerelease: true
           files: |
-            image/vibos-x86_64.iso
+            image/os8-x86_64.iso
             image/vibos-x86_64-installer.iso
-            image/vibos-arm64.iso
+            image/os-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

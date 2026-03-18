@@ -51,6 +51,31 @@ static int path_compare(const char *a, const char *b) {
   return *a - *b;
 }
 
+static void path_copy(char *dst, const char *src, int max) {
+  int i = 0;
+  if (!dst || max <= 0)
+    return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+  while (src[i] && i < max - 1) {
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = '\0';
+}
+
+static struct vfsmount *find_mount_by_target(const char *target) {
+  if (!target)
+    return NULL;
+  for (int i = 0; i < mount_count; i++) {
+    if (mounts[i] && path_compare(mounts[i]->mnt_target, target) == 0)
+      return mounts[i];
+  }
+  return NULL;
+}
+
 /* ===================================================================== */
 /* VFS initialization */
 /* ===================================================================== */
@@ -599,6 +624,21 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
     return -ENODEV;
   }
 
+  /* Reject conflicting reuse of the same mountpoint, but treat an identical
+   * remount request as already satisfied. */
+  struct vfsmount *existing = find_mount_by_target(target);
+  if (existing) {
+    if (path_compare(existing->mnt_devname, source) == 0 &&
+        path_compare(existing->mnt_fstype, fstype) == 0) {
+      printk(KERN_INFO "VFS: '%s' already mounted on '%s', skipping duplicate\n",
+             source, target);
+      return 0;
+    }
+    printk(KERN_WARNING "VFS: Mountpoint '%s' already in use by '%s' (%s)\n",
+           target, existing->mnt_devname, existing->mnt_fstype);
+    return -EBUSY;
+  }
+
   /* Check mount limit */
   if (mount_count >= MAX_MOUNTS) {
     return -ENOMEM;
@@ -630,6 +670,8 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
     mnt->mnt_devname[i] = source[i];
   }
   mnt->mnt_devname[i] = '\0';
+  path_copy(mnt->mnt_target, target, sizeof(mnt->mnt_target));
+  path_copy(mnt->mnt_fstype, fstype, sizeof(mnt->mnt_fstype));
 
   mounts[mount_count++] = mnt;
 
@@ -649,9 +691,22 @@ int vfs_umount(const char *target) {
 
   /* Find mount point */
   for (int i = 0; i < mount_count; i++) {
-    if (mounts[i] && mounts[i]->mnt_root) {
-      /* TODO: Compare mount point */
-      /* For now, just mark as unmounted */
+    if (mounts[i] && mounts[i]->mnt_root &&
+        path_compare(mounts[i]->mnt_target, target) == 0) {
+      /* TODO: Tear down the superblock properly. */
+      mounts[i]->mnt_root = NULL;
+      mounts[i]->mnt_sb = NULL;
+      mounts[i]->mnt_mountpoint = NULL;
+      mounts[i]->mnt_parent = NULL;
+      mounts[i]->mnt_devname[0] = '\0';
+      mounts[i]->mnt_target[0] = '\0';
+      mounts[i]->mnt_fstype[0] = '\0';
+      if (root_mount == mounts[i]) {
+        root_mount = NULL;
+        root_dentry = NULL;
+      }
+      printk(KERN_INFO "VFS: Unmounted '%s'\n", target);
+      return 0;
     }
   }
 

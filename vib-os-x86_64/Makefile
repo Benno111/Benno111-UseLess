@@ -19,7 +19,7 @@ BUILD_DIR := build
 ISO_ROOT := iso_root
 
 # Output files
-KERNEL := $(BUILD_DIR)/kernel.elf
+KERNEL := $(BUILD_DIR)/main.sys
 ISO := uefi-demo.iso
 
 # Compiler flags
@@ -144,7 +144,7 @@ $(ISO): $(KERNEL) $(LIMINE_DIR)
 	mkdir -p $(ISO_ROOT)/limine
 	
 	# Copy kernel
-	cp $(KERNEL) $(ISO_ROOT)/boot/kernel.elf
+	cp $(KERNEL) $(ISO_ROOT)/boot/main.sys
 	
 	# Copy Limine config to ALL locations Limine searches
 	cp limine.conf $(ISO_ROOT)/limine.conf

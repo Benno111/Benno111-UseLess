@@ -130,6 +130,8 @@ static uint32_t storage_default_capacity_mib(storage_kind_t kind) {
   case STORAGE_KIND_NVME:
   case STORAGE_KIND_APPLE_ANS:
     return 262144;
+  case STORAGE_KIND_CDROM:
+    return 700;
   case STORAGE_KIND_USB_MASS_STORAGE:
     return 8192;
   default:
@@ -245,6 +247,8 @@ const char *storage_kind_name(storage_kind_t kind) {
     return "RAID";
   case STORAGE_KIND_NVME:
     return "NVMe";
+  case STORAGE_KIND_CDROM:
+    return "CD-ROM";
   case STORAGE_KIND_USB_MASS_STORAGE:
     return "USB Mass Storage";
   case STORAGE_KIND_APPLE_ANS:
@@ -510,6 +514,8 @@ static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
   uint16_t identify[256];
   char location[24];
   int status;
+  uint8_t mid;
+  uint8_t hi;
   uint32_t total_sectors;
   int disk_slot;
 
@@ -530,8 +536,25 @@ static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
   if (status < 0)
     return;
 
-  if (inb(io_base + 4) != 0 || inb(io_base + 5) != 0)
+  mid = inb(io_base + 4);
+  hi = inb(io_base + 5);
+  if (mid != 0 || hi != 0) {
+    if (mid == 0x14 && hi == 0xEB) {
+      outb(io_base + 7, 0xA1);
+      status = storage_ide_wait(io_base, 0x89, 0x08, 100000);
+      if (status < 0 || !(status & 0x08))
+        return;
+
+      for (int i = 0; i < 256; i++)
+        identify[i] = inw(io_base);
+
+      location[0] = '\0';
+      storage_append_location(location, sizeof(location), "cd", storage_disk_count);
+      storage_record_disk(STORAGE_KIND_CDROM, controller_index, ide_index,
+                          "ATAPI CD-ROM", location);
+    }
     return;
+  }
 
   status = storage_ide_wait(io_base, 0x09, 0x08, 100000);
   if (status < 0 || !(status & 0x08))
@@ -595,7 +618,14 @@ static void storage_probe_ahci_controller(int controller_index,
 
     if (det != 3 || ipm != 1)
       continue;
-    if (sig == 0xEB140101 || sig == 0x96690101)
+    if (sig == 0xEB140101) {
+      location[0] = '\0';
+      storage_append_location(location, sizeof(location), "cd", storage_disk_count);
+      storage_record_disk(STORAGE_KIND_CDROM, controller_index, port,
+                          "SATA ATAPI CD-ROM", location);
+      continue;
+    }
+    if (sig == 0x96690101)
       continue;
 
     location[0] = '\0';
@@ -694,6 +724,7 @@ static void storage_recompute_partition_layout(int disk_index) {
 static int storage_commit_mbr_partitions(int disk_index) {
   uint8_t sector[STORAGE_SECTOR_SIZE];
   int present_count = 0;
+  int active_slot = -1;
 
   if (disk_index < 0 || disk_index >= storage_disk_count)
     return -1;
@@ -709,6 +740,31 @@ static int storage_commit_mbr_partitions(int disk_index) {
   for (int i = 0; i < STORAGE_SECTOR_SIZE; i++)
     sector[i] = 0;
 
+  /* Legacy BIOS/MBR boot should point at the system/update partition when
+   * available. UEFI uses the EFI system partition type and copied BOOTX64.EFI
+   * payload, so it does not need the active flag. */
+  for (int i = 0, entry = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    if (active_slot < 0 &&
+        storage_partitions[disk_index][i].kind == STORAGE_PARTITION_SYSTEM) {
+      active_slot = entry;
+      break;
+    }
+    entry++;
+  }
+  if (active_slot < 0) {
+    for (int i = 0, entry = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+      if (!storage_partitions[disk_index][i].present)
+        continue;
+      if (storage_partitions[disk_index][i].kind == STORAGE_PARTITION_EFI) {
+        active_slot = entry;
+        break;
+      }
+      entry++;
+    }
+  }
+
   for (int i = 0, entry = 0; i < STORAGE_MAX_PARTITIONS; i++) {
     uint8_t *mbr_entry;
     storage_partition_t *part;
@@ -717,7 +773,7 @@ static int storage_commit_mbr_partitions(int disk_index) {
       continue;
     part = &storage_partitions[disk_index][i];
     mbr_entry = &sector[STORAGE_MBR_PARTITION_OFFSET + entry * 16];
-    mbr_entry[0] = (entry == 0 && part->kind == STORAGE_PARTITION_EFI) ? 0x80 : 0x00;
+    mbr_entry[0] = (entry == active_slot) ? 0x80 : 0x00;
     mbr_entry[1] = 0xFE;
     mbr_entry[2] = 0xFF;
     mbr_entry[3] = 0xFF;
@@ -904,13 +960,15 @@ int storage_register_disk_backend(const char *location,
   storage_disks[disk_index].read_fn = read_fn;
   storage_disks[disk_index].write_fn = write_fn;
   storage_disks[disk_index].backend_ctx = ctx;
-  if (read_fn)
+  if (read_fn && storage_disks[disk_index].kind != STORAGE_KIND_CDROM)
     storage_load_mbr_partitions(disk_index);
   return 0;
 }
 
 int storage_disk_supports_partition_writes(int disk_index) {
   if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+  if (storage_disks[disk_index].kind == STORAGE_KIND_CDROM)
     return 0;
   if (storage_disks[disk_index].write_fn)
     return 1;
@@ -930,7 +988,8 @@ int storage_get_disk_kind(int index) {
 int storage_disk_is_removable(int index) {
   if (index < 0 || index >= storage_disk_count)
     return 0;
-  return storage_disks[index].kind == STORAGE_KIND_USB_MASS_STORAGE;
+  return storage_disks[index].kind == STORAGE_KIND_USB_MASS_STORAGE ||
+         storage_disks[index].kind == STORAGE_KIND_CDROM;
 }
 
 int storage_get_disk_location(int index, char *buf, int max) {
@@ -1005,6 +1064,10 @@ void storage_build_overview(char *buf, int max) {
     storage_append_string(buf, max, "  IDE:");
     storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_IDE));
   }
+  if (storage_get_kind_count(STORAGE_KIND_CDROM) > 0) {
+    storage_append_string(buf, max, "  CD:");
+    storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_CDROM));
+  }
   if (storage_get_kind_count(STORAGE_KIND_RAID) > 0) {
     storage_append_string(buf, max, "  RAID:");
     storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_RAID));
@@ -1019,6 +1082,16 @@ int storage_describe_disk(int index, char *buf, int max) {
     return -1;
 
   disk = &storage_disks[index];
+  if (disk->kind == STORAGE_KIND_CDROM) {
+    buf[0] = '\0';
+    storage_append_string(buf, max, disk->name);
+    storage_append_string(buf, max, " [");
+    storage_append_string(buf, max, disk->location);
+    storage_append_string(buf, max, "] ");
+    storage_append_decimal(buf, max, (int)disk->capacity_mib);
+    storage_append_string(buf, max, " MiB optical media, read-only");
+    return 0;
+  }
   free_mib = disk->capacity_mib > storage_partition_used_mib(index)
                  ? disk->capacity_mib - storage_partition_used_mib(index)
                  : 0;
@@ -1040,12 +1113,12 @@ void storage_build_disk_overview(char *buf, int max) {
 
   buf[0] = '\0';
   if (storage_disk_count == 0) {
-    storage_append_string(buf, max, "No hard disks registered");
+    storage_append_string(buf, max, "No storage media registered");
     return;
   }
 
   storage_append_decimal(buf, max, storage_disk_count);
-  storage_append_string(buf, max, " disk");
+  storage_append_string(buf, max, " storage device");
   if (storage_disk_count != 1)
     storage_append_string(buf, max, "s");
   storage_append_string(buf, max, " ready");

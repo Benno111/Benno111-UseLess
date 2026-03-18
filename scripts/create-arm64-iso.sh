@@ -5,7 +5,7 @@ BUILD_DIR="${1:?missing build dir}"
 IMAGE_DIR="${2:?missing image dir}"
 
 KERNEL_ELF="${BUILD_DIR}/kernel/vibos-arm64.elf"
-ISO_PATH="${IMAGE_DIR}/vibos-arm64.iso"
+ISO_PATH="${IMAGE_DIR}/os-arm64.iso"
 
 STAGING_DIR="${BUILD_DIR}/arm64-iso"
 EFI_DIR="${STAGING_DIR}/EFI/BOOT"

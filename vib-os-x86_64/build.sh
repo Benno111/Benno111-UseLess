@@ -42,9 +42,9 @@ ld.lld -nostdlib -static -z max-page-size=0x1000 -T kernel/linker.ld \
     $BUILD_DIR/gui/desktop.o \
     $BUILD_DIR/gui/window.o \
     $BUILD_DIR/gui/compositor.o \
-    -o $BUILD_DIR/kernel.elf
+    -o $BUILD_DIR/main.sys
 
-echo "   Kernel: $BUILD_DIR/kernel.elf ($(ls -lh $BUILD_DIR/kernel.elf | awk '{print $5}'))"
+echo "   Kernel: $BUILD_DIR/main.sys ($(ls -lh $BUILD_DIR/main.sys | awk '{print $5}'))"
 
 # Download pre-built Limine from release tarball
 echo "[3/5] Getting Limine bootloader..."
@@ -90,12 +90,12 @@ if [ ! -f "limine-bin/BOOTX64.EFI" ]; then
     
     # Create a simple bootable image for QEMU testing
     mkdir -p "$ISO_ROOT"/boot
-    cp $BUILD_DIR/kernel.elf "$ISO_ROOT"/boot/kernel.elf
+    cp $BUILD_DIR/main.sys "$ISO_ROOT"/boot/main.sys
     cp limine.conf "$ISO_ROOT"/boot/limine.conf
     
     echo ""
     echo "To test in QEMU with direct kernel boot:"
-    echo "  qemu-system-x86_64 -M q35 -m 512M -kernel $BUILD_DIR/kernel.elf -serial stdio"
+    echo "  qemu-system-x86_64 -M q35 -m 512M -kernel $BUILD_DIR/main.sys -serial stdio"
     echo ""
     exit 0
 fi
@@ -109,7 +109,7 @@ mkdir -p "$ISO_ROOT"/boot
 mkdir -p "$ISO_ROOT"/EFI/BOOT
 
 # Copy kernel
-cp $BUILD_DIR/kernel.elf "$ISO_ROOT"/boot/kernel.elf
+cp $BUILD_DIR/main.sys "$ISO_ROOT"/boot/main.sys
 
 # Copy Limine config to multiple locations (Limine searches several paths)
 cp limine.conf "$ISO_ROOT"/boot/limine.conf

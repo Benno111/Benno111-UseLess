@@ -6,7 +6,7 @@ set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-ISO_NAME="${ISO_NAME:-vibos-x86_64.iso}"
+ISO_NAME="${ISO_NAME:-os8-x86_64.iso}"
 ISO_ROOT="${BUILD_DIR}/iso_root"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
@@ -65,14 +65,14 @@ fi
 
 # Keep both names so the ISO matches the embedded config and the repo's
 # existing naming used elsewhere.
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/kernel.elf"
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/vibos.elf"
+cp "$KERNEL_PATH" "$ISO_ROOT/boot/main.sys"
+cp "$KERNEL_PATH" "$ISO_ROOT/boot/bootloader.sys"
 cp "$LIMINE_CFG" "$ISO_ROOT/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/boot/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/limine/limine.conf"
 cp "$LIMINE_CFG" "$ISO_ROOT/EFI/BOOT/limine.conf"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/kernel.elf"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/vibos.elf"
+cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/main.sys"
+cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/bootloader.sys"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
@@ -94,8 +94,8 @@ This ISO contains:
 - a bundled system image payload at /install/system-image
 
 Primary payload files:
-- /install/system-image/boot/kernel.elf
-- /install/system-image/boot/vibos.elf
+- /install/system-image/boot/main.sys
+- /install/system-image/boot/bootloader.sys
 - /install/system-image/limine.conf
 - /install/system-image/boot/limine-bios.sys
 - /install/system-image/boot/limine-bios-cd.bin
@@ -141,7 +141,7 @@ require_iso_path() {
     fi
 }
 
-require_iso_path "/boot/kernel.elf"
+require_iso_path "/boot/main.sys"
 require_iso_path "/boot/limine-bios-cd.bin"
 require_iso_path "/boot/limine-uefi-cd.bin"
 require_iso_path "/boot/limine-bios.sys"
@@ -149,8 +149,8 @@ require_iso_path "/EFI/BOOT/BOOTX64.EFI"
 require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
-require_iso_path "/install/system-image/boot/kernel.elf"
-require_iso_path "/install/system-image/boot/vibos.elf"
+require_iso_path "/install/system-image/boot/main.sys"
+require_iso_path "/install/system-image/boot/bootloader.sys"
 require_iso_path "/install/system-image/limine.conf"
 require_iso_path "/install/system-image/boot/limine-bios.sys"
 require_iso_path "/install/system-image/boot/limine-bios-cd.bin"

@@ -44,6 +44,7 @@ static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
 static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
+static void str_copy_safe(char *dst, const char *src, int max);
 void compositor_mark_full_redraw(void);
 
 
@@ -160,11 +161,11 @@ static struct {
   const char *name;   /* Display name */
   const char *path;   /* Image path (for type=1) */
 } wallpapers[NUM_WALLPAPERS] = {
-    {1, 0, 0, 0, 0, 0, 0, "Landscape", "/Pictures/landscape.jpg"},
-    {1, 0, 0, 0, 0, 0, 0, "Nature", "/Pictures/nature.jpg"},
-    {1, 0, 0, 0, 0, 0, 0, "City", "/Pictures/city.jpg"},
-    {1, 0, 0, 0, 0, 0, 0, "Portrait", "/Pictures/portrait.jpg"},
-    {1, 0, 0, 0, 0, 0, 0, "Wallpaper", "/Pictures/wallpaper.jpg"},
+    {1, 38, 72, 120, 16, 30, 58, "Landscape", "/assets/wallpapers/landscape.jpg"},
+    {1, 26, 92, 82, 9, 37, 48, "Nature", "/assets/wallpapers/nature.jpg"},
+    {1, 84, 108, 148, 26, 33, 52, "City", "/assets/wallpapers/city.jpg"},
+    {1, 124, 82, 126, 48, 28, 64, "Portrait", "/assets/wallpapers/portrait.jpg"},
+    {1, 58, 88, 118, 22, 28, 46, "Wallpaper", "/assets/wallpapers/wallpaper.jpg"},
     {0, 30, 27, 75, 15, 27, 62, "Indigo Night", NULL},
     {0, 20, 60, 100, 10, 30, 60, "Ocean Blue", NULL},
     {0, 60, 20, 60, 30, 15, 45, "Purple Haze", NULL},
@@ -2804,6 +2805,7 @@ static int installer_copy_system_image_to_root(const char *target_root,
 static int installer_finalize_install(void) {
   char summary[96];
   char target_state_path[128];
+  char bios_boot_cfg[192];
 
   dock_loaded = 0;
   load_dock_config();
@@ -2837,6 +2839,12 @@ static int installer_finalize_install(void) {
     write_text_file(efi_boot_cfg,
                     "bootable=1\nloader=limine\nsource=installer\n");
   }
+  write_text_file("/System/mbr-boot.cfg",
+                  "bootable=1\nscheme=mbr\nactive_partition=Update\nloader=limine\nsource=installer\n");
+  str_copy_safe(bios_boot_cfg, installer_update_root, sizeof(bios_boot_cfg));
+  installer_append_to_buf(bios_boot_cfg, sizeof(bios_boot_cfg), "/BOOTABLE.CFG");
+  write_text_file(bios_boot_cfg,
+                  "bootable=1\nscheme=mbr\nactive_partition=Update\nloader=limine\nsource=installer\n");
 
   summary[0] = '\0';
   str_copy_safe(summary, "Installed ", sizeof(summary));
@@ -2857,6 +2865,7 @@ static int installer_finalize_install(void) {
   installer_log("install complete");
   installer_set_status(summary);
   installer_log("EFI marked bootable");
+  installer_log("MBR active partition marked bootable");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_active = 0;
@@ -5676,6 +5685,7 @@ static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
 static int g_gpu_rendering_enabled = 0;
 static uint32_t *g_saved_backbuffer = NULL;
+static char g_gpu_backend_name[32] = "software";
 
 /* Mark a region as needing update */
 void compositor_mark_dirty(int x, int y, int w, int h) {
@@ -5697,6 +5707,8 @@ void compositor_mark_full_redraw(void) {
 }
 
 void gui_configure_gpu_rendering(int enabled) {
+  if (enabled == g_gpu_rendering_enabled)
+    return;
   if (enabled) {
     if (!primary_display.framebuffer)
       return;
@@ -5705,7 +5717,7 @@ void gui_configure_gpu_rendering(int enabled) {
       primary_display.backbuffer = NULL;
     }
     g_gpu_rendering_enabled = 1;
-    printk(KERN_INFO "GUI: GPU-backed direct framebuffer rendering enabled\n");
+    printk(KERN_INFO "GUI: %s acceleration enabled\n", g_gpu_backend_name);
   } else {
     if (!primary_display.backbuffer && g_saved_backbuffer)
       primary_display.backbuffer = g_saved_backbuffer;
@@ -5716,6 +5728,26 @@ void gui_configure_gpu_rendering(int enabled) {
 }
 
 int gui_is_gpu_rendering_enabled(void) { return g_gpu_rendering_enabled; }
+
+void gui_refresh_hardware_acceleration_policy(void) {
+  int enable = 0;
+  const char *backend = "software";
+  extern int intel_gfx_is_ready(void);
+  extern int intel_gfx_has_framebuffer(void);
+  extern bool virtio_gpu_is_available(void);
+  extern bool virtio_gpu_has_3d(void);
+
+  if (virtio_gpu_is_available() && virtio_gpu_has_3d()) {
+    enable = 1;
+    backend = "virtio-gpu";
+  } else if (intel_gfx_is_ready() && intel_gfx_has_framebuffer()) {
+    enable = 1;
+    backend = "intel-gfx";
+  }
+
+  str_copy_safe(g_gpu_backend_name, backend, sizeof(g_gpu_backend_name));
+  gui_configure_gpu_rendering(enable);
+}
 
 /* Optimized memcpy for scanlines */
 static inline void fast_memcpy_line(uint32_t *dst, uint32_t *src, int width) {
@@ -7332,15 +7364,6 @@ void gui_open_rename(const char *path) {
 /* Image Viewer                                                          */
 /* ===================================================================== */
 
-/* Bootstrap image declarations (defined in separate .c files) */
-extern const unsigned char bootstrap_landscape_jpg[];
-extern const unsigned int bootstrap_landscape_jpg_len;
-extern const unsigned char bootstrap_portrait_jpg[];
-extern const unsigned int bootstrap_portrait_jpg_len;
-extern const unsigned char bootstrap_square_jpg[];
-extern const unsigned int bootstrap_square_jpg_len;
-extern const unsigned char bootstrap_wallpaper_jpg[];
-extern const unsigned int bootstrap_wallpaper_jpg_len;
 extern const unsigned char bootstrap_test_png[];
 extern const unsigned int bootstrap_test_png_len;
 
@@ -7348,38 +7371,17 @@ extern const unsigned int bootstrap_test_png_len;
 
 #define NUM_BOOTSTRAP_IMAGES 5
 
-static const unsigned char *get_bootstrap_image_data(int index) {
-  switch (index) {
-  case 0:
-    return bootstrap_landscape_jpg;
-  case 1:
-    return bootstrap_portrait_jpg;
-  case 2:
-    return bootstrap_square_jpg;
-  case 3:
-    return bootstrap_wallpaper_jpg;
-  case 4:
-    return bootstrap_test_png;
-  default:
-    return NULL;
-  }
-}
-
-static unsigned int get_bootstrap_image_len(int index) {
-  switch (index) {
-  case 0:
-    return bootstrap_landscape_jpg_len;
-  case 1:
-    return bootstrap_portrait_jpg_len;
-  case 2:
-    return bootstrap_square_jpg_len;
-  case 3:
-    return bootstrap_wallpaper_jpg_len;
-  case 4:
-    return bootstrap_test_png_len;
-  default:
-    return 0;
-  }
+static const char *get_bootstrap_image_path(int index) {
+  static const char *paths[] = {
+      "/assets/wallpapers/landscape.jpg",
+      "/assets/wallpapers/portrait.jpg",
+      "/assets/wallpapers/square.jpg",
+      "/assets/wallpapers/wallpaper.jpg",
+      NULL,
+  };
+  if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
+    return paths[index];
+  return NULL;
 }
 
 static const char *get_bootstrap_image_name(int index) {
@@ -7400,9 +7402,28 @@ static void image_viewer_load_bootstrap(int index) {
   }
 
   /* Decode image - detect format by magic bytes */
-  const unsigned char *data = get_bootstrap_image_data(index);
-  unsigned int len = get_bootstrap_image_len(index);
+  uint8_t *external_data = NULL;
+  size_t external_size = 0;
+  const unsigned char *data = NULL;
+  unsigned int len = 0;
+  const char *path = get_bootstrap_image_path(index);
   int ret = -1;
+  int used_external_file = 0;
+
+  if (path && media_load_file(path, &external_data, &external_size) == 0) {
+    data = external_data;
+    len = (unsigned int)external_size;
+    used_external_file = 1;
+  } else if (index == 4) {
+    data = bootstrap_test_png;
+    len = bootstrap_test_png_len;
+  } else {
+    printk(KERN_ERR "Image Viewer: Missing bootstrap asset %s\n",
+           path ? path : "(null)");
+    g_imgview.loaded = 0;
+    return;
+  }
+
   /* PNG magic: 0x89 'P' 'N' 'G' */
   if (len >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' &&
       data[3] == 'G') {
@@ -7410,6 +7431,8 @@ static void image_viewer_load_bootstrap(int index) {
   } else {
     ret = media_decode_jpeg(data, len, &g_imgview.image);
   }
+  if (used_external_file)
+    media_free_file(external_data);
 
   if (ret == 0) {
     g_imgview.loaded = 1;

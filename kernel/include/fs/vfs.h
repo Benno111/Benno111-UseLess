@@ -273,6 +273,8 @@ struct vfsmount {
     struct dentry *mnt_mountpoint;
     struct vfsmount *mnt_parent;
     char mnt_devname[64];
+    char mnt_target[64];
+    char mnt_fstype[32];
 };
 
 /* ===================================================================== */

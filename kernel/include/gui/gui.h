@@ -20,6 +20,7 @@ struct display *gui_get_display(void);
 void gui_compose(void);
 void gui_configure_gpu_rendering(int enabled);
 int gui_is_gpu_rendering_enabled(void);
+void gui_refresh_hardware_acceleration_policy(void);
 
 /* Window management */
 struct window *gui_create_window(const char *title, int x, int y, int w, int h);

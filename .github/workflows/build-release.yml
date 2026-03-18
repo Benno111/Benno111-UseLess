@@ -99,8 +99,8 @@ jobs:
 
       - name: Verify x86_64 ISO boot contents
         run: |
-          ISO=image/vibos-x86_64.iso
-          xorriso -indev "$ISO" -find /boot/kernel.elf -quit >/dev/null 2>&1
+          ISO=image/os8-x86_64.iso
+          xorriso -indev "$ISO" -find /boot/main.sys -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-bios.sys -quit >/dev/null 2>&1
@@ -115,7 +115,7 @@ jobs:
         run: |
           mkdir -p release/x86_64/boot-support
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
-          cp image/vibos-x86_64.iso release/x86_64/vibos-x86_64.iso
+          cp image/os8-x86_64.iso release/x86_64/os8-x86_64.iso
           cp /tmp/x86_64-iso-files.txt release/x86_64/ISO_CONTENTS.txt
           cp vib-os-x86_64/limine.conf release/x86_64/limine.conf
           cp vib-os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
@@ -124,15 +124,15 @@ jobs:
           cp vib-os-x86_64/limine/bin/limine-uefi-cd.bin release/x86_64/boot-support/limine-uefi-cd.bin
           cat > release/x86_64/BOOTING.md << 'EOF'
           x86_64 boot files included in this bundle:
-          - vibos-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
+          - os8-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
           - vibos-x86_64.elf: kernel binary
           - ISO_CONTENTS.txt: manifest of files verified inside the ISO
           - limine.conf: Limine boot menu configuration
           - boot-support/: Limine BIOS and UEFI boot files used to build the ISO
 
           Recommended boot path:
-          1. Use vibos-x86_64.iso directly in a VM.
-          2. Use Rufus in ISO mode to write vibos-x86_64.iso to USB.
+          1. Use os8-x86_64.iso directly in a VM.
+          2. Use Rufus in ISO mode to write os8-x86_64.iso to USB.
           3. Use the boot-support files only if you are rebuilding or debugging the boot media layout.
           EOF
 
@@ -183,7 +183,7 @@ jobs:
           ### x86_64
           - `vibos-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
             - `vibos-x86_64.elf` - Kernel binary
-            - `vibos-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
+            - `os8-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
             - `ISO_CONTENTS.txt` - Verified manifest of boot files inside the ISO
             - `limine.conf` - Boot menu configuration
             - `boot-support/` - Limine BIOS and UEFI boot files used by the ISO
