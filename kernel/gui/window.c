@@ -1769,6 +1769,98 @@ static int write_text_file(const char *path, const char *content) {
   return media_install_text_file(path, content);
 }
 
+static int installer_get_persistent_root(char *buf, int max) {
+  static const char *roots[] = {"/Persist", "/persist", "/disk", "/mnt/disk"};
+  struct file *dir;
+
+  if (!buf || max <= 0)
+    return -1;
+
+  for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
+    dir = vfs_open(roots[i], O_RDONLY, 0);
+    if (!dir)
+      continue;
+    vfs_close(dir);
+    str_copy_safe(buf, roots[i], max);
+    return 0;
+  }
+
+  buf[0] = '\0';
+  return -1;
+}
+
+static int installer_translate_target_path(const char *path, char *buf,
+                                           int max) {
+  char persistent_root[64];
+  int prefix_len = 0;
+  int idx = 0;
+
+  if (!path || !buf || max <= 0 || !installer_target_root[0])
+    return -1;
+  if (installer_get_persistent_root(persistent_root,
+                                    sizeof(persistent_root)) != 0)
+    return -1;
+
+  while (installer_target_root[prefix_len])
+    prefix_len++;
+  for (int i = 0; i < prefix_len; i++) {
+    if (path[i] != installer_target_root[i])
+      return -1;
+  }
+  if (path[prefix_len] && path[prefix_len] != '/')
+    return -1;
+
+  for (int i = 0; persistent_root[i] && idx < max - 1; i++)
+    buf[idx++] = persistent_root[i];
+  for (int i = prefix_len; path[i] && idx < max - 1; i++)
+    buf[idx++] = path[i];
+  buf[idx] = '\0';
+  return 0;
+}
+
+static int installer_write_raw_file(const char *path, const uint8_t *data,
+                                    size_t size) {
+  struct file *f;
+  ssize_t written;
+
+  if (!path || (!data && size > 0))
+    return -1;
+
+  installer_ensure_parent_dirs(path);
+  vfs_unlink(path);
+  f = vfs_open(path, O_CREAT | O_WRONLY, 0644);
+  if (!f)
+    return -1;
+  written = vfs_write(f, (const char *)data, size);
+  vfs_close(f);
+  return (written < 0) ? (int)written : 0;
+}
+
+static int installer_write_target_file(const char *logical_path,
+                                       const uint8_t *data, size_t size) {
+  char physical_path[256];
+
+  if (installer_write_raw_file(logical_path, data, size) != 0)
+    return -1;
+  if (installer_translate_target_path(logical_path, physical_path,
+                                      sizeof(physical_path)) == 0) {
+    if (installer_write_raw_file(physical_path, data, size) != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static int installer_write_target_text_file(const char *logical_path,
+                                            const char *content) {
+  size_t len = 0;
+  if (!content)
+    return -1;
+  while (content[len])
+    len++;
+  return installer_write_target_file(logical_path, (const uint8_t *)content,
+                                     len);
+}
+
 static int read_text_file(const char *path, char *buf, int max) {
   uint8_t *data;
   size_t size;
@@ -2670,7 +2762,7 @@ static int installer_copy_file(const char *src_path, const char *dst_path) {
   }
 
   installer_ensure_parent_dirs(dst_path);
-  if (media_install_file(dst_path, data, size) != 0) {
+  if (installer_write_target_file(dst_path, data, size) != 0) {
     str_copy_safe(msg, "write failed: ", sizeof(msg));
     installer_append_to_buf(msg, sizeof(msg), dst_path);
     installer_log(msg);
@@ -2802,10 +2894,47 @@ static int installer_copy_system_image_to_root(const char *target_root,
   return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
 }
 
+static int installer_payload_file_exists(const char *path) {
+  struct file *f;
+
+  if (!path || !path[0])
+    return 0;
+  f = vfs_open(path, O_RDONLY, 0);
+  if (!f)
+    return 0;
+  vfs_close(f);
+  return 1;
+}
+
+static int installer_validate_system_image_payload(void) {
+  static const char *required_paths[] = {
+      "/install/system-image/boot/main.sys",
+      "/install/system-image/boot/bootloader.sys",
+      "/install/system-image/limine.conf",
+      "/install/system-image/boot/limine.conf",
+      "/install/system-image/boot/limine-bios.sys",
+      "/install/system-image/EFI/BOOT/BOOTX64.EFI",
+  };
+  char msg[320];
+
+  for (int i = 0; i < (int)(sizeof(required_paths) / sizeof(required_paths[0]));
+       i++) {
+    if (installer_payload_file_exists(required_paths[i]))
+      continue;
+    str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), required_paths[i]);
+    installer_log(msg);
+    return -1;
+  }
+
+  return 0;
+}
+
 static int installer_finalize_install(void) {
   char summary[96];
   char target_state_path[128];
   char bios_boot_cfg[192];
+  char efi_boot_cfg[192];
 
   dock_loaded = 0;
   load_dock_config();
@@ -2827,24 +2956,23 @@ static int installer_finalize_install(void) {
       target_state_path[idx++] = *p;
     target_state_path[idx] = '\0';
   }
-  write_text_file(target_state_path,
-                  "installed=1\nprofile=system-image\nsource=installer-iso\n");
+  installer_write_target_text_file(
+      target_state_path,
+      "installed=1\nprofile=system-image\nsource=installer-iso\n");
 
   write_text_file("/System/efi-boot.cfg",
                   "bootable=1\nloader=limine\nsource=installer\n");
-  {
-    char efi_boot_cfg[192];
-    str_copy_safe(efi_boot_cfg, installer_efi_root, sizeof(efi_boot_cfg));
-    installer_append_to_buf(efi_boot_cfg, sizeof(efi_boot_cfg), "/BOOTABLE.CFG");
-    write_text_file(efi_boot_cfg,
-                    "bootable=1\nloader=limine\nsource=installer\n");
-  }
+  str_copy_safe(efi_boot_cfg, installer_efi_root, sizeof(efi_boot_cfg));
+  installer_append_to_buf(efi_boot_cfg, sizeof(efi_boot_cfg), "/BOOT/BOOTABLE.CFG");
+  installer_write_target_text_file(
+      efi_boot_cfg, "bootable=1\nloader=limine\nsource=installer\n");
   write_text_file("/System/mbr-boot.cfg",
-                  "bootable=1\nscheme=mbr\nactive_partition=Update\nloader=limine\nsource=installer\n");
+                  "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\nsource=installer\n");
   str_copy_safe(bios_boot_cfg, installer_update_root, sizeof(bios_boot_cfg));
   installer_append_to_buf(bios_boot_cfg, sizeof(bios_boot_cfg), "/BOOTABLE.CFG");
-  write_text_file(bios_boot_cfg,
-                  "bootable=1\nscheme=mbr\nactive_partition=Update\nloader=limine\nsource=installer\n");
+  installer_write_target_text_file(
+      bios_boot_cfg,
+      "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\nsource=installer\n");
 
   summary[0] = '\0';
   str_copy_safe(summary, "Installed ", sizeof(summary));
@@ -2863,6 +2991,7 @@ static int installer_finalize_install(void) {
     summary[idx] = '\0';
   }
   installer_log("install complete");
+  installer_log("system image written to target root");
   installer_set_status(summary);
   installer_log("EFI marked bootable");
   installer_log("MBR active partition marked bootable");
@@ -2943,7 +3072,7 @@ static void installer_process_background_install(void) {
     installer_partition_root_path(installer_efi_root, sizeof(installer_efi_root),
                                   "EFI");
     installer_partition_root_path(installer_update_root,
-                                  sizeof(installer_update_root), "Update");
+                                  sizeof(installer_update_root), "boot");
     str_copy_safe(installer_log_target_root, installer_target_root,
                   sizeof(installer_log_target_root));
     installer_log(installer_target_root);
@@ -2954,31 +3083,29 @@ static void installer_process_background_install(void) {
                                 "install failed: target layout creation failed");
       return;
     }
-    installer_set_status("Copying EFI files...");
+    if (installer_validate_system_image_payload() != 0) {
+      installer_fail_background("Install blocked. Boot files are missing from the installer image.",
+                                "install blocked: boot payload incomplete");
+      return;
+    }
+    installer_set_status("Copying system image...");
     installer_progress_done = 2;
     installer_phase = 3;
     return;
   }
   case 3:
-    if (installer_copy_system_image_to_root(installer_efi_root,
+    if (installer_copy_system_image_to_root(installer_target_root,
                                             &installer_copied_files,
                                             &installer_failed_files) != 0) {
-      installer_fail_background("Install failed. EFI image copy failed.",
-                                "install failed: EFI copy failed");
+      installer_fail_background("Install failed. System image copy failed.",
+                                "install failed: system image copy failed");
       return;
     }
-    installer_set_status("Copying update files...");
+    installer_set_status("Preparing boot metadata...");
     installer_progress_done = 3;
     installer_phase = 4;
     return;
   case 4:
-    if (installer_copy_system_image_to_root(installer_update_root,
-                                            &installer_copied_files,
-                                            &installer_failed_files) != 0) {
-      installer_fail_background("Install failed. Update image copy failed.",
-                                "install failed: update copy failed");
-      return;
-    }
     installer_set_status("Finalizing boot files...");
     installer_progress_done = 4;
     installer_phase = 5;

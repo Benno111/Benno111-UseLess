@@ -55,8 +55,8 @@ jobs:
           set -euxo pipefail
           ls -lh image/os8-x86_64.iso
           file image/os8-x86_64.iso
-          ls -lh image/vibos-x86_64-installer.iso
-          file image/vibos-x86_64-installer.iso
+          ls -lh image/os-x86_64-installer.iso
+          file image/os-x86_64-installer.iso
           ls -lh image/os-arm64.iso
           file image/os-arm64.iso
 
@@ -76,7 +76,7 @@ jobs:
           ## Bootable Media
 
           - \`os8-x86_64.iso\`
-          - \`vibos-x86_64-installer.iso\`
+          - \`os-x86_64-installer.iso\`
           - \`os-arm64.iso\`
 
           ## Branch
@@ -97,7 +97,7 @@ jobs:
           prerelease: true
           files: |
             image/os8-x86_64.iso
-            image/vibos-x86_64-installer.iso
+            image/os-x86_64-installer.iso
             image/os-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -40,6 +40,10 @@ static void init_subsystems(void *dtb);
 static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void keyboard_handler(int key);
+static int seed_installer_payload_file(const char *target_path,
+                                       const char *source_path);
+static void seed_installer_payload_text(const char *target_path,
+                                        const char *content);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
 #endif
@@ -79,6 +83,28 @@ void kernel_main(void *dtb) {
 
   /* This point should never be reached */
   panic("kernel_main returned unexpectedly!");
+}
+
+static int seed_installer_payload_file(const char *target_path,
+                                       const char *source_path) {
+  uint8_t *data = NULL;
+  size_t size = 0;
+
+  if (!target_path || !source_path)
+    return -1;
+  if (media_load_file(source_path, &data, &size) != 0)
+    return -1;
+
+  media_install_file(target_path, data, size);
+  media_free_file(data);
+  return 0;
+}
+
+static void seed_installer_payload_text(const char *target_path,
+                                        const char *content) {
+  if (!target_path || !content)
+    return;
+  media_install_text_file(target_path, content);
 }
 
 /*
@@ -373,18 +399,51 @@ static void populate_seed_filesystem(void) {
     media_install_text_file("/install/system-image/IMAGE_INFO.txt",
                             "OS next stage System Image\n"
                             "Mounted into the installer runtime from boot payload.\n");
-    media_install_text_file("/install/system-image/limine.conf",
-                            "TIMEOUT=0\n"
-                            ":OS next stage\n"
-                            "    protocol: limine\n"
-                            "    path: boot():/boot/bootloader.sys\n");
-    media_install_text_file("/install/system-image/boot/limine.conf",
-                            "TIMEOUT=0\n"
-                            ":OS next stage\n"
-                            "    protocol: limine\n"
-                            "    path: boot():/boot/bootloader.sys\n");
-    media_install_text_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
-                            "LIMINE_EFI_PLACEHOLDER");
+    if (seed_installer_payload_file("/install/system-image/limine.conf",
+                                    "/limine.conf") != 0) {
+      seed_installer_payload_text("/install/system-image/limine.conf",
+                                  "TIMEOUT=0\n"
+                                  ":OS next stage\n"
+                                  "    protocol: limine\n"
+                                  "    path: boot():/boot/bootloader.sys\n");
+    }
+    if (seed_installer_payload_file("/install/system-image/boot/limine.conf",
+                                    "/boot/limine.conf") != 0) {
+      seed_installer_payload_text("/install/system-image/boot/limine.conf",
+                                  "TIMEOUT=0\n"
+                                  ":OS next stage\n"
+                                  "    protocol: limine\n"
+                                  "    path: boot():/boot/bootloader.sys\n");
+    }
+    if (seed_installer_payload_file("/install/system-image/limine/limine.conf",
+                                    "/EFI/BOOT/limine.conf") != 0 &&
+        seed_installer_payload_file("/install/system-image/limine/limine.conf",
+                                    "/limine.conf") != 0) {
+      seed_installer_payload_text("/install/system-image/limine/limine.conf",
+                                  "TIMEOUT=0\n"
+                                  ":OS next stage\n"
+                                  "    protocol: limine\n"
+                                  "    path: boot():/boot/bootloader.sys\n");
+    }
+    if (seed_installer_payload_file("/install/system-image/EFI/BOOT/limine.conf",
+                                    "/EFI/BOOT/limine.conf") != 0 &&
+        seed_installer_payload_file("/install/system-image/EFI/BOOT/limine.conf",
+                                    "/limine.conf") != 0) {
+      seed_installer_payload_text(
+          "/install/system-image/EFI/BOOT/limine.conf",
+          "TIMEOUT=0\n"
+          ":OS next stage\n"
+          "    protocol: limine\n"
+          "    path: boot():/boot/bootloader.sys\n");
+    }
+    seed_installer_payload_file("/install/system-image/boot/limine-bios.sys",
+                                "/boot/limine-bios.sys");
+    seed_installer_payload_file("/install/system-image/boot/limine-bios-cd.bin",
+                                "/boot/limine-bios-cd.bin");
+    seed_installer_payload_file("/install/system-image/boot/limine-uefi-cd.bin",
+                                "/boot/limine-uefi-cd.bin");
+    seed_installer_payload_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
+                                "/EFI/BOOT/BOOTX64.EFI");
 #ifdef ARCH_X86_64
     {
       void *kernel_file = limine_get_kernel_file_addr();
