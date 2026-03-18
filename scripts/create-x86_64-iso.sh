@@ -76,6 +76,7 @@ cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/bootloader.sys"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
 cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
+cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/EFI/BOOT/limine.conf"
 cp "$LIMINE_BIN_DIR/limine-bios.sys" "$INSTALL_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$INSTALL_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$INSTALL_ROOT/boot/"
@@ -97,6 +98,9 @@ Primary payload files:
 - /install/system-image/boot/main.sys
 - /install/system-image/boot/bootloader.sys
 - /install/system-image/limine.conf
+- /install/system-image/boot/limine.conf
+- /install/system-image/limine/limine.conf
+- /install/system-image/EFI/BOOT/limine.conf
 - /install/system-image/boot/limine-bios.sys
 - /install/system-image/boot/limine-bios-cd.bin
 - /install/system-image/boot/limine-uefi-cd.bin
@@ -152,6 +156,9 @@ require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"
 require_iso_path "/install/system-image/limine.conf"
+require_iso_path "/install/system-image/boot/limine.conf"
+require_iso_path "/install/system-image/limine/limine.conf"
+require_iso_path "/install/system-image/EFI/BOOT/limine.conf"
 require_iso_path "/install/system-image/boot/limine-bios.sys"
 require_iso_path "/install/system-image/boot/limine-bios-cd.bin"
 require_iso_path "/install/system-image/boot/limine-uefi-cd.bin"

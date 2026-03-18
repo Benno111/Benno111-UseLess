@@ -121,6 +121,7 @@ static int gui_is_installer_mode(void) {
 static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
 static int installer_active = 0;
+static int installer_show_restart_screen = 0;
 static int installer_phase = 0;
 static int installer_progress_done = 0;
 static int installer_progress_total = 5;
@@ -2912,7 +2913,11 @@ static int installer_validate_system_image_payload(void) {
       "/install/system-image/boot/bootloader.sys",
       "/install/system-image/limine.conf",
       "/install/system-image/boot/limine.conf",
+      "/install/system-image/limine/limine.conf",
+      "/install/system-image/EFI/BOOT/limine.conf",
       "/install/system-image/boot/limine-bios.sys",
+      "/install/system-image/boot/limine-bios-cd.bin",
+      "/install/system-image/boot/limine-uefi-cd.bin",
       "/install/system-image/EFI/BOOT/BOOTX64.EFI",
   };
   char msg[320];
@@ -2928,6 +2933,21 @@ static int installer_validate_system_image_payload(void) {
   }
 
   return 0;
+}
+
+static int installer_reboot_seconds_remaining(void) {
+  uint64_t now;
+  uint64_t remaining_ms;
+
+  if (!installer_reboot_deadline_ms)
+    return 0;
+
+  now = arch_timer_get_ms();
+  if (now >= installer_reboot_deadline_ms)
+    return 0;
+
+  remaining_ms = installer_reboot_deadline_ms - now;
+  return (int)((remaining_ms + 999) / 1000);
 }
 
 static int installer_finalize_install(void) {
@@ -2997,6 +3017,7 @@ static int installer_finalize_install(void) {
   installer_log("MBR active partition marked bootable");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
+  installer_show_restart_screen = 1;
   installer_active = 0;
   installer_phase = 0;
   installer_reboot_deadline_ms = arch_timer_get_ms() + 3000;
@@ -3007,6 +3028,7 @@ static void installer_start_background_install(void) {
   installer_log_clear();
   installer_refresh_disk_inventory();
   installer_has_run = 0;
+  installer_show_restart_screen = 0;
   installer_active = 1;
   installer_phase = 1;
   installer_progress_done = 0;
@@ -3025,6 +3047,7 @@ static void installer_start_background_install(void) {
 static void installer_fail_background(const char *status, const char *log_line) {
   installer_active = 0;
   installer_phase = 0;
+  installer_show_restart_screen = 0;
   installer_set_status(status);
   if (log_line)
     installer_log(log_line);
@@ -3145,6 +3168,55 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                    ? (progress_w * installer_progress_done) /
                          installer_progress_total
                    : 0;
+
+  if (installer_show_restart_screen) {
+    char countdown[96];
+    int seconds = installer_reboot_seconds_remaining();
+    int restart_x = content_x + 24;
+    int restart_y = content_y + content_h - 64;
+    int restart_w = 180;
+    int restart_h = 34;
+
+    gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
+    gui_draw_rect(card_x + 18, card_y + 18, card_w - 36, 72, 0x123B2A);
+    gui_draw_string(card_x + 34, card_y + 34, "Installation Complete",
+                    0xFFFFFF, 0x123B2A);
+    gui_draw_string(card_x + 34, card_y + 58,
+                    "The system image is installed and ready to boot.",
+                    0xD1FAE5, 0x123B2A);
+
+    gui_draw_string(card_x + 18, card_y + 118, "Next step:", 0x89B4FA,
+                    0x232337);
+    gui_draw_string(card_x + 30, card_y + 142,
+                    "Restart to boot from the installed disk.", 0xE5E7EB,
+                    0x232337);
+    gui_draw_string(card_x + 30, card_y + 162,
+                    "Remove the installer media if your VM or machine keeps",
+                    0xE5E7EB, 0x232337);
+    gui_draw_string(card_x + 30, card_y + 182,
+                    "booting back into setup after restart.", 0xE5E7EB,
+                    0x232337);
+
+    gui_draw_string(card_x + 18, card_y + 222, "Status:", 0x89B4FA, 0x232337);
+    gui_draw_rect(card_x + 18, card_y + 242, card_w - 36, 34, 0x1B1B2B);
+    gui_draw_string(card_x + 28, card_y + 253, installer_status, 0xFFFFFF,
+                    0x1B1B2B);
+
+    str_copy_safe(countdown, "Automatic restart in ", sizeof(countdown));
+    {
+      int idx = 0;
+      while (countdown[idx] && idx < (int)sizeof(countdown) - 1)
+        idx++;
+      append_decimal(countdown, &idx, seconds > 0 ? seconds : 0);
+      installer_append_to_buf(countdown, sizeof(countdown), " seconds...");
+    }
+    gui_draw_string(card_x + 18, card_y + 298, countdown, 0xA6E3A1, 0x232337);
+
+    gui_draw_rect(restart_x, restart_y, restart_w, restart_h, 0x16A34A);
+    gui_draw_string(restart_x + 42, restart_y + 10, "Restart Now", 0xFFFFFF,
+                    0x16A34A);
+    return;
+  }
 
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
   gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
@@ -6940,6 +7012,19 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         installer_refresh_disk_inventory();
 
+        if (installer_show_restart_screen) {
+          if (x >= button_x && x < button_x + button_w && y >= button_y &&
+              y < button_y + button_h) {
+            installer_reboot_deadline_ms = 0;
+            {
+              extern void arch_reboot(void);
+              arch_reboot();
+            }
+            return;
+          }
+          return;
+        }
+
         for (int i = 0; i < installer_disk_count && i < 3; i++) {
           int row_y = disk_y + 18 + i * 26;
           if (x >= card_x + 18 && x < card_x + content_w - 60 && y >= row_y &&
@@ -7165,6 +7250,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
   if (gui_is_installer_mode()) {
     installer_has_run = 0;
+    installer_show_restart_screen = 0;
     installer_set_status("Ready to install the system image.");
   }
 
