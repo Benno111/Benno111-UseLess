@@ -72,6 +72,7 @@ Common targets:
 - `kernel` builds only the kernel
 - `image` builds the bootable image or ISO
 - `installer-image` builds the x86_64 installer ISO
+- `dos-installer-image` builds a BIOS-only 16-bit text installer image
 - `qemu` runs the default emulator flow
 - `qemu-bios` runs BIOS boot where supported
 - `qemu-uefi` runs UEFI boot where supported
@@ -109,6 +110,18 @@ This produces:
 
 ```text
 image/os-x86_64-installer.iso
+```
+
+### x86_64 DOS-style text installer
+
+```sh
+make ARCH=x86_64 dos-installer-image
+```
+
+This produces:
+
+```text
+image/os-x86_64-dos-installer.img
 ```
 
 ### x86_64 default image
@@ -153,6 +166,12 @@ Important notes:
 - `/setup/` is currently a mirrored runtime view of the installer media, not a true ISO9660 mount
 - the installer path is still evolving
 - storage and partition handling are development-grade and should be treated carefully
+
+There is also a second installer variant:
+
+- a BIOS-only, 16-bit real-mode, DOS-style text installer image
+- it does not boot the kernel
+- it is currently a fallback installer shell and framework, not a full replacement for the GUI installer yet
 
 ## Runtime Filesystem Model
 

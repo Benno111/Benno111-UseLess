@@ -196,7 +196,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image dos-installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -226,6 +226,7 @@ help:
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
+	@echo "  dos-installer-image - Create BIOS real-mode text installer image"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -331,6 +332,29 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@echo "[CC] $<"
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 
+INSTALLER_BOOT_STAGE1_OBJ := $(BUILD_DIR)/boot/installer_stage1.o
+INSTALLER_BOOT_STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
+INSTALLER_BOOT_STAGE1_BIN := $(BUILD_DIR)/boot/installer_stage1.bin
+INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
+
+$(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.S | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@echo "[AS] $<"
+	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
+
+$(INSTALLER_BOOT_STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@echo "[AS] $<"
+	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
+
+$(INSTALLER_BOOT_STAGE1_BIN): $(INSTALLER_BOOT_STAGE1_OBJ)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O binary $< $@
+
+$(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_OBJ)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O binary $< $@
+
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
 	@$(LD) $(LDFLAGS_KERNEL) -o $@ $^
@@ -359,13 +383,24 @@ else ifeq ($(ARCH),x86)
 	@echo "[IMAGE] Created: $(RAW_IMAGE)"
 endif
 
-installer-image: kernel
+installer-image: kernel $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
-	@ISO_NAME=os-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=os-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" DOS_INSTALLER_IMAGE="$(IMAGE_DIR)/os-x86_64-dos-installer.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-installer.iso"
 else
 	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
+	@exit 1
+endif
+
+dos-installer-image: $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN)
+ifeq ($(ARCH),x86_64)
+	@echo "[IMAGE] Creating BIOS DOS-style text installer image..."
+	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
+else
+	@echo "[IMAGE] dos-installer-image is currently supported only for ARCH=x86_64"
 	@exit 1
 endif
 

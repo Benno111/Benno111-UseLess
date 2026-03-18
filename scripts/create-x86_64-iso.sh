@@ -13,6 +13,7 @@ LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
 LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
+DOS_INSTALLER_IMAGE="${DOS_INSTALLER_IMAGE:-${IMAGE_DIR}/os-x86_64-dos-installer.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -56,6 +57,12 @@ mkdir -p "$INSTALL_ROOT/boot"
 mkdir -p "$INSTALL_ROOT/EFI/BOOT"
 mkdir -p "$INSTALL_ROOT/limine"
 
+if [ -f "$DOS_INSTALLER_IMAGE" ]; then
+    DOS_INSTALLER_ENABLED=1
+else
+    DOS_INSTALLER_ENABLED=0
+fi
+
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
     cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
@@ -86,6 +93,11 @@ cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
+
+if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
+    cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
+    cp "$DOS_INSTALLER_IMAGE" "$INSTALL_ROOT/boot/dos-installer.img"
+fi
 
 cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
 OS next stage System Image
@@ -126,10 +138,40 @@ xorriso -as mkisofs \
     -efi-boot-part \
     --efi-boot-image \
     --protective-msdos-label \
+    $(if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then printf '%s ' -append_partition 2 0x06 "$DOS_INSTALLER_IMAGE"; fi) \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
 "$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+
+if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
+    patch_dos_installer_partition() {
+        local image_path="$1"
+        local start_lba
+        local byte0
+        local byte1
+        local byte2
+        local byte3
+
+        start_lba=$(od -An -t u4 -j 470 -N 4 "$image_path" | tr -d ' \n')
+        if [ -z "$start_lba" ] || [ "$start_lba" = "0" ]; then
+            echo "[ERROR] Failed to locate appended DOS installer partition in $image_path" >&2
+            exit 1
+        fi
+
+        byte0=$(( start_lba        & 0xFF ))
+        byte1=$(( (start_lba >> 8) & 0xFF ))
+        byte2=$(( (start_lba >> 16) & 0xFF ))
+        byte3=$(( (start_lba >> 24) & 0xFF ))
+
+        printf "\\$(printf '%03o' "$byte0")\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")\\$(printf '%03o' "$byte3")" \
+            | dd of="$image_path" bs=1 seek=$(( start_lba * 512 + 502 )) conv=notrunc status=none
+    }
+
+    log "Patching DOS installer partition chainload base"
+    patch_dos_installer_partition "$ISO_PATH"
+    "$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+fi
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
@@ -153,6 +195,10 @@ require_iso_path "/EFI/BOOT/BOOTX64.EFI"
 require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
+if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
+    require_iso_path "/boot/dos-installer.img"
+    require_iso_path "/install/system-image/boot/dos-installer.img"
+fi
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"
 require_iso_path "/install/system-image/limine.conf"
