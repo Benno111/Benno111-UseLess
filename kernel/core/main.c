@@ -11,6 +11,7 @@
 #include "drivers/storage.h"
 #include "drivers/pci.h"
 #include "drivers/uart.h"
+#include "fs/iso9660.h"
 #include "fs/vfs.h"
 #include "media/media.h"
 #include "media/seed_assets.h"
@@ -600,9 +601,13 @@ static void refresh_external_storage_views(void) {
     build_seed_path(external_root, sizeof(external_root), "/External", location);
     seed_make_dir("", external_root);
 
-    if (kind == STORAGE_KIND_CDROM && boot_is_installer_mode()) {
-      copy_tree_to_prefix("/setup", external_root, 0);
-      continue;
+    if (kind == STORAGE_KIND_CDROM) {
+      if (iso9660_copy_to_ramfs(location, external_root) == 0)
+        continue;
+      if (boot_is_installer_mode()) {
+        copy_tree_to_prefix("/setup", external_root, 0);
+        continue;
+      }
     }
 
     build_seed_path(source_root, sizeof(source_root), "/Installed", location);

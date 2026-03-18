@@ -51,6 +51,9 @@ int storage_get_disk_count(void);
 int storage_get_disk_kind(int index);
 int storage_disk_is_removable(int index);
 int storage_get_disk_location(int index, char *buf, int max);
+int storage_get_disk_index_by_location(const char *location);
+int storage_read_block(int disk_index, uint32_t lba, void *buffer,
+                       uint32_t block_size);
 int storage_describe_disk(int index, char *buf, int max);
 void storage_build_disk_overview(char *buf, int max);
 int storage_get_partition_count(int disk_index);

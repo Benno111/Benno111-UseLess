@@ -474,6 +474,51 @@ static int storage_ide_read_sector(const storage_disk_t *disk, uint32_t lba,
   return 0;
 }
 
+static int storage_ide_read_atapi_block(const storage_disk_t *disk, uint32_t lba,
+                                        void *buffer) {
+  uint16_t io_base;
+  uint8_t drive_select;
+  int status;
+  uint16_t *words = (uint16_t *)buffer;
+  uint8_t packet[12] = {0};
+
+  if (!buffer || storage_ide_disk_geometry(disk, &io_base, &drive_select) != 0)
+    return -1;
+
+  outb(io_base + 6, (uint8_t)(0xA0 | drive_select));
+  io_wait();
+  outb(io_base + 1, 0);
+  outb(io_base + 4, 0x00);
+  outb(io_base + 5, 0x08);
+  outb(io_base + 7, 0xA0);
+
+  status = storage_ide_wait(io_base, 0x88, 0x08, 100000);
+  if (status < 0 || (status & 0x01))
+    return -1;
+
+  packet[0] = 0xA8;
+  packet[2] = (uint8_t)((lba >> 24) & 0xFF);
+  packet[3] = (uint8_t)((lba >> 16) & 0xFF);
+  packet[4] = (uint8_t)((lba >> 8) & 0xFF);
+  packet[5] = (uint8_t)(lba & 0xFF);
+  packet[9] = 1;
+
+  for (int i = 0; i < 6; i++) {
+    uint16_t word = (uint16_t)packet[i * 2] |
+                    ((uint16_t)packet[i * 2 + 1] << 8);
+    outw(io_base, word);
+  }
+
+  status = storage_ide_wait(io_base, 0x88, 0x08, 100000);
+  if (status < 0 || (status & 0x01))
+    return -1;
+
+  for (int i = 0; i < 1024; i++)
+    words[i] = inw(io_base);
+
+  return 0;
+}
+
 static int storage_ide_write_sector(const storage_disk_t *disk, uint32_t lba,
                                     const void *buffer) {
   uint16_t io_base;
@@ -997,6 +1042,31 @@ int storage_get_disk_location(int index, char *buf, int max) {
     return -1;
   storage_copy_string(buf, storage_disks[index].location, max);
   return 0;
+}
+
+int storage_get_disk_index_by_location(const char *location) {
+  if (!location)
+    return -1;
+  return storage_find_disk_by_location(location);
+}
+
+int storage_read_block(int disk_index, uint32_t lba, void *buffer,
+                       uint32_t block_size) {
+  if (disk_index < 0 || disk_index >= storage_disk_count || !buffer)
+    return -1;
+
+  if (block_size == 512)
+    return storage_disk_read_sector(disk_index, lba, buffer);
+
+  if (block_size == 2048 && storage_disks[disk_index].kind == STORAGE_KIND_CDROM) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+    return storage_ide_read_atapi_block(&storage_disks[disk_index], lba, buffer);
+#else
+    return -1;
+#endif
+  }
+
+  return -1;
 }
 
 int storage_get_kind_count(storage_kind_t kind) {
