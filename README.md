@@ -72,7 +72,7 @@ Common targets:
 - `kernel` builds only the kernel
 - `image` builds the bootable image or ISO
 - `installer-image` builds the x86_64 installer ISO
-- `dos-installer-image` builds a BIOS-only 16-bit text installer image
+- `dos-installer-image` builds a BIOS-only 16-bit text installer image with 64-bit kernel handoff disabled
 - `qemu` runs the default emulator flow
 - `qemu-bios` runs BIOS boot where supported
 - `qemu-uefi` runs UEFI boot where supported
@@ -170,6 +170,7 @@ Important notes:
 There is also a second installer variant:
 
 - a BIOS-only, 16-bit real-mode, DOS-style text installer image
+- this variant stays in BIOS real mode and does not transition into the 64-bit kernel path
 - it does not boot the kernel
 - it is currently a fallback installer shell and framework, not a full replacement for the GUI installer yet
 

@@ -131,11 +131,11 @@ halt_system:
 title_text:
     .asciz  "OS next stage DOS-style Installer\r\n"
 subtitle_text:
-    .asciz  "16-bit real mode fallback installer\r\n\r\n"
+    .asciz  "16-bit real mode fallback installer\r\n64-bit kernel handoff disabled\r\n\r\n"
 menu_text:
     .asciz  "  1. Install system image (stub)\r\n  2. Enter installer shell\r\n  3. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
 install_text:
-    .asciz  "This installer variant runs without the kernel and is intended\r\nas a DOS-style fallback path.\r\n\r\nCurrent status:\r\n- BIOS text mode is working\r\n- real-mode control flow is working\r\n- integration hooks for full disk install can be added here next\r\n\r\n"
+    .asciz  "This installer variant runs without the kernel and is intended\r\nas a DOS-style fallback path.\r\n\r\nCurrent status:\r\n- BIOS text mode is working\r\n- real-mode control flow is working\r\n- 64-bit kernel handoff is disabled in this variant\r\n- integration hooks for full disk install can be added here next\r\n\r\n"
 shell_text:
     .asciz  "Installer shell\r\nCommands: h=help, r=reboot, q=back\r\n\r\n"
 shell_help_text:
