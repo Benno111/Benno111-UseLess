@@ -1,8 +1,9 @@
 /*
- * Vib-OS BIOS Bootloader - Stage 1
- * 
- * This is the Master Boot Record (MBR) that loads stage 2
- * Loaded by BIOS at 0x7C00
+ * OS next stage BIOS text installer - stage 1
+ *
+ * This is a BIOS volume boot sector for the DOS-style installer path.
+ * It carries a minimal FAT-style BPB so chainloaders recognise it as a
+ * bootable volume, then loads installer stage 2 from the following sectors.
  */
 
 .code16
@@ -10,6 +11,30 @@
 .global _start
 
 _start:
+    jmp     real_mode_entry
+    nop
+
+    .ascii  "OSNEXT  "
+    .word   512                 /* bytes per sector */
+    .byte   1                   /* sectors per cluster */
+    .word   1                   /* reserved sectors */
+    .byte   1                   /* number of FATs */
+    .word   16                  /* root directory entries */
+    .word   0                   /* total sectors (16-bit) */
+    .byte   0xF8                /* media descriptor */
+    .word   1                   /* sectors per FAT */
+    .word   63                  /* sectors per track */
+    .word   255                 /* heads */
+hidden_sectors:
+    .long   0                   /* patched to partition LBA when embedded */
+    .long   32768               /* total sectors (32-bit, 16 MiB image) */
+    .byte   0x80                /* BIOS drive */
+    .byte   0
+    .byte   0x29                /* extended boot signature */
+    .long   0x4F534E58          /* volume serial */
+    .ascii  "OSNEXTSETUP"       /* volume label */
+    .ascii  "FAT16   "
+
     ljmp    $0x0000, $real_mode_entry
 
 real_mode_entry:
@@ -96,7 +121,7 @@ load_stage2:
     push    %dx
     push    %si
 
-    movl    partition_base_lba, %eax
+    movl    hidden_sectors, %eax
     incl    %eax
     movl    %eax, dap_lba
     movl    $0, dap_lba + 4
@@ -106,7 +131,7 @@ load_stage2:
     int     $0x13
     jnc     .done
 
-    cmpb    $0, partition_base_lba
+    cmpl    $0, hidden_sectors
     jne     .fail
 
     movb    boot_drive, %dl
@@ -155,14 +180,6 @@ dap:
     .word   0x0000
 dap_lba:
     .quad   1
-
-/* ===================================================================== */
-/* Boot Signature */
-/* ===================================================================== */
-
-.org 502
-partition_base_lba:
-    .long   0
 
 .org 510
 .word 0xAA55

@@ -165,7 +165,7 @@ if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
         byte3=$(( (start_lba >> 24) & 0xFF ))
 
         printf "\\$(printf '%03o' "$byte0")\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")\\$(printf '%03o' "$byte3")" \
-            | dd of="$image_path" bs=1 seek=$(( start_lba * 512 + 502 )) conv=notrunc status=none
+            | dd of="$image_path" bs=1 seek=$(( start_lba * 512 + 28 )) conv=notrunc status=none
     }
 
     log "Patching DOS installer partition chainload base"
