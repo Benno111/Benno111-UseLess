@@ -8,6 +8,7 @@
 #include "apps/embedded_apps.h"
 #include "arch/arch.h"
 #include "build_uuid.h"
+#include "drivers/storage.h"
 #include "drivers/pci.h"
 #include "drivers/uart.h"
 #include "fs/vfs.h"
