@@ -464,18 +464,30 @@ static int copy_tree_callback(void *ctx, const char *name, int len,
         name[3] == 'u' && name[4] == 'p')))
     return 0;
 
-  str_copy_safe(src_path, copy->src_root, sizeof(src_path));
-  while (src_path[src_len])
-    src_len++;
+  src_path[0] = '\0';
+  if (copy->src_root) {
+    for (src_len = 0;
+         copy->src_root[src_len] && src_len < (int)sizeof(src_path) - 1;
+         src_len++) {
+      src_path[src_len] = copy->src_root[src_len];
+    }
+    src_path[src_len] = '\0';
+  }
   if (!(src_len == 1 && src_path[0] == '/') && src_len < (int)sizeof(src_path) - 1)
     src_path[src_len++] = '/';
   for (int i = 0; i < len && src_len < (int)sizeof(src_path) - 1; i++)
     src_path[src_len++] = name[i];
   src_path[src_len] = '\0';
 
-  str_copy_safe(dst_path, copy->dst_root, sizeof(dst_path));
-  while (dst_path[dst_len])
-    dst_len++;
+  dst_path[0] = '\0';
+  if (copy->dst_root) {
+    for (dst_len = 0;
+         copy->dst_root[dst_len] && dst_len < (int)sizeof(dst_path) - 1;
+         dst_len++) {
+      dst_path[dst_len] = copy->dst_root[dst_len];
+    }
+    dst_path[dst_len] = '\0';
+  }
   if (!(dst_len == 1 && dst_path[0] == '/') && dst_len < (int)sizeof(dst_path) - 1)
     dst_path[dst_len++] = '/';
   for (int i = 0; i < len && dst_len < (int)sizeof(dst_path) - 1; i++)
