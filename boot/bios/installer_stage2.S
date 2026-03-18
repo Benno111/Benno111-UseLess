@@ -119,7 +119,7 @@ print_string:
     ret
 
 reboot_system:
-    mov     $0x1234, 0x472
+    movw    $0x1234, 0x472
     ljmp    $0xFFFF, $0x0000
 
 halt_system:
