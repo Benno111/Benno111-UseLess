@@ -41,6 +41,7 @@ static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
 static void populate_seed_tree_at(const char *prefix);
+static void ensure_boot_payload_dirs(const char *prefix);
 static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
                            const char *path);
 static void seed_make_dir(const char *prefix, const char *path);
@@ -419,6 +420,13 @@ static void populate_seed_tree_at(const char *prefix) {
                   "}\n");
 }
 
+static void ensure_boot_payload_dirs(const char *prefix) {
+  seed_make_dir(prefix, "boot");
+  seed_make_dir(prefix, "EFI");
+  seed_make_dir(prefix, "EFI/BOOT");
+  seed_make_dir(prefix, "limine");
+}
+
 static void populate_installer_payload(void) {
 #ifdef ARCH_X86_64
   extern int boot_is_installer_mode(void);
@@ -491,8 +499,15 @@ static void populate_installer_payload(void) {
   seed_make_dir("", "/install");
   seed_make_dir("", "/install/system-image");
   seed_make_dir("", "/setup");
+  seed_make_dir("", "/setup/boot");
+  seed_make_dir("", "/setup/EFI");
+  seed_make_dir("", "/setup/EFI/BOOT");
+  seed_make_dir("", "/setup/limine");
   seed_make_dir("", "/setup/install");
   seed_make_dir("", "/setup/install/system-image");
+  ensure_boot_payload_dirs("/install/system-image");
+  ensure_boot_payload_dirs("/setup");
+  ensure_boot_payload_dirs("/setup/install/system-image");
   populate_seed_tree_at("/install/system-image");
   populate_seed_tree_at("/setup/install/system-image");
 

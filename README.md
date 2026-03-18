@@ -1,0 +1,254 @@
+# OS next stage
+
+OS next stage is a hobby Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
+
+The repository currently targets:
+
+- `arm64` for the main UEFI-based build flow
+- `x86_64` for Limine-based bring-up, GUI work, and installer development
+- `x86` for a legacy BIOS-oriented path
+
+This project is still in heavy development. Features, layouts, boot flows, and on-disk formats are changing often.
+
+## What Is In This Repo
+
+- A freestanding kernel with architecture-specific bring-up code
+- An in-memory VFS and RAM-backed root filesystem
+- A desktop-style GUI, file manager, installer UI, and basic apps
+- Storage probing and simple partition management
+- Boot image generation scripts for different targets
+- Runtime-seeded demo content, applications, and installer payloads
+
+## Current State
+
+The x86_64 path is the fastest-moving part of the project right now. It includes:
+
+- Limine boot support
+- Framebuffer GUI bring-up
+- PCI and basic storage discovery
+- PS/2 input
+- An installer workflow that stages a bundled system image
+- A setup-media mirror exposed at `/setup/` while running the installer
+
+The live environment is still largely RAMFS-based. The installer writes a staged system image into an installed target layout, but this is still an experimental OS project, not a finished general-purpose system.
+
+## Repository Layout
+
+```text
+boot/                 Boot configs and bootloader-related assets
+drivers/              Shared driver code
+kernel/               Core kernel, arch code, GUI, FS, media, apps
+libc/                 C library work
+runtimes/             Runtime/toolchain experiments
+scripts/              Image creation and helper scripts
+userspace/            Userspace programs and binaries used by seeding/builds
+vib-os-x86_64/        Limine config and x86_64 boot assets
+Makefile.multiarch    Main build entry point
+```
+
+## Build System
+
+The main entry point is:
+
+```sh
+make -f Makefile.multiarch ARCH=<arch> <target>
+```
+
+If your default `make` already uses `Makefile.multiarch`, you can usually run:
+
+```sh
+make ARCH=<arch> <target>
+```
+
+Supported architectures:
+
+- `ARCH=arm64`
+- `ARCH=x86_64`
+- `ARCH=x86`
+
+Common targets:
+
+- `all` builds the kernel and boot image
+- `kernel` builds only the kernel
+- `image` builds the bootable image or ISO
+- `installer-image` builds the x86_64 installer ISO
+- `qemu` runs the default emulator flow
+- `qemu-bios` runs BIOS boot where supported
+- `qemu-uefi` runs UEFI boot where supported
+- `clean` removes build artifacts for the selected architecture
+
+## Toolchain Expectations
+
+The project expects a freestanding LLVM-style toolchain and emulator utilities.
+
+Typical requirements:
+
+- `clang`
+- `ld.lld`
+- `llvm-ar`
+- `llvm-objcopy`
+- `llvm-objdump`
+- `qemu-system-*`
+
+For x86_64 ISO creation, the current scripts also expect:
+
+- `xorriso`
+- Limine boot assets under `vib-os-x86_64/limine/bin`
+
+Host assumptions in the current build system are best on Linux or macOS-style environments. Some helper scripts are shell-based and assume Unix tooling.
+
+## Quick Start
+
+### x86_64 installer ISO
+
+```sh
+make ARCH=x86_64 installer-image
+```
+
+This produces:
+
+```text
+image/os-x86_64-installer.iso
+```
+
+### x86_64 default image
+
+```sh
+make ARCH=x86_64 image
+```
+
+This produces:
+
+```text
+image/vibos-x86_64.iso
+```
+
+### ARM64 image
+
+```sh
+make ARCH=arm64 image
+```
+
+### Run in QEMU
+
+```sh
+make ARCH=x86_64 qemu
+make ARCH=x86_64 qemu-uefi
+make ARCH=arm64 qemu-uefi
+```
+
+## x86_64 Installer Flow
+
+The x86_64 installer image is built around a Limine-booted GUI environment.
+
+At installer boot, the kernel now stages:
+
+- a bundled system image under `/install/system-image`
+- a setup-media mirror under `/setup/`
+
+The installer UI uses that staged payload to populate the selected install target.
+
+Important notes:
+
+- `/setup/` is currently a mirrored runtime view of the installer media, not a true ISO9660 mount
+- the installer path is still evolving
+- storage and partition handling are development-grade and should be treated carefully
+
+## Runtime Filesystem Model
+
+A lot of the current OS experience is seeded into RAMFS during boot.
+
+That seeded content includes things like:
+
+- `Desktop`
+- `Documents`
+- `Downloads`
+- `Pictures`
+- `System`
+- `bin`
+- `sbin`
+- `usr`
+- `examples`
+
+It also seeds demo files and embedded binaries such as:
+
+- `/sbin/init`
+- `/bin/login`
+- `/bin/sh`
+- desktop notes and readme files
+- sample media assets
+- example scripts and NanoLang samples
+
+The installer now stages that same baseline tree into the install payload so the installed system image is not just boot files.
+
+## Boot Images
+
+The x86_64 ISO builder script creates a hybrid BIOS+UEFI image and validates that key payload files exist inside the final ISO.
+
+The generated installer image includes:
+
+- top-level boot files used by the installer environment
+- a bundled install payload under `/install/system-image`
+
+The x86_64 build uses Limine configuration files from:
+
+- `vib-os-x86_64/limine.conf`
+- `vib-os-x86_64/limine-installer.conf`
+
+## Development Notes
+
+This is an experimental codebase. Expect rough edges in:
+
+- storage handling
+- persistent installation behavior
+- filesystem semantics
+- nested path handling
+- GUI/window manager behavior
+- boot/runtime parity across architectures
+
+When working in this repo, it is a good idea to verify changes against actual serial logs or VM boots rather than assuming the build scripts and runtime behavior fully match.
+
+## Recommended Workflow
+
+For x86_64 bring-up and installer work:
+
+1. Build `ARCH=x86_64 installer-image`
+2. Boot it in QEMU with serial output enabled
+3. Watch the serial log for storage detection, setup payload staging, and installer status
+4. Reboot into the installed target and compare behavior against the live seeded environment
+
+## Known Reality Of The Project
+
+This repository is not a polished distribution or a production OS.
+
+It is a development playground for:
+
+- kernel experimentation
+- desktop/UI iteration
+- bootloader and installer work
+- architecture bring-up
+- filesystem and storage prototyping
+
+That is also what makes it useful: most of the interesting systems work is visible, editable, and still moving.
+
+## Cleaning Builds
+
+Remove build output for one architecture:
+
+```sh
+make ARCH=x86_64 clean
+```
+
+If needed, remove everything under `build/` and `image/` using the available clean targets in the build system.
+
+## Contributing To Your Own Sanity
+
+If you are changing boot or installer behavior, always check:
+
+- the serial log
+- the generated ISO contents
+- the live root tree
+- the staged `/install/system-image` tree
+- the staged `/setup/` tree in installer mode
+
+Those paths are often the fastest way to see whether a change landed in the runtime you actually booted.
