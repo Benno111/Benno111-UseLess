@@ -5674,6 +5674,8 @@ static compositor_dirty_rect_t g_dirty_regions[MAX_DIRTY_REGIONS];
 static int g_dirty_count = 0;
 static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
+static int g_gpu_rendering_enabled = 0;
+static uint32_t *g_saved_backbuffer = NULL;
 
 /* Mark a region as needing update */
 void compositor_mark_dirty(int x, int y, int w, int h) {
@@ -5693,6 +5695,27 @@ void compositor_mark_full_redraw(void) {
   g_full_redraw = 1;
   g_dirty_count = 0;
 }
+
+void gui_configure_gpu_rendering(int enabled) {
+  if (enabled) {
+    if (!primary_display.framebuffer)
+      return;
+    if (primary_display.backbuffer) {
+      g_saved_backbuffer = primary_display.backbuffer;
+      primary_display.backbuffer = NULL;
+    }
+    g_gpu_rendering_enabled = 1;
+    printk(KERN_INFO "GUI: GPU-backed direct framebuffer rendering enabled\n");
+  } else {
+    if (!primary_display.backbuffer && g_saved_backbuffer)
+      primary_display.backbuffer = g_saved_backbuffer;
+    g_gpu_rendering_enabled = 0;
+    printk(KERN_INFO "GUI: Software backbuffer rendering enabled\n");
+  }
+  compositor_mark_full_redraw();
+}
+
+int gui_is_gpu_rendering_enabled(void) { return g_gpu_rendering_enabled; }
 
 /* Optimized memcpy for scanlines */
 static inline void fast_memcpy_line(uint32_t *dst, uint32_t *src, int width) {
@@ -7071,6 +7094,8 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   if (!primary_display.backbuffer) {
     printk(KERN_WARNING
            "GUI: Backbuffer allocation failed, rendering directly to framebuffer\n");
+  } else {
+    g_saved_backbuffer = primary_display.backbuffer;
   }
 
   /* Clear windows */

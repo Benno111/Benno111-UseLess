@@ -6,6 +6,7 @@
  */
 
 #include "fs/vfs.h"
+#include "drivers/storage.h"
 #include "mm/kmalloc.h"
 #include "printk.h"
 #include "types.h"
@@ -66,6 +67,7 @@ void desktop_arrange_icons(void);
 #define ICON_TYPE_APP 5
 #define ICON_TYPE_PYTHON 6
 #define ICON_TYPE_NANO 7
+#define ICON_TYPE_REMOVABLE_DISK 8
 
 /* Sort Modes */
 #define SORT_NAME 0
@@ -90,6 +92,8 @@ typedef struct desktop_icon {
   char name[64];
   char path[256];
   int type;
+  int is_virtual;
+  int storage_disk_index;
   int x, y;           /* Position on desktop */
   int grid_x, grid_y; /* Grid slot */
   int selected;
@@ -277,6 +281,159 @@ static int get_icon_type(const char *name, int is_dir) {
   return ICON_TYPE_FILE;
 }
 
+static int desktop_has_selected_virtual_icon(void) {
+  for (int i = 0; i < desktop_icon_count; i++) {
+    if (desktop_icons[i].selected && desktop_icons[i].is_virtual)
+      return 1;
+  }
+  return 0;
+}
+
+static int desktop_try_open_dir(const char *path) {
+  struct file *dir;
+  if (!path || !path[0])
+    return -1;
+  dir = vfs_open(path, O_RDONLY, 0);
+  if (!dir)
+    return -1;
+  vfs_close(dir);
+  gui_create_file_manager_path(200, 100, path);
+  return 0;
+}
+
+static void desktop_append_disk_root_candidate(char *path, int max,
+                                               const char *prefix,
+                                               const char *location,
+                                               const char *suffix) {
+  int idx = 0;
+
+  if (!path || max <= 0)
+    return;
+  path[0] = '\0';
+
+  if (prefix) {
+    for (int i = 0; prefix[i] && idx < max - 1; i++)
+      path[idx++] = prefix[i];
+  }
+  if (location) {
+    for (int i = 0; location[i] && idx < max - 1; i++)
+      path[idx++] = location[i];
+  }
+  if (suffix) {
+    for (int i = 0; suffix[i] && idx < max - 1; i++)
+      path[idx++] = suffix[i];
+  }
+  path[idx] = '\0';
+}
+
+static void desktop_open_removable_disk(const desktop_icon_t *icon) {
+  char location[32];
+  char path[256];
+  static const char *simple_candidates[] = {"/mnt/disk", "/disk", "/Persist",
+                                            "/persist"};
+
+  if (!icon || icon->storage_disk_index < 0)
+    return;
+
+  if (storage_get_disk_location(icon->storage_disk_index, location,
+                                sizeof(location)) != 0) {
+    gui_create_file_manager_path(200, 100, "/");
+    return;
+  }
+
+  for (int i = 0; i < (int)(sizeof(simple_candidates) / sizeof(simple_candidates[0]));
+       i++) {
+    if (desktop_try_open_dir(simple_candidates[i]) == 0)
+      return;
+  }
+
+  desktop_append_disk_root_candidate(path, sizeof(path), "/Installed/",
+                                     location, "");
+  if (desktop_try_open_dir(path) == 0)
+    return;
+
+  desktop_append_disk_root_candidate(path, sizeof(path), "/Installed/",
+                                     location, "/Data");
+  if (desktop_try_open_dir(path) == 0)
+    return;
+
+  desktop_append_disk_root_candidate(path, sizeof(path), "/Installed/",
+                                     location, "/Update");
+  if (desktop_try_open_dir(path) == 0)
+    return;
+
+  gui_create_file_manager_path(200, 100, "/");
+}
+
+static void draw_removable_disk_icon(int x, int y, int size) {
+  int body_x = x + 6;
+  int body_y = y + size / 3;
+  int body_w = size - 12;
+  int body_h = size / 3;
+
+  gui_draw_rect(body_x, body_y, body_w, body_h, 0xD8DEE9);
+  gui_draw_rect(body_x + 3, body_y + 3, body_w - 6, body_h - 6, 0x94A3B8);
+  gui_draw_rect(body_x + 10, body_y + body_h, body_w - 20, 8, 0x475569);
+  gui_draw_rect(body_x + body_w - 14, body_y + body_h + 2, 6, 4, 0x22C55E);
+}
+
+static void desktop_add_removable_disk_icons(void) {
+  int disk_count = storage_get_disk_count();
+
+  for (int i = 0; i < disk_count && desktop_icon_count < DESKTOP_MAX_ICONS; i++) {
+    desktop_icon_t *icon;
+    char location[32];
+    char suffix[8];
+    int removable_index = 0;
+    int suffix_len = 0;
+
+    if (!storage_disk_is_removable(i))
+      continue;
+
+    for (int j = 0; j < desktop_icon_count; j++) {
+      if (desktop_icons[j].type == ICON_TYPE_REMOVABLE_DISK)
+        removable_index++;
+    }
+
+    icon = &desktop_icons[desktop_icon_count];
+    str_copy(icon->name, "Removable Disk", sizeof(icon->name));
+    if (removable_index > 0) {
+      int n = removable_index + 1;
+      int tmp_len = 0;
+      int tmp = n;
+      while (tmp > 0 && tmp_len < (int)sizeof(suffix)) {
+        suffix[tmp_len++] = (char)('0' + (tmp % 10));
+        tmp /= 10;
+      }
+      if (tmp_len < (int)sizeof(suffix) - 1) {
+        icon->name[14] = ' ';
+        for (int j = 0; j < tmp_len && 15 + j < (int)sizeof(icon->name) - 1; j++)
+          icon->name[15 + j] = suffix[tmp_len - j - 1];
+        icon->name[15 + tmp_len] = '\0';
+      }
+    }
+
+    if (storage_get_disk_location(i, location, sizeof(location)) != 0)
+      str_copy(location, "usb", sizeof(location));
+
+    str_copy(icon->path, "disk://", sizeof(icon->path));
+    while (icon->path[suffix_len])
+      suffix_len++;
+    for (int j = 0; location[j] && suffix_len < (int)sizeof(icon->path) - 1; j++)
+      icon->path[suffix_len++] = location[j];
+    icon->path[suffix_len] = '\0';
+
+    icon->type = ICON_TYPE_REMOVABLE_DISK;
+    icon->is_virtual = 1;
+    icon->storage_disk_index = i;
+    icon->selected = 0;
+    icon->stacked = 0;
+    icon->size = 0;
+    icon->mtime = 0;
+    desktop_icon_count++;
+  }
+}
+
 /* ===================================================================== */
 /* Dirty Region Tracking */
 /* ===================================================================== */
@@ -419,6 +576,9 @@ static void draw_desktop_icon(desktop_icon_t *icon) {
   case ICON_TYPE_TEXT:
     draw_file_icon(x, y, DESKTOP_ICON_SIZE, 0xFFFFFF);
     break;
+  case ICON_TYPE_REMOVABLE_DISK:
+    draw_removable_disk_icon(x, y, DESKTOP_ICON_SIZE);
+    break;
   case ICON_TYPE_APP: {
     char app_id[64];
     if (load_app_id_from_shortcut(icon->path, icon->name, app_id,
@@ -533,6 +693,8 @@ static void ctx_menu_add_separator(void) {
 }
 
 void desktop_show_context_menu(int x, int y, int on_icon) {
+  int selected_has_virtual = desktop_has_selected_virtual_icon();
+
   ctx_menu.item_count = 0;
   ctx_menu.x = x;
   ctx_menu.y = y;
@@ -546,12 +708,12 @@ void desktop_show_context_menu(int x, int y, int on_icon) {
     /* Context menu for selected file/folder - only working items */
     ctx_menu_add_item("Open", menu_action_open, 1);
     ctx_menu_add_separator();
-    ctx_menu_add_item("Cut", menu_action_cut, 1);
-    ctx_menu_add_item("Copy", menu_action_copy, 1);
+    ctx_menu_add_item("Cut", menu_action_cut, !selected_has_virtual);
+    ctx_menu_add_item("Copy", menu_action_copy, !selected_has_virtual);
     ctx_menu_add_separator();
-    ctx_menu_add_item("Delete", menu_action_delete, 1);
+    ctx_menu_add_item("Delete", menu_action_delete, !selected_has_virtual);
     ctx_menu_add_item("Rename", menu_action_rename,
-                      desktop_selected_count == 1);
+                      desktop_selected_count == 1 && !selected_has_virtual);
   } else {
     /* Context menu for desktop background - only working items */
     ctx_menu_add_item("New Folder", menu_action_new_folder, 1);
@@ -732,6 +894,8 @@ void desktop_refresh(void) {
     vfs_close(dir);
   }
 
+  desktop_add_removable_disk_icons();
+
   /* Sort icons */
   desktop_sort_icons();
 
@@ -787,6 +951,8 @@ static int dir_scan_callback(void *ctx, const char *name, int len,
   /* Determine type */
   int is_dir = (type == 4); /* DT_DIR */
   icon->type = get_icon_type(icon->name, is_dir);
+  icon->is_virtual = 0;
+  icon->storage_disk_index = -1;
 
   icon->selected = 0;
   icon->stacked = 0;
@@ -863,7 +1029,9 @@ static void menu_action_open(void *ctx) {
     if (desktop_icons[i].selected) {
       printk(KERN_INFO "DESKTOP: Opening %s\n", desktop_icons[i].path);
 
-      if (desktop_icons[i].type == ICON_TYPE_FOLDER) {
+      if (desktop_icons[i].type == ICON_TYPE_REMOVABLE_DISK) {
+        desktop_open_removable_disk(&desktop_icons[i]);
+      } else if (desktop_icons[i].type == ICON_TYPE_FOLDER) {
         /* Open folder in file manager */
         gui_create_file_manager_path(200, 100, desktop_icons[i].path);
       } else if (desktop_icons[i].type == ICON_TYPE_APP) {
@@ -1054,6 +1222,8 @@ static void menu_action_rename(void *ctx) {
   /* Find selected icon and start inline rename */
   for (int i = 0; i < desktop_icon_count; i++) {
     if (desktop_icons[i].selected) {
+      if (desktop_icons[i].is_virtual)
+        continue;
       rename_active = 1;
       rename_icon_idx = i;
       str_copy(rename_buffer, desktop_icons[i].name, 64);
@@ -1072,6 +1242,8 @@ static void menu_action_delete(void *ctx) {
   (void)ctx;
   for (int i = 0; i < desktop_icon_count; i++) {
     if (desktop_icons[i].selected) {
+      if (desktop_icons[i].is_virtual)
+        continue;
       printk(KERN_INFO "DESKTOP: Deleting %s\n", desktop_icons[i].path);
       vfs_unlink(desktop_icons[i].path);
     }
@@ -1083,6 +1255,8 @@ static void menu_action_copy(void *ctx) {
   (void)ctx;
   for (int i = 0; i < desktop_icon_count; i++) {
     if (desktop_icons[i].selected) {
+      if (desktop_icons[i].is_virtual)
+        continue;
       str_copy(clipboard_path, desktop_icons[i].path, 256);
       clipboard_is_cut = 0;
       printk(KERN_INFO "DESKTOP: Copied %s\n", clipboard_path);
@@ -1095,6 +1269,8 @@ static void menu_action_cut(void *ctx) {
   (void)ctx;
   for (int i = 0; i < desktop_icon_count; i++) {
     if (desktop_icons[i].selected) {
+      if (desktop_icons[i].is_virtual)
+        continue;
       str_copy(clipboard_path, desktop_icons[i].path, 256);
       clipboard_is_cut = 1;
       printk(KERN_INFO "DESKTOP: Cut %s\n", clipboard_path);

@@ -921,6 +921,25 @@ int storage_get_controller_count(void) { return storage_controller_count; }
 
 int storage_get_disk_count(void) { return storage_disk_count; }
 
+int storage_get_disk_kind(int index) {
+  if (index < 0 || index >= storage_disk_count)
+    return STORAGE_KIND_UNKNOWN;
+  return storage_disks[index].kind;
+}
+
+int storage_disk_is_removable(int index) {
+  if (index < 0 || index >= storage_disk_count)
+    return 0;
+  return storage_disks[index].kind == STORAGE_KIND_USB_MASS_STORAGE;
+}
+
+int storage_get_disk_location(int index, char *buf, int max) {
+  if (!buf || max <= 0 || index < 0 || index >= storage_disk_count)
+    return -1;
+  storage_copy_string(buf, storage_disks[index].location, max);
+  return 0;
+}
+
 int storage_get_kind_count(storage_kind_t kind) {
   if (kind <= STORAGE_KIND_UNKNOWN || kind > STORAGE_KIND_APPLE_ANS)
     return 0;

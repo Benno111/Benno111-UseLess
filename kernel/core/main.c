@@ -597,15 +597,20 @@ static void init_subsystems(void *dtb) {
   extern const char *intel_gfx_get_name(void);
   extern int virtio_gpu_init(pci_device_t * pci);
   extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
+  extern void gui_configure_gpu_rendering(int enabled);
   if (intel_gfx_is_ready()) {
     printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
            intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
+    if (intel_gfx_has_framebuffer()) {
+      gui_configure_gpu_rendering(1);
+    }
   }
 
   pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
   if (gpu) {
     if (virtio_gpu_init(gpu) == 0) {
       printk(KERN_INFO "  GPU: virtio-gpu initialized with 3D acceleration\n");
+      gui_configure_gpu_rendering(1);
     } else {
       printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
     }

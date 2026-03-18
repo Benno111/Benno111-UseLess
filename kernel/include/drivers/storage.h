@@ -47,6 +47,9 @@ void storage_build_overview(char *buf, int max);
 const char *storage_kind_name(storage_kind_t kind);
 
 int storage_get_disk_count(void);
+int storage_get_disk_kind(int index);
+int storage_disk_is_removable(int index);
+int storage_get_disk_location(int index, char *buf, int max);
 int storage_describe_disk(int index, char *buf, int max);
 void storage_build_disk_overview(char *buf, int max);
 int storage_get_partition_count(int disk_index);
