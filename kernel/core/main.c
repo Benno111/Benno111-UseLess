@@ -661,13 +661,18 @@ static void populate_installer_payload(void) {
       "# Limine Configuration File\n"
       "# OS next stage x64 installer ISO\n"
       "\n"
-      "timeout: 0\n"
+      "timeout: 5\n"
       "default_entry: 1\n"
       "\n"
       "/OS next stage Installer\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n"
-      "    cmdline: boot=usb mode=installer\n";
+      "    cmdline: boot=usb mode=installer\n"
+      "\n"
+      "/OS next stage DOS-style Installer\n"
+      "    comment: BIOS-only 16-bit real-mode fallback installer with 64-bit handoff disabled\n"
+      "    protocol: bios_chainload\n"
+      "    partition: 2\n";
   static const char *image_info =
       "OS next stage System Image\n"
       "\n"
