@@ -41,6 +41,7 @@ static void start_init_process(void);
 static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
 static void import_staged_system_image(void);
+static int staged_system_image_exists(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
 static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
@@ -537,10 +538,25 @@ static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
 }
 
 static void import_staged_system_image(void) {
+  printk(KERN_INFO "INSTALL: looking for staged system image at /install/system-image\n");
+  if (!staged_system_image_exists()) {
+    printk(KERN_INFO "INSTALL: staged system image not found\n");
+    return;
+  }
+
+  printk(KERN_INFO "INSTALL: staged system image found\n");
   if (copy_tree_to_prefix("/install/system-image", "/", 0) == 0) {
     printk(KERN_INFO
            "INSTALL: imported staged /install/system-image into live root\n");
   }
+}
+
+static int staged_system_image_exists(void) {
+  struct file *dir = vfs_open("/install/system-image", O_RDONLY, 0);
+  if (!dir)
+    return 0;
+  vfs_close(dir);
+  return 1;
 }
 
 static void populate_installer_payload(void) {
