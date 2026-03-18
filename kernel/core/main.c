@@ -42,6 +42,8 @@ static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
 static void import_staged_system_image(void);
 static int staged_system_image_exists(void);
+static void refresh_external_storage_views(void);
+static int boot_hdd_disk_index(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
 static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
@@ -211,6 +213,7 @@ static void start_x86_64_bringup(void) {
 
   printk(KERN_INFO "x86_64: Running late PCI probe\n");
   pci_init();
+  refresh_external_storage_views();
 
   input_init();
   input_set_key_callback(keyboard_handler);
@@ -557,6 +560,72 @@ static int staged_system_image_exists(void) {
     return 0;
   vfs_close(dir);
   return 1;
+}
+
+static int boot_hdd_disk_index(void) {
+  extern int storage_get_disk_count(void);
+  extern int storage_get_disk_kind(int index);
+
+  for (int i = 0; i < storage_get_disk_count(); i++) {
+    int kind = storage_get_disk_kind(i);
+    if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
+      continue;
+    return i;
+  }
+  return -1;
+}
+
+static void refresh_external_storage_views(void) {
+  extern int boot_is_installer_mode(void);
+  extern int storage_get_disk_count(void);
+  extern int storage_get_disk_kind(int index);
+  extern int storage_get_disk_location(int index, char *buf, int max);
+  char location[32];
+  char external_root[128];
+  char source_root[128];
+  int boot_disk = boot_hdd_disk_index();
+
+  seed_make_dir("", "/External");
+
+  for (int i = 0; i < storage_get_disk_count(); i++) {
+    int kind = storage_get_disk_kind(i);
+
+    if (i == boot_disk && kind != STORAGE_KIND_CDROM &&
+        kind != STORAGE_KIND_USB_MASS_STORAGE)
+      continue;
+    if (storage_get_disk_location(i, location, sizeof(location)) != 0)
+      continue;
+
+    build_seed_path(external_root, sizeof(external_root), "/External", location);
+    seed_make_dir("", external_root);
+
+    if (kind == STORAGE_KIND_CDROM && boot_is_installer_mode()) {
+      copy_tree_to_prefix("/setup", external_root, 0);
+      continue;
+    }
+
+    build_seed_path(source_root, sizeof(source_root), "/Installed", location);
+    if (copy_tree_to_prefix(source_root, external_root, 0) == 0)
+      continue;
+
+    build_seed_path(source_root, sizeof(source_root), "/Installed", location);
+    if ((int)sizeof(source_root) > 0) {
+      int len = 0;
+      while (source_root[len] && len < (int)sizeof(source_root) - 1)
+        len++;
+      if (len < (int)sizeof(source_root) - 5) {
+        source_root[len++] = '/';
+        source_root[len++] = 'D';
+        source_root[len++] = 'a';
+        source_root[len++] = 't';
+        source_root[len++] = 'a';
+        source_root[len] = '\0';
+        copy_tree_to_prefix(source_root, external_root, 0);
+      }
+    }
+  }
+
+  printk(KERN_INFO "STORAGE: external storage views refreshed under /External\n");
 }
 
 static void populate_installer_payload(void) {

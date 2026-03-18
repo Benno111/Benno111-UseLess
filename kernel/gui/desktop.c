@@ -326,11 +326,32 @@ static void desktop_append_disk_root_candidate(char *path, int max,
   path[idx] = '\0';
 }
 
+static int desktop_is_external_disk(int disk_index) {
+  int kind;
+  int boot_hdd = -1;
+  int disk_count = storage_get_disk_count();
+
+  if (disk_index < 0 || disk_index >= disk_count)
+    return 0;
+
+  kind = storage_get_disk_kind(disk_index);
+  for (int i = 0; i < disk_count; i++) {
+    int candidate_kind = storage_get_disk_kind(i);
+    if (candidate_kind == STORAGE_KIND_CDROM ||
+        candidate_kind == STORAGE_KIND_USB_MASS_STORAGE)
+      continue;
+    boot_hdd = i;
+    break;
+  }
+
+  if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
+    return 1;
+  return disk_index != boot_hdd;
+}
+
 static void desktop_open_removable_disk(const desktop_icon_t *icon) {
   char location[32];
   char path[256];
-  static const char *simple_candidates[] = {"/mnt/disk", "/disk", "/Persist",
-                                            "/persist"};
 
   if (!icon || icon->storage_disk_index < 0)
     return;
@@ -341,11 +362,10 @@ static void desktop_open_removable_disk(const desktop_icon_t *icon) {
     return;
   }
 
-  for (int i = 0; i < (int)(sizeof(simple_candidates) / sizeof(simple_candidates[0]));
-       i++) {
-    if (desktop_try_open_dir(simple_candidates[i]) == 0)
-      return;
-  }
+  desktop_append_disk_root_candidate(path, sizeof(path), "/External/", location,
+                                     "");
+  if (desktop_try_open_dir(path) == 0)
+    return;
 
   desktop_append_disk_root_candidate(path, sizeof(path), "/Installed/",
                                      location, "");
@@ -387,7 +407,7 @@ static void desktop_add_removable_disk_icons(void) {
     int removable_index = 0;
     int suffix_len = 0;
 
-    if (!storage_disk_is_removable(i))
+    if (!desktop_is_external_disk(i))
       continue;
 
     for (int j = 0; j < desktop_icon_count; j++) {
