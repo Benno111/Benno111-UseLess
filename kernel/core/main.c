@@ -322,30 +322,33 @@ static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
 
 static void seed_make_dir(const char *prefix, const char *path) {
   char full_path[256];
+  extern int ramfs_create_dir(const char *path, mode_t mode);
 
   if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
     return;
-  vfs_mkdir(full_path, 0755);
+  ramfs_create_dir(full_path, 0755);
 }
 
 static void seed_write_text(const char *prefix, const char *path, mode_t mode,
                             const char *content) {
   char full_path[256];
-  (void)mode;
+  extern int ramfs_create_file(const char *path, mode_t mode,
+                               const char *content);
 
   if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
     return;
-  media_install_text_file(full_path, content);
+  ramfs_create_file(full_path, mode, content);
 }
 
 static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
                              const uint8_t *data, size_t size) {
   char full_path[256];
-  (void)mode;
+  extern int ramfs_create_file_bytes(const char *path, mode_t mode,
+                                     const uint8_t *data, size_t size);
 
   if (build_seed_path(full_path, sizeof(full_path), prefix, path) != 0)
     return;
-  media_install_file(full_path, data, size);
+  ramfs_create_file_bytes(full_path, mode, data, size);
 }
 
 static void populate_seed_tree_at(const char *prefix) {
