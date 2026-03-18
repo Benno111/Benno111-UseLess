@@ -138,6 +138,8 @@ xorriso -as mkisofs \
     -efi-boot-part \
     --efi-boot-image \
     --protective-msdos-label \
+    -appended_part_as mbr \
+    --mbr-force-bootable \
     $(if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then printf '%s ' -append_partition 2 0x06 "$DOS_INSTALLER_IMAGE"; fi) \
     "$ISO_ROOT" \
     -o "$ISO_PATH"

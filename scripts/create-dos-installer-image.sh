@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create a BIOS-only DOS-style text installer disk image.
+# Create a BIOS-only DOS-style text installer partition image.
 
 set -e
 
@@ -31,10 +31,10 @@ IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
 require_file "$STAGE1"
 require_file "$STAGE2"
 
-log "Creating DOS-style installer image at $IMAGE_PATH"
+log "Creating DOS-style installer volume image at $IMAGE_PATH"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" 2>/dev/null
 
-log "Writing stage 1 boot sector"
+log "Writing stage 1 volume boot sector"
 dd if="$STAGE1" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
 
 log "Writing stage 2 text installer"
