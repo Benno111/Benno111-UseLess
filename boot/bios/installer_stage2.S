@@ -10,6 +10,9 @@
 .global _start
 
 _start:
+    ljmp    $0x0000, $real_mode_entry
+
+real_mode_entry:
     cli
     xor     %ax, %ax
     mov     %ax, %ds
