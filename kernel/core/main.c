@@ -42,6 +42,10 @@ static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
+static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
+                               int skip_payload_roots);
+static int copy_tree_callback(void *ctx, const char *name, int len,
+                              loff_t offset, ino_t ino, unsigned type);
 static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
                            const char *path);
 static void seed_make_dir(const char *prefix, const char *path);
@@ -427,6 +431,94 @@ static void ensure_boot_payload_dirs(const char *prefix) {
   seed_make_dir(prefix, "limine");
 }
 
+typedef struct {
+  const char *src_root;
+  const char *dst_root;
+  int skip_payload_roots;
+} seed_copy_ctx_t;
+
+static int copy_tree_callback(void *ctx, const char *name, int len,
+                              loff_t offset, ino_t ino, unsigned type) {
+  seed_copy_ctx_t *copy = (seed_copy_ctx_t *)ctx;
+  char src_path[256];
+  char dst_path[256];
+  int src_len = 0;
+  int dst_len = 0;
+  struct file *dir;
+  seed_copy_ctx_t next;
+  uint8_t *data = NULL;
+  size_t size = 0;
+
+  (void)offset;
+  (void)ino;
+
+  if (!copy || !name || len <= 0)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+  if (copy->skip_payload_roots &&
+      ((len == 7 && name[0] == 'i' && name[1] == 'n' && name[2] == 's' &&
+        name[3] == 't' && name[4] == 'a' && name[5] == 'l' && name[6] == 'l') ||
+       (len == 5 && name[0] == 's' && name[1] == 'e' && name[2] == 't' &&
+        name[3] == 'u' && name[4] == 'p')))
+    return 0;
+
+  str_copy_safe(src_path, copy->src_root, sizeof(src_path));
+  while (src_path[src_len])
+    src_len++;
+  if (!(src_len == 1 && src_path[0] == '/') && src_len < (int)sizeof(src_path) - 1)
+    src_path[src_len++] = '/';
+  for (int i = 0; i < len && src_len < (int)sizeof(src_path) - 1; i++)
+    src_path[src_len++] = name[i];
+  src_path[src_len] = '\0';
+
+  str_copy_safe(dst_path, copy->dst_root, sizeof(dst_path));
+  while (dst_path[dst_len])
+    dst_len++;
+  if (!(dst_len == 1 && dst_path[0] == '/') && dst_len < (int)sizeof(dst_path) - 1)
+    dst_path[dst_len++] = '/';
+  for (int i = 0; i < len && dst_len < (int)sizeof(dst_path) - 1; i++)
+    dst_path[dst_len++] = name[i];
+  dst_path[dst_len] = '\0';
+
+  if (type == 4) {
+    seed_make_dir("", dst_path);
+    next.src_root = src_path;
+    next.dst_root = dst_path;
+    next.skip_payload_roots = 0;
+    dir = vfs_open(src_path, O_RDONLY, 0);
+    if (!dir)
+      return 0;
+    vfs_readdir(dir, &next, copy_tree_callback);
+    vfs_close(dir);
+    return 0;
+  }
+
+  if (media_load_file(src_path, &data, &size) == 0) {
+    media_install_file(dst_path, data, size);
+    media_free_file(data);
+  }
+  return 0;
+}
+
+static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
+                               int skip_payload_roots) {
+  struct file *dir;
+  seed_copy_ctx_t ctx;
+
+  dir = vfs_open(src_root, O_RDONLY, 0);
+  if (!dir)
+    return -1;
+
+  ctx.src_root = src_root;
+  ctx.dst_root = dst_root;
+  ctx.skip_payload_roots = skip_payload_roots;
+  vfs_readdir(dir, &ctx, copy_tree_callback);
+  vfs_close(dir);
+  return 0;
+}
+
 static void populate_installer_payload(void) {
 #ifdef ARCH_X86_64
   extern int boot_is_installer_mode(void);
@@ -508,8 +600,8 @@ static void populate_installer_payload(void) {
   ensure_boot_payload_dirs("/install/system-image");
   ensure_boot_payload_dirs("/setup");
   ensure_boot_payload_dirs("/setup/install/system-image");
-  populate_seed_tree_at("/install/system-image");
-  populate_seed_tree_at("/setup/install/system-image");
+  copy_tree_to_prefix("/", "/install/system-image", 1);
+  copy_tree_to_prefix("/", "/setup/install/system-image", 1);
 
   if (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
           0 ||
