@@ -2381,7 +2381,7 @@ static void ensure_app_manifest(const dock_app_def_t *app) {
 
   if (build_app_shortcut_path("/Desktop", app->shortcut_name, shortcut_path,
                               sizeof(shortcut_path)) == 0) {
-    write_text_file(shortcut_path, manifest);
+    vfs_unlink(shortcut_path);
   }
   if (build_app_shortcut_path(GUI_SYSTEM_APPS_FOLDER, app->shortcut_name,
                               folder_shortcut_path,
