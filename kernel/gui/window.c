@@ -46,6 +46,14 @@ static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
 static void str_copy_safe(char *dst, const char *src, int max);
 void compositor_mark_full_redraw(void);
+void gui_set_blur_effects_enabled(int enabled);
+int gui_blur_effects_requested(void);
+int gui_are_blur_effects_enabled(void);
+
+/* Blur/compositor state is defined later but used by early draw helpers. */
+static int g_blur_effects_requested;
+static int g_blur_effects_enabled;
+static char g_gpu_backend_name[32];
 
 
 /* Terminal functions from terminal.c */
