@@ -5,8 +5,12 @@
  */
 
 #include "media/media.h"
+#include "arch/arch.h"
+#include "gui/gui.h"
 #include "mm/kmalloc.h"
+#include "mm/pmm.h"
 #include "printk.h"
+#include "string.h"
 #include "types.h"
 
 /* Forward declare window type */
@@ -18,6 +22,7 @@ extern void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 extern struct window *gui_create_window(const char *title, int x, int y, int w,
                                         int h);
 extern void compositor_mark_full_redraw(void);
+extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
 
 /* ===================================================================== */
 /* Terminal Configuration */
@@ -397,6 +402,215 @@ static int str_ends_with_ci(const char *str, const char *suffix) {
   return 1;
 }
 
+static void format_uptime_string(char *buf, int buf_size) {
+  uint64_t total_seconds;
+  uint64_t total_minutes;
+  uint64_t days;
+  uint64_t hours;
+  uint64_t minutes;
+  int idx = 0;
+  char tmp[24];
+  int ti;
+
+  if (!buf || buf_size <= 0)
+    return;
+
+  total_seconds = arch_timer_get_ms() / 1000;
+  total_minutes = total_seconds / 60;
+  days = total_minutes / (24 * 60);
+  hours = (total_minutes / 60) % 24;
+  minutes = total_minutes % 60;
+  buf[0] = '\0';
+
+  if (days > 0) {
+    ti = 0;
+    do {
+      tmp[ti++] = (char)('0' + (days % 10));
+      days /= 10;
+    } while (days > 0 && ti < (int)sizeof(tmp) - 1);
+    while (ti > 0 && idx < buf_size - 1)
+      buf[idx++] = tmp[--ti];
+    if (idx < buf_size - 1)
+      buf[idx++] = ' ';
+    if (idx < buf_size - 1)
+      buf[idx++] = 'd';
+    if (hours > 0 || minutes > 0) {
+      if (idx < buf_size - 2) {
+        buf[idx++] = ' ';
+        buf[idx++] = ' ';
+      }
+    }
+  }
+
+  if (hours > 0) {
+    ti = 0;
+    do {
+      tmp[ti++] = (char)('0' + (hours % 10));
+      hours /= 10;
+    } while (hours > 0 && ti < (int)sizeof(tmp) - 1);
+    while (ti > 0 && idx < buf_size - 1)
+      buf[idx++] = tmp[--ti];
+    if (idx < buf_size - 1)
+      buf[idx++] = ' ';
+    if (idx < buf_size - 1)
+      buf[idx++] = 'h';
+    if (minutes > 0 && idx < buf_size - 2) {
+      buf[idx++] = ' ';
+      buf[idx++] = ' ';
+    }
+  }
+
+  ti = 0;
+  do {
+    tmp[ti++] = (char)('0' + (minutes % 10));
+    minutes /= 10;
+  } while (minutes > 0 && ti < (int)sizeof(tmp) - 1);
+  while (ti > 0 && idx < buf_size - 1)
+    buf[idx++] = tmp[--ti];
+  if (idx < buf_size - 1)
+    buf[idx++] = ' ';
+  if (idx < buf_size - 1)
+    buf[idx++] = 'm';
+
+  buf[idx] = '\0';
+}
+
+static int append_char(char *buf, int buf_size, int idx, char c) {
+  if (!buf || buf_size <= 0)
+    return idx;
+  if (idx < buf_size - 1)
+    buf[idx++] = c;
+  buf[idx < buf_size ? idx : buf_size - 1] = '\0';
+  return idx;
+}
+
+static int append_str(char *buf, int buf_size, int idx, const char *str) {
+  if (!buf || buf_size <= 0 || !str)
+    return idx;
+  while (*str && idx < buf_size - 1)
+    buf[idx++] = *str++;
+  buf[idx] = '\0';
+  return idx;
+}
+
+static int append_u64(char *buf, int buf_size, int idx, uint64_t value) {
+  char tmp[24];
+  int ti = 0;
+
+  do {
+    tmp[ti++] = (char)('0' + (value % 10));
+    value /= 10;
+  } while (value > 0 && ti < (int)sizeof(tmp));
+
+  while (ti > 0 && idx < buf_size - 1)
+    buf[idx++] = tmp[--ti];
+  if (idx < buf_size)
+    buf[idx] = '\0';
+  return idx;
+}
+
+static uint64_t bytes_to_mib(size_t bytes) { return ((uint64_t)bytes) / (1024 * 1024); }
+
+static void build_neofetch_host_string(char *buf, int buf_size) {
+  uint32_t cpu_count = arch_cpu_count();
+  int idx = 0;
+
+  if (!buf || buf_size <= 0)
+    return;
+
+  buf[0] = '\0';
+  idx = append_str(buf, buf_size, idx, ARCH_NAME);
+  idx = append_str(buf, buf_size, idx, " platform");
+  if (cpu_count > 0) {
+    idx = append_str(buf, buf_size, idx, ", ");
+    idx = append_u64(buf, buf_size, idx, cpu_count);
+    idx = append_str(buf, buf_size, idx, " CPU");
+    if (cpu_count != 1)
+      idx = append_char(buf, buf_size, idx, 's');
+  }
+}
+
+static void build_neofetch_kernel_string(char *buf, int buf_size) {
+  if (!buf || buf_size <= 0)
+    return;
+  buf[0] = '\0';
+  append_str(buf, buf_size, 0, "OS next stage 8.0.0 (");
+  append_str(buf, buf_size, (int)strlen(buf), ARCH_NAME);
+  append_char(buf, buf_size, (int)strlen(buf), ')');
+}
+
+static void build_neofetch_memory_string(char *buf, int buf_size) {
+  size_t phys_total = pmm_get_total_memory();
+  size_t phys_free = pmm_get_free_memory();
+  size_t heap_total = 0;
+  size_t heap_used = 0;
+  size_t heap_free = 0;
+  uint64_t phys_used_mib;
+  uint64_t phys_total_mib;
+  uint64_t heap_used_mib;
+  uint64_t heap_total_mib;
+  int idx = 0;
+
+  if (!buf || buf_size <= 0)
+    return;
+
+  kmalloc_get_stats(&heap_total, &heap_used, &heap_free);
+  (void)heap_free;
+
+  phys_used_mib = bytes_to_mib(phys_total > phys_free ? phys_total - phys_free : 0);
+  phys_total_mib = bytes_to_mib(phys_total);
+  heap_used_mib = bytes_to_mib(heap_used);
+  heap_total_mib = bytes_to_mib(heap_total);
+
+  buf[0] = '\0';
+  idx = append_u64(buf, buf_size, idx, phys_used_mib);
+  idx = append_str(buf, buf_size, idx, " MiB / ");
+  idx = append_u64(buf, buf_size, idx, phys_total_mib);
+  idx = append_str(buf, buf_size, idx, " MiB phys");
+  if (heap_total_mib > 0) {
+    idx = append_str(buf, buf_size, idx, ", ");
+    idx = append_u64(buf, buf_size, idx, heap_used_mib);
+    idx = append_str(buf, buf_size, idx, " MiB / ");
+    idx = append_u64(buf, buf_size, idx, heap_total_mib);
+    idx = append_str(buf, buf_size, idx, " MiB heap");
+  }
+}
+
+static void build_neofetch_gpu_string(char *buf, int buf_size) {
+  uint32_t *fb = NULL;
+  uint32_t fb_width = 0;
+  uint32_t fb_height = 0;
+  const char *gpu_name = NULL;
+  int idx = 0;
+
+  if (!buf || buf_size <= 0)
+    return;
+
+  fb_get_info(&fb, &fb_width, &fb_height);
+
+#ifdef ARCH_X86_64
+  extern int intel_gfx_is_ready(void);
+  extern const char *intel_gfx_get_name(void);
+
+  if (intel_gfx_is_ready())
+    gpu_name = intel_gfx_get_name();
+#endif
+
+  if (!gpu_name || !gpu_name[0]) {
+    gpu_name = gui_is_gpu_rendering_enabled() ? "GPU compositor"
+                                              : "Framebuffer compositor";
+  }
+
+  buf[0] = '\0';
+  idx = append_str(buf, buf_size, idx, gpu_name);
+  if (fb && fb_width && fb_height) {
+    idx = append_str(buf, buf_size, idx, " ");
+    idx = append_u64(buf, buf_size, idx, fb_width);
+    idx = append_char(buf, buf_size, idx, 'x');
+    idx = append_u64(buf, buf_size, idx, fb_height);
+  }
+}
+
 static void build_path(struct terminal *term, const char *input, char *out,
                        int out_size) {
   if (!term || !input || !out || out_size <= 0)
@@ -616,24 +830,42 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   } else if (str_starts_with(cmd, "whoami")) {
     term_puts(term, "root\n");
   } else if (str_starts_with(cmd, "neofetch")) {
+    char host_buf[64];
+    char kernel_buf[64];
+    char uptime_buf[32];
+    char memory_buf[96];
+    char cpu_buf[96];
+    char gpu_buf[96];
+
+    build_neofetch_host_string(host_buf, sizeof(host_buf));
+    build_neofetch_kernel_string(kernel_buf, sizeof(kernel_buf));
+    format_uptime_string(uptime_buf, sizeof(uptime_buf));
+    build_neofetch_memory_string(memory_buf, sizeof(memory_buf));
+    arch_cpu_info(cpu_buf, sizeof(cpu_buf));
+    if (!cpu_buf[0])
+      strcpy(cpu_buf, "Unknown CPU");
+    build_neofetch_gpu_string(gpu_buf, sizeof(gpu_buf));
+
     term_puts(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
-#ifdef ARCH_X86_64
-    term_puts(term, "\033[33mHost:\033[0m    QEMU x86_64 Virtual Machine\n");
-    term_puts(term, "\033[33mKernel:\033[0m  8.0.0-x86_64\n");
-    term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
+    term_puts(term, "\033[33mHost:\033[0m    ");
+    term_puts(term, host_buf);
+    term_puts(term, "\n");
+    term_puts(term, "\033[33mKernel:\033[0m  ");
+    term_puts(term, kernel_buf);
+    term_puts(term, "\n");
+    term_puts(term, "\033[33mUptime:\033[0m  ");
+    term_puts(term, uptime_buf);
+    term_puts(term, "\n");
     term_puts(term, "\033[33mShell:\033[0m   vsh 1.0\n");
-    term_puts(term, "\033[33mMemory:\033[0m  128 MB kernel heap\n");
-    term_puts(term, "\033[33mCPU:\033[0m     x86_64 (Limine boot)\n");
-    term_puts(term, "\033[33mGPU:\033[0m     Limine framebuffer\n");
-#else
-    term_puts(term, "\033[33mHost:\033[0m    QEMU ARM Virtual Machine\n");
-    term_puts(term, "\033[33mKernel:\033[0m  8.0.0-arm64\n");
-    term_puts(term, "\033[33mUptime:\033[0m  0 mins\n");
-    term_puts(term, "\033[33mShell:\033[0m   vsh 1.0\n");
-    term_puts(term, "\033[33mMemory:\033[0m  12 MB / 252 MB\n");
-    term_puts(term, "\033[33mCPU:\033[0m     ARM Cortex-A72 (max)\n");
-    term_puts(term, "\033[33mGPU:\033[0m     QEMU ramfb 1024x768\n");
-#endif
+    term_puts(term, "\033[33mMemory:\033[0m  ");
+    term_puts(term, memory_buf);
+    term_puts(term, "\n");
+    term_puts(term, "\033[33mCPU:\033[0m     ");
+    term_puts(term, cpu_buf);
+    term_puts(term, "\n");
+    term_puts(term, "\033[33mGPU:\033[0m     ");
+    term_puts(term, gpu_buf);
+    term_puts(term, "\n");
   } else if (str_starts_with(cmd, "exit")) {
     term_puts(term, "\033[33mGoodbye!\033[0m\n");
   } else if (str_starts_with(cmd, "play ")) {

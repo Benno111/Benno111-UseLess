@@ -51,6 +51,7 @@ void compositor_mark_full_redraw(void);
 void gui_set_blur_effects_enabled(int enabled);
 int gui_blur_effects_requested(void);
 int gui_are_blur_effects_enabled(void);
+int gui_is_gpu_rendering_enabled(void);
 
 /* Blur/compositor state is defined later but used by early draw helpers. */
 static int g_blur_effects_requested;
@@ -5706,7 +5707,6 @@ static void draw_window(struct window *win) {
     char *target_text = (win->title[0] == 'N') ? notepad_text : rename_text;
     int target_cursor = (win->title[0] == 'N') ? notepad_cursor : rename_cursor;
 
-    int total_chars = 0;
     int line_count = 1;
     int col_count = 1;
     for (int i = 0; i < target_cursor && ty < max_y; i++) {
@@ -5719,7 +5719,6 @@ static void draw_window(struct window *win) {
       } else {
         gui_draw_char(tx, ty, c, 0xD4D4D4, 0x1E1E1E);
         tx += 8;
-        total_chars++;
         col_count++;
         if (tx >= max_x) {
           tx = content_x + 8 + gutter_w;
@@ -7241,8 +7240,6 @@ static int resize_start_win_x = 0, resize_start_win_y = 0;
 #define MIN_WINDOW_HEIGHT 100
 
 void gui_handle_mouse_event(int x, int y, int buttons) {
-  int prev_x = mouse_x;
-  int prev_y = mouse_y;
   int old_buttons = prev_buttons;
   mouse_x = x;
   mouse_y = y;
@@ -7265,7 +7262,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
   /* Track for double-click detection */
   static int last_click_x = 0, last_click_y = 0;
-  static uint64_t last_click_time = 0;
   static int click_count = 0;
 
   if (startup_flow_active()) {
@@ -7816,7 +7812,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int sidebar_w = 118;
         int panel_x = content_x + sidebar_w + 14;
         int panel_y = content_y + 14;
-        int panel_w = content_w - sidebar_w - 24;
 
         for (int i = 0; i < 3; i++) {
           int tab_y = content_y + 76 + i * 38;
@@ -8509,6 +8504,7 @@ void gui_open_notepad(const char *path) {
 }
 
 static void rename_on_mouse(struct window *win, int x, int y, int buttons) {
+  (void)buttons;
   /* Check Save Button */
   int content_y = BORDER_WIDTH + TITLEBAR_HEIGHT;
   if (y >= content_y && y < content_y + 30) {
