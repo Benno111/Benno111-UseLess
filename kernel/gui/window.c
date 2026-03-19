@@ -3615,7 +3615,7 @@ static const unsigned char *fm_icon_for_item(const char *name, unsigned type,
     bmp = icon_files;
     color = 0x60A5FA;
   } else if (str_ends_with_ci(name, ".app")) {
-    bmp = icon_app_store;
+    bmp = icon_files;
     color = 0xC4B5FD;
   } else if (str_ends_with_ci(name, ".py")) {
     bmp = icon_python;
