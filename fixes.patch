@@ -1,0 +1,142 @@
+diff --git a/kernel/fs/vfs.c b/kernel/fs/vfs.c
+index 0000000..0000000 100644
+--- a/kernel/fs/vfs.c
++++ b/kernel/fs/vfs.c
+@@
++// Normalize path (remove trailing slash except root)
++static void normalize_path(char *path) {
++    size_t len = strlen(path);
++    while (len > 1 && path[len - 1] == '/') {
++        path[len - 1] = '\0';
++        len--;
++    }
++}
+
+ int vfs_mount(const char *target, struct fs *fs) {
++    char norm_target[256];
++    strncpy(norm_target, target, sizeof(norm_target));
++    normalize_path(norm_target);
+
+     for (int i = 0; i < MAX_MOUNTS; i++) {
+-        if (strcmp(mounts[i].target, target) == 0) {
++        char existing[256];
++        strncpy(existing, mounts[i].target, sizeof(existing));
++        normalize_path(existing);
++
++        if (strcmp(existing, norm_target) == 0) {
+             return -EEXIST;
+         }
+     }
+
+     for (int i = 0; i < MAX_MOUNTS; i++) {
+         if (!mounts[i].used) {
+             mounts[i].used = 1;
+             mounts[i].fs = fs;
+-            strncpy(mounts[i].target, target, sizeof(mounts[i].target));
++            strncpy(mounts[i].target, norm_target, sizeof(mounts[i].target));
+             return 0;
+         }
+     }
+     return -ENOMEM;
+ }
+
+diff --git a/kernel/gui/window.c b/kernel/gui/window.c
+index 0000000..0000000 100644
+--- a/kernel/gui/window.c
++++ b/kernel/gui/window.c
+@@
+ void file_manager_refresh(struct window *win) {
+     struct dirent *ent;
+
++    // Dedup tracking
++    char seen[256][256];
++    int seen_count = 0;
++
+     while ((ent = vfs_readdir(dir)) != NULL) {
+-        add_entry(win, ent->name, ent->type);
++        if (!strcmp(ent->name, ".") || !strcmp(ent->name, ".."))
++            continue;
++
++        int duplicate = 0;
++        for (int i = 0; i < seen_count; i++) {
++            if (!strcmp(seen[i], ent->name)) {
++                duplicate = 1;
++                break;
++            }
++        }
++
++        if (duplicate) continue;
++
++        strncpy(seen[seen_count++], ent->name, 256);
++        add_entry(win, ent->name, ent->type);
+     }
+ }
+
+@@
+ int installer_copy_file(const char *src, const char *dst) {
+-    char *buf = kmalloc(file_size);
+-    vfs_read(src_fd, buf, file_size);
+-    vfs_write(dst_fd, buf, file_size);
+-    kfree(buf);
++    char buf[4096];
++
++    while (1) {
++        int r = vfs_read(src_fd, buf, sizeof(buf));
++        if (r < 0) return r;
++        if (r == 0) break;
++
++        int written = 0;
++        while (written < r) {
++            int w = vfs_write(dst_fd, buf + written, r - written);
++            if (w <= 0) return -EIO;
++            written += w;
++        }
++    }
++
++    return 0;
+ }
+
+diff --git a/boot/bios/stage1.S b/boot/bios/stage1.S
+index 0000000..0000000 100644
+--- a/boot/bios/stage1.S
++++ b/boot/bios/stage1.S
+@@
+     cli
+     xor ax, ax
+     mov ds, ax
+
++    ; Detect INT13 extensions (LBA support)
++    mov ah, 0x41
++    mov bx, 0x55AA
++    int 0x13
++    jc no_lba
++    cmp bx, 0xAA55
++    jne no_lba
++
++    mov byte [use_lba], 1
++    jmp load_stage2
++
++no_lba:
++    mov byte [use_lba], 0
+
+ load_stage2:
+
+diff --git a/scripts/build_dos_image.sh b/scripts/build_dos_image.sh
+index 0000000..0000000 100755
+--- a/scripts/build_dos_image.sh
++++ b/scripts/build_dos_image.sh
+@@
++# Calculate stage2 sector count
++STAGE2_SIZE=$(stat -c%s stage2.bin)
++SECTORS=$(( (STAGE2_SIZE + 511) / 512 ))
++
++# Patch sector count into stage1 (offset 2)
++printf "\\x%02x\\x%02x" $((SECTORS & 0xff)) $(((SECTORS >> 8) & 0xff)) \
++  | dd of=stage1.bin bs=1 seek=2 conv=notrunc
++
++# Pad stage2 to full sectors
++dd if=/dev/zero bs=512 count=$SECTORS | cat stage2.bin - \
++  | dd of=stage2_padded.bin bs=512 count=$SECTORS
++
++# Write padded stage2
++dd if=stage2_padded.bin of=disk.img bs=512 seek=1 conv=notrunc
