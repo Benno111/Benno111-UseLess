@@ -20,6 +20,7 @@
 #include "printk.h"
 #include "sched/sched.h"
 #include "types.h"
+#include "gui/font.h"
 
 /* Kernel version */
 #define VIBOS_VERSION_MAJOR 0
@@ -63,6 +64,301 @@ static void keyboard_handler(int key);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
 #endif
+
+static void panic_append_char(char *buf, size_t max, size_t *idx, char c) {
+  if (!buf || !idx || *idx >= max - 1)
+    return;
+  buf[(*idx)++] = c;
+  buf[*idx] = '\0';
+}
+
+static void panic_append_str(char *buf, size_t max, size_t *idx, const char *src) {
+  size_t i = 0;
+  if (!buf || !idx || !src)
+    return;
+  while (src[i] && *idx < max - 1) {
+    buf[(*idx)++] = src[i++];
+  }
+  buf[*idx] = '\0';
+}
+
+static void panic_append_u64(char *buf, size_t max, size_t *idx, uint64_t value) {
+  char tmp[32];
+  int ti = 0;
+
+  if (value == 0) {
+    panic_append_char(buf, max, idx, '0');
+    return;
+  }
+
+  while (value > 0 && ti < (int)sizeof(tmp)) {
+    tmp[ti++] = (char)('0' + (value % 10));
+    value /= 10;
+  }
+  while (ti > 0)
+    panic_append_char(buf, max, idx, tmp[--ti]);
+}
+
+static void panic_append_hex(char *buf, size_t max, size_t *idx, uint64_t value,
+                             int width) {
+  static const char hex[] = "0123456789ABCDEF";
+
+  panic_append_str(buf, max, idx, "0x");
+  for (int shift = (width - 1) * 4; shift >= 0; shift -= 4) {
+    panic_append_char(buf, max, idx, hex[(value >> shift) & 0xF]);
+  }
+}
+
+static void panic_make_kv_u64(char *buf, size_t max, const char *key,
+                              uint64_t value, const char *suffix) {
+  size_t idx = 0;
+  if (!buf || max == 0)
+    return;
+  buf[0] = '\0';
+  panic_append_str(buf, max, &idx, key);
+  panic_append_str(buf, max, &idx, ": ");
+  panic_append_u64(buf, max, &idx, value);
+  if (suffix)
+    panic_append_str(buf, max, &idx, suffix);
+}
+
+static void panic_make_kv_hex(char *buf, size_t max, const char *key,
+                              uint64_t value, int width) {
+  size_t idx = 0;
+  if (!buf || max == 0)
+    return;
+  buf[0] = '\0';
+  panic_append_str(buf, max, &idx, key);
+  panic_append_str(buf, max, &idx, ": ");
+  panic_append_hex(buf, max, &idx, value, width);
+}
+
+static void panic_fb_fill_rect(uint32_t *fb, uint32_t pitch_pixels, uint32_t fb_w,
+                               uint32_t fb_h, int x, int y, int w, int h,
+                               uint32_t color) {
+  if (!fb || w <= 0 || h <= 0)
+    return;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x + w > (int)fb_w)
+    w = (int)fb_w - x;
+  if (y + h > (int)fb_h)
+    h = (int)fb_h - y;
+  if (w <= 0 || h <= 0)
+    return;
+
+  for (int row = y; row < y + h; row++) {
+    uint32_t *dst = fb + row * pitch_pixels + x;
+    for (int col = 0; col < w; col++)
+      dst[col] = color;
+  }
+}
+
+static void panic_fb_draw_char(uint32_t *fb, uint32_t pitch_pixels, uint32_t fb_w,
+                               uint32_t fb_h, int x, int y, char c,
+                               uint32_t fg, uint32_t bg) {
+  const uint8_t *glyph;
+
+  if (!fb)
+    return;
+  glyph = font_data[(unsigned char)c];
+  for (int row = 0; row < FONT_HEIGHT; row++) {
+    int py = y + row;
+    if (py < 0 || py >= (int)fb_h)
+      continue;
+    for (int col = 0; col < FONT_WIDTH; col++) {
+      int px = x + col;
+      if (px < 0 || px >= (int)fb_w)
+        continue;
+      fb[py * pitch_pixels + px] =
+          (glyph[row] & (0x80 >> col)) ? fg : bg;
+    }
+  }
+}
+
+static void panic_fb_draw_string(uint32_t *fb, uint32_t pitch_pixels, uint32_t fb_w,
+                                 uint32_t fb_h, int x, int y, const char *str,
+                                 uint32_t fg, uint32_t bg) {
+  int dx = x;
+  while (str && *str) {
+    panic_fb_draw_char(fb, pitch_pixels, fb_w, fb_h, dx, y, *str, fg, bg);
+    dx += FONT_WIDTH;
+    str++;
+  }
+}
+
+static void panic_fb_draw_wrapped(uint32_t *fb, uint32_t pitch_pixels,
+                                  uint32_t fb_w, uint32_t fb_h, int x, int y,
+                                  int max_chars, const char *str, uint32_t fg,
+                                  uint32_t bg, int max_lines) {
+  char line[96];
+  int line_len = 0;
+  int lines_drawn = 0;
+
+  if (!str || max_chars <= 0 || max_lines <= 0)
+    return;
+
+  for (size_t i = 0;; i++) {
+    char c = str[i];
+    int flush = 0;
+
+    if (c == '\0' || c == '\n' || line_len >= max_chars) {
+      flush = 1;
+    } else {
+      line[line_len++] = c;
+    }
+
+    if (flush) {
+      line[line_len] = '\0';
+      panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, x,
+                           y + lines_drawn * (FONT_HEIGHT + 2), line, fg, bg);
+      lines_drawn++;
+      line_len = 0;
+      if (lines_drawn >= max_lines || c == '\0')
+        break;
+      if (c == '\n')
+        continue;
+      if (c != '\0')
+        line[line_len++] = c;
+    }
+  }
+}
+
+static void panic_draw_screen(const char *msg) {
+  uint32_t *fb = NULL;
+  uint32_t fb_w = 0;
+  uint32_t fb_h = 0;
+  uint32_t pitch = 0;
+  uint32_t pitch_pixels;
+  char cpu_info[96];
+  char line0[128];
+  char line1[128];
+  char line2[128];
+  char line3[128];
+  char line4[128];
+  char line5[128];
+  char log_buf[768];
+  size_t log_size;
+  size_t log_offset;
+  size_t copied;
+  int panel_x;
+  int panel_y;
+  int panel_w;
+  int panel_h;
+  int max_log_chars;
+  uint64_t uptime_ms;
+  uintptr_t stack_hint;
+  uintptr_t caller_hint;
+
+  extern int fb_init(void);
+  extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
+  extern uint32_t fb_get_pitch(void);
+
+  fb_get_info(&fb, &fb_w, &fb_h);
+  if (!fb || !fb_w || !fb_h) {
+    if (fb_init() == 0)
+      fb_get_info(&fb, &fb_w, &fb_h);
+  }
+  pitch = fb_get_pitch();
+  if (!fb || !fb_w || !fb_h)
+    return;
+
+  pitch_pixels = pitch ? (pitch / 4) : fb_w;
+  uptime_ms = arch_timer_get_ms();
+  stack_hint = (uintptr_t)&fb;
+  caller_hint = (uintptr_t)__builtin_return_address(0);
+  arch_cpu_info(cpu_info, sizeof(cpu_info));
+
+  panic_make_kv_u64(line0, sizeof(line0), "Uptime", uptime_ms, " ms");
+  panic_make_kv_hex(line1, sizeof(line1), "Caller", (uint64_t)caller_hint,
+                    sizeof(uintptr_t) * 2);
+  panic_make_kv_hex(line2, sizeof(line2), "Stack", (uint64_t)stack_hint,
+                    sizeof(uintptr_t) * 2);
+  panic_make_kv_hex(line3, sizeof(line3), "Kernel", (uint64_t)(uintptr_t)__kernel_start,
+                    sizeof(uintptr_t) * 2);
+  panic_make_kv_hex(line4, sizeof(line4), "Kernel End",
+                    (uint64_t)(uintptr_t)__kernel_end, sizeof(uintptr_t) * 2);
+  panic_make_kv_hex(line5, sizeof(line5), "Framebuffer",
+                    (uint64_t)(uintptr_t)fb, sizeof(uintptr_t) * 2);
+
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, 0, 0, (int)fb_w, (int)fb_h,
+                     0x12070A);
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, 0, 0, (int)fb_w, 18, 0x7F1D1D);
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, 0, (int)fb_h - 20, (int)fb_w,
+                     20, 0x1F0A0C);
+
+  panel_x = 24;
+  panel_y = 28;
+  panel_w = (int)fb_w - 48;
+  panel_h = (int)fb_h - 56;
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, panel_x, panel_y, panel_w, panel_h,
+                     0x1A1114);
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, panel_x, panel_y, panel_w, 2,
+                     0xC84B4B);
+  panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, panel_x, panel_y, 2, panel_h,
+                     0xC84B4B);
+
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 18,
+                       "KERNEL PANIC", 0xFFFFFF, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 40,
+                       "The kernel hit a fatal error and stopped safely.",
+                       0xF3D0D0, 0x1A1114);
+
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 74,
+                       "Basic Details", 0xFCA5A5, 0x1A1114);
+  panic_fb_draw_wrapped(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 98,
+                        (panel_w - 36) / FONT_WIDTH, msg ? msg : "(no panic message)",
+                        0xFFFFFF, 0x1A1114, 3);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 156,
+                       "Build:", 0xFCA5A5, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 74, panel_y + 156,
+                       BUILD_UUID, 0xE5E7EB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 178,
+                       "Arch:", 0xFCA5A5, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 74, panel_y + 178,
+                       ARCH_NAME, 0xE5E7EB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 200,
+                       "CPU:", 0xFCA5A5, 0x1A1114);
+  panic_fb_draw_wrapped(fb, pitch_pixels, fb_w, fb_h, panel_x + 74, panel_y + 200,
+                        (panel_w - 92) / FONT_WIDTH, cpu_info, 0xE5E7EB, 0x1A1114,
+                        2);
+
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 246,
+                       "Debug Info", 0xFCA5A5, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 270,
+                       line0, 0xD1D5DB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 290,
+                       line1, 0xD1D5DB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 310,
+                       line2, 0xD1D5DB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 330,
+                       line3, 0xD1D5DB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 350,
+                       line4, 0xD1D5DB, 0x1A1114);
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 370,
+                       line5, 0xD1D5DB, 0x1A1114);
+
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 404,
+                       "Recent Kernel Log", 0xFCA5A5, 0x1A1114);
+  log_size = printk_log_size();
+  log_offset = log_size > sizeof(log_buf) - 1 ? log_size - (sizeof(log_buf) - 1) : 0;
+  copied = printk_log_read(log_buf, log_offset, sizeof(log_buf) - 1);
+  log_buf[copied] = '\0';
+  max_log_chars = (panel_w - 36) / FONT_WIDTH;
+  panic_fb_draw_wrapped(fb, pitch_pixels, fb_w, fb_h, panel_x + 18, panel_y + 428,
+                        max_log_chars, log_buf, 0xC7D2FE, 0x1A1114, 8);
+
+  panic_fb_draw_string(fb, pitch_pixels, fb_w, fb_h, panel_x + 18,
+                       panel_y + panel_h - 26,
+                       "Troubleshooting: capture this screen and the serial log.",
+                       0xFDE68A, 0x1A1114);
+}
 
 /*
  * kernel_main - Main kernel entry point
@@ -1153,15 +1449,39 @@ static void start_init_process(void) {
  * @msg: Error message to display
  */
 void panic(const char *msg) {
+  static int panic_in_progress = 0;
+  uintptr_t caller_hint = (uintptr_t)__builtin_return_address(0);
+  uintptr_t stack_hint = (uintptr_t)&msg;
+
   /* Disable interrupts */
   arch_irq_disable();
+
+  if (panic_in_progress) {
+    printk(KERN_EMERG "\n");
+    printk(KERN_EMERG "Recursive kernel panic detected!\n");
+    printk(KERN_EMERG "Latest panic: %s\n", msg ? msg : "(null)");
+    printk(KERN_EMERG "Caller: 0x%lx Stack: 0x%lx\n", (unsigned long)caller_hint,
+           (unsigned long)stack_hint);
+    arch_halt();
+  }
+  panic_in_progress = 1;
 
   printk(KERN_EMERG "\n");
   printk(KERN_EMERG "============================================\n");
   printk(KERN_EMERG "KERNEL PANIC!\n");
   printk(KERN_EMERG "============================================\n");
-  printk(KERN_EMERG "%s\n", msg);
+  printk(KERN_EMERG "%s\n", msg ? msg : "(null)");
+  printk(KERN_EMERG "Build UUID: %s\n", BUILD_UUID);
+  printk(KERN_EMERG "Arch: %s\n", ARCH_NAME);
+  printk(KERN_EMERG "Caller: 0x%lx\n", (unsigned long)caller_hint);
+  printk(KERN_EMERG "Stack: 0x%lx\n", (unsigned long)stack_hint);
+  printk(KERN_EMERG "Kernel start: 0x%lx\n", (unsigned long)(uintptr_t)__kernel_start);
+  printk(KERN_EMERG "Kernel end: 0x%lx\n", (unsigned long)(uintptr_t)__kernel_end);
   printk(KERN_EMERG "============================================\n");
+  printk(KERN_EMERG "Rendering panic screen...\n");
+
+  panic_draw_screen(msg);
+
   printk(KERN_EMERG "System halted.\n");
 
   /* Infinite loop */

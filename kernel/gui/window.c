@@ -332,6 +332,18 @@ static void calc_button_click(char key) {
 static char notepad_text[NOTEPAD_MAX_TEXT];
 static char notepad_filepath[256]; /* Track open file */
 static int notepad_cursor = 0;
+static char notepad_status[96] = "Ready";
+static int notepad_dirty = 0;
+
+#define NOTEPAD_DIALOG_NONE 0
+#define NOTEPAD_DIALOG_OPEN 1
+#define NOTEPAD_DIALOG_SAVE 2
+static int notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
+static char notepad_dialog_dir[256] = "/Documents";
+static char notepad_dialog_input[256];
+static char notepad_dialog_selected[64];
+static struct window *notepad_find_window(void);
+static void notepad_update_window_title(void);
 
 /* Rename State */
 static char rename_text[256];
@@ -368,6 +380,169 @@ static int snake_game_over = 0;
 /* Mouse state (global for hover effects) */
 static int mouse_x = 512, mouse_y = 384;
 static int mouse_buttons = 0;
+static int settings_active_tab = 0;
+static char settings_status[96] = "Tune your desktop experience.";
+
+static void notepad_append_to_buf(char *dst, int max, const char *src) {
+  int idx = 0;
+
+  if (!dst || max <= 0)
+    return;
+  while (dst[idx] && idx < max - 1)
+    idx++;
+  for (int i = 0; src && src[i] && idx < max - 1; i++)
+    dst[idx++] = src[i];
+  dst[idx] = '\0';
+}
+
+static const char *notepad_basename(const char *path) {
+  const char *name = path;
+
+  if (!path || !path[0])
+    return "Untitled";
+  for (int i = 0; path[i]; i++) {
+    if (path[i] == '/' && path[i + 1])
+      name = &path[i + 1];
+  }
+  return name;
+}
+
+static void notepad_extract_parent_dir(const char *path, char *out, int out_max) {
+  int last_slash = -1;
+
+  if (!out || out_max <= 0)
+    return;
+  if (!path || !path[0]) {
+    str_copy_safe(out, "/Documents", out_max);
+    return;
+  }
+
+  for (int i = 0; path[i]; i++) {
+    if (path[i] == '/')
+      last_slash = i;
+  }
+
+  if (last_slash <= 0) {
+    str_copy_safe(out, "/", out_max);
+    return;
+  }
+
+  for (int i = 0; i < last_slash && i < out_max - 1; i++)
+    out[i] = path[i];
+  out[last_slash < out_max ? last_slash : out_max - 1] = '\0';
+}
+
+static void notepad_set_status(const char *msg) {
+  str_copy_safe(notepad_status, msg, sizeof(notepad_status));
+}
+
+static void notepad_reset_document(void) {
+  notepad_text[0] = '\0';
+  notepad_cursor = 0;
+  notepad_filepath[0] = '\0';
+  notepad_dirty = 0;
+  notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
+  notepad_dialog_selected[0] = '\0';
+  notepad_dialog_input[0] = '\0';
+  str_copy_safe(notepad_dialog_dir, "/Documents", sizeof(notepad_dialog_dir));
+  notepad_set_status("New document");
+  notepad_update_window_title();
+}
+
+static int notepad_load_file(const char *path) {
+  struct file *f;
+  int bytes;
+
+  if (!path || !path[0]) {
+    notepad_set_status("Open failed: no file selected");
+    return -1;
+  }
+
+  f = vfs_open(path, O_RDONLY, 0);
+  if (!f) {
+    notepad_set_status("Open failed");
+    return -1;
+  }
+
+  bytes = vfs_read(f, notepad_text, NOTEPAD_MAX_TEXT - 1);
+  vfs_close(f);
+  if (bytes < 0) {
+    notepad_set_status("Open failed");
+    return -1;
+  }
+
+  notepad_text[bytes] = '\0';
+  notepad_cursor = bytes;
+  str_copy_safe(notepad_filepath, path, sizeof(notepad_filepath));
+  notepad_dirty = 0;
+  notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
+  notepad_dialog_selected[0] = '\0';
+  notepad_dialog_input[0] = '\0';
+  notepad_extract_parent_dir(path, notepad_dialog_dir, sizeof(notepad_dialog_dir));
+  notepad_set_status("File opened");
+  notepad_update_window_title();
+  return 0;
+}
+
+static int notepad_save_to_path(const char *path) {
+  if (!path || !path[0]) {
+    notepad_set_status("Save failed: no path");
+    return -1;
+  }
+
+  installer_ensure_parent_dirs(path);
+  if (write_text_file(path, notepad_text) != 0) {
+    notepad_set_status("Save failed");
+    return -1;
+  }
+
+  str_copy_safe(notepad_filepath, path, sizeof(notepad_filepath));
+  notepad_extract_parent_dir(path, notepad_dialog_dir, sizeof(notepad_dialog_dir));
+  notepad_dirty = 0;
+  notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
+  notepad_dialog_selected[0] = '\0';
+  notepad_set_status("File saved");
+  notepad_update_window_title();
+  return 0;
+}
+
+static void notepad_begin_dialog(int mode) {
+  char default_name[256];
+
+  notepad_dialog_mode = mode;
+  notepad_dialog_selected[0] = '\0';
+
+  if (notepad_filepath[0]) {
+    str_copy_safe(notepad_dialog_input, notepad_filepath,
+                  sizeof(notepad_dialog_input));
+    notepad_extract_parent_dir(notepad_filepath, notepad_dialog_dir,
+                               sizeof(notepad_dialog_dir));
+  } else {
+    str_copy_safe(notepad_dialog_dir, "/Documents", sizeof(notepad_dialog_dir));
+    str_copy_safe(default_name, notepad_dialog_dir, sizeof(default_name));
+    notepad_append_to_buf(default_name, sizeof(default_name), "/untitled.txt");
+    str_copy_safe(notepad_dialog_input, default_name, sizeof(notepad_dialog_input));
+  }
+
+  notepad_set_status(mode == NOTEPAD_DIALOG_OPEN ? "Choose a file to open"
+                                                 : "Choose where to save");
+}
+
+static void notepad_close_dialog(void) {
+  notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
+  notepad_dialog_selected[0] = '\0';
+  notepad_dialog_input[0] = '\0';
+}
+
+static void notepad_confirm_dialog(void) {
+  if (notepad_dialog_mode == NOTEPAD_DIALOG_OPEN) {
+    if (notepad_load_file(notepad_dialog_input) == 0)
+      notepad_close_dialog();
+  } else if (notepad_dialog_mode == NOTEPAD_DIALOG_SAVE) {
+    if (notepad_save_to_path(notepad_dialog_input) == 0)
+      notepad_close_dialog();
+  }
+}
 
 /* Trig tables for Clock (fixed point 8.8, scale 256) */
 /* 0..59 corresponds to 0..360 degrees clockwise from top */
@@ -385,16 +560,63 @@ static const int clock_cos[60] = {
     205,  189,  171,  150,  128,  104,  79,   53,   26,   0,    -26,  -53,
     -79,  -104, -128, -150, -171, -189, -205, -219, -231, -240, -248, -253};
 
-static void clock_get_time(int *hours24, int *minutes, int *seconds) {
-  int64_t secs;
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+static uint8_t clock_cmos_read(uint8_t reg) {
+  outb(0x70, reg);
+  io_wait();
+  return inb(0x71);
+}
 
-#ifdef ARCH_X86_64
-  /* Fallback to uptime-based clock on x86 until RTC plumbing is available. */
-  secs = (int64_t)(arch_timer_get_ms() / 1000);
+static int clock_bcd_to_int(uint8_t value) {
+  return ((value >> 4) * 10) + (value & 0x0F);
+}
+
+static void clock_read_rtc_time(int *hours24, int *minutes, int *seconds) {
+  uint8_t sec;
+  uint8_t min;
+  uint8_t hour;
+  uint8_t reg_b;
+
+  if (!hours24 || !minutes || !seconds)
+    return;
+
+  while (clock_cmos_read(0x0A) & 0x80) {
+  }
+
+  sec = clock_cmos_read(0x00);
+  min = clock_cmos_read(0x02);
+  hour = clock_cmos_read(0x04);
+  reg_b = clock_cmos_read(0x0B);
+
+  if (!(reg_b & 0x04)) {
+    sec = (uint8_t)clock_bcd_to_int(sec);
+    min = (uint8_t)clock_bcd_to_int(min);
+    hour = (uint8_t)(((hour & 0x80) ? 0x80 : 0) | clock_bcd_to_int(hour & 0x7F));
+  }
+
+  if (!(reg_b & 0x02)) {
+    int pm = hour & 0x80;
+    hour &= 0x7F;
+    if (pm && hour < 12)
+      hour = (uint8_t)(hour + 12);
+    else if (!pm && hour == 12)
+      hour = 0;
+  }
+
+  *seconds = sec % 60;
+  *minutes = min % 60;
+  *hours24 = hour % 24;
+}
+#endif
+
+static void clock_get_time(int *hours24, int *minutes, int *seconds) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  clock_read_rtc_time(hours24, minutes, seconds);
+  return;
 #else
+  int64_t secs;
   volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
   secs = *pl031_data;
-#endif
 
   while (secs < 0) {
     secs += 24 * 3600;
@@ -406,6 +628,7 @@ static void clock_get_time(int *hours24, int *minutes, int *seconds) {
     *minutes = (int)((secs / 60) % 60);
   if (seconds)
     *seconds = (int)(secs % 60);
+#endif
 }
 
 static void clock_format_time(char *buf, int hours24, int minutes, int seconds) {
@@ -593,6 +816,54 @@ static void snake_key(int key) {
 }
 
 static void notepad_key(int key) {
+  if (notepad_dialog_mode != NOTEPAD_DIALOG_NONE) {
+    if (key == 27) {
+      notepad_close_dialog();
+      notepad_set_status("Dialog closed");
+      return;
+    }
+    if (key == '\n' || key == '\r') {
+      notepad_confirm_dialog();
+      return;
+    }
+    if (key == '\b' || key == 127) {
+      int len = 0;
+      while (notepad_dialog_input[len])
+        len++;
+      if (len > 0)
+        notepad_dialog_input[len - 1] = '\0';
+      return;
+    }
+    if (key >= 32 && key < 127) {
+      int len = 0;
+      while (notepad_dialog_input[len])
+        len++;
+      if (len < (int)sizeof(notepad_dialog_input) - 1) {
+        notepad_dialog_input[len++] = (char)key;
+        notepad_dialog_input[len] = '\0';
+      }
+    }
+    return;
+  }
+
+  if (key == 14) { /* Ctrl+N */
+    notepad_reset_document();
+    return;
+  }
+
+  if (key == 15) { /* Ctrl+O */
+    notepad_begin_dialog(NOTEPAD_DIALOG_OPEN);
+    return;
+  }
+
+  if (key == 19) { /* Ctrl+S */
+    if (notepad_filepath[0])
+      notepad_save_to_path(notepad_filepath);
+    else
+      notepad_begin_dialog(NOTEPAD_DIALOG_SAVE);
+    return;
+  }
+
   /* Ctrl+C - Copy all text to clipboard */
   if (key == 3) { /* ASCII 3 = Ctrl+C */
     clipboard_len = 0;
@@ -611,6 +882,9 @@ static void notepad_key(int key) {
       notepad_text[notepad_cursor++] = clipboard_buffer[i];
     }
     notepad_text[notepad_cursor] = '\0';
+    notepad_dirty = 1;
+    notepad_set_status("Pasted from clipboard");
+    notepad_update_window_title();
     return;
   }
 
@@ -625,20 +899,44 @@ static void notepad_key(int key) {
     return;
   }
 
+  if (key == 24) { /* Ctrl+X */
+    clipboard_len = 0;
+    for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
+      clipboard_buffer[i] = notepad_text[i];
+      clipboard_len++;
+    }
+    clipboard_buffer[clipboard_len] = '\0';
+    notepad_text[0] = '\0';
+    notepad_cursor = 0;
+    notepad_dirty = 1;
+    notepad_set_status("Cut document to clipboard");
+    notepad_update_window_title();
+    return;
+  }
+
   if (key == '\b' || key == 127) { /* Backspace */
     if (notepad_cursor > 0) {
       notepad_cursor--;
       notepad_text[notepad_cursor] = '\0';
+      notepad_dirty = 1;
+      notepad_set_status("Edited");
+      notepad_update_window_title();
     }
   } else if (key >= 32 && key < 127) { /* Printable */
     if (notepad_cursor < NOTEPAD_MAX_TEXT - 1) {
       notepad_text[notepad_cursor++] = (char)key;
       notepad_text[notepad_cursor] = '\0';
+      notepad_dirty = 1;
+      notepad_set_status("Edited");
+      notepad_update_window_title();
     }
   } else if (key == '\n' || key == '\r') { /* Enter */
     if (notepad_cursor < NOTEPAD_MAX_TEXT - 1) {
       notepad_text[notepad_cursor++] = '\n';
       notepad_text[notepad_cursor] = '\0';
+      notepad_dirty = 1;
+      notepad_set_status("Edited");
+      notepad_update_window_title();
     }
   }
 }
@@ -1112,6 +1410,38 @@ static struct window windows[MAX_WINDOWS];
 static struct window *window_stack = NULL; /* Z-order, top is focused */
 static struct window *focused_window = NULL;
 static int next_window_id = 1;
+
+static struct window *notepad_find_window(void) {
+  for (int i = 0; i < MAX_WINDOWS; i++) {
+    if (windows[i].id != 0 && windows[i].visible && windows[i].title[0] == 'N' &&
+        windows[i].title[1] == 'o' && windows[i].title[2] == 't') {
+      return &windows[i];
+    }
+  }
+  return NULL;
+}
+
+static void notepad_update_window_title(void) {
+  struct window *win = notepad_find_window();
+  int idx = 0;
+
+  if (!win)
+    return;
+
+  str_copy_safe(win->title, "Notepad", sizeof(win->title));
+  idx = 7;
+  if (notepad_filepath[0] && idx < (int)sizeof(win->title) - 3) {
+    win->title[idx++] = ' ';
+    win->title[idx++] = '-';
+    win->title[idx++] = ' ';
+    win->title[idx] = '\0';
+    notepad_append_to_buf(win->title, sizeof(win->title),
+                          notepad_basename(notepad_filepath));
+  }
+  if (notepad_dirty) {
+    notepad_append_to_buf(win->title, sizeof(win->title), " *");
+  }
+}
 
 static int window_title_equals(const struct window *win, const char *title) {
   int i = 0;
@@ -2554,7 +2884,7 @@ int gui_launch_app_by_id(const char *app_id) {
     gui_open_notepad(NULL);
     break;
   case GUI_APP_SETTINGS:
-    gui_create_window("Settings", spawn_x + 20, spawn_y + 30, 380, 320);
+    gui_create_window("Settings", spawn_x + 20, spawn_y + 30, 560, 420);
     break;
   case GUI_APP_CLOCK:
     gui_create_window("Clock", spawn_x + 50, spawn_y + 40, 260, 200);
@@ -4654,7 +4984,7 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 8, content_y + 8,
                     "Brush [O]  Line [/]  Color:", 0xFFFFFF, 0x404040);
     /* Color palette */
-    gui_draw_rect(content_x + 200, content_y + 4, 20, 20, 0xFF0000);
+    gui_draw_rect(content_x + 200, content_y + 4, 20, 20, 0xFF00Browser
     gui_draw_rect(content_x + 224, content_y + 4, 20, 20, 0x00FF00);
     gui_draw_rect(content_x + 248, content_y + 4, 20, 20, 0x0000FF);
     gui_draw_rect(content_x + 272, content_y + 4, 20, 20, 0x000000);
@@ -4672,7 +5002,7 @@ static void draw_window(struct window *win) {
     gui_draw_rect(content_x + 80, content_y + 8, content_w - 96, 24, 0xFFFFFF);
     gui_draw_rect_outline(content_x + 80, content_y + 8, content_w - 96, 24,
                           0xA0A0A0, 1);
-    gui_draw_string(content_x + 88, content_y + 12, "http://vib-os.org",
+    gui_draw_string(content_x + 88, content_y + 12, "http://os.de",
                     0x333333, 0xFFFFFF);
 
     /* Navigation Buttons */
@@ -4815,16 +5145,29 @@ static void draw_window(struct window *win) {
   /* Settings window */
   else if (win->title[0] == 'S' && win->title[1] == 'e' &&
            win->title[2] == 't') {
-    int yy = content_y + 12;
     char resolution[32];
     char windows_info[32];
     const char *blur_status;
-    const char *blur_button;
+    const char *gpu_status;
     extern int intel_hda_is_playing(void);
+    int sidebar_w = 118;
+    int panel_x = content_x + sidebar_w + 14;
+    int panel_y = content_y + 14;
+    int panel_w = content_w - sidebar_w - 24;
+    int card_w = (panel_w - 12) / 2;
+    int dock_count_buf_idx = 0;
+    char dock_count_buf[24];
+    char installed_buf[24];
+    int installed_apps = 0;
 
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
+    load_dock_config();
+    for (int i = 0; i < app_catalog_count; i++) {
+      if (app_is_installed(&app_catalog[i]))
+        installed_apps++;
+    }
     if (gui_are_blur_effects_enabled()) {
       blur_status = "Blur: On";
     } else if (gui_blur_effects_requested()) {
@@ -4832,62 +5175,188 @@ static void draw_window(struct window *win) {
     } else {
       blur_status = "Blur: Off";
     }
-    blur_button = gui_blur_effects_requested() ? "Disable Blur"
-                                               : "Enable Blur";
+    gpu_status = gui_is_gpu_rendering_enabled() ? "GPU rendering active"
+                                                : "Software rendering active";
 
-    /* Header */
-    gui_draw_string(content_x + 12, yy, "System Settings", 0xFFFFFF, THEME_BG);
-    yy += 28;
+    dock_count_buf[0] = '\0';
+    append_decimal(dock_count_buf, &dock_count_buf_idx, dock_item_count);
+    notepad_append_to_buf(dock_count_buf, sizeof(dock_count_buf), " dock apps");
+    installed_buf[0] = '\0';
+    dock_count_buf_idx = 0;
+    append_decimal(installed_buf, &dock_count_buf_idx, installed_apps);
+    notepad_append_to_buf(installed_buf, sizeof(installed_buf), " installed");
 
-    /* Display section */
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 60, 0x252535);
-    gui_draw_string(content_x + 20, yy + 8, "Display", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 28, "Resolution:", 0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + 116, yy + 28, resolution, 0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + 20, yy + 44, "Open Windows:", 0xCDD6F4,
-                    0x252535);
-    gui_draw_string(content_x + 116, yy + 44, windows_info, 0xCDD6F4,
-                    0x252535);
-    yy += 70;
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0x141824);
+    gui_draw_rect(content_x + 10, content_y + 10, sidebar_w - 12, content_h - 20,
+                  0x101827);
+    gui_draw_string(content_x + 24, content_y + 24, "Settings", 0xFFFFFF, 0x101827);
+    gui_draw_string(content_x + 24, content_y + 42, "Control center", 0x94A3B8,
+                    0x101827);
 
-    /* Sound section */
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 44, 0x252535);
-    gui_draw_string(content_x + 20, yy + 8, "Sound", 0x89B4FA, 0x252535);
-    if (intel_hda_is_playing()) {
-      gui_draw_string(content_x + 20, yy + 26, "Audio: Playing via Intel HDA",
-                      0xA6E3A1, 0x252535);
-    } else {
-      gui_draw_string(content_x + 20, yy + 26, "Audio: Intel HDA ready",
-                      0xCDD6F4, 0x252535);
+    for (int i = 0; i < 3; i++) {
+      int tab_y = content_y + 76 + i * 38;
+      uint32_t tab_bg = i == settings_active_tab ? 0x2563EB : 0x1E293B;
+      const char *label = i == 0 ? "Overview" : (i == 1 ? "Appearance" : "System");
+      gui_draw_rect(content_x + 18, tab_y, sidebar_w - 28, 28, tab_bg);
+      gui_draw_string(content_x + 30, tab_y + 8, label, 0xFFFFFF, tab_bg);
     }
-    yy += 54;
 
-    /* Network section */
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 44, 0x252535);
-    gui_draw_string(content_x + 20, yy + 8, "Network", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 26, "Status: virtio-net user NAT",
-                    0xCDD6F4, 0x252535);
-    yy += 54;
+    gui_draw_rect(panel_x, panel_y, panel_w, 60, 0x1F2937);
+    gui_draw_string(panel_x + 18, panel_y + 16,
+                    settings_active_tab == 0
+                        ? "Desktop overview"
+                        : (settings_active_tab == 1 ? "Appearance & effects"
+                                                    : "System tools"),
+                    0xFFFFFF, 0x1F2937);
+    gui_draw_string(panel_x + 18, panel_y + 34, settings_status, 0xCBD5E1,
+                    0x1F2937);
 
-    /* Visual Effects section */
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 58, 0x252535);
-    gui_draw_string(content_x + 20, yy + 8, "Visual Effects", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 26, blur_status, 0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + 20, yy + 40, g_gpu_backend_name, 0x94A3B8,
-                    0x252535);
-    gui_draw_rect(content_x + content_w - 132, yy + 15, 108, 28,
-                  gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-    gui_draw_string(content_x + content_w - 122, yy + 21, blur_button, 0xFFFFFF,
+    if (settings_active_tab == 0) {
+      int card_y = panel_y + 72;
+      gui_draw_rect(panel_x, card_y, panel_w, 72, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 12, "Display", 0x93C5FD, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 32, resolution, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 180, card_y + 32, windows_info, 0xCBD5E1, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 50, dock_count_buf, 0xA5B4FC, 0x252535);
+      gui_draw_string(panel_x + 180, card_y + 50, installed_buf, 0xA5F3FC, 0x252535);
+
+      card_y += 84;
+      gui_draw_rect(panel_x, card_y, card_w, 74, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 12, "Graphics", 0x89B4FA, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 32, gpu_status, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 50, blur_status, 0xCBD5E1, 0x252535);
+
+      gui_draw_rect(panel_x + card_w + 12, card_y, card_w, 74, 0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 12, "Media & Network",
+                      0x89B4FA, 0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 32,
+                      intel_hda_is_playing() ? "Audio is currently playing"
+                                             : "Audio backend standing by",
+                      intel_hda_is_playing() ? 0xA6E3A1 : 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 50,
+                      "virtio-net online with user-mode NAT", 0xCBD5E1, 0x252535);
+
+      card_y += 88;
+      gui_draw_rect(panel_x, card_y, 108, 30, 0x1D4ED8);
+      gui_draw_string(panel_x + 18, card_y + 9, "Backgrounds", 0xFFFFFF, 0x1D4ED8);
+      gui_draw_rect(panel_x + 118, card_y, 98, 30, 0x2563EB);
+      gui_draw_string(panel_x + 138, card_y + 9, "App Store", 0xFFFFFF, 0x2563EB);
+      gui_draw_rect(panel_x + 226, card_y, 92, 30, 0x3B82F6);
+      gui_draw_string(panel_x + 248, card_y + 9, "Devices", 0xFFFFFF, 0x3B82F6);
+      gui_draw_rect(panel_x + 328, card_y, 84, 30, 0x4B5563);
+      gui_draw_string(panel_x + 354, card_y + 9, "About", 0xFFFFFF, 0x4B5563);
+    } else if (settings_active_tab == 1) {
+      int preview_x = panel_x;
+      int preview_y = panel_y + 72;
+      int preview_w = 180;
+      int preview_h = 110;
+
+      gui_draw_rect(preview_x, preview_y, preview_w, preview_h, 0x252535);
+      load_thumbnails();
+      if (wallpapers[current_wallpaper].type == 1 &&
+          thumbnail_cache[current_wallpaper].pixels) {
+        media_image_t *thumb_img = &thumbnail_cache[current_wallpaper];
+        for (int py = 0; py < preview_h - 16; py++) {
+          for (int px = 0; px < preview_w - 16; px++) {
+            int src_x = (px * thumb_img->width) / (preview_w - 16);
+            int src_y = (py * thumb_img->height) / (preview_h - 16);
+            if (src_x < (int)thumb_img->width && src_y < (int)thumb_img->height) {
+              draw_image_pixel(preview_x + 8 + px, preview_y + 8 + py,
+                               thumb_img->pixels[src_y * thumb_img->width + src_x]);
+            }
+          }
+        }
+      } else {
+        for (int py = 0; py < preview_h - 16; py++) {
+          uint8_t pr = wallpapers[current_wallpaper].tr +
+                       ((wallpapers[current_wallpaper].br -
+                         wallpapers[current_wallpaper].tr) *
+                        py) /
+                           (preview_h - 16);
+          uint8_t pg = wallpapers[current_wallpaper].tg +
+                       ((wallpapers[current_wallpaper].bg -
+                         wallpapers[current_wallpaper].tg) *
+                        py) /
+                           (preview_h - 16);
+          uint8_t pb = wallpapers[current_wallpaper].tb +
+                       ((wallpapers[current_wallpaper].bb -
+                         wallpapers[current_wallpaper].tb) *
+                        py) /
+                           (preview_h - 16);
+          gui_draw_rect(preview_x + 8, preview_y + 8 + py, preview_w - 16, 1,
+                        (pr << 16) | (pg << 8) | pb);
+        }
+      }
+
+      gui_draw_rect(panel_x + 194, preview_y, panel_w - 194, 110, 0x252535);
+      gui_draw_string(panel_x + 210, preview_y + 14, "Current wallpaper", 0x93C5FD,
+                      0x252535);
+      gui_draw_string(panel_x + 210, preview_y + 36, wallpapers[current_wallpaper].name,
+                      0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 210, preview_y + 56,
+                      wallpapers[current_wallpaper].type == 1 ? "Photo-based scene"
+                                                              : "Gradient theme",
+                      0xCBD5E1, 0x252535);
+      gui_draw_string(panel_x + 210, preview_y + 76, blur_status, 0xA5B4FC, 0x252535);
+
+      preview_y += 124;
+      gui_draw_rect(panel_x, preview_y, panel_w, 96, 0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 12, "Visual effects", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 34, gpu_status, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 52, g_gpu_backend_name, 0xCBD5E1,
+                      0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 70,
+                      dock_is_visible() ? "Dock is visible on this boot mode"
+                                        : "Dock hidden in current mode",
+                      0xCBD5E1, 0x252535);
+
+      gui_draw_rect(panel_x, preview_y + 110, 116, 30, 0x1D4ED8);
+      gui_draw_string(panel_x + 18, preview_y + 119, "Backgrounds", 0xFFFFFF,
+                      0x1D4ED8);
+      gui_draw_rect(panel_x + 126, preview_y + 110, 116, 30,
                     gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-    yy += 68;
+      gui_draw_string(panel_x + 152, preview_y + 119,
+                      gui_blur_effects_requested() ? "Blur On" : "Blur Off",
+                      0xFFFFFF,
+                      gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
+      gui_draw_rect(panel_x + 252, preview_y + 110, 130, 30,
+                    gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
+      gui_draw_string(panel_x + 280, preview_y + 119,
+                      gui_is_gpu_rendering_enabled() ? "GPU On" : "GPU Off",
+                      0xFFFFFF,
+                      gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
+    } else {
+      int block_y = panel_y + 72;
+      gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 12, "System status", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + 16, block_y + 32, g_gpu_backend_name, 0xFFFFFF,
+                      0x252535);
+      gui_draw_string(panel_x + 150, block_y + 32,
+                      intel_hda_is_playing() ? "Intel HDA streaming"
+                                             : "Intel HDA ready",
+                      0xCBD5E1, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 52, "virtio-net / file manager / app store",
+                      0xCBD5E1, 0x252535);
 
-    /* Device Manager button */
-    gui_draw_rect(content_x + 10, yy, 100, 28, 0x3B82F6);
-    gui_draw_string(content_x + 18, yy + 6, "Devices...", 0xFFFFFF, 0x3B82F6);
+      block_y += 90;
+      gui_draw_rect(panel_x, block_y, 110, 30, 0x3B82F6);
+      gui_draw_string(panel_x + 22, block_y + 9, "Devices", 0xFFFFFF, 0x3B82F6);
+      gui_draw_rect(panel_x + 120, block_y, 110, 30, 0x1D4ED8);
+      gui_draw_string(panel_x + 146, block_y + 9, "Files", 0xFFFFFF, 0x1D4ED8);
+      gui_draw_rect(panel_x + 240, block_y, 110, 30, 0x2563EB);
+      gui_draw_string(panel_x + 264, block_y + 9, "App Store", 0xFFFFFF, 0x2563EB);
+      gui_draw_rect(panel_x + 360, block_y, 110, 30, 0x6D28D9);
+      gui_draw_string(panel_x + 374, block_y + 9, "Reset Dock", 0xFFFFFF, 0x6D28D9);
 
-    /* About button */
-    gui_draw_rect(content_x + 120, yy, 100, 28, 0x4B5563);
-    gui_draw_string(content_x + 136, yy + 6, "About...", 0xFFFFFF, 0x4B5563);
+      block_y += 42;
+      gui_draw_rect(panel_x, block_y, 110, 30, 0x4B5563);
+      gui_draw_string(panel_x + 32, block_y + 9, "About", 0xFFFFFF, 0x4B5563);
+      gui_draw_rect(panel_x + 120, block_y, panel_w - 120, 30, 0x1E293B);
+      gui_draw_string(panel_x + 136, block_y + 9, "Use these tools to inspect and restore",
+                      0xCBD5E1, 0x1E293B);
+    }
   }
   /* Device Manager window */
   else if (win->title[0] == 'D' && win->title[1] == 'e' &&
@@ -5131,7 +5600,7 @@ static void draw_window(struct window *win) {
             win->title[2] == 'n')) {
 
     /* Modern dark toolbar */
-    int toolbar_h = 36;
+    int toolbar_h = 62;
     gui_draw_rect(content_x, content_y, content_w, toolbar_h, 0x2D2D30);
 
     /* Toolbar buttons with modern styling */
@@ -5159,6 +5628,12 @@ static void draw_window(struct window *win) {
     gui_draw_string(bx + 10, btn_y + 5, "Save", 0xFFFFFF, 0x0E639C);
     bx += 50 + btn_spacing;
 
+    /* Save As button */
+    gui_draw_rect(bx, btn_y, 64, btn_h, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 64, 1, 0x505054);
+    gui_draw_string(bx + 8, btn_y + 5, "Save As", 0xCCCCCC, 0x3E3E42);
+    bx += 64 + btn_spacing;
+
     /* Separator */
     bx += 8;
     gui_draw_rect(bx, btn_y + 2, 1, btn_h - 4, 0x505054);
@@ -5181,6 +5656,14 @@ static void draw_window(struct window *win) {
     gui_draw_rect(bx, btn_y, 55, btn_h, 0x3E3E42);
     gui_draw_rect(bx, btn_y, 55, 1, 0x505054);
     gui_draw_string(bx + 8, btn_y + 5, "Paste", 0xCCCCCC, 0x3E3E42);
+
+    if (win->title[0] == 'N') {
+      gui_draw_string(content_x + 10, content_y + 40,
+                      notepad_filepath[0] ? notepad_filepath : "Untitled document",
+                      0xA9B7C6, 0x2D2D30);
+      gui_draw_string(content_x + content_w - 170, content_y + 40,
+                      notepad_dirty ? "Modified" : "Saved", 0xD7BA7D, 0x2D2D30);
+    }
 
     /* Text editing area with modern styling */
     int text_area_y = content_y + toolbar_h + 2;
@@ -5219,25 +5702,29 @@ static void draw_window(struct window *win) {
     int ty = text_area_y + 4;
     int max_x = content_x + content_w - 12;
     int max_y = text_area_y + text_area_h - 8;
-
     char *target_text = (win->title[0] == 'N') ? notepad_text : rename_text;
     int target_cursor = (win->title[0] == 'N') ? notepad_cursor : rename_cursor;
 
-    int char_count = 0;
+    int total_chars = 0;
     int line_count = 1;
+    int col_count = 1;
     for (int i = 0; i < target_cursor && ty < max_y; i++) {
       char c = target_text[i];
       if (c == '\n') {
         tx = content_x + 8 + gutter_w;
         ty += 16;
         line_count++;
+        col_count = 1;
       } else {
         gui_draw_char(tx, ty, c, 0xD4D4D4, 0x1E1E1E);
         tx += 8;
-        char_count++;
+        total_chars++;
+        col_count++;
         if (tx >= max_x) {
           tx = content_x + 8 + gutter_w;
           ty += 16;
+          line_count++;
+          col_count = 1;
         }
       }
     }
@@ -5266,7 +5753,7 @@ static void draw_window(struct window *win) {
     status_text[si++] = 'o';
     status_text[si++] = 'l';
     status_text[si++] = ' ';
-    int col = char_count % 50 + 1;
+    int col = col_count;
     if (col < 10) {
       status_text[si++] = '0' + col;
     } else {
@@ -5278,8 +5765,80 @@ static void draw_window(struct window *win) {
                     0x007ACC);
 
     /* File type indicator */
-    gui_draw_string(content_x + content_w - 60, status_y + 4, "UTF-8", 0xFFFFFF,
-                    0x007ACC);
+    if (win->title[0] == 'N') {
+      char right_status[80] = "UTF-8  ";
+      if (notepad_dirty) {
+        notepad_append_to_buf(right_status, sizeof(right_status), "Dirty");
+      } else {
+        notepad_append_to_buf(right_status, sizeof(right_status), "Saved");
+      }
+      gui_draw_string(content_x + content_w - 110, status_y + 4, right_status,
+                      0xFFFFFF, 0x007ACC);
+      gui_draw_string(content_x + 110, status_y + 4, notepad_status, 0xFFFFFF,
+                      0x007ACC);
+    } else {
+      gui_draw_string(content_x + content_w - 60, status_y + 4, "UTF-8", 0xFFFFFF,
+                      0x007ACC);
+    }
+
+    if (win->title[0] == 'N' && notepad_dialog_mode != NOTEPAD_DIALOG_NONE) {
+      struct fm_item items[FM_MAX_ITEMS];
+      int item_count = fm_collect_items(notepad_dialog_dir, items, FM_MAX_ITEMS);
+      int panel_w = content_w - 80;
+      int panel_h = content_h - 70;
+      int panel_x = content_x + 40;
+      int panel_y = content_y + 26;
+      int list_x = panel_x + 16;
+      int list_y = panel_y + 68;
+      int list_w = panel_w - 32;
+      int row_h = 22;
+      int visible_rows = (panel_h - 156) / row_h;
+      if (visible_rows < 4)
+        visible_rows = 4;
+
+      gui_draw_rect(content_x + 10, content_y + 10, content_w - 20, content_h - 20,
+                    0x101012);
+      gui_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x252526);
+      gui_draw_rect(panel_x, panel_y, panel_w, 1, 0x3C3C3C);
+      gui_draw_rect(panel_x, panel_y, 1, panel_h, 0x3C3C3C);
+
+      gui_draw_string(panel_x + 16, panel_y + 14,
+                      notepad_dialog_mode == NOTEPAD_DIALOG_OPEN ? "Open File"
+                                                                  : "Save File",
+                      0xFFFFFF, 0x252526);
+      gui_draw_rect(panel_x + 16, panel_y + 34, 44, 22, 0x3E3E42);
+      gui_draw_string(panel_x + 30, panel_y + 40, "Up", 0xCCCCCC, 0x3E3E42);
+      gui_draw_string(panel_x + 70, panel_y + 40, notepad_dialog_dir, 0x9CDCFE,
+                      0x252526);
+
+      gui_draw_rect(list_x, list_y, list_w, visible_rows * row_h + 4, 0x1E1E1E);
+      for (int i = 0; i < item_count && i < visible_rows; i++) {
+        int row_y = list_y + 2 + i * row_h;
+        uint32_t row_bg =
+            str_cmp(notepad_dialog_selected, items[i].name) == 0 ? 0x094771 : 0x1E1E1E;
+        gui_draw_rect(list_x + 2, row_y, list_w - 4, row_h - 2, row_bg);
+        gui_draw_string(list_x + 8, row_y + 6, items[i].type == 4 ? "[DIR]" : "[FILE]",
+                        items[i].type == 4 ? 0x4FC1FF : 0xB5CEA8, row_bg);
+        gui_draw_string(list_x + 56, row_y + 6, items[i].name, 0xD4D4D4, row_bg);
+      }
+
+      gui_draw_string(panel_x + 16, panel_y + panel_h - 70, "Path", 0xCCCCCC,
+                      0x252526);
+      gui_draw_rect(panel_x + 16, panel_y + panel_h - 50, panel_w - 140, 24,
+                    0x1E1E1E);
+      gui_draw_string(panel_x + 24, panel_y + panel_h - 44, notepad_dialog_input,
+                      0xDCDCAA, 0x1E1E1E);
+
+      gui_draw_rect(panel_x + panel_w - 110, panel_y + panel_h - 50, 42, 24,
+                    0x3E3E42);
+      gui_draw_string(panel_x + panel_w - 100, panel_y + panel_h - 44, "Esc",
+                      0xCCCCCC, 0x3E3E42);
+      gui_draw_rect(panel_x + panel_w - 60, panel_y + panel_h - 50, 44, 24,
+                    0x0E639C);
+      gui_draw_string(panel_x + panel_w - 50, panel_y + panel_h - 44,
+                      notepad_dialog_mode == NOTEPAD_DIALOG_OPEN ? "Open" : "Save",
+                      0xFFFFFF, 0x0E639C);
+    }
   }
   /* Snake Game */
   else if (win->title[0] == 'S' && win->title[1] == 'n' &&
@@ -6075,13 +6634,6 @@ static void draw_desktop(void) {
     gui_draw_string(text_x, text_y, build_info, 0xD9E4F4, 0x00000000);
     gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0xAEB9CB, 0x00000000);
   }
-
-  /* Draw menu bar at top (glass effect) */
-  draw_menu_bar();
-
-  /* Draw dock at bottom */
-  if (dock_is_visible())
-    draw_dock();
 }
 
 /* ===================================================================== */
@@ -6104,6 +6656,44 @@ static int g_blur_effects_requested = 1;
 static int g_blur_effects_enabled = 0;
 static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
+
+static int dock_handle_click(int x, int y) {
+  int dock_content_w;
+  int dock_x;
+  int dock_y;
+  int dock_h;
+
+  if (!dock_is_visible())
+    return 0;
+  if (!gui_is_installer_mode()) {
+    load_dock_config();
+  }
+
+  dock_content_w =
+      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
+  dock_x = (primary_display.width - dock_content_w) / 2;
+  dock_y = primary_display.height - DOCK_HEIGHT + 6;
+  dock_h = DOCK_HEIGHT - 12;
+
+  if (y < dock_y || y >= dock_y + dock_h)
+    return 0;
+
+  {
+    int icon_x = dock_x + 16;
+    int icon_y_start = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
+
+    for (int i = 0; i < dock_item_count; i++) {
+      if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
+          y < icon_y_start + DOCK_ICON_SIZE) {
+        gui_launch_app_by_id(dock_items[i]->id);
+        return 1;
+      }
+      icon_x += DOCK_ICON_SIZE + DOCK_PADDING;
+    }
+  }
+
+  return 1;
+}
 
 /* Mark a region as needing update */
 void compositor_mark_dirty(int x, int y, int w, int h) {
@@ -6276,6 +6866,10 @@ void gui_compose(void) {
   for (int i = count - 1; i >= 0; i--) {
     draw_window(draw_order[i]);
   }
+
+  draw_menu_bar();
+  if (dock_is_visible())
+    draw_dock();
 
   draw_window_switcher_overlay();
   draw_secure_attention_overlay();
@@ -6533,6 +7127,7 @@ static int drag_offset_x = 0, drag_offset_y = 0;
 static int prev_buttons = 0;
 
 #define SNAP_EDGE_THRESHOLD 28
+#define WINDOW_BOTTOM_CLEARANCE 12
 
 static void snap_window_to_zone(struct window *win, int mouse_x_pos,
                                 int mouse_y_pos) {
@@ -6547,7 +7142,8 @@ static void snap_window_to_zone(struct window *win, int mouse_x_pos,
   screen_w = (int)primary_display.width;
   screen_h = (int)primary_display.height;
   work_y = MENU_BAR_HEIGHT;
-  work_h = screen_h - MENU_BAR_HEIGHT - dock_reserved_height();
+  work_h =
+      screen_h - MENU_BAR_HEIGHT - dock_reserved_height() - WINDOW_BOTTOM_CLEARANCE;
 
   if (mouse_y_pos <= work_y + SNAP_EDGE_THRESHOLD) {
     if (win->state != WINDOW_MAXIMIZED) {
@@ -6731,9 +7327,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     if (dragging_window->y < MENU_BAR_HEIGHT)
       dragging_window->y = MENU_BAR_HEIGHT;
     if (dragging_window->y >
-        (int)primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT)
+        (int)primary_display.height - dock_reserved_height() -
+            TITLEBAR_HEIGHT - WINDOW_BOTTOM_CLEARANCE)
       dragging_window->y =
-          primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT;
+          primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT -
+          WINDOW_BOTTOM_CLEARANCE;
     if (dragging_window->x < 0)
       dragging_window->x = 0;
     if (dragging_window->x > (int)primary_display.width - 100)
@@ -6861,7 +7459,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       /* Settings (y+40) */
       if (rel_y >= 32 && rel_y < 58) {
         printk("Opening Settings window\\n");
-        gui_create_window("Settings", 200, 120, 380, 320);
+        gui_create_window("Settings", 200, 120, 560, 420);
         menu_open = 0;
         return;
       }
@@ -6882,6 +7480,20 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         return;
       }
       /* Click in dropdown but not on item - close menu */
+      menu_open = 0;
+      return;
+    }
+
+    if (y < MENU_BAR_HEIGHT) {
+      if (x < 90) {
+        menu_open = menu_open ? 0 : 1;
+      } else {
+        menu_open = 0;
+      }
+      return;
+    }
+
+    if (dock_handle_click(x, y)) {
       menu_open = 0;
       return;
     }
@@ -6960,7 +7572,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       /* Settings (y+40) - expanded range */
       if (rel_y >= 32 && rel_y < 58) {
         printk("MENU: Opening Settings window\\n");
-        gui_create_window("Settings", 200, 120, 380, 320);
+        gui_create_window("Settings", 200, 120, 560, 420);
         menu_open = 0;
         return;
       }
@@ -7100,7 +7712,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             win->width = primary_display.width;
             win->height =
                 primary_display.height - MENU_BAR_HEIGHT -
-                dock_reserved_height();
+                dock_reserved_height() - WINDOW_BOTTOM_CLEARANCE;
             win->state = WINDOW_MAXIMIZED;
           }
           return;
@@ -7199,26 +7811,129 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        int visuals_y = content_y + 12 + 28 + 70 + 54 + 54;
-        int yy = visuals_y + 68;
+        int content_w = win->width - BORDER_WIDTH * 2;
+        int sidebar_w = 118;
+        int panel_x = content_x + sidebar_w + 14;
+        int panel_y = content_y + 14;
+        int panel_w = content_w - sidebar_w - 24;
 
-        if (x >= content_x + win->width - BORDER_WIDTH * 2 - 132 &&
-            x < content_x + win->width - BORDER_WIDTH * 2 - 24 &&
-            y >= visuals_y + 15 && y < visuals_y + 43) {
-          gui_set_blur_effects_enabled(!gui_blur_effects_requested());
-          break;
+        for (int i = 0; i < 3; i++) {
+          int tab_y = content_y + 76 + i * 38;
+          if (x >= content_x + 18 && x < content_x + sidebar_w - 10 &&
+              y >= tab_y && y < tab_y + 28) {
+            settings_active_tab = i;
+            if (i == 0)
+              str_copy_safe(settings_status, "Tune your desktop experience.",
+                            sizeof(settings_status));
+            else if (i == 1)
+              str_copy_safe(settings_status, "Adjust wallpapers, blur, and graphics.",
+                            sizeof(settings_status));
+            else
+              str_copy_safe(settings_status, "Launch tools and recover defaults.",
+                            sizeof(settings_status));
+            break;
+          }
         }
 
-        if (x >= content_x + 10 && x < content_x + 110 && y >= yy &&
-            y < yy + 28) {
-          gui_create_window("Device Manager", win->x + 40, win->y + 40, 460,
-                            360);
-          break;
-        }
-        if (x >= content_x + 120 && x < content_x + 220 && y >= yy &&
-            y < yy + 28) {
-          gui_create_window("About", 280, 180, 420, 260);
-          break;
+        if (settings_active_tab == 0) {
+          int row_y = panel_y + 72 + 84 + 88;
+          if (x >= panel_x && x < panel_x + 108 && y >= row_y && y < row_y + 30) {
+            gui_create_window("Background Settings", win->x + 18, win->y + 18, 400,
+                              350);
+            str_copy_safe(settings_status, "Opened background settings.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 118 && x < panel_x + 216 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_window("App Store", win->x + 28, win->y + 28, 540, 420);
+            str_copy_safe(settings_status, "Opened the app store.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 226 && x < panel_x + 318 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_window("Device Manager", win->x + 40, win->y + 40, 460,
+                              360);
+            str_copy_safe(settings_status, "Opened device manager.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 328 && x < panel_x + 412 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_window("About", 280, 180, 420, 260);
+            str_copy_safe(settings_status, "Opened about window.",
+                          sizeof(settings_status));
+            break;
+          }
+        } else if (settings_active_tab == 1) {
+          int button_y = panel_y + 72 + 124 + 110;
+          if (x >= panel_x && x < panel_x + 116 && y >= button_y &&
+              y < button_y + 30) {
+            gui_create_window("Background Settings", win->x + 18, win->y + 18, 400,
+                              350);
+            str_copy_safe(settings_status, "Pick a new wallpaper.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 126 && x < panel_x + 242 && y >= button_y &&
+              y < button_y + 30) {
+            gui_set_blur_effects_enabled(!gui_blur_effects_requested());
+            str_copy_safe(settings_status,
+                          gui_blur_effects_requested() ? "Blur requested."
+                                                       : "Blur disabled.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 252 && x < panel_x + 382 && y >= button_y &&
+              y < button_y + 30) {
+            gui_configure_gpu_rendering(!gui_is_gpu_rendering_enabled());
+            str_copy_safe(settings_status,
+                          gui_is_gpu_rendering_enabled() ? "GPU rendering enabled."
+                                                         : "Software renderer enabled.",
+                          sizeof(settings_status));
+            break;
+          }
+        } else {
+          int row1_y = panel_y + 72 + 90;
+          int row2_y = row1_y + 42;
+          if (x >= panel_x && x < panel_x + 110 && y >= row1_y && y < row1_y + 30) {
+            gui_create_window("Device Manager", win->x + 40, win->y + 40, 460,
+                              360);
+            str_copy_safe(settings_status, "Opened device manager.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 120 && x < panel_x + 230 && y >= row1_y &&
+              y < row1_y + 30) {
+            gui_create_file_manager_path(win->x + 26, win->y + 26, "/");
+            str_copy_safe(settings_status, "Opened file manager.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 240 && x < panel_x + 350 && y >= row1_y &&
+              y < row1_y + 30) {
+            gui_create_window("App Store", win->x + 28, win->y + 28, 540, 420);
+            str_copy_safe(settings_status, "Opened the app store.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 360 && x < panel_x + 470 && y >= row1_y &&
+              y < row1_y + 30) {
+            dock_item_count = 0;
+            dock_add_all_system_apps();
+            save_dock_config();
+            str_copy_safe(settings_status, "Dock reset to system defaults.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x && x < panel_x + 110 && y >= row2_y &&
+              y < row2_y + 30) {
+            gui_create_window("About", 280, 180, 420, 260);
+            str_copy_safe(settings_status, "Opened about window.",
+                          sizeof(settings_status));
+            break;
+          }
         }
       }
 
@@ -7471,31 +8186,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
   }
 
-  /* Check dock click */
-  if (!dock_is_visible())
-    return;
-  if (!gui_is_installer_mode()) {
-    load_dock_config();
-  }
-  int dock_content_w =
-      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
-  int dock_x = (primary_display.width - dock_content_w) / 2;
-  int dock_y = primary_display.height - DOCK_HEIGHT + 6;
-  int dock_h = DOCK_HEIGHT - 12;
-
-  if (y >= dock_y && y < dock_y + dock_h) {
-    int icon_x = dock_x + 16;
-    int icon_y_start = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
-
-    for (int i = 0; i < dock_item_count; i++) {
-      if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
-          y < icon_y_start + DOCK_ICON_SIZE) {
-        gui_launch_app_by_id(dock_items[i]->id);
-        return;
-      }
-      icon_x += DOCK_ICON_SIZE + DOCK_PADDING;
-    }
-  }
 }
 
 /* ===================================================================== */
@@ -7683,73 +8373,137 @@ struct window *gui_create_file_manager_path(int x, int y, const char *path) {
 }
 
 static void notepad_on_mouse(struct window *win, int x, int y, int buttons) {
-  /* Check Save Button */
-  /* Toolbar area */
+  int content_x = BORDER_WIDTH;
   int content_y = BORDER_WIDTH + TITLEBAR_HEIGHT;
-  if (y >= content_y && y < content_y + 30) {
-    if (x >= BORDER_WIDTH + 10 && x < BORDER_WIDTH + 70) {
-      /* Save clicked */
-      if (notepad_filepath[0]) {
-        /* Open for writing */
-        struct file *f = vfs_open(notepad_filepath, O_RDWR | O_CREAT, 0644);
-        if (f) {
-          /* Determine length */
-          int len = 0;
-          while (notepad_text[len] && len < NOTEPAD_MAX_TEXT)
-            len++;
 
-          /* Write content */
-          extern ssize_t vfs_write(struct file * file, const char *buf,
-                                   size_t count);
-          vfs_write(f, notepad_text, len);
-          /* Reset file position if we want to ensure we wrote from start?
-           * vfs_open sets pos 0. */
+  (void)buttons;
 
-          /* Hack: Force truncation in ramfs? For now just overwrite. */
+  if (notepad_dialog_mode != NOTEPAD_DIALOG_NONE) {
+    struct fm_item items[FM_MAX_ITEMS];
+    int item_count = fm_collect_items(notepad_dialog_dir, items, FM_MAX_ITEMS);
+    int panel_w = win->width - BORDER_WIDTH * 2 - 80;
+    int panel_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT - 70;
+    int panel_x = content_x + 40;
+    int panel_y = content_y + 26;
+    int list_x = panel_x + 16;
+    int list_y = panel_y + 68;
+    int list_w = panel_w - 32;
+    int row_h = 22;
+    int visible_rows = (panel_h - 156) / row_h;
+    if (visible_rows < 4)
+      visible_rows = 4;
 
-          vfs_close(f);
+    if (x >= panel_x + 16 && x < panel_x + 60 && y >= panel_y + 34 &&
+        y < panel_y + 56) {
+      char parent[256];
+      notepad_extract_parent_dir(notepad_dialog_dir, parent, sizeof(parent));
+      str_copy_safe(notepad_dialog_dir, parent, sizeof(notepad_dialog_dir));
+      notepad_set_status("Moved to parent folder");
+      return;
+    }
 
-          printk("Notepad: Saved %d bytes to %s\n", len, notepad_filepath);
+    for (int i = 0; i < item_count && i < visible_rows; i++) {
+      int row_y = list_y + 2 + i * row_h;
+      if (x >= list_x + 2 && x < list_x + list_w - 2 && y >= row_y &&
+          y < row_y + row_h - 2) {
+        char full_path[512];
+        str_copy_safe(notepad_dialog_selected, items[i].name,
+                      sizeof(notepad_dialog_selected));
+        fm_join_path(notepad_dialog_dir, items[i].name, full_path, sizeof(full_path));
+        if (items[i].type == 4) {
+          str_copy_safe(notepad_dialog_dir, full_path, sizeof(notepad_dialog_dir));
+          str_copy_safe(notepad_dialog_input, full_path, sizeof(notepad_dialog_input));
+          notepad_dialog_selected[0] = '\0';
+          notepad_set_status("Opened folder");
+        } else {
+          str_copy_safe(notepad_dialog_input, full_path, sizeof(notepad_dialog_input));
+          notepad_set_status("Selected file");
         }
+        return;
       }
+    }
+
+    if (x >= panel_x + panel_w - 110 && x < panel_x + panel_w - 68 &&
+        y >= panel_y + panel_h - 50 && y < panel_y + panel_h - 26) {
+      notepad_close_dialog();
+      notepad_set_status("Dialog closed");
+      return;
+    }
+    if (x >= panel_x + panel_w - 60 && x < panel_x + panel_w - 16 &&
+        y >= panel_y + panel_h - 50 && y < panel_y + panel_h - 26) {
+      notepad_confirm_dialog();
+      return;
+    }
+    return;
+  }
+
+  if (y >= content_y && y < content_y + 30) {
+    if (x >= content_x + 8 && x < content_x + 58) {
+      notepad_reset_document();
+      return;
+    }
+    if (x >= content_x + 62 && x < content_x + 112) {
+      notepad_begin_dialog(NOTEPAD_DIALOG_OPEN);
+      return;
+    }
+    if (x >= content_x + 116 && x < content_x + 166) {
+      if (notepad_filepath[0])
+        notepad_save_to_path(notepad_filepath);
+      else
+        notepad_begin_dialog(NOTEPAD_DIALOG_SAVE);
+      return;
+    }
+    if (x >= content_x + 170 && x < content_x + 234) {
+      notepad_begin_dialog(NOTEPAD_DIALOG_SAVE);
+      return;
+    }
+    if (x >= content_x + 259 && x < content_x + 301) {
+      clipboard_len = 0;
+      for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
+        clipboard_buffer[i] = notepad_text[i];
+        clipboard_len++;
+      }
+      clipboard_buffer[clipboard_len] = '\0';
+      notepad_text[0] = '\0';
+      notepad_cursor = 0;
+      notepad_dirty = 1;
+      notepad_set_status("Cut document to clipboard");
+      notepad_update_window_title();
+      return;
+    }
+    if (x >= content_x + 305 && x < content_x + 355) {
+      clipboard_len = 0;
+      for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
+        clipboard_buffer[i] = notepad_text[i];
+        clipboard_len++;
+      }
+      clipboard_buffer[clipboard_len] = '\0';
+      notepad_set_status("Copied to clipboard");
+      return;
+    }
+    if (x >= content_x + 359 && x < content_x + 414) {
+      for (int i = 0; i < clipboard_len && notepad_cursor < NOTEPAD_MAX_TEXT - 1;
+           i++) {
+        notepad_text[notepad_cursor++] = clipboard_buffer[i];
+      }
+      notepad_text[notepad_cursor] = '\0';
+      notepad_dirty = 1;
+      notepad_set_status("Pasted from clipboard");
+      notepad_update_window_title();
+      return;
     }
   }
 }
 
 void gui_open_notepad(const char *path) {
-  /* Clear existing state */
-  notepad_text[0] = '\0';
-  notepad_cursor = 0;
-  notepad_filepath[0] = '\0';
-
-  if (path) {
-    /* Copy path */
-    int i = 0;
-    while (path[i] && i < 255) {
-      notepad_filepath[i] = path[i];
-      i++;
-    }
-    notepad_filepath[i] = '\0';
-
-    /* Read file */
-    struct file *f = vfs_open(path, O_RDONLY, 0);
-    if (f) {
-      /* Read up to max */
-      extern ssize_t vfs_read(struct file * file, char *buf, size_t count);
-      int bytes = vfs_read(f, notepad_text, NOTEPAD_MAX_TEXT - 1);
-      if (bytes >= 0) {
-        notepad_text[bytes] = '\0';
-        if (bytes < NOTEPAD_MAX_TEXT)
-          notepad_text[bytes] = '\0';
-        notepad_cursor = bytes;
-      }
-      vfs_close(f);
-    }
-  }
+  notepad_reset_document();
+  if (path)
+    notepad_load_file(path);
 
   struct window *win = gui_create_window("Notepad", 150, 80, 450, 350);
   if (win) {
     win->on_mouse = notepad_on_mouse;
+    notepad_update_window_title();
   }
 }
 

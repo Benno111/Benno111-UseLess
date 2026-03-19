@@ -1432,7 +1432,7 @@ static void menu_action_select_all(void *ctx) {
 
 static void menu_action_personalize(void *ctx) {
   (void)ctx;
-  gui_create_window("Settings", 200, 100, 400, 350);
+  gui_create_window("Settings", 200, 100, 560, 420);
 }
 
 static void menu_action_display_settings(void *ctx) {

@@ -615,13 +615,6 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   } else if (str_starts_with(cmd, "whoami")) {
     term_puts(term, "root\n");
   } else if (str_starts_with(cmd, "neofetch")) {
-    term_puts(term, "\033[36m");
-    term_puts(term, "       _  _         ___  ____  \n");
-    term_puts(term, " __   _(_)| |__     / _ \\/ ___| \n");
-    term_puts(term, " \\ \\ / / || '_ \\   | | | \\___ \\ \n");
-    term_puts(term, "  \\ V /| || |_) |  | |_| |___) |\n");
-    term_puts(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
-    term_puts(term, "\033[0m\n");
     term_puts(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
 #ifdef ARCH_X86_64
     term_puts(term, "\033[33mHost:\033[0m    QEMU x86_64 Virtual Machine\n");
