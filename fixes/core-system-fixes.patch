@@ -1,142 +1,166 @@
 diff --git a/kernel/fs/vfs.c b/kernel/fs/vfs.c
-index 0000000..0000000 100644
 --- a/kernel/fs/vfs.c
 +++ b/kernel/fs/vfs.c
-@@
-+// Normalize path (remove trailing slash except root)
-+static void normalize_path(char *path) {
-+    size_t len = strlen(path);
-+    while (len > 1 && path[len - 1] == '/') {
-+        path[len - 1] = '\0';
-+        len--;
-+    }
-+}
-
- int vfs_mount(const char *target, struct fs *fs) {
-+    char norm_target[256];
-+    strncpy(norm_target, target, sizeof(norm_target));
-+    normalize_path(norm_target);
-
-     for (int i = 0; i < MAX_MOUNTS; i++) {
--        if (strcmp(mounts[i].target, target) == 0) {
-+        char existing[256];
-+        strncpy(existing, mounts[i].target, sizeof(existing));
-+        normalize_path(existing);
-+
-+        if (strcmp(existing, norm_target) == 0) {
-             return -EEXIST;
-         }
-     }
-
-     for (int i = 0; i < MAX_MOUNTS; i++) {
-         if (!mounts[i].used) {
-             mounts[i].used = 1;
-             mounts[i].fs = fs;
--            strncpy(mounts[i].target, target, sizeof(mounts[i].target));
-+            strncpy(mounts[i].target, norm_target, sizeof(mounts[i].target));
-             return 0;
-         }
-     }
-     return -ENOMEM;
+@@ -43,10 +43,28 @@ static struct file_system_type *find_filesystem(const char *name) {
  }
 
+ static int path_compare(const char *a, const char *b) {
+-  while (*a && *b && *a == *b) {
+-    a++;
+-    b++;
++  int a_len = 0;
++  int b_len = 0;
++
++  if (!a)
++    a = "";
++  if (!b)
++    b = "";
++
++  while (a[a_len])
++    a_len++;
++  while (b[b_len])
++    b_len++;
++
++  while (a_len > 1 && a[a_len - 1] == '/')
++    a_len--;
++  while (b_len > 1 && b[b_len - 1] == '/')
++    b_len--;
++
++  for (int i = 0;; i++) {
++    char ac = (i < a_len) ? a[i] : '\0';
++    char bc = (i < b_len) ? b[i] : '\0';
++    if (ac != bc)
++      return (int)((unsigned char)ac) - (int)((unsigned char)bc);
++    if (ac == '\0')
++      return 0;
+   }
+-  return *a - *b;
+ }
 diff --git a/kernel/gui/window.c b/kernel/gui/window.c
-index 0000000..0000000 100644
 --- a/kernel/gui/window.c
 +++ b/kernel/gui/window.c
-@@
- void file_manager_refresh(struct window *win) {
-     struct dirent *ent;
+@@ -3623,10 +3623,26 @@ struct fm_ctx {
+   int cur_x, cur_y;
+   int max_x, max_y; /* Bounds for clipping */
+   struct fm_state *state;
++  char seen[128][64];
++  int seen_count;
+ };
 
-+    // Dedup tracking
-+    char seen[256][256];
-+    int seen_count = 0;
-+
-     while ((ent = vfs_readdir(dir)) != NULL) {
--        add_entry(win, ent->name, ent->type);
-+        if (!strcmp(ent->name, ".") || !strcmp(ent->name, ".."))
-+            continue;
-+
-+        int duplicate = 0;
-+        for (int i = 0; i < seen_count; i++) {
-+            if (!strcmp(seen[i], ent->name)) {
-+                duplicate = 1;
-+                break;
-+            }
-+        }
-+
-+        if (duplicate) continue;
-+
-+        strncpy(seen[seen_count++], ent->name, 256);
-+        add_entry(win, ent->name, ent->type);
-     }
- }
+ static int fm_render_callback(void *ctx, const char *name, int len,
+                               loff_t offset, ino_t ino, unsigned type) {
+   (void)offset;
+   (void)ino;
+   struct fm_ctx *c = (struct fm_ctx *)ctx;
 
-@@
- int installer_copy_file(const char *src, const char *dst) {
--    char *buf = kmalloc(file_size);
--    vfs_read(src_fd, buf, file_size);
--    vfs_write(dst_fd, buf, file_size);
--    kfree(buf);
-+    char buf[4096];
+-  /* Skip . and .. */
+-  if (name[0] == '.')
++  /* Skip . and .., but allow normal dotfiles. */
++  if ((len == 1 && name[0] == '.') ||
++      (len == 2 && name[0] == '.' && name[1] == '.'))
+     return 0;
 +
-+    while (1) {
-+        int r = vfs_read(src_fd, buf, sizeof(buf));
-+        if (r < 0) return r;
-+        if (r == 0) break;
-+
-+        int written = 0;
-+        while (written < r) {
-+            int w = vfs_write(dst_fd, buf + written, r - written);
-+            if (w <= 0) return -EIO;
-+            written += w;
-+        }
++  for (int i = 0; i < c->seen_count; i++) {
++    if (str_cmp(c->seen[i], name) == 0)
++      return 0;
++  }
++  if (c->seen_count < (int)(sizeof(c->seen) / sizeof(c->seen[0]))) {
++    int copy_len = len;
++    if (copy_len >= (int)sizeof(c->seen[0]))
++      copy_len = (int)sizeof(c->seen[0]) - 1;
++    for (int i = 0; i < copy_len; i++)
++      c->seen[c->seen_count][i] = name[i];
++    c->seen[c->seen_count][copy_len] = '\0';
++    c->seen_count++;
++  }
+@@ -2753,7 +2769,8 @@ static int installer_copy_file(const char *src_path, const char *dst_path) {
+   uint8_t *data = NULL;
+   size_t size = 0;
+   char msg[320];
++  int ret;
+
+   if (media_load_file(src_path, &data, &size) != 0) {
+     str_copy_safe(msg, "read failed: ", sizeof(msg));
+     installer_append_to_buf(msg, sizeof(msg), src_path);
+@@ -2762,7 +2779,15 @@ static int installer_copy_file(const char *src_path, const char *dst_path) {
+   }
+
+   installer_ensure_parent_dirs(dst_path);
+-  if (installer_write_target_file(dst_path, data, size) != 0) {
++  ret = installer_write_target_file(dst_path, data, size);
++  if (ret != 0 && size == 0) {
++    struct file *dst = vfs_open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
++    if (dst) {
++      vfs_close(dst);
++      ret = 0;
 +    }
-+
-+    return 0;
- }
-
++  }
++  if (ret != 0) {
+     str_copy_safe(msg, "write failed: ", sizeof(msg));
+     installer_append_to_buf(msg, sizeof(msg), dst_path);
+     installer_log(msg);
 diff --git a/boot/bios/stage1.S b/boot/bios/stage1.S
-index 0000000..0000000 100644
 --- a/boot/bios/stage1.S
 +++ b/boot/bios/stage1.S
-@@
-     cli
-     xor ax, ax
-     mov ds, ax
+@@ -12,7 +12,7 @@ _start:
+     jmp     real_mode_entry
+     nop
 
-+    ; Detect INT13 extensions (LBA support)
-+    mov ah, 0x41
-+    mov bx, 0x55AA
-+    int 0x13
-+    jc no_lba
-+    cmp bx, 0xAA55
-+    jne no_lba
-+
-+    mov byte [use_lba], 1
-+    jmp load_stage2
-+
-+no_lba:
-+    mov byte [use_lba], 0
+-    .ascii  "OSNEXT  "
++    .ascii  "OSKERNEL"
+@@ -28,7 +28,7 @@ hidden_sectors:
+     .byte   0
+     .byte   0x29                /* extended boot signature */
+     .long   0x4F534E58          /* volume serial */
+-    .ascii  "OSNEXTSETUP"       /* volume label */
++    .ascii  "OSKSETUP   "       /* volume label */
+     .ascii  "FAT16   "
+@@ -118,7 +118,8 @@ dap:
+     .byte   0x10
+     .byte   0
+-    .word   16
++stage2_sector_count:
++    .word   16
+     .word   0x7E00
+     .word   0x0000
+diff --git a/scripts/create-dos-installer-image.sh b/scripts/create-dos-installer-image.sh
+--- a/scripts/create-dos-installer-image.sh
++++ b/scripts/create-dos-installer-image.sh
+@@ -27,9 +27,27 @@ IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
+ require_file "$STAGE1"
+ require_file "$STAGE2"
 
- load_stage2:
++STAGE2_SIZE=$(stat -c%s "$STAGE2")
++STAGE2_SECTORS=$(((STAGE2_SIZE + 511) / 512))
++STAGE2_PADDED="$BUILD_DIR/boot/installer_stage2.padded.bin"
++STAGE1_PATCHED="$BUILD_DIR/boot/installer_stage1.patched.bin"
++
+ log "Creating DOS-style installer volume image at $IMAGE_PATH"
+ dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" 2>/dev/null
 
-diff --git a/scripts/build_dos_image.sh b/scripts/build_dos_image.sh
-index 0000000..0000000 100755
---- a/scripts/build_dos_image.sh
-+++ b/scripts/build_dos_image.sh
-@@
-+# Calculate stage2 sector count
-+STAGE2_SIZE=$(stat -c%s stage2.bin)
-+SECTORS=$(( (STAGE2_SIZE + 511) / 512 ))
++cp "$STAGE1" "$STAGE1_PATCHED"
++python3 - "$STAGE1_PATCHED" "$STAGE2_SECTORS" <<'PY'
++import sys
++path = sys.argv[1]
++sectors = int(sys.argv[2])
++with open(path, "r+b") as f:
++    data = bytearray(f.read())
++    marker = b"\x10\x00\x00\x7E\x00\x00"
++    off = data.find(marker)
++    if off == -1:
++        raise SystemExit("stage2 sector-count marker not found in stage1 image")
++    data[off:off+2] = sectors.to_bytes(2, "little")
++    f.seek(0)
++    f.write(data)
++PY
++cp "$STAGE2" "$STAGE2_PADDED"
++truncate -s $((STAGE2_SECTORS * 512)) "$STAGE2_PADDED"
 +
-+# Patch sector count into stage1 (offset 2)
-+printf "\\x%02x\\x%02x" $((SECTORS & 0xff)) $(((SECTORS >> 8) & 0xff)) \
-+  | dd of=stage1.bin bs=1 seek=2 conv=notrunc
-+
-+# Pad stage2 to full sectors
-+dd if=/dev/zero bs=512 count=$SECTORS | cat stage2.bin - \
-+  | dd of=stage2_padded.bin bs=512 count=$SECTORS
-+
-+# Write padded stage2
-+dd if=stage2_padded.bin of=disk.img bs=512 seek=1 conv=notrunc
+ log "Writing stage 1 volume boot sector"
+-dd if="$STAGE1" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
++dd if="$STAGE1_PATCHED" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
+
+-log "Writing stage 2 text installer"
+-dd if="$STAGE2" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
++log "Writing stage 2 text installer ($STAGE2_SECTORS sectors)"
++dd if="$STAGE2_PADDED" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
