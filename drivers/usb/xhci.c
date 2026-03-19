@@ -162,6 +162,54 @@ struct xhci_device {
 static struct xhci_device xhci = {0};
 static int xhci_ready = 0;
 
+static const char *xhci_speed_name(uint8_t speed) {
+  switch (speed) {
+  case 1:
+    return "full-speed";
+  case 2:
+    return "low-speed";
+  case 3:
+    return "high-speed";
+  case 4:
+    return "super-speed";
+  case 5:
+    return "super-speed+";
+  default:
+    return "unknown-speed";
+  }
+}
+
+static void xhci_append_text(char *dst, int max, const char *src) {
+  int idx = 0;
+
+  if (!dst || max <= 0 || !src)
+    return;
+  while (dst[idx] && idx < max - 1)
+    idx++;
+  for (int i = 0; src[i] && idx < max - 1; i++)
+    dst[idx++] = src[i];
+  dst[idx] = '\0';
+}
+
+static void xhci_append_decimal(char *dst, int max, int value) {
+  char tmp[12];
+  int len = 0;
+
+  if (value <= 0) {
+    xhci_append_text(dst, max, "0");
+    return;
+  }
+
+  while (value > 0 && len < (int)sizeof(tmp)) {
+    tmp[len++] = (char)('0' + (value % 10));
+    value /= 10;
+  }
+  for (int i = len - 1; i >= 0; i--) {
+    char one[2] = {tmp[i], '\0'};
+    xhci_append_text(dst, max, one);
+  }
+}
+
 /* ===================================================================== */
 /* MMIO Access */
 /* ===================================================================== */
@@ -532,4 +580,40 @@ int xhci_get_connected_count(void) {
     }
   }
   return count;
+}
+
+int usb_device_count(void) { return xhci_get_connected_count(); }
+
+int usb_device_info(int idx, uint16_t *vid, uint16_t *pid, char *name,
+                    int name_len) {
+  int current = 0;
+
+  if (idx < 0)
+    return 0;
+
+  for (int port = 0; port < (int)xhci.max_ports; port++) {
+    if (!xhci.ports[port].connected)
+      continue;
+    if (current != idx) {
+      current++;
+      continue;
+    }
+
+    if (vid)
+      *vid = 0;
+    if (pid)
+      *pid = 0;
+    if (name && name_len > 0) {
+      name[0] = '\0';
+      xhci_append_text(name, name_len, "USB Device P");
+      xhci_append_decimal(name, name_len, port + 1);
+      xhci_append_text(name, name_len, " ");
+      xhci_append_text(name, name_len, xhci_speed_name(xhci.ports[port].speed));
+    }
+    return 1;
+  }
+
+  if (name && name_len > 0)
+    name[0] = '\0';
+  return 0;
 }
