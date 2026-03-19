@@ -368,6 +368,8 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_make_dir(prefix, "Pictures");
   seed_make_dir(prefix, "System");
   seed_make_dir(prefix, "Desktop");
+  seed_make_dir(prefix, "System/Apps");
+  seed_make_dir(prefix, "Desktop/System Apps");
   seed_make_dir(prefix, "/Desktop/Projects");
 
   seed_write_text(prefix, "/Desktop/notes.txt", 0644,

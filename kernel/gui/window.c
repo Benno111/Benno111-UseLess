@@ -21,6 +21,7 @@
 struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
+int gui_launch_app_by_id(const char *app_id);
 
 /* Forward declarations for drawing helpers used before their definitions. */
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
@@ -1569,6 +1570,7 @@ typedef struct {
 #define GUI_SYSTEM_DIR "/System"
 #define GUI_SYSTEM_APPS_DIR "/System/Apps"
 #define GUI_APPS_DIR "/Applications"
+#define GUI_SYSTEM_APPS_FOLDER "/Desktop/System Apps"
 #define GUI_DOCK_CONFIG_PATH "/System/dock.cfg"
 #define GUI_SETUP_STATE_PATH "/System/setup-state.cfg"
 #define GUI_ACCOUNT_PATH "/System/account.cfg"
@@ -1778,6 +1780,26 @@ static int app_manifest_path(const dock_app_def_t *app, char *path, int max) {
   return 0;
 }
 
+static int build_app_shortcut_path(const char *dir, const char *shortcut_name,
+                                   char *path, int max) {
+  int idx = 0;
+
+  if (!dir || !shortcut_name || !path || max < 8)
+    return -1;
+
+  str_copy_safe(path, dir, max);
+  while (path[idx])
+    idx++;
+  if (idx >= max - 1)
+    return -1;
+  if (idx > 0 && path[idx - 1] != '/')
+    path[idx++] = '/';
+  for (int i = 0; shortcut_name[i] && idx < max - 1; i++)
+    path[idx++] = shortcut_name[i];
+  path[idx] = '\0';
+  return 0;
+}
+
 static int write_text_file(const char *path, const char *content) {
   return media_install_text_file(path, content);
 }
@@ -1940,6 +1962,34 @@ static int app_is_installed(const dock_app_def_t *app) {
     return 0;
   media_free_file(data);
   return 1;
+}
+
+static int load_app_id_from_manifest_file(const char *path, const char *fallback,
+                                          char *app_id, int max) {
+  char manifest[160];
+
+  if (!app_id || max <= 0)
+    return -1;
+  app_id[0] = '\0';
+
+  if (path && read_text_file(path, manifest, sizeof(manifest)) >= 0 &&
+      manifest_get_value(manifest, "id", app_id, max) == 0 && app_id[0]) {
+    return 0;
+  }
+
+  if (fallback) {
+    int out = 0;
+    for (int i = 0; fallback[i] && fallback[i] != '.' && out < max - 1; i++) {
+      char c = fallback[i];
+      if (c >= 'A' && c <= 'Z')
+        c = (char)(c + 32);
+      if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+        app_id[out++] = c;
+    }
+    app_id[out] = '\0';
+  }
+
+  return app_id[0] ? 0 : -1;
 }
 
 static void set_startup_status(const char *message) {
@@ -2135,6 +2185,7 @@ static void ensure_gui_app_dirs(void) {
   vfs_mkdir(GUI_SYSTEM_APPS_DIR, 0755);
   vfs_mkdir(GUI_APPS_DIR, 0755);
   vfs_mkdir("/Desktop", 0755);
+  vfs_mkdir(GUI_SYSTEM_APPS_FOLDER, 0755);
 }
 
 static int system_manifest_path_by_id(const char *app_id, char *path, int max) {
@@ -2310,6 +2361,7 @@ static void load_system_app_catalog(void) {
 static void ensure_app_manifest(const dock_app_def_t *app) {
   char manifest_path[128];
   char shortcut_path[128];
+  char folder_shortcut_path[160];
   char manifest[128] = "id=";
   int idx = 3;
 
@@ -2327,14 +2379,15 @@ static void ensure_app_manifest(const dock_app_def_t *app) {
     write_text_file(manifest_path, manifest);
   }
 
-  str_copy_safe(shortcut_path, "/Desktop/", sizeof(shortcut_path));
-  idx = 9;
-  for (int i = 0; app->shortcut_name[i] && idx < (int)sizeof(shortcut_path) - 1;
-       i++) {
-    shortcut_path[idx++] = app->shortcut_name[i];
+  if (build_app_shortcut_path("/Desktop", app->shortcut_name, shortcut_path,
+                              sizeof(shortcut_path)) == 0) {
+    write_text_file(shortcut_path, manifest);
   }
-  shortcut_path[idx] = '\0';
-  write_text_file(shortcut_path, manifest);
+  if (build_app_shortcut_path(GUI_SYSTEM_APPS_FOLDER, app->shortcut_name,
+                              folder_shortcut_path,
+                              sizeof(folder_shortcut_path)) == 0) {
+    write_text_file(folder_shortcut_path, manifest);
+  }
 }
 
 static void dock_add_item(const dock_app_def_t *app) {
@@ -3561,6 +3614,9 @@ static const unsigned char *fm_icon_for_item(const char *name, unsigned type,
   if (type == 4) {
     bmp = icon_files;
     color = 0x60A5FA;
+  } else if (str_ends_with_ci(name, ".app")) {
+    bmp = icon_app_store;
+    color = 0xC4B5FD;
   } else if (str_ends_with_ci(name, ".py")) {
     bmp = icon_python;
     color = 0xFACC15;
@@ -3582,7 +3638,9 @@ static const unsigned char *fm_icon_for_item(const char *name, unsigned type,
 static const char *fm_type_label(const char *name, unsigned type) {
   if (type == 4)
     return "Folder";
-  if (str_ends_with_ci(name, ".txt"))
+  if (str_ends_with_ci(name, ".app"))
+    return "App";
+  if (str_ends_with_ci(name, ".txt") || str_ends_with_ci(name, ".log"))
     return "Text";
   if (str_ends_with_ci(name, ".py"))
     return "Python";
@@ -3922,6 +3980,8 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
       fm_navigate_to(win, st, "/Music");
     else if (y >= content_y + 238 && y < content_y + 266)
       fm_navigate_to(win, st, "/Users");
+    else if (y >= content_y + 268 && y < content_y + 296)
+      fm_navigate_to(win, st, GUI_SYSTEM_APPS_FOLDER);
     return;
   }
 
@@ -3949,8 +4009,15 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
       char full_path[512];
       fm_join_path(st->path, st->selected, full_path, sizeof(full_path));
 
-      if (str_ends_with_ci(st->selected, ".txt")) {
+      if (str_ends_with_ci(st->selected, ".txt") ||
+          str_ends_with_ci(st->selected, ".log")) {
         gui_open_notepad(full_path);
+      } else if (str_ends_with_ci(st->selected, ".app")) {
+        char app_id[32];
+        if (load_app_id_from_manifest_file(full_path, st->selected, app_id,
+                                           sizeof(app_id)) == 0) {
+          gui_launch_app_by_id(app_id);
+        }
       } else if (str_ends_with_ci(st->selected, ".jpg") ||
                  str_ends_with_ci(st->selected, ".jpeg") ||
                  str_ends_with_ci(st->selected, ".png")) {
@@ -4472,10 +4539,10 @@ static void draw_window(struct window *win) {
     gui_draw_string(sidebar_x + 12, sidebar_y + 14, "Places", 0xFFFFFF, 0x111827);
 
     const char *places[] = {"/", "/Desktop", "/Documents", "/Pictures", "/Music",
-                            "/Users"};
+                            "/Users", GUI_SYSTEM_APPS_FOLDER};
     const char *labels[] = {"Root", "Desktop", "Documents", "Pictures", "Music",
-                            "Users"};
-    for (int i = 0; i < 6; i++) {
+                            "Users", "System Apps"};
+    for (int i = 0; i < 7; i++) {
       int row_y = sidebar_y + 34 + i * 30;
       uint32_t row_bg = (st && str_cmp(st->path, places[i]) == 0) ? 0x1D4ED8 : 0x1F2937;
       gui_draw_rect(sidebar_x + 8, row_y, sidebar_w - 32, 24, row_bg);
