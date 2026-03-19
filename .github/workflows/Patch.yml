@@ -9,19 +9,21 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Create branch
         run: |
-          git checkout -b auto/apply-patch
+          git checkout -B auto/apply-patch
 
       - name: Apply patch
         run: |
-          git apply fixes.patch
+          git apply --reject --whitespace=fix fixes/core-system-fixes.patch
 
       - name: Commit
         run: |
