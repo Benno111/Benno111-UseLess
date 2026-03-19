@@ -41,6 +41,9 @@ int xhci_init(phys_addr_t mmio_base);
 int xhci_is_ready(void);
 int xhci_get_port_count(void);
 int xhci_get_connected_count(void);
+int usb_device_count(void);
+int usb_device_info(int idx, uint16_t *vid, uint16_t *pid, char *name,
+                    int name_len);
 int usb_msd_init(struct usb_device *dev);
 int usb_hid_init(struct usb_device *dev);
 

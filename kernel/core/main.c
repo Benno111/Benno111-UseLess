@@ -44,7 +44,7 @@ static void populate_seed_filesystem(void);
 static void populate_installer_payload(void);
 static void import_staged_system_image(void);
 static int staged_system_image_exists(void);
-static void refresh_external_storage_views(void);
+void refresh_external_storage_views(void);
 static int boot_hdd_disk_index(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
@@ -579,7 +579,7 @@ static int boot_hdd_disk_index(void) {
   return -1;
 }
 
-static void refresh_external_storage_views(void) {
+void refresh_external_storage_views(void) {
   extern int boot_is_installer_mode(void);
   extern int storage_get_disk_count(void);
   extern int storage_get_disk_kind(int index);

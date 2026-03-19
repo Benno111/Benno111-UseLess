@@ -2287,6 +2287,10 @@ static int load_system_app_from_manifest(const char *path) {
     return -1;
   if (manifest_get_value(manifest, "id", id, sizeof(id)) != 0 || !id[0])
     return -1;
+  for (int i = 0; i < app_catalog_count; i++) {
+    if (str_cmp(app_catalog[i].id, id) == 0)
+      return 0;
+  }
 
   if (manifest_get_value(manifest, "label", label, sizeof(label)) != 0)
     str_copy_safe(label, id, sizeof(label));
@@ -2349,6 +2353,14 @@ static void load_system_app_catalog(void) {
 
   for (int i = 0; i < APP_CATALOG_SEED_COUNT; i++) {
     write_system_app_seed(&app_catalog_seed[i]);
+    if (app_catalog_count < MAX_SYSTEM_APPS) {
+      fill_runtime_app(&app_catalog[app_catalog_count++], app_catalog_seed[i].id,
+                       app_catalog_seed[i].label,
+                       app_catalog_seed[i].shortcut_name,
+                       app_catalog_seed[i].kind,
+                       app_catalog_seed[i].default_dock,
+                       app_catalog_seed[i].visible_in_store);
+    }
   }
 
   dir = vfs_open(GUI_SYSTEM_APPS_DIR, O_RDONLY, 0);
@@ -3981,6 +3993,8 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
     else if (y >= content_y + 238 && y < content_y + 266)
       fm_navigate_to(win, st, "/Users");
     else if (y >= content_y + 268 && y < content_y + 296)
+      fm_navigate_to(win, st, "/External");
+    else if (y >= content_y + 298 && y < content_y + 326)
       fm_navigate_to(win, st, GUI_SYSTEM_APPS_FOLDER);
     return;
   }
@@ -4539,10 +4553,10 @@ static void draw_window(struct window *win) {
     gui_draw_string(sidebar_x + 12, sidebar_y + 14, "Places", 0xFFFFFF, 0x111827);
 
     const char *places[] = {"/", "/Desktop", "/Documents", "/Pictures", "/Music",
-                            "/Users", GUI_SYSTEM_APPS_FOLDER};
+                            "/Users", "/External", GUI_SYSTEM_APPS_FOLDER};
     const char *labels[] = {"Root", "Desktop", "Documents", "Pictures", "Music",
-                            "Users", "System Apps"};
-    for (int i = 0; i < 7; i++) {
+                            "Users", "External", "System Apps"};
+    for (int i = 0; i < 8; i++) {
       int row_y = sidebar_y + 34 + i * 30;
       uint32_t row_bg = (st && str_cmp(st->path, places[i]) == 0) ? 0x1D4ED8 : 0x1F2937;
       gui_draw_rect(sidebar_x + 8, row_y, sidebar_w - 32, 24, row_bg);
@@ -4882,16 +4896,22 @@ static void draw_window(struct window *win) {
     char resolution[32];
     char windows_info[32];
     char usb_ports[32];
+    char usb_name0[48];
+    char usb_name1[48];
     char storage_overview[96];
     char storage_line0[80];
     char storage_line1[80];
     char disk_overview[80];
+    int usb_count = 0;
     extern int intel_hda_is_ready(void);
     extern int intel_hda_is_playing(void);
     extern int virtio_net_is_ready(void);
     extern int xhci_is_ready(void);
     extern int xhci_get_port_count(void);
     extern int xhci_get_connected_count(void);
+    extern int usb_device_count(void);
+    extern int usb_device_info(int idx, uint16_t *vid, uint16_t *pid, char *name,
+                               int name_len);
     extern void storage_build_overview(char *buf, int max);
     extern void storage_build_disk_overview(char *buf, int max);
     extern int storage_describe_controller(int index, char *buf, int max);
@@ -4901,6 +4921,13 @@ static void draw_window(struct window *win) {
     build_windows_string(windows_info);
     build_device_ports_string(usb_ports, xhci_get_connected_count(),
                               xhci_get_port_count());
+    usb_name0[0] = '\0';
+    usb_name1[0] = '\0';
+    usb_count = usb_device_count();
+    if (usb_count > 0)
+      usb_device_info(0, NULL, NULL, usb_name0, sizeof(usb_name0));
+    if (usb_count > 1)
+      usb_device_info(1, NULL, NULL, usb_name1, sizeof(usb_name1));
     storage_build_overview(storage_overview, sizeof(storage_overview));
     storage_build_disk_overview(disk_overview, sizeof(disk_overview));
     if (storage_describe_controller(0, storage_line0, sizeof(storage_line0)) !=
@@ -4973,7 +5000,7 @@ static void draw_window(struct window *win) {
                     virtio_net_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
     yy += 62;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 84, 0x252535);
     gui_draw_string(content_x + 20, yy + 8, "USB Host Controller", 0x89B4FA,
                     0x252535);
     gui_draw_string(content_x + 20, yy + 28,
@@ -4982,6 +5009,21 @@ static void draw_window(struct window *win) {
                     xhci_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
     gui_draw_string(content_x + content_w - 150, yy + 28, usb_ports,
                     xhci_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+    if (!xhci_is_ready()) {
+      gui_draw_string(content_x + 20, yy + 48, "No USB enumeration available",
+                      0x6C7086, 0x252535);
+    } else if (usb_count <= 0) {
+      gui_draw_string(content_x + 20, yy + 48, "No USB devices enumerated",
+                      0x6C7086, 0x252535);
+    } else {
+      gui_draw_string(content_x + 20, yy + 48, usb_name0, 0xCDD6F4, 0x252535);
+      if (usb_count > 1) {
+        gui_draw_string(content_x + 20, yy + 64, usb_name1, 0x94A3B8, 0x252535);
+      } else {
+        gui_draw_string(content_x + 20, yy + 64, "1 device detected",
+                        0x6C7086, 0x252535);
+      }
+    }
   }
   /* Clock window */
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
@@ -6119,12 +6161,12 @@ void gui_configure_gpu_rendering(int enabled) {
   if (enabled) {
     if (!primary_display.framebuffer)
       return;
-    if (primary_display.backbuffer) {
+    if (primary_display.backbuffer)
       g_saved_backbuffer = primary_display.backbuffer;
-      primary_display.backbuffer = NULL;
-    }
     g_gpu_rendering_enabled = 1;
-    printk(KERN_INFO "GUI: %s acceleration enabled\n", g_gpu_backend_name);
+    printk(KERN_INFO
+           "GUI: %s acceleration enabled (safe compositor handoff)\n",
+           g_gpu_backend_name);
   } else {
     if (!primary_display.backbuffer && g_saved_backbuffer)
       primary_display.backbuffer = g_saved_backbuffer;

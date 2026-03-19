@@ -324,6 +324,9 @@ static void stub_wfi(void) {
     asm volatile("hlt");
 #endif
 }
+extern int usb_device_count(void);
+extern int usb_device_info(int idx, uint16_t *vid, uint16_t *pid, char *name,
+                           int name_len);
 static int stub_sound(const void *d, uint32_t s) { (void)d; (void)s; return -1; }
 static int stub_sound_pcm(const void *d, uint32_t s, uint8_t c, uint32_t r) { (void)d; (void)s; (void)c; (void)r; return -1; }
 static int stub_proc_info(int i, char *n, int ns, int *st) { (void)i; (void)n; (void)ns; (void)st; return 0; }
@@ -530,8 +533,8 @@ void kapi_init(kapi_t *api) {
     api->get_cpu_cores = stub_int;
 
     /* USB */
-    api->usb_device_count = stub_int;
-    api->usb_device_info = stub_usb_info;
+    api->usb_device_count = usb_device_count;
+    api->usb_device_info = usb_device_info;
 
     /* Kernel log */
     api->klog_read = kapi_klog_read;

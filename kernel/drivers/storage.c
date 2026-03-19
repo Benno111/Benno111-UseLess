@@ -1138,6 +1138,11 @@ void storage_build_overview(char *buf, int max) {
     storage_append_string(buf, max, "  CD:");
     storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_CDROM));
   }
+  if (storage_get_kind_count(STORAGE_KIND_USB_MASS_STORAGE) > 0) {
+    storage_append_string(buf, max, "  USB:");
+    storage_append_decimal(buf, max,
+                           storage_get_kind_count(STORAGE_KIND_USB_MASS_STORAGE));
+  }
   if (storage_get_kind_count(STORAGE_KIND_RAID) > 0) {
     storage_append_string(buf, max, "  RAID:");
     storage_append_decimal(buf, max, storage_get_kind_count(STORAGE_KIND_RAID));
@@ -1160,6 +1165,28 @@ int storage_describe_disk(int index, char *buf, int max) {
     storage_append_string(buf, max, "] ");
     storage_append_decimal(buf, max, (int)disk->capacity_mib);
     storage_append_string(buf, max, " MiB optical media, read-only");
+    return 0;
+  }
+  if (disk->kind == STORAGE_KIND_USB_MASS_STORAGE) {
+    free_mib = disk->capacity_mib > storage_partition_used_mib(index)
+                   ? disk->capacity_mib - storage_partition_used_mib(index)
+                   : 0;
+    buf[0] = '\0';
+    storage_append_string(buf, max, disk->name);
+    storage_append_string(buf, max, " [");
+    storage_append_string(buf, max, disk->location);
+    storage_append_string(buf, max, "] ");
+    storage_append_decimal(buf, max, (int)disk->capacity_mib);
+    storage_append_string(buf, max, " MiB USB flash drive");
+    if (disk->read_fn)
+      storage_append_string(buf, max, ", readable");
+    else
+      storage_append_string(buf, max, ", backend pending");
+    if (free_mib > 0) {
+      storage_append_string(buf, max, ", free ");
+      storage_append_decimal(buf, max, (int)free_mib);
+      storage_append_string(buf, max, " MiB");
+    }
     return 0;
   }
   free_mib = disk->capacity_mib > storage_partition_used_mib(index)

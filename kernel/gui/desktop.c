@@ -352,9 +352,12 @@ static int desktop_is_external_disk(int disk_index) {
 static void desktop_open_removable_disk(const desktop_icon_t *icon) {
   char location[32];
   char path[256];
+  extern void refresh_external_storage_views(void);
 
   if (!icon || icon->storage_disk_index < 0)
     return;
+
+  refresh_external_storage_views();
 
   if (storage_get_disk_location(icon->storage_disk_index, location,
                                 sizeof(location)) != 0) {
@@ -406,9 +409,11 @@ static void desktop_add_removable_disk_icons(void) {
     char suffix[8];
     int removable_index = 0;
     int suffix_len = 0;
+    int disk_kind;
 
     if (!desktop_is_external_disk(i))
       continue;
+    disk_kind = storage_get_disk_kind(i);
 
     for (int j = 0; j < desktop_icon_count; j++) {
       if (desktop_icons[j].type == ICON_TYPE_REMOVABLE_DISK)
@@ -416,7 +421,12 @@ static void desktop_add_removable_disk_icons(void) {
     }
 
     icon = &desktop_icons[desktop_icon_count];
-    str_copy(icon->name, "Removable Disk", sizeof(icon->name));
+    if (disk_kind == STORAGE_KIND_USB_MASS_STORAGE)
+      str_copy(icon->name, "USB Flash Drive", sizeof(icon->name));
+    else if (disk_kind == STORAGE_KIND_CDROM)
+      str_copy(icon->name, "CD-ROM", sizeof(icon->name));
+    else
+      str_copy(icon->name, "Removable Disk", sizeof(icon->name));
     if (removable_index > 0) {
       int n = removable_index + 1;
       int tmp_len = 0;
@@ -426,10 +436,16 @@ static void desktop_add_removable_disk_icons(void) {
         tmp /= 10;
       }
       if (tmp_len < (int)sizeof(suffix) - 1) {
-        icon->name[14] = ' ';
-        for (int j = 0; j < tmp_len && 15 + j < (int)sizeof(icon->name) - 1; j++)
-          icon->name[15 + j] = suffix[tmp_len - j - 1];
-        icon->name[15 + tmp_len] = '\0';
+        int base_len = 0;
+        while (icon->name[base_len] && base_len < (int)sizeof(icon->name) - 1)
+          base_len++;
+        if (base_len < (int)sizeof(icon->name) - 2) {
+          icon->name[base_len++] = ' ';
+          for (int j = 0; j < tmp_len &&
+                          base_len + j < (int)sizeof(icon->name) - 1; j++)
+            icon->name[base_len + j] = suffix[tmp_len - j - 1];
+          icon->name[base_len + tmp_len] = '\0';
+        }
       }
     }
 
