@@ -44,11 +44,32 @@ static struct file_system_type *find_filesystem(const char *name) {
 }
 
 static int path_compare(const char *a, const char *b) {
-  while (*a && *b && *a == *b) {
-    a++;
-    b++;
+  int a_len = 0;
+  int b_len = 0;
+
+  if (!a)
+    a = "";
+  if (!b)
+    b = "";
+
+  while (a[a_len])
+    a_len++;
+  while (b[b_len])
+    b_len++;
+
+  while (a_len > 1 && a[a_len - 1] == '/')
+    a_len--;
+  while (b_len > 1 && b[b_len - 1] == '/')
+    b_len--;
+
+  for (int i = 0;; i++) {
+    char ac = (i < a_len) ? a[i] : '\0';
+    char bc = (i < b_len) ? b[i] : '\0';
+    if (ac != bc)
+      return (int)((unsigned char)ac) - (int)((unsigned char)bc);
+    if (ac == '\0')
+      return 0;
   }
-  return *a - *b;
 }
 
 static void path_copy(char *dst, const char *src, int max) {

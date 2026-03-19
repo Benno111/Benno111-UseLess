@@ -2754,6 +2754,7 @@ static int installer_copy_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
   char msg[320];
+  int ret;
 
   if (media_load_file(src_path, &data, &size) != 0) {
     str_copy_safe(msg, "read failed: ", sizeof(msg));
@@ -2763,7 +2764,15 @@ static int installer_copy_file(const char *src_path, const char *dst_path) {
   }
 
   installer_ensure_parent_dirs(dst_path);
-  if (installer_write_target_file(dst_path, data, size) != 0) {
+  ret = installer_write_target_file(dst_path, data, size);
+  if (ret != 0 && size == 0) {
+    struct file *dst = vfs_open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst) {
+      vfs_close(dst);
+      ret = 0;
+    }
+  }
+  if (ret != 0) {
     str_copy_safe(msg, "write failed: ", sizeof(msg));
     installer_append_to_buf(msg, sizeof(msg), dst_path);
     installer_log(msg);
@@ -3624,6 +3633,8 @@ struct fm_ctx {
   int cur_x, cur_y;
   int max_x, max_y; /* Bounds for clipping */
   struct fm_state *state;
+  char seen[128][64];
+  int seen_count;
 };
 
 static int fm_render_callback(void *ctx, const char *name, int len,
@@ -3632,9 +3643,24 @@ static int fm_render_callback(void *ctx, const char *name, int len,
   (void)ino;
   struct fm_ctx *c = (struct fm_ctx *)ctx;
 
-  /* Skip . and .. */
-  if (name[0] == '.')
+  /* Skip . and .., but allow normal dotfiles. */
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
     return 0;
+
+  for (int i = 0; i < c->seen_count; i++) {
+    if (str_cmp(c->seen[i], name) == 0)
+      return 0;
+  }
+  if (c->seen_count < (int)(sizeof(c->seen) / sizeof(c->seen[0]))) {
+    int copy_len = len;
+    if (copy_len >= (int)sizeof(c->seen[0]))
+      copy_len = (int)sizeof(c->seen[0]) - 1;
+    for (int i = 0; i < copy_len; i++)
+      c->seen[c->seen_count][i] = name[i];
+    c->seen[c->seen_count][copy_len] = '\0';
+    c->seen_count++;
+  }
 
   int icon_size = 32;
   int slot_w = 80;

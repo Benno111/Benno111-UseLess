@@ -14,7 +14,7 @@ _start:
     jmp     real_mode_entry
     nop
 
-    .ascii  "OSNEXT  "
+    .ascii  "OSKERNEL"
     .word   512                 /* bytes per sector */
     .byte   1                   /* sectors per cluster */
     .word   1                   /* reserved sectors */
@@ -32,7 +32,7 @@ hidden_sectors:
     .byte   0
     .byte   0x29                /* extended boot signature */
     .long   0x4F534E58          /* volume serial */
-    .ascii  "OSNEXTSETUP"       /* volume label */
+    .ascii  "OSKSETUP   "       /* volume label */
     .ascii  "FAT16   "
 
     ljmp    $0x0000, $real_mode_entry
@@ -175,6 +175,7 @@ boot_drive:
 dap:
     .byte   0x10
     .byte   0
+stage2_sector_count:
     .word   16
     .word   0x7E00
     .word   0x0000
