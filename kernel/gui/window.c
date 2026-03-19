@@ -380,13 +380,12 @@ static void clock_get_time(int *hours24, int *minutes, int *seconds) {
   int64_t secs;
 
 #ifdef ARCH_X86_64
-  secs = 12 * 3600 + 34 * 60;
+  /* Fallback to uptime-based clock on x86 until RTC plumbing is available. */
+  secs = (int64_t)(arch_timer_get_ms() / 1000);
 #else
   volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
   secs = *pl031_data;
 #endif
-
-  secs += -5 * 3600;
 
   while (secs < 0) {
     secs += 24 * 3600;
@@ -861,7 +860,9 @@ static void gui_apply_backdrop_blur(int x, int y, int w, int h, int stride) {
 static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride) {
-  gui_apply_backdrop_blur(x, y, w, h, blur_stride);
+  if (g_blur_effects_enabled) {
+    gui_apply_backdrop_blur(x, y, w, h, blur_stride);
+  }
   gui_fill_rect_alpha(x, y, w, h, tint);
   gui_fill_rect_alpha(x, y, w, 1, glow);
   gui_fill_rect_alpha(x, y, 1, h, glow);
@@ -947,11 +948,14 @@ static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
   int s = scale < 1 ? 1 : scale;
   int outer = 14 * s;
   int inner = 8 * s;
+  int has_bg = bg != 0x00000000;
 
-  gui_draw_rect(x, y, outer, outer, bg);
+  if (has_bg)
+    gui_draw_rect(x, y, outer, outer, bg);
   gui_draw_rect_outline(x, y, outer, outer, fg, s);
   gui_draw_rect(x + 3 * s, y + 3 * s, inner, inner, accent);
-  gui_draw_rect(x + 5 * s, y + 5 * s, 4 * s, 4 * s, bg);
+  if (has_bg)
+    gui_draw_rect(x + 5 * s, y + 5 * s, 4 * s, 4 * s, bg);
 
   gui_draw_line(x + 2 * s, y + 2 * s, x + 12 * s, y + 12 * s, fg);
   gui_draw_line(x + 12 * s, y + 2 * s, x + 2 * s, y + 12 * s, fg);
@@ -2916,18 +2920,31 @@ static int installer_payload_file_exists(const char *path) {
   return 1;
 }
 
+static int installer_payload_any_file_exists(const char **paths, int count) {
+  if (!paths || count <= 0)
+    return 0;
+
+  for (int i = 0; i < count; i++) {
+    if (installer_payload_file_exists(paths[i]))
+      return 1;
+  }
+  return 0;
+}
+
 static int installer_validate_system_image_payload(void) {
   static const char *required_paths[] = {
       "/install/system-image/boot/main.sys",
       "/install/system-image/boot/bootloader.sys",
-      "/install/system-image/limine.conf",
-      "/install/system-image/boot/limine.conf",
-      "/install/system-image/limine/limine.conf",
-      "/install/system-image/EFI/BOOT/limine.conf",
       "/install/system-image/boot/limine-bios.sys",
       "/install/system-image/boot/limine-bios-cd.bin",
       "/install/system-image/boot/limine-uefi-cd.bin",
       "/install/system-image/EFI/BOOT/BOOTX64.EFI",
+  };
+  static const char *limine_cfg_paths[] = {
+      "/install/system-image/limine.conf",
+      "/install/system-image/boot/limine.conf",
+      "/install/system-image/limine/limine.conf",
+      "/install/system-image/EFI/BOOT/limine.conf",
   };
   char msg[320];
 
@@ -2937,6 +2954,15 @@ static int installer_validate_system_image_payload(void) {
       continue;
     str_copy_safe(msg, "install payload missing: ", sizeof(msg));
     installer_append_to_buf(msg, sizeof(msg), required_paths[i]);
+    installer_log(msg);
+    return -1;
+  }
+
+  if (!installer_payload_any_file_exists(
+          limine_cfg_paths,
+          (int)(sizeof(limine_cfg_paths) / sizeof(limine_cfg_paths[0])))) {
+    str_copy_safe(msg, "install payload missing: no Limine config in system image",
+                  sizeof(msg));
     installer_log(msg);
     return -1;
   }
@@ -3325,6 +3351,269 @@ struct fm_state {
   int scroll_y;
 };
 
+#define FM_MAX_ITEMS 96
+
+struct fm_item {
+  char name[64];
+  unsigned type;
+};
+
+struct fm_collect_ctx {
+  struct fm_item *items;
+  int count;
+  int max_items;
+};
+
+static int fm_name_length(const char *name) {
+  int len = 0;
+  while (name && name[len])
+    len++;
+  return len;
+}
+
+static void fm_set_window_title(struct window *win, const char *path) {
+  if (!win)
+    return;
+
+  str_copy_safe(win->title, "File Manager", sizeof(win->title));
+  if (!path || !path[0])
+    return;
+
+  int idx = 12;
+  if (idx < (int)sizeof(win->title) - 1) {
+    win->title[idx++] = ' ';
+    win->title[idx++] = '-';
+    win->title[idx++] = ' ';
+  }
+
+  for (int i = 0; path[i] && idx < (int)sizeof(win->title) - 1; i++)
+    win->title[idx++] = path[i];
+  win->title[idx] = '\0';
+}
+
+static void fm_join_path(const char *base, const char *name, char *out,
+                         int out_max) {
+  int idx = 0;
+  if (!out || out_max <= 0)
+    return;
+  out[0] = '\0';
+
+  if (base) {
+    while (base[idx] && idx < out_max - 1) {
+      out[idx] = base[idx];
+      idx++;
+    }
+  }
+
+  if (idx == 0) {
+    out[idx++] = '/';
+  } else if (out[idx - 1] != '/' && idx < out_max - 1) {
+    out[idx++] = '/';
+  }
+
+  for (int i = 0; name && name[i] && idx < out_max - 1; i++)
+    out[idx++] = name[i];
+  out[idx] = '\0';
+}
+
+static int fm_path_exists(const char *path) {
+  struct file *f = vfs_open(path, O_RDONLY, 0);
+  if (!f)
+    return 0;
+  vfs_close(f);
+  return 1;
+}
+
+static void fm_build_unique_child_path(const char *dir_path, const char *base,
+                                       const char *ext, char *out,
+                                       int out_max) {
+  char candidate[512];
+  char name[96];
+
+  for (int attempt = 0; attempt < 32; attempt++) {
+    int idx = 0;
+    const char *prefix = base ? base : "New Item";
+    for (int i = 0; prefix[i] && idx < (int)sizeof(name) - 1; i++)
+      name[idx++] = prefix[i];
+
+    if (attempt > 0 && idx < (int)sizeof(name) - 3) {
+      name[idx++] = ' ';
+      if (attempt >= 10) {
+        name[idx++] = (char)('0' + (attempt / 10));
+      }
+      name[idx++] = (char)('0' + (attempt % 10));
+    }
+
+    for (int i = 0; ext && ext[i] && idx < (int)sizeof(name) - 1; i++)
+      name[idx++] = ext[i];
+    name[idx] = '\0';
+
+    fm_join_path(dir_path, name, candidate, sizeof(candidate));
+    if (!fm_path_exists(candidate)) {
+      str_copy_safe(out, candidate, out_max);
+      return;
+    }
+  }
+
+  fm_join_path(dir_path, "New Item", out, out_max);
+}
+
+static void fm_navigate_to(struct window *win, struct fm_state *st,
+                           const char *path) {
+  if (!st)
+    return;
+  if (!path || !path[0]) {
+    st->path[0] = '/';
+    st->path[1] = '\0';
+  } else {
+    str_copy_safe(st->path, path, sizeof(st->path));
+  }
+  st->selected[0] = '\0';
+  st->scroll_y = 0;
+  fm_set_window_title(win, st->path);
+}
+
+static void fm_go_parent(struct window *win, struct fm_state *st) {
+  int len = 0;
+  if (!st)
+    return;
+  while (st->path[len])
+    len++;
+  if (len <= 1)
+    return;
+
+  while (len > 0 && st->path[len - 1] != '/')
+    len--;
+  if (len > 1)
+    len--;
+  st->path[len] = '\0';
+  if (len == 0) {
+    st->path[0] = '/';
+    st->path[1] = '\0';
+  }
+  st->selected[0] = '\0';
+  st->scroll_y = 0;
+  fm_set_window_title(win, st->path);
+}
+
+static int fm_collect_callback(void *ctx, const char *name, int len, loff_t off,
+                               ino_t ino, unsigned type) {
+  (void)off;
+  (void)ino;
+  struct fm_collect_ctx *collect = (struct fm_collect_ctx *)ctx;
+
+  if (!collect || !name)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+  if (collect->count >= collect->max_items)
+    return 1;
+
+  int insert_at = collect->count;
+  if (type == 4) {
+    insert_at = 0;
+    while (insert_at < collect->count && collect->items[insert_at].type == 4)
+      insert_at++;
+    for (int i = collect->count; i > insert_at; i--)
+      collect->items[i] = collect->items[i - 1];
+  }
+
+  int copy_len = len;
+  if (copy_len >= (int)sizeof(collect->items[insert_at].name))
+    copy_len = (int)sizeof(collect->items[insert_at].name) - 1;
+  for (int i = 0; i < copy_len; i++)
+    collect->items[insert_at].name[i] = name[i];
+  collect->items[insert_at].name[copy_len] = '\0';
+  collect->items[insert_at].type = type;
+  collect->count++;
+  return 0;
+}
+
+static int fm_collect_items(const char *path, struct fm_item *items,
+                            int max_items) {
+  struct file *dir = vfs_open(path, O_RDONLY, 0);
+  if (!dir)
+    return -1;
+
+  struct fm_collect_ctx ctx;
+  ctx.items = items;
+  ctx.count = 0;
+  ctx.max_items = max_items;
+  vfs_readdir(dir, &ctx, fm_collect_callback);
+  vfs_close(dir);
+  return ctx.count;
+}
+
+static const unsigned char *fm_icon_for_item(const char *name, unsigned type,
+                                             uint32_t *color_out) {
+  uint32_t color = 0xD1D5DB;
+  const unsigned char *bmp = icon_notepad;
+
+  if (type == 4) {
+    bmp = icon_files;
+    color = 0x60A5FA;
+  } else if (str_ends_with_ci(name, ".py")) {
+    bmp = icon_python;
+    color = 0xFACC15;
+  } else if (str_ends_with_ci(name, ".nano")) {
+    bmp = icon_nano;
+    color = 0x4ADE80;
+  } else if (str_ends_with_ci(name, ".jpg") || str_ends_with_ci(name, ".jpeg") ||
+             str_ends_with_ci(name, ".png")) {
+    color = 0xF9E2AF;
+  } else if (str_ends_with_ci(name, ".mp3")) {
+    color = 0x86EFAC;
+  }
+
+  if (color_out)
+    *color_out = color;
+  return bmp;
+}
+
+static const char *fm_type_label(const char *name, unsigned type) {
+  if (type == 4)
+    return "Folder";
+  if (str_ends_with_ci(name, ".txt"))
+    return "Text";
+  if (str_ends_with_ci(name, ".py"))
+    return "Python";
+  if (str_ends_with_ci(name, ".nano"))
+    return "NanoLang";
+  if (str_ends_with_ci(name, ".jpg") || str_ends_with_ci(name, ".jpeg") ||
+      str_ends_with_ci(name, ".png"))
+    return "Image";
+  if (str_ends_with_ci(name, ".mp3"))
+    return "Audio";
+  return "File";
+}
+
+static void fm_truncate_label(const char *src, char *dst, int max_chars) {
+  int len = fm_name_length(src);
+  if (!dst || max_chars <= 0)
+    return;
+  if (!src) {
+    dst[0] = '\0';
+    return;
+  }
+
+  if (len <= max_chars) {
+    str_copy_safe(dst, src, max_chars + 1);
+    return;
+  }
+
+  int keep = max_chars - 3;
+  if (keep < 1)
+    keep = 1;
+  int i = 0;
+  for (; i < keep && src[i]; i++)
+    dst[i] = src[i];
+  dst[i++] = '.';
+  dst[i++] = '.';
+  dst[i++] = '.';
+  dst[i] = '\0';
+}
+
 static void installer_refresh_disk_inventory(void) {
   extern int storage_get_disk_count(void);
   extern int storage_describe_disk(int index, char *buf, int max);
@@ -3558,198 +3847,6 @@ static void image_viewer_on_mouse(struct window *win, int x, int y,
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 
-/* Context for finding clicked item */
-struct find_ctx {
-  int target_slot_x;
-  int target_slot_y;
-  int cur_x;
-  int cur_y;
-  int start_x;
-  int cur_slot;
-  struct fm_state *st;
-  int clicked;
-  int click_x, click_y;
-  int slot_w, slot_h;
-  int win_w;
-};
-
-static int find_callback(void *ctx, const char *name, int len, loff_t off,
-                         ino_t ino, unsigned type) {
-  (void)off;
-  (void)ino;
-  struct find_ctx *fc = (struct find_ctx *)ctx;
-  if (fc->clicked)
-    return 0;
-
-  if (name[0] == '.')
-    return 0;
-
-  /* Check if click is in this slot */
-  if (fc->click_x >= fc->cur_x && fc->click_x < fc->cur_x + fc->slot_w &&
-      fc->click_y >= fc->cur_y && fc->click_y < fc->cur_y + fc->slot_h) {
-
-    /* HIT! */
-    fc->clicked = 1;
-
-    /* Handle selection */
-    int i;
-    for (i = 0; i < len && i < 255; i++)
-      fc->st->selected[i] = name[i];
-    fc->st->selected[i] = '\0';
-
-    /* Handle Double Click (Primitive: if already selected, enter) */
-    if (type == 4) { /* Directory */
-      /* Append path */
-      int plen = 0;
-      while (fc->st->path[plen])
-        plen++;
-      /* Check if path ends in / */
-      int need_slash = (plen > 0 && fc->st->path[plen - 1] != '/');
-      if (plen + len + need_slash + 1 < 256) {
-        if (need_slash)
-          fc->st->path[plen++] = '/';
-        for (i = 0; i < len; i++)
-          fc->st->path[plen++] = name[i];
-        fc->st->path[plen] = '\0';
-        fc->st->selected[0] = '\0';
-      }
-    }
-    return 1; /* Stop */
-  }
-
-  /* Advance */
-  fc->cur_x += fc->slot_w;
-  if (fc->cur_x + fc->slot_w > fc->start_x + fc->win_w) {
-    fc->cur_x = fc->start_x;
-    fc->cur_y += fc->slot_h;
-  }
-  return 0;
-}
-
-struct fm_ctx {
-  struct window *win;
-  int x, y;
-  int start_x, start_y;
-  int cur_x, cur_y;
-  int max_x, max_y; /* Bounds for clipping */
-  struct fm_state *state;
-  char seen[128][64];
-  int seen_count;
-};
-
-static int fm_render_callback(void *ctx, const char *name, int len,
-                              loff_t offset, ino_t ino, unsigned type) {
-  (void)offset;
-  (void)ino;
-  struct fm_ctx *c = (struct fm_ctx *)ctx;
-
-  /* Skip . and .., but allow normal dotfiles. */
-  if ((len == 1 && name[0] == '.') ||
-      (len == 2 && name[0] == '.' && name[1] == '.'))
-    return 0;
-
-  for (int i = 0; i < c->seen_count; i++) {
-    if (str_cmp(c->seen[i], name) == 0)
-      return 0;
-  }
-  if (c->seen_count < (int)(sizeof(c->seen) / sizeof(c->seen[0]))) {
-    int copy_len = len;
-    if (copy_len >= (int)sizeof(c->seen[0]))
-      copy_len = (int)sizeof(c->seen[0]) - 1;
-    for (int i = 0; i < copy_len; i++)
-      c->seen[c->seen_count][i] = name[i];
-    c->seen[c->seen_count][copy_len] = '\0';
-    c->seen_count++;
-  }
-
-  int icon_size = 32;
-  int slot_w = 80;
-  int slot_h = 70;
-
-  int dx = c->cur_x;
-  int dy = c->cur_y;
-
-  /* Skip if icon would be outside visible content area */
-  if (dy + slot_h > c->max_y) {
-    /* Still advance position for proper layout calculation */
-    c->cur_x += slot_w;
-    if (c->cur_x + slot_w > c->max_x) {
-      c->cur_x = c->start_x;
-      c->cur_y += slot_h;
-    }
-    return 0; /* Don't draw, but continue iterating */
-  }
-
-  /* Select icon */
-  /* Check for known extensions or just file vs dir */
-  /* Simple check: type (DT_DIR included in ramfs.c as shifted mode) */
-  /* VFS readdir passes mode >> 12. S_IFDIR is 0040000. >> 12 is 4. */
-  /* S_IFREG is 0100000. >> 12 is 8 (010). */
-
-  const unsigned char *bmp = icon_notepad; /* Default file */
-  uint32_t color = 0xCCCCCC;
-
-  /* S_IFDIR >> 12 is 4 */
-  if (type == 4) {
-    bmp = icon_files; /* Folder icon */
-    color = 0x3B82F6;
-  } else {
-    /* Check extension */
-    if (len > 4 && name[len - 4] == '.' && name[len - 3] == 't' &&
-        name[len - 2] == 'x' && name[len - 1] == 't') {
-      bmp = icon_notepad;
-      color = 0xFFFFFF;
-    } else if (str_ends_with_ci(name, ".jpg") ||
-               str_ends_with_ci(name, ".jpeg")) {
-      color = 0xF9E2AF;
-    } else if (str_ends_with_ci(name, ".mp3")) {
-      color = 0xA6E3A1;
-    } else if (str_ends_with_ci(name, ".py")) {
-      bmp = icon_python;
-      color = 0xFFD43B; /* Python yellow */
-    } else if (str_ends_with_ci(name, ".nano")) {
-      bmp = icon_nano;
-      color = 0x22C55E; /* NanoLang green */
-    }
-  }
-
-  /* Check if selected */
-  int is_selected = 0;
-  if (c->state && str_cmp(c->state->selected, name) == 0) {
-    is_selected = 1;
-  }
-
-  /* Selection Box */
-  if (is_selected) {
-    gui_draw_rect(dx + 2, dy + 2, slot_w - 4, slot_h - 4, 0x404050);
-    gui_draw_rect_outline(dx + 2, dy + 2, slot_w - 4, slot_h - 4, 0x606080, 1);
-  }
-
-  /* Draw Icon */
-  draw_icon(dx + (slot_w - icon_size) / 2, dy + 8, icon_size, bmp, color,
-            is_selected ? 0x404050 : 0x1E1E2E);
-
-  /* Draw Label */
-  int lbl_len = len > 10 ? 10 : len;
-  char lbl[12];
-  for (int i = 0; i < lbl_len; i++)
-    lbl[i] = name[i];
-  lbl[lbl_len] = '\0';
-
-  /* Center text */
-  gui_draw_string(dx + (slot_w - lbl_len * 8) / 2, dy + icon_size + 12, lbl,
-                  0xFFFFFF, is_selected ? 0x404050 : 0x1E1E2E);
-
-  /* Advance position */
-  c->cur_x += slot_w;
-  if (c->cur_x + slot_w > c->max_x) {
-    c->cur_x = c->start_x;
-    c->cur_y += slot_h;
-  }
-
-  return 0;
-}
-
 /* File Manager Mouse Handler */
 static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
   struct fm_state *st = (struct fm_state *)win->userdata;
@@ -3757,252 +3854,144 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
   if (!st)
     return;
 
-  /* Handle Toolbar Clicks */
-  int toolbar_h = 40;
+  int content_x = BORDER_WIDTH;
+  int content_y = BORDER_WIDTH + TITLEBAR_HEIGHT;
+  int toolbar_h = 52;
+  int info_h = 54;
+  int sidebar_w = 118;
+  int details_w = 130;
+  int list_x = content_x + sidebar_w + 10;
+  int list_y = content_y + toolbar_h + info_h + 8;
+  int list_w = win->width - BORDER_WIDTH * 2 - sidebar_w - details_w - 24;
+  int row_h = 44;
 
-  /* Toolbar is drawn below titlebar */
-  /* Relative Y: BORDER_WIDTH + TITLEBAR_HEIGHT */
-  int tb_start_y = BORDER_WIDTH + TITLEBAR_HEIGHT;
-  int tb_end_y = tb_start_y + toolbar_h;
-
-  if (y >= tb_start_y && y < tb_end_y) {
-    /* Back Button: x relative to window = BORDER_WIDTH + 10 */
-    if (x >= BORDER_WIDTH + 10 && x < BORDER_WIDTH + 70) {
-      /* Go to parent */
-      int len = 0;
-      while (st->path[len])
-        len++;
-      if (len > 1) { /* Not root */
-        while (len > 0 && st->path[len - 1] != '/')
-          len--;
-
-        /* If we found the root slash at index 0 (len=1), keep it. */
-        /* If we found a slash elsewhere (len>1), remove it (len--). */
-        if (len > 1)
-          len--;
-
-        st->path[len] = '\0';
-        st->selected[0] = '\0';
-        if (len == 0) {
-          st->path[0] = '/';
-          st->path[1] = '\0';
-        }
-      }
+  if (y >= content_y + 10 && y < content_y + 42) {
+    if (x >= content_x + 10 && x < content_x + 74) {
+      fm_go_parent(win, st);
+      return;
     }
-
-    /* New Folder: 80px offset */
-    if (x >= BORDER_WIDTH + 80 && x < BORDER_WIDTH + 180) {
-      /* Create "NewFolder" */
+    if (x >= content_x + 82 && x < content_x + 166) {
       char new_path[512];
-      int p_len = 0;
-      while (st->path[p_len]) {
-        new_path[p_len] = st->path[p_len];
-        p_len++;
-      }
-      if (new_path[p_len - 1] != '/') {
-        new_path[p_len] = '/';
-        p_len++;
-      }
-
-      const char *base = "NewFolder";
-      for (int i = 0; base[i]; i++) {
-        new_path[p_len] = base[i];
-        p_len++;
-      }
-      new_path[p_len] = '\0';
-
-      /* Try to create */
       extern int vfs_mkdir(const char *path, mode_t mode);
+      fm_build_unique_child_path(st->path, "New Folder", "", new_path,
+                                 sizeof(new_path));
       vfs_mkdir(new_path, 0755);
+      return;
     }
-
-    /* New File: 190px offset */
-    if (x >= BORDER_WIDTH + 190 && x < BORDER_WIDTH + 280) {
-      /* Create "NewFile.txt" */
-      /* ... (existing logic) ... */
+    if (x >= content_x + 174 && x < content_x + 248) {
       char new_path[512];
-      int p_len = 0;
-      while (st->path[p_len]) {
-        new_path[p_len] = st->path[p_len];
-        p_len++;
-      }
-      if (new_path[p_len - 1] != '/') {
-        new_path[p_len] = '/';
-        p_len++;
-      }
-
-      const char *base = "NewFile.txt";
-      for (int i = 0; base[i]; i++) {
-        new_path[p_len] = base[i];
-        p_len++;
-      }
-      new_path[p_len] = '\0';
-
-      /* Try to create */
       extern int vfs_create(const char *path, mode_t mode);
+      fm_build_unique_child_path(st->path, "New File", ".txt", new_path,
+                                 sizeof(new_path));
       vfs_create(new_path, 0644);
+      return;
     }
-
-    /* Rename: 290px offset */
-    if (x >= BORDER_WIDTH + 290 && x < BORDER_WIDTH + 380) {
+    if (x >= content_x + 256 && x < content_x + 328) {
       if (st->selected[0]) {
-        /* Build full path */
         char full_path[512];
-        int idx = 0;
-        int p_len = 0;
-        while (st->path[p_len]) {
-          full_path[idx++] = st->path[p_len++];
-        }
-        if (idx > 0 && full_path[idx - 1] != '/')
-          full_path[idx++] = '/';
-        else if (idx == 0)
-          full_path[idx++] = '/';
-
-        int s_len = 0;
-        while (st->selected[s_len]) {
-          full_path[idx++] = st->selected[s_len++];
-        }
-        full_path[idx] = '\0';
-
         extern void gui_open_rename(const char *path);
+        fm_join_path(st->path, st->selected, full_path, sizeof(full_path));
         gui_open_rename(full_path);
       }
+      return;
     }
-
-    /* Partition Manager: 390px offset */
-    if (x >= BORDER_WIDTH + 390 && x < BORDER_WIDTH + 440) {
+    if (x >= content_x + 336 && x < content_x + 410) {
       open_partition_manager_window(win->x + 40, win->y + 30);
+      return;
     }
+  }
 
+  if (x >= content_x + 10 && x < content_x + sidebar_w - 10) {
+    if (y >= content_y + 88 && y < content_y + 116)
+      fm_navigate_to(win, st, "/");
+    else if (y >= content_y + 118 && y < content_y + 146)
+      fm_navigate_to(win, st, "/Desktop");
+    else if (y >= content_y + 148 && y < content_y + 176)
+      fm_navigate_to(win, st, "/Documents");
+    else if (y >= content_y + 178 && y < content_y + 206)
+      fm_navigate_to(win, st, "/Pictures");
+    else if (y >= content_y + 208 && y < content_y + 236)
+      fm_navigate_to(win, st, "/Music");
+    else if (y >= content_y + 238 && y < content_y + 266)
+      fm_navigate_to(win, st, "/Users");
     return;
   }
 
-  /* Handle Grid Clicks */
-  struct file *dir = vfs_open(st->path, O_RDONLY, 0);
-  if (!dir)
+  struct fm_item items[FM_MAX_ITEMS];
+  int item_count = fm_collect_items(st->path, items, FM_MAX_ITEMS);
+  if (item_count <= 0)
     return;
 
-  /* Grid Clicks */
-  /* Content starts below toolbar */
-  int content_x = BORDER_WIDTH + 10;
-  int content_y = BORDER_WIDTH + TITLEBAR_HEIGHT + 40 + 10;
+  for (int i = 0; i < item_count; i++) {
+    int row_y = list_y + i * row_h;
+    if (x >= list_x && x < list_x + list_w && y >= row_y && y < row_y + row_h) {
+      int was_selected = str_cmp(st->selected, items[i].name) == 0;
+      str_copy_safe(st->selected, items[i].name, sizeof(st->selected));
 
-  struct find_ctx fctx;
-  fctx.cur_x = content_x;
-  fctx.cur_y = content_y;
-  fctx.start_x = content_x;
-  fctx.st = st;
-  fctx.clicked = 0;
-  fctx.click_x = x;
-  fctx.click_y = y;
+      if (items[i].type == 4 && was_selected) {
+        char next_path[512];
+        fm_join_path(st->path, items[i].name, next_path, sizeof(next_path));
+        fm_navigate_to(win, st, next_path);
+        return;
+      }
 
-  /* Initialize dimensions */
-  fctx.slot_w = 80;
-  fctx.slot_h = 70;
-  fctx.win_w = win->width - 40; /* Match wrapped logic in render callback */
-  fctx.slot_w = 80;
-  fctx.slot_h = 70;
-  fctx.win_w = win->width - 40;
+      if (!was_selected)
+        return;
 
-  extern int vfs_readdir(
-      struct file * file, void *ctx,
-      int (*filldir)(void *, const char *, int, loff_t, ino_t, unsigned));
-  vfs_readdir(dir, &fctx, find_callback);
+      char full_path[512];
+      fm_join_path(st->path, st->selected, full_path, sizeof(full_path));
 
-  vfs_close(dir);
+      if (str_ends_with_ci(st->selected, ".txt")) {
+        gui_open_notepad(full_path);
+      } else if (str_ends_with_ci(st->selected, ".jpg") ||
+                 str_ends_with_ci(st->selected, ".jpeg") ||
+                 str_ends_with_ci(st->selected, ".png")) {
+        gui_open_image_viewer(full_path);
+      } else if (str_ends_with_ci(st->selected, ".mp3")) {
+        gui_play_mp3_file(full_path);
+      } else if (str_ends_with_ci(st->selected, ".py") ||
+                 str_ends_with_ci(st->selected, ".nano")) {
+        /* Python/NanoLang file - open new terminal and run it */
+        extern void term_set_active(struct terminal * term);
+        extern void term_puts(struct terminal * term, const char *str);
+        extern void term_execute_command(struct terminal * term, const char *cmd);
+        extern void term_set_content_pos(struct terminal * t, int x, int y);
 
-  if (fctx.clicked) {
-    /* Check if it's a file (.txt) */
-    int len = 0;
-    while (st->selected[len])
-      len++;
+        /* Stagger window positions */
+        static int term_spawn_x = 120;
+        static int term_spawn_y = 100;
 
-    /* Build full path once */
-    char full_path[512];
-    int idx = 0;
-    int p_len = 0;
-    while (st->path[p_len]) {
-      full_path[idx++] = st->path[p_len++];
-    }
-    if (idx > 0 && full_path[idx - 1] != '/')
-      full_path[idx++] = '/';
-    else if (idx == 0)
-      full_path[idx++] = '/';
-    int s_len = 0;
-    while (st->selected[s_len]) {
-      full_path[idx++] = st->selected[s_len++];
-    }
-    full_path[idx] = '\0';
+        struct window *term_win =
+            gui_create_window("Terminal", term_spawn_x, term_spawn_y, 500, 350);
+        if (term_win) {
+          /* Create terminal with position relative to window content area */
+          int content_x = term_spawn_x + BORDER_WIDTH;
+          int content_y = term_spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+          struct terminal *term = term_create(content_x, content_y, 60, 18);
+          if (term) {
+            /* Store terminal in window and set as active */
+            term_win->userdata = term;
+            term_set_active(term);
+            term_set_content_pos(term, content_x, content_y);
 
-    if (str_ends_with_ci(st->selected, ".txt")) {
-      gui_open_notepad(full_path);
-    } else if (str_ends_with_ci(st->selected, ".jpg") ||
-               str_ends_with_ci(st->selected, ".jpeg") ||
-               str_ends_with_ci(st->selected, ".png")) {
-      gui_open_image_viewer(full_path);
-    } else if (str_ends_with_ci(st->selected, ".mp3")) {
-      gui_play_mp3_file(full_path);
-    } else if (str_ends_with_ci(st->selected, ".py") ||
-               str_ends_with_ci(st->selected, ".nano")) {
-      /* Python/NanoLang file - open new terminal and run it */
-      extern void term_set_active(struct terminal * term);
-      extern void term_puts(struct terminal * term, const char *str);
-      extern void term_execute_command(struct terminal * term, const char *cmd);
-      extern void term_set_content_pos(struct terminal * t, int x, int y);
-
-      /* Stagger window positions */
-      static int term_spawn_x = 120;
-      static int term_spawn_y = 100;
-
-      struct window *term_win =
-          gui_create_window("Terminal", term_spawn_x, term_spawn_y, 500, 350);
-      if (term_win) {
-        /* Create terminal with position relative to window content area */
-        int content_x = term_spawn_x + BORDER_WIDTH;
-        int content_y = term_spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        struct terminal *term = term_create(content_x, content_y, 60, 18);
-        if (term) {
-          /* Store terminal in window and set as active */
-          term_win->userdata = term;
-          term_set_active(term);
-          term_set_content_pos(term, content_x, content_y);
-
-          /* Build run command */
-          char run_cmd[300] = "run ";
-          int j = 4;
-          for (int i = 0; full_path[i] && j < 298; i++) {
-            run_cmd[j++] = full_path[i];
+            /* Build run command */
+            char run_cmd[300] = "run ";
+            int j = 4;
+            for (int i = 0; full_path[i] && j < 298; i++) {
+              run_cmd[j++] = full_path[i];
+            }
+            run_cmd[j] = '\0';
+            /* Execute the run command */
+            term_execute_command(term, run_cmd);
+            term_puts(term,
+                      "\n\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
           }
-          run_cmd[j] = '\0';
-          /* Execute the run command */
-          term_execute_command(term, run_cmd);
-          term_puts(term, "\n\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
         }
-      }
 
-      /* Stagger next window */
-      term_spawn_x = (term_spawn_x + 40) % 300 + 80;
-      term_spawn_y = (term_spawn_y + 35) % 200 + 70;
-    } else {
-      /* Directory - Navigate if it's a dir */
-      struct file *entry = vfs_open(full_path, O_RDONLY, 0);
-      if (entry && entry->f_dentry && entry->f_dentry->d_inode &&
-          S_ISDIR(entry->f_dentry->d_inode->i_mode)) {
-        int p = 0;
-        while (st->path[p])
-          p++;
-        if (st->path[p - 1] != '/') {
-          st->path[p++] = '/';
-        }
-        int s = 0;
-        while (st->selected[s]) {
-          st->path[p++] = st->selected[s++];
-        }
-        st->path[p] = '\0';
-        st->selected[0] = '\0';
+        /* Stagger next window */
+        term_spawn_x = (term_spawn_x + 40) % 300 + 80;
+        term_spawn_y = (term_spawn_y + 35) % 200 + 70;
       }
-      if (entry)
-        vfs_close(entry);
     }
   }
 }
@@ -4410,64 +4399,163 @@ static void draw_window(struct window *win) {
   /* File Manager */
   else if (win->title[0] == 'F' && win->title[1] == 'i' &&
            win->title[2] == 'l') {
-    int yy = content_y;
-    int toolbar_h = 40;
-
-    /* Toolbar */
-    gui_draw_rect(content_x, yy, content_w, toolbar_h, 0x2A2A35);
-    gui_draw_line(content_x, yy + toolbar_h, content_x + content_w,
-                  yy + toolbar_h, 0x404050);
-
-    /* Back Button */
-    gui_draw_rect(content_x + 10, yy + 8, 60, 24, 0x404050);
-    gui_draw_string(content_x + 22, yy + 12, "Back", 0xFFFFFF, 0x404050);
-
-    /* New Folder Button */
-    gui_draw_rect(content_x + 80, yy + 8, 100, 24, 0x404050);
-    gui_draw_string(content_x + 90, yy + 12, "New Folder", 0xFFFFFF, 0x404050);
-
-    /* New File Button */
-    gui_draw_rect(content_x + 190, yy + 8, 90, 24, 0x404050);
-    gui_draw_string(content_x + 200, yy + 12, "New File", 0xFFFFFF, 0x404050);
-
-    /* Rename Button */
-    gui_draw_rect(content_x + 290, yy + 8, 90, 24, 0x404050);
-    gui_draw_string(content_x + 300, yy + 12, "Rename", 0xFFFFFF, 0x404050);
-
-    /* Partition Manager Button */
-    gui_draw_rect(content_x + 390, yy + 8, 50, 24, 0x2563EB);
-    gui_draw_string(content_x + 394, yy + 12, "Disk", 0xFFFFFF, 0x2563EB);
-
-    yy += toolbar_h;
-
     struct fm_state *st = (struct fm_state *)win->userdata;
     const char *path = st ? st->path : "/";
+    struct fm_item items[FM_MAX_ITEMS];
+    int item_count = fm_collect_items(path, items, FM_MAX_ITEMS);
+    int folder_count = 0;
+    int selected_index = -1;
 
-    gui_draw_string(content_x + 10, yy + 4, "Location:", 0xAAAAAA, THEME_BG);
-    gui_draw_string(content_x + 90, yy + 4, path, 0xFFFFFF, THEME_BG);
-
-    yy += 20;
-
-    /* Grid container */
-    struct fm_ctx ctx;
-    ctx.win = win;
-    ctx.start_x = content_x + 10;
-    ctx.start_y = yy;
-    ctx.cur_x = ctx.start_x;
-    ctx.cur_y = ctx.start_y;
-    ctx.max_x = content_x + content_w - 10; /* Right edge bound */
-    ctx.max_y = content_y + content_h;      /* Bottom edge bound */
-    ctx.state = st;
-
-    /* Open VFS */
-    struct file *dir = vfs_open(path, O_RDONLY, 0);
-    if (dir) {
-      vfs_readdir(dir, &ctx, fm_render_callback);
-      vfs_close(dir);
-    } else {
-      gui_draw_string(content_x + 20, yy + 20, "Failed to open directory",
-                      0xFF0000, 0x1E1E2E);
+    if (item_count > 0) {
+      for (int i = 0; i < item_count; i++) {
+        if (items[i].type == 4)
+          folder_count++;
+        if (st && str_cmp(st->selected, items[i].name) == 0)
+          selected_index = i;
+      }
     }
+
+    int toolbar_h = 52;
+    int info_h = 54;
+    int sidebar_w = 118;
+    int details_w = 130;
+    int sidebar_x = content_x + 8;
+    int sidebar_y = content_y + toolbar_h + 8;
+    int list_x = content_x + sidebar_w + 10;
+    int list_y = content_y + toolbar_h + info_h + 8;
+    int list_w = content_w - sidebar_w - details_w - 24;
+    int row_h = 44;
+
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0x171A24);
+
+    gui_draw_rect(content_x, content_y, content_w, toolbar_h, 0x111827);
+    gui_draw_rect(content_x + 10, content_y + 10, 64, 30, 0x334155);
+    gui_draw_string(content_x + 28, content_y + 19, "Back", 0xFFFFFF, 0x334155);
+    gui_draw_rect(content_x + 82, content_y + 10, 84, 30, 0x1D4ED8);
+    gui_draw_string(content_x + 96, content_y + 19, "Folder", 0xFFFFFF, 0x1D4ED8);
+    gui_draw_rect(content_x + 174, content_y + 10, 74, 30, 0x0F766E);
+    gui_draw_string(content_x + 192, content_y + 19, "File", 0xFFFFFF, 0x0F766E);
+    gui_draw_rect(content_x + 256, content_y + 10, 72, 30, 0x6D28D9);
+    gui_draw_string(content_x + 270, content_y + 19, "Rename", 0xFFFFFF, 0x6D28D9);
+    gui_draw_rect(content_x + 336, content_y + 10, 74, 30, 0x2563EB);
+    gui_draw_string(content_x + 356, content_y + 19, "Disks", 0xFFFFFF, 0x2563EB);
+
+    gui_draw_rect(content_x + 8, content_y + toolbar_h + 4, content_w - 16, 42,
+                  0x1F2937);
+    gui_draw_string(content_x + 18, content_y + toolbar_h + 10, "Location",
+                    0x93C5FD, 0x1F2937);
+    gui_draw_string(content_x + 90, content_y + toolbar_h + 10, path, 0xFFFFFF,
+                    0x1F2937);
+    gui_draw_string(content_x + content_w - 130, content_y + toolbar_h + 10,
+                    "Folders", 0x9CA3AF, 0x1F2937);
+
+    char count_buf[16];
+    count_buf[0] = '\0';
+    int count_idx = 0;
+    if (folder_count >= 10)
+      count_buf[count_idx++] = (char)('0' + (folder_count / 10));
+    count_buf[count_idx++] = (char)('0' + (folder_count % 10));
+    count_buf[count_idx] = '\0';
+    gui_draw_string(content_x + content_w - 74, content_y + toolbar_h + 10,
+                    count_buf, 0xFFFFFF, 0x1F2937);
+
+    gui_draw_rect(sidebar_x, sidebar_y, sidebar_w - 16, content_h - toolbar_h - 16,
+                  0x111827);
+    gui_draw_string(sidebar_x + 12, sidebar_y + 14, "Places", 0xFFFFFF, 0x111827);
+
+    const char *places[] = {"/", "/Desktop", "/Documents", "/Pictures", "/Music",
+                            "/Users"};
+    const char *labels[] = {"Root", "Desktop", "Documents", "Pictures", "Music",
+                            "Users"};
+    for (int i = 0; i < 6; i++) {
+      int row_y = sidebar_y + 34 + i * 30;
+      uint32_t row_bg = (st && str_cmp(st->path, places[i]) == 0) ? 0x1D4ED8 : 0x1F2937;
+      gui_draw_rect(sidebar_x + 8, row_y, sidebar_w - 32, 24, row_bg);
+      gui_draw_string(sidebar_x + 16, row_y + 6, labels[i], 0xFFFFFF, row_bg);
+    }
+
+    gui_draw_rect(list_x, content_y + toolbar_h + 8, list_w, content_h - toolbar_h - 16,
+                  0x0F172A);
+    gui_draw_rect(details_w > 0 ? content_x + content_w - details_w - 8 : content_x,
+                  content_y + toolbar_h + 8, details_w, content_h - toolbar_h - 16,
+                  0x111827);
+    gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 22,
+                    "Details", 0xFFFFFF, 0x111827);
+
+    gui_draw_rect(list_x + 8, content_y + toolbar_h + 18, list_w - 16, 24, 0x172033);
+    gui_draw_string(list_x + 18, content_y + toolbar_h + 24, "Name", 0x93C5FD, 0x172033);
+    gui_draw_string(list_x + list_w - 74, content_y + toolbar_h + 24, "Type",
+                    0x93C5FD, 0x172033);
+
+    if (item_count < 0) {
+      gui_draw_string(list_x + 16, list_y + 10, "Failed to open directory",
+                      0xFCA5A5, 0x0F172A);
+    } else if (item_count == 0) {
+      gui_draw_string(list_x + 16, list_y + 10, "This folder is empty.",
+                      0xCBD5E1, 0x0F172A);
+    } else {
+      for (int i = 0; i < item_count && i < 10; i++) {
+        int row_y = list_y + i * row_h;
+        int is_selected = (selected_index == i);
+        uint32_t row_bg = is_selected ? 0x1D4ED8 : (i % 2 ? 0x111827 : 0x0F172A);
+        uint32_t icon_color = 0xFFFFFF;
+        const unsigned char *icon =
+            fm_icon_for_item(items[i].name, items[i].type, &icon_color);
+        char short_name[22];
+        const char *type_label = fm_type_label(items[i].name, items[i].type);
+
+        fm_truncate_label(items[i].name, short_name, 18);
+        gui_draw_rect(list_x + 8, row_y, list_w - 16, row_h - 4, row_bg);
+        draw_icon(list_x + 14, row_y + 6, 24, icon, icon_color, row_bg);
+        gui_draw_string(list_x + 48, row_y + 14, short_name, 0xFFFFFF, row_bg);
+        gui_draw_string(list_x + list_w - 78, row_y + 14, type_label,
+                        is_selected ? 0xDBEAFE : 0x94A3B8, row_bg);
+      }
+    }
+
+    gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 54,
+                    "Items", 0x93C5FD, 0x111827);
+    char items_buf[16];
+    items_buf[0] = '\0';
+    int items_idx = 0;
+    if (item_count > 99)
+      item_count = 99;
+    if (item_count >= 10)
+      items_buf[items_idx++] = (char)('0' + (item_count / 10));
+    items_buf[items_idx++] = (char)('0' + (item_count % 10));
+    items_buf[items_idx] = '\0';
+    gui_draw_string(content_x + content_w - details_w + 58, content_y + toolbar_h + 54,
+                    items_buf, 0xFFFFFF, 0x111827);
+
+    gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 78,
+                    "Selected", 0x93C5FD, 0x111827);
+    if (selected_index >= 0) {
+      char selected_short[18];
+      fm_truncate_label(items[selected_index].name, selected_short, 14);
+      gui_draw_string(content_x + content_w - details_w + 8,
+                      content_y + toolbar_h + 100, selected_short, 0xFFFFFF,
+                      0x111827);
+      gui_draw_string(content_x + content_w - details_w + 8,
+                      content_y + toolbar_h + 124,
+                      fm_type_label(items[selected_index].name,
+                                    items[selected_index].type),
+                      0xA5B4FC, 0x111827);
+      gui_draw_string(content_x + content_w - details_w + 8,
+                      content_y + toolbar_h + 148,
+                      items[selected_index].type == 4 ? "Open: click twice"
+                                                     : "Open: click twice",
+                      0x94A3B8, 0x111827);
+    } else {
+      gui_draw_string(content_x + content_w - details_w + 8,
+                      content_y + toolbar_h + 100, "Nothing selected",
+                      0x94A3B8, 0x111827);
+    }
+
+    gui_draw_string(content_x + content_w - details_w + 8,
+                    content_y + content_h - 40, "Quick access", 0x93C5FD, 0x111827);
+    gui_draw_string(content_x + content_w - details_w + 8,
+                    content_y + content_h - 22, "Root Desktop Docs",
+                    0xCBD5E1, 0x111827);
   }
   /* Paint */
   else if (win->title[0] == 'P' && win->title[1] == 'a' &&
@@ -4641,11 +4729,22 @@ static void draw_window(struct window *win) {
     int yy = content_y + 12;
     char resolution[32];
     char windows_info[32];
+    const char *blur_status;
+    const char *blur_button;
     extern int intel_hda_is_playing(void);
 
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
+    if (gui_are_blur_effects_enabled()) {
+      blur_status = "Blur: On";
+    } else if (gui_blur_effects_requested()) {
+      blur_status = "Blur: Auto-disabled on this GPU";
+    } else {
+      blur_status = "Blur: Off";
+    }
+    blur_button = gui_blur_effects_requested() ? "Disable Blur"
+                                               : "Enable Blur";
 
     /* Header */
     gui_draw_string(content_x + 12, yy, "System Settings", 0xFFFFFF, THEME_BG);
@@ -4680,6 +4779,18 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 20, yy + 26, "Status: virtio-net user NAT",
                     0xCDD6F4, 0x252535);
     yy += 54;
+
+    /* Visual Effects section */
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 58, 0x252535);
+    gui_draw_string(content_x + 20, yy + 8, "Visual Effects", 0x89B4FA, 0x252535);
+    gui_draw_string(content_x + 20, yy + 26, blur_status, 0xCDD6F4, 0x252535);
+    gui_draw_string(content_x + 20, yy + 40, g_gpu_backend_name, 0x94A3B8,
+                    0x252535);
+    gui_draw_rect(content_x + content_w - 132, yy + 15, 108, 28,
+                  gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
+    gui_draw_string(content_x + content_w - 122, yy + 21, blur_button, 0xFFFFFF,
+                    gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
+    yy += 68;
 
     /* Device Manager button */
     gui_draw_rect(content_x + 10, yy, 100, 28, 0x3B82F6);
@@ -5238,6 +5349,9 @@ static void draw_window(struct window *win) {
 static int menu_open = 0; /* 0=closed, 1=Apple menu open */
 
 static void draw_menu_bar(void) {
+  char time_str[9];
+  int hours24, minutes, seconds;
+
   gui_draw_glass_panel(0, 0, primary_display.width, MENU_BAR_HEIGHT, 0x7A243246,
                        0x3FFFFFFF, 0x904D5B72, 2);
   gui_fill_rect_alpha(0, 0, primary_display.width, 1, 0x5AFFFFFF);
@@ -5245,57 +5359,16 @@ static void draw_menu_bar(void) {
                       0x4A10141C);
 
   /* OS next stage logo */
-  gui_draw_os_logo(12, 6, 1, 0xFFFFFF, 0x89B4FA, 0x00000000);
+  gui_draw_os_logo(10, 4, 1, 0xFFFFFF, 0x89B4FA, 0x00000000);
 
   /* OS next stage name (bold) */
-  gui_draw_string(34, 6, "OS next stage", 0xFFFFFF, 0x00000000);
+  gui_draw_string(32, 6, "OS next stage", 0xFFFFFF, 0x00000000);
 
-  /* Clock on right - compute from PL031 RTC */
-  {
-    uint64_t secs;
-#ifdef ARCH_X86_64
-    /* x86_64 bring-up path does not use the ARM PL031 MMIO RTC. */
-    secs = 12 * 3600 + 34 * 60;
-#else
-    /* Read PL031 RTC at 0x09010000 */
-    volatile uint32_t *pl031_data = (volatile uint32_t *)0x09010000;
-    secs = *pl031_data;
-#endif
-
-    /* Timezone offset */
-    int tz_offset = -5;
-    secs += tz_offset * 3600;
-
-    /* Convert to HH:MM */
-    int hrs = (secs / 3600) % 24;
-    int mins = (secs / 60) % 60;
-
-    char time_str[6];
-    time_str[0] = '0' + (hrs / 10);
-    time_str[1] = '0' + (hrs % 10);
-    time_str[2] = ':';
-    time_str[3] = '0' + (mins / 10);
-    time_str[4] = '0' + (mins % 10);
-    time_str[5] = '\0';
-
-    gui_draw_string(primary_display.width - 52, 6, time_str, 0xFFFFFF,
-                    0x00000000);
-  }
-
-  /* WiFi Icon (Static Connected) */
-  {
-    int wx = primary_display.width - 86;
-    int wy = 12;
-    /* Draw arcs using simple lines/pixels */
-    /* Center dot */
-    gui_draw_rect(wx, wy + 6, 2, 2, 0xFFFFFF);
-    /* Middle arc */
-    gui_draw_line(wx - 3, wy + 3, wx, wy, 0xFFFFFF);
-    gui_draw_line(wx, wy, wx + 3, wy + 3, 0xFFFFFF);
-    /* Top arc */
-    gui_draw_line(wx - 6, wy, wx, wy - 3, 0xFFFFFF);
-    gui_draw_line(wx, wy - 3, wx + 6, wy, 0xFFFFFF);
-  }
+  clock_get_time(&hours24, &minutes, &seconds);
+  clock_format_time(time_str, hours24, minutes, seconds);
+  time_str[5] = '\0';
+  gui_draw_string(primary_display.width - 52, 6, time_str, 0xFFFFFF,
+                  0x00000000);
 
   /* WiFi Icon (Static Connected) */
   {
@@ -5367,6 +5440,7 @@ static void draw_icon(int x, int y, int size, const unsigned char *bitmap,
           draw_pixel(dx, dy, color);
         }
       }
+      return;
     }
   }
 }
@@ -5909,6 +5983,8 @@ static int g_dirty_count = 0;
 static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
 static int g_gpu_rendering_enabled = 0;
+static int g_blur_effects_requested = 1;
+static int g_blur_effects_enabled = 0;
 static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
 
@@ -5931,6 +6007,37 @@ void compositor_mark_full_redraw(void) {
   g_dirty_count = 0;
 }
 
+static int gui_backend_supports_blur_effects(void) {
+  if (str_cmp(g_gpu_backend_name, "virtio-gpu") == 0)
+    return 1;
+  if (str_cmp(g_gpu_backend_name, "intel-gfx") == 0)
+    return 1;
+  return 0;
+}
+
+static void gui_refresh_blur_effects_policy(void) {
+  int next = g_blur_effects_requested && g_gpu_rendering_enabled &&
+             gui_backend_supports_blur_effects();
+
+  if (next == g_blur_effects_enabled)
+    return;
+
+  g_blur_effects_enabled = next;
+  printk(KERN_INFO "GUI: blur effects %s (%s, requested=%d)\n",
+         g_blur_effects_enabled ? "enabled" : "disabled", g_gpu_backend_name,
+         g_blur_effects_requested);
+  compositor_mark_full_redraw();
+}
+
+void gui_set_blur_effects_enabled(int enabled) {
+  g_blur_effects_requested = enabled ? 1 : 0;
+  gui_refresh_blur_effects_policy();
+}
+
+int gui_blur_effects_requested(void) { return g_blur_effects_requested; }
+
+int gui_are_blur_effects_enabled(void) { return g_blur_effects_enabled; }
+
 void gui_configure_gpu_rendering(int enabled) {
   if (enabled == g_gpu_rendering_enabled)
     return;
@@ -5949,6 +6056,7 @@ void gui_configure_gpu_rendering(int enabled) {
     g_gpu_rendering_enabled = 0;
     printk(KERN_INFO "GUI: Software backbuffer rendering enabled\n");
   }
+  gui_refresh_blur_effects_policy();
   compositor_mark_full_redraw();
 }
 
@@ -5972,6 +6080,7 @@ void gui_refresh_hardware_acceleration_policy(void) {
 
   str_copy_safe(g_gpu_backend_name, backend, sizeof(g_gpu_backend_name));
   gui_configure_gpu_rendering(enable);
+  gui_refresh_blur_effects_policy();
 }
 
 /* Optimized memcpy for scanlines */
@@ -6973,7 +7082,15 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        int yy = content_y + 12 + 28 + 70 + 54 + 54;
+        int visuals_y = content_y + 12 + 28 + 70 + 54 + 54;
+        int yy = visuals_y + 68;
+
+        if (x >= content_x + win->width - BORDER_WIDTH * 2 - 132 &&
+            x < content_x + win->width - BORDER_WIDTH * 2 - 24 &&
+            y >= visuals_y + 15 && y < visuals_y + 43) {
+          gui_set_blur_effects_enabled(!gui_blur_effects_requested());
+          break;
+        }
 
         if (x >= content_x + 10 && x < content_x + 110 && y >= yy &&
             y < yy + 28) {
@@ -7404,6 +7521,7 @@ struct window *gui_create_file_manager(int x, int y) {
       st->scroll_y = 0;
       win->userdata = st;
       win->on_mouse = fm_on_mouse;
+      fm_set_window_title(win, st->path);
     }
   }
   return win;
@@ -7441,6 +7559,7 @@ struct window *gui_create_file_manager_path(int x, int y, const char *path) {
       st->scroll_y = 0;
       win->userdata = st;
       win->on_mouse = fm_on_mouse;
+      fm_set_window_title(win, st->path);
     }
   }
   return win;
