@@ -1,0 +1,32 @@
+name: Apply patch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download patch artifact or read patch from repo
+        run: |
+          test -f fixes.patch
+
+      - name: Apply patch
+        run: |
+          git apply fixes.patch
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b auto/apply-patch
+          git add -A
+          git commit -m "Apply patch" || exit 0
+          git push origin auto/apply-patch --force
