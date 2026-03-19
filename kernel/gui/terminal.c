@@ -17,6 +17,7 @@ extern void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
 extern void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 extern struct window *gui_create_window(const char *title, int x, int y, int w,
                                         int h);
+extern void compositor_mark_full_redraw(void);
 
 /* ===================================================================== */
 /* Terminal Configuration */
@@ -1209,6 +1210,8 @@ void term_handle_key(struct terminal *term, int key) {
       term_putc(term, key);
     }
   }
+
+  compositor_mark_full_redraw();
 }
 
 /* ===================================================================== */

@@ -45,6 +45,7 @@ static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
 static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
+static int write_text_file(const char *path, const char *content);
 static void str_copy_safe(char *dst, const char *src, int max);
 void compositor_mark_full_redraw(void);
 void gui_set_blur_effects_enabled(int enabled);
@@ -4984,7 +4985,7 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 8, content_y + 8,
                     "Brush [O]  Line [/]  Color:", 0xFFFFFF, 0x404040);
     /* Color palette */
-    gui_draw_rect(content_x + 200, content_y + 4, 20, 20, 0xFF00Browser
+    gui_draw_rect(content_x + 200, content_y + 4, 20, 20, 0xFF0000);
     gui_draw_rect(content_x + 224, content_y + 4, 20, 20, 0x00FF00);
     gui_draw_rect(content_x + 248, content_y + 4, 20, 20, 0x0000FF);
     gui_draw_rect(content_x + 272, content_y + 4, 20, 20, 0x000000);
