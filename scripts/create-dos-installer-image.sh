@@ -31,14 +31,37 @@ IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
 require_file "$STAGE1"
 require_file "$STAGE2"
 
+STAGE2_SIZE=$(stat -c%s "$STAGE2")
+STAGE2_SECTORS=$(((STAGE2_SIZE + 511) / 512))
+STAGE2_PADDED="$BUILD_DIR/boot/installer_stage2.padded.bin"
+STAGE1_PATCHED="$BUILD_DIR/boot/installer_stage1.patched.bin"
+
 log "Creating DOS-style installer volume image at $IMAGE_PATH"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" 2>/dev/null
 
-log "Writing stage 1 volume boot sector"
-dd if="$STAGE1" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
+cp "$STAGE1" "$STAGE1_PATCHED"
+python3 - "$STAGE1_PATCHED" "$STAGE2_SECTORS" <<'PATCHPY'
+import sys
+path = sys.argv[1]
+sectors = int(sys.argv[2])
+with open(path, "r+b") as f:
+    data = bytearray(f.read())
+    marker = b"\x10\x00\x00\x7E\x00\x00"
+    off = data.find(marker)
+    if off == -1:
+        raise SystemExit("stage2 sector-count marker not found in stage1 image")
+    data[off:off+2] = sectors.to_bytes(2, "little")
+    f.seek(0)
+    f.write(data)
+PATCHPY
+cp "$STAGE2" "$STAGE2_PADDED"
+truncate -s $((STAGE2_SECTORS * 512)) "$STAGE2_PADDED"
 
-log "Writing stage 2 text installer"
-dd if="$STAGE2" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
+log "Writing stage 1 volume boot sector"
+dd if="$STAGE1_PATCHED" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
+
+log "Writing stage 2 text installer ($STAGE2_SECTORS sectors)"
+dd if="$STAGE2_PADDED" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
 
 log "Image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
