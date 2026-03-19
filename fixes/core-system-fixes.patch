@@ -41,4 +41,3 @@ diff --git a/kernel/fs/vfs.c b/kernel/fs/vfs.c
  static void path_copy(char *dst, const char *src, int max) {
 diff --git a/kernel/gui/window.c b/kernel/gui/window.c
 --- a/kernel/gui/window.c
-+++
