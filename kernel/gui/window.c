@@ -390,6 +390,26 @@ static int mouse_buttons = 0;
 static int settings_active_tab = 0;
 static char settings_status[96] = "Tune your desktop experience.";
 
+typedef struct {
+  uint16_t width;
+  uint16_t height;
+  const char *label;
+} settings_resolution_option_t;
+
+static const settings_resolution_option_t settings_resolution_options[] = {
+    {1024, 768, "1024x768"},
+    {1280, 720, "1280x720"},
+    {1600, 900, "1600x900"},
+    {1920, 1080, "1920x1080"},
+};
+
+#define SETTINGS_RESOLUTION_OPTION_COUNT \
+  ((int)(sizeof(settings_resolution_options) / \
+         sizeof(settings_resolution_options[0])))
+
+static int settings_resolution_current_idx = -1;
+static int settings_resolution_pending_idx = -1;
+
 static void notepad_append_to_buf(char *dst, int max, const char *src) {
   int idx = 0;
 
@@ -1366,6 +1386,42 @@ static void build_resolution_string(char *buf, uint32_t width, uint32_t height) 
   buf[idx++] = ' ';
   append_decimal(buf, &idx, (int)height);
   buf[idx] = '\0';
+}
+
+static void settings_sync_resolution_picker(void) {
+  settings_resolution_current_idx = -1;
+  for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+    if (settings_resolution_options[i].width == primary_display.width &&
+        settings_resolution_options[i].height == primary_display.height) {
+      settings_resolution_current_idx = i;
+      break;
+    }
+  }
+
+  if (settings_resolution_pending_idx < 0 ||
+      settings_resolution_pending_idx >= SETTINGS_RESOLUTION_OPTION_COUNT) {
+    settings_resolution_pending_idx = settings_resolution_current_idx >= 0
+                                          ? settings_resolution_current_idx
+                                          : 0;
+  }
+}
+
+static int settings_resolution_button_bounds(int panel_x, int panel_y, int index,
+                                             int *x, int *y, int *w, int *h) {
+  int card_y = panel_y + 72 + 104 + 84;
+
+  if (index < 0 || index >= SETTINGS_RESOLUTION_OPTION_COUNT)
+    return 0;
+
+  if (x)
+    *x = panel_x + 16 + index * 92;
+  if (y)
+    *y = card_y + 42;
+  if (w)
+    *w = 84;
+  if (h)
+    *h = 22;
+  return 1;
 }
 
 static void build_device_ports_string(char *buf, int connected, int total) {
@@ -5514,7 +5570,10 @@ static void draw_window(struct window *win) {
       int preview_x = panel_x;
       int preview_y = panel_y + 72;
       int preview_w = 180;
-      int preview_h = 110;
+      int preview_h = 90;
+      int resolution_card_y;
+
+      settings_sync_resolution_picker();
 
       gui_draw_rect(preview_x, preview_y, preview_w, preview_h, 0x252535);
       load_thumbnails();
@@ -5553,7 +5612,7 @@ static void draw_window(struct window *win) {
         }
       }
 
-      gui_draw_rect(panel_x + 194, preview_y, panel_w - 194, 110, 0x252535);
+      gui_draw_rect(panel_x + 194, preview_y, panel_w - 194, preview_h, 0x252535);
       gui_draw_string(panel_x + 210, preview_y + 14, "Current wallpaper", 0x93C5FD,
                       0x252535);
       gui_draw_string(panel_x + 210, preview_y + 36, wallpapers[current_wallpaper].name,
@@ -5562,35 +5621,67 @@ static void draw_window(struct window *win) {
                       wallpapers[current_wallpaper].type == 1 ? "Photo-based scene"
                                                               : "Gradient theme",
                       0xCBD5E1, 0x252535);
-      gui_draw_string(panel_x + 210, preview_y + 76, blur_status, 0xA5B4FC, 0x252535);
+      gui_draw_string(panel_x + 210, preview_y + 72, blur_status, 0xA5B4FC, 0x252535);
 
-      preview_y += 124;
-      gui_draw_rect(panel_x, preview_y, panel_w, 96, 0x252535);
+      preview_y += 104;
+      gui_draw_rect(panel_x, preview_y, panel_w, 72, 0x252535);
       gui_draw_string(panel_x + 16, preview_y + 12, "Visual effects", 0x89B4FA,
                       0x252535);
-      gui_draw_string(panel_x + 16, preview_y + 34, gpu_status, 0xFFFFFF, 0x252535);
-      gui_draw_string(panel_x + 16, preview_y + 52, g_gpu_backend_name, 0xCBD5E1,
+      gui_draw_string(panel_x + 16, preview_y + 30, gpu_status, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 46, g_gpu_backend_name, 0xCBD5E1,
                       0x252535);
-      gui_draw_string(panel_x + 16, preview_y + 70,
+      gui_draw_string(panel_x + 200, preview_y + 30, blur_status, 0xA5B4FC,
+                      0x252535);
+      gui_draw_string(panel_x + 200, preview_y + 46,
                       dock_is_visible() ? "Dock is visible on this boot mode"
                                         : "Dock hidden in current mode",
                       0xCBD5E1, 0x252535);
 
-      gui_draw_rect(panel_x, preview_y + 110, 116, 30, 0x1D4ED8);
-      gui_draw_string(panel_x + 18, preview_y + 119, "Backgrounds", 0xFFFFFF,
+      resolution_card_y = preview_y + 84;
+      gui_draw_rect(panel_x, resolution_card_y, panel_w, 96, 0x252535);
+      gui_draw_string(panel_x + 16, resolution_card_y + 12, "Display resolution",
+                      0x89B4FA, 0x252535);
+      gui_draw_string(panel_x + 16, resolution_card_y + 28, "Current:", 0xCBD5E1,
+                      0x252535);
+      gui_draw_string(panel_x + 76, resolution_card_y + 28, resolution, 0xFFFFFF,
+                      0x252535);
+      gui_draw_string(panel_x + 210, resolution_card_y + 28, "Selected:", 0xCBD5E1,
+                      0x252535);
+      gui_draw_string(panel_x + 282, resolution_card_y + 28,
+                      settings_resolution_options[settings_resolution_pending_idx].label,
+                      0xA5B4FC, 0x252535);
+
+      for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+        int bx, by, bw, bh;
+        uint32_t bg;
+        uint32_t fg;
+        settings_resolution_button_bounds(panel_x, panel_y, i, &bx, &by, &bw, &bh);
+        bg = i == settings_resolution_pending_idx
+                 ? 0x2563EB
+                 : (i == settings_resolution_current_idx ? 0x374151 : 0x1E293B);
+        fg = i == settings_resolution_pending_idx ? 0xFFFFFF : 0xCBD5E1;
+        gui_draw_rect(bx, by, bw, bh, bg);
+        gui_draw_string(bx + 8, by + 7, settings_resolution_options[i].label, fg, bg);
+      }
+
+      gui_draw_rect(panel_x + 8, resolution_card_y + 66, 90, 24, 0x1D4ED8);
+      gui_draw_string(panel_x + 18, resolution_card_y + 74, "Wallpapers", 0xFFFFFF,
                       0x1D4ED8);
-      gui_draw_rect(panel_x + 126, preview_y + 110, 116, 30,
+      gui_draw_rect(panel_x + 106, resolution_card_y + 66, 90, 24,
                     gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-      gui_draw_string(panel_x + 152, preview_y + 119,
+      gui_draw_string(panel_x + 126, resolution_card_y + 74,
                       gui_blur_effects_requested() ? "Blur On" : "Blur Off",
                       0xFFFFFF,
                       gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-      gui_draw_rect(panel_x + 252, preview_y + 110, 130, 30,
+      gui_draw_rect(panel_x + 204, resolution_card_y + 66, 90, 24,
                     gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
-      gui_draw_string(panel_x + 280, preview_y + 119,
+      gui_draw_string(panel_x + 228, resolution_card_y + 74,
                       gui_is_gpu_rendering_enabled() ? "GPU On" : "GPU Off",
                       0xFFFFFF,
                       gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
+      gui_draw_rect(panel_x + 302, resolution_card_y + 66, 90, 24, 0x4B5563);
+      gui_draw_string(panel_x + 330, resolution_card_y + 74, "Apply",
+                      0xFFFFFF, 0x4B5563);
     } else {
       int block_y = panel_y + 72;
       gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
@@ -8468,17 +8559,36 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             break;
           }
         } else if (settings_active_tab == 1) {
-          int button_y = panel_y + 72 + 124 + 110;
-          if (x >= panel_x && x < panel_x + 116 && y >= button_y &&
-              y < button_y + 30) {
+          int resolution_card_y = panel_y + 72 + 104 + 84;
+          int button_y = resolution_card_y + 66;
+          int picked_resolution = 0;
+
+          settings_sync_resolution_picker();
+          for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+            int bx, by, bw, bh;
+            settings_resolution_button_bounds(panel_x, panel_y, i, &bx, &by, &bw,
+                                              &bh);
+            if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+              settings_resolution_pending_idx = i;
+              str_copy_safe(settings_status, "Resolution preset selected.",
+                            sizeof(settings_status));
+              picked_resolution = 1;
+              break;
+            }
+          }
+          if (picked_resolution)
+            break;
+
+          if (x >= panel_x + 8 && x < panel_x + 98 && y >= button_y &&
+              y < button_y + 24) {
             gui_create_window("Background Settings", win->x + 18, win->y + 18, 400,
                               350);
             str_copy_safe(settings_status, "Pick a new wallpaper.",
                           sizeof(settings_status));
             break;
           }
-          if (x >= panel_x + 126 && x < panel_x + 242 && y >= button_y &&
-              y < button_y + 30) {
+          if (x >= panel_x + 106 && x < panel_x + 196 && y >= button_y &&
+              y < button_y + 24) {
             gui_set_blur_effects_enabled(!gui_blur_effects_requested());
             str_copy_safe(settings_status,
                           gui_blur_effects_requested() ? "Blur requested."
@@ -8486,13 +8596,25 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                           sizeof(settings_status));
             break;
           }
-          if (x >= panel_x + 252 && x < panel_x + 382 && y >= button_y &&
-              y < button_y + 30) {
+          if (x >= panel_x + 204 && x < panel_x + 294 && y >= button_y &&
+              y < button_y + 24) {
             gui_configure_gpu_rendering(!gui_is_gpu_rendering_enabled());
             str_copy_safe(settings_status,
                           gui_is_gpu_rendering_enabled() ? "GPU rendering enabled."
                                                          : "Software renderer enabled.",
                           sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 302 && x < panel_x + 392 && y >= button_y &&
+              y < button_y + 24) {
+            if (settings_resolution_pending_idx == settings_resolution_current_idx) {
+              str_copy_safe(settings_status, "That resolution is already active.",
+                            sizeof(settings_status));
+            } else {
+              str_copy_safe(settings_status,
+                            "Resolution saved in Settings. Live switching is not available on this build.",
+                            sizeof(settings_status));
+            }
             break;
           }
         } else {
