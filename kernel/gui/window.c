@@ -22,7 +22,6 @@ struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
 int gui_launch_app_by_id(const char *app_id);
-typedef enum gui_app_kind gui_app_kind_t;
 
 /* Forward declarations for drawing helpers used before their definitions. */
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
@@ -1485,60 +1484,6 @@ static int window_minimize_disabled(const struct window *win) {
   return gui_is_installer_mode() && window_title_equals(win, "Installer");
 }
 
-static int window_matches_app_kind(const struct window *win,
-                                   gui_app_kind_t kind) {
-  if (!win || !win->visible)
-    return 0;
-
-  switch (kind) {
-  case GUI_APP_TERMINAL:
-    return win->title[0] == 'T' && win->title[1] == 'e' && win->title[2] == 'r';
-  case GUI_APP_FILES:
-    return win->title[0] == 'F' && win->title[1] == 'i' &&
-           win->title[2] == 'l';
-  case GUI_APP_CALCULATOR:
-    return win->title[0] == 'C' && win->title[1] == 'a' &&
-           win->title[2] == 'l';
-  case GUI_APP_NOTES:
-    return win->title[0] == 'N' && win->title[1] == 'o' &&
-           win->title[2] == 't';
-  case GUI_APP_SETTINGS:
-    return win->title[0] == 'S' && win->title[1] == 'e' &&
-           win->title[2] == 't';
-  case GUI_APP_CLOCK:
-    return win->title[0] == 'C' && win->title[1] == 'l' &&
-           win->title[2] == 'o';
-  case GUI_APP_SNAKE:
-    return win->title[0] == 'S' && win->title[1] == 'n' &&
-           win->title[2] == 'a';
-  case GUI_APP_HELP:
-    return win->title[0] == 'H' && win->title[1] == 'e';
-  case GUI_APP_BROWSER:
-    return win->title[0] == 'B' && win->title[1] == 'r' &&
-           win->title[2] == 'o';
-  case GUI_APP_APPSTORE:
-    return win->title[0] == 'A' && win->title[1] == 'p' &&
-           win->title[2] == 'p' && win->title[3] == ' ';
-  }
-  return 0;
-}
-
-static int count_windows_for_app_kind(gui_app_kind_t kind) {
-  int count = 0;
-  for (struct window *win = window_stack; win; win = win->next) {
-    if (window_matches_app_kind(win, kind))
-      count++;
-  }
-  return count;
-}
-
-static struct window *find_window_for_app_kind(gui_app_kind_t kind) {
-  for (struct window *win = window_stack; win; win = win->next) {
-    if (window_matches_app_kind(win, kind))
-      return win;
-  }
-  return NULL;
-}
 
 static void build_windows_string(char *buf) {
   int idx = 0;
@@ -1942,6 +1887,61 @@ typedef enum gui_app_kind {
   GUI_APP_BROWSER,
   GUI_APP_APPSTORE
 } gui_app_kind_t;
+
+static int window_matches_app_kind(const struct window *win,
+                                   gui_app_kind_t kind) {
+  if (!win || !win->visible)
+    return 0;
+
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    return win->title[0] == 'T' && win->title[1] == 'e' && win->title[2] == 'r';
+  case GUI_APP_FILES:
+    return win->title[0] == 'F' && win->title[1] == 'i' &&
+           win->title[2] == 'l';
+  case GUI_APP_CALCULATOR:
+    return win->title[0] == 'C' && win->title[1] == 'a' &&
+           win->title[2] == 'l';
+  case GUI_APP_NOTES:
+    return win->title[0] == 'N' && win->title[1] == 'o' &&
+           win->title[2] == 't';
+  case GUI_APP_SETTINGS:
+    return win->title[0] == 'S' && win->title[1] == 'e' &&
+           win->title[2] == 't';
+  case GUI_APP_CLOCK:
+    return win->title[0] == 'C' && win->title[1] == 'l' &&
+           win->title[2] == 'o';
+  case GUI_APP_SNAKE:
+    return win->title[0] == 'S' && win->title[1] == 'n' &&
+           win->title[2] == 'a';
+  case GUI_APP_HELP:
+    return win->title[0] == 'H' && win->title[1] == 'e';
+  case GUI_APP_BROWSER:
+    return win->title[0] == 'B' && win->title[1] == 'r' &&
+           win->title[2] == 'o';
+  case GUI_APP_APPSTORE:
+    return win->title[0] == 'A' && win->title[1] == 'p' &&
+           win->title[2] == 'p' && win->title[3] == ' ';
+  }
+  return 0;
+}
+
+static int count_windows_for_app_kind(gui_app_kind_t kind) {
+  int count = 0;
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (window_matches_app_kind(win, kind))
+      count++;
+  }
+  return count;
+}
+
+static struct window *find_window_for_app_kind(gui_app_kind_t kind) {
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (window_matches_app_kind(win, kind))
+      return win;
+  }
+  return NULL;
+}
 
 typedef struct {
   char id[32];
