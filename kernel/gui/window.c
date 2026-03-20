@@ -49,6 +49,8 @@ static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
 static int write_text_file(const char *path, const char *content);
 static void str_copy_safe(char *dst, const char *src, int max);
+void gui_open_image_viewer(const char *path);
+static void gui_play_mp3_file(const char *path);
 void compositor_mark_full_redraw(void);
 void gui_set_blur_effects_enabled(int enabled);
 int gui_blur_effects_requested(void);
@@ -6823,7 +6825,6 @@ static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
 
 static int dock_handle_click(int x, int y) {
-  int dock_x;
   int dock_y;
   int dock_h;
   int launcher_btn_size;
@@ -6836,7 +6837,6 @@ static int dock_handle_click(int x, int y) {
     load_dock_config();
   }
 
-  dock_x = 0;
   dock_y = primary_display.height - DOCK_HEIGHT;
   dock_h = DOCK_HEIGHT;
   launcher_btn_size = DOCK_ICON_SIZE + 6;
