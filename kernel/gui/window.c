@@ -1540,9 +1540,6 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   return -1;
 #endif
 
-  if ((uintptr_t)primary_display.framebuffer != 0x10000000UL)
-    return -1;
-
   if (bochs_init(width, height) != 0)
     return -1;
 
