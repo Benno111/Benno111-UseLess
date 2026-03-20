@@ -38,6 +38,7 @@ static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  int blur_stride);
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color);
+static void draw_filled_circle(int cx, int cy, int r, uint32_t color);
 static int startup_flow_active(void);
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
@@ -6310,7 +6311,7 @@ enum {
 
 static void main_menu_launcher_button_rect(int *x, int *y, int *w, int *h) {
   int dock_y = (int)primary_display.height - DOCK_HEIGHT;
-  int size = DOCK_ICON_SIZE + 6;
+  int size = 50;
 
   if (x)
     *x = 14;
