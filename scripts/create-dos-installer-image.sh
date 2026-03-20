@@ -77,6 +77,8 @@ reserved_sectors = int(sys.argv[4])
 sectors_per_cluster = int(sys.argv[5])
 root_entries = int(sys.argv[6])
 fat_sectors = int(sys.argv[7])
+total_sectors_16 = image_total_sectors if image_total_sectors <= 0xFFFF else 0
+total_sectors_32 = 0 if total_sectors_16 else image_total_sectors
 with open(path, "r+b") as f:
     data = bytearray(f.read())
     marker = b"\x10\x00\x00\x7E\x00\x00"
@@ -84,11 +86,24 @@ with open(path, "r+b") as f:
     if off == -1:
         raise SystemExit("stage2 sector-count marker not found in stage1 image")
     data[off:off+2] = stage2_sectors.to_bytes(2, "little")
+    data[11:13] = (512).to_bytes(2, "little")
     data[13] = sectors_per_cluster
     data[14:16] = reserved_sectors.to_bytes(2, "little")
+    data[16] = 1
     data[17:19] = root_entries.to_bytes(2, "little")
+    data[19:21] = total_sectors_16.to_bytes(2, "little")
+    data[21] = 0xF8
     data[22:24] = fat_sectors.to_bytes(2, "little")
+    data[24:26] = (63).to_bytes(2, "little")
+    data[26:28] = (255).to_bytes(2, "little")
     data[32:36] = image_total_sectors.to_bytes(4, "little")
+    data[32:36] = total_sectors_32.to_bytes(4, "little")
+    data[36] = 0x80
+    data[37] = 0
+    data[38] = 0x29
+    data[39:43] = (0x4F534E58).to_bytes(4, "little")
+    data[43:54] = b"OSKSETUP   "
+    data[54:62] = b"FAT16   "
     f.seek(0)
     f.write(data)
 PATCHPY
