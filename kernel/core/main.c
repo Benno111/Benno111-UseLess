@@ -681,10 +681,13 @@ static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
 static void populate_seed_tree_at(const char *prefix) {
   extern const unsigned char bootstrap_test_png[];
   extern const unsigned int bootstrap_test_png_len;
+  extern const unsigned char bootstrap_logo_png[];
+  extern const unsigned int bootstrap_logo_png_len;
 
   seed_make_dir(prefix, "Documents");
   seed_make_dir(prefix, "Downloads");
   seed_make_dir(prefix, "Pictures");
+  seed_make_dir(prefix, "assets");
   seed_make_dir(prefix, "System");
   seed_make_dir(prefix, "Desktop");
   seed_make_dir(prefix, "System/Apps");
@@ -702,6 +705,8 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_write_text(prefix, "todo.txt", 0644,
                   "- Implement Browser\n- Fix Bugs\n- Sleep");
   seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
+  seed_write_bytes(prefix, "assets/logo.png", 0644, bootstrap_logo_png,
+                   bootstrap_logo_png_len);
   seed_write_bytes(prefix, "Pictures/test.png", 0644, bootstrap_test_png,
                    bootstrap_test_png_len);
 
@@ -1030,7 +1035,7 @@ static void populate_installer_payload(void) {
   seed_make_dir("", "/install");
   seed_make_dir("", "/install/system-image");
   ensure_boot_payload_dirs("/install/system-image");
-  copy_tree_to_prefix("/", "/install/system-image", 1);
+  populate_seed_tree_at("/install/system-image");
 
   if (installer_mode) {
     seed_make_dir("", "/setup");
@@ -1042,7 +1047,7 @@ static void populate_installer_payload(void) {
     seed_make_dir("", "/setup/install/system-image");
     ensure_boot_payload_dirs("/setup");
     ensure_boot_payload_dirs("/setup/install/system-image");
-    copy_tree_to_prefix("/", "/setup/install/system-image", 1);
+    populate_seed_tree_at("/setup/install/system-image");
   }
 
   if ((installer_mode &&
