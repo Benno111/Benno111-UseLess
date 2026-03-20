@@ -70,15 +70,40 @@ pci_device_t *pci_find_device(uint16_t vendor, uint16_t device) {
   return NULL;
 }
 
+static uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func,
+                             uint8_t bar_offset) {
+  uint32_t bar_raw = pci_read32(bus, slot, func, bar_offset);
+  uint64_t addr;
+
+  if (bar_raw == 0 || bar_raw == 0xFFFFFFFF)
+    return 0;
+  if (bar_raw & 0x1)
+    return 0; /* Ignore I/O BARs in this MMIO-only path */
+
+  addr = (uint64_t)(bar_raw & 0xFFFFFFF0U);
+  if ((bar_raw & 0x6) == 0x4) {
+    uint32_t high = pci_read32(bus, slot, func, (uint8_t)(bar_offset + 4));
+    if (high == 0xFFFFFFFF)
+      return 0;
+    addr |= ((uint64_t)high << 32);
+  }
+
+  return addr;
+}
+
 /* Allocate BAR if unassigned */
 static uint64_t pci_alloc_bar(uint8_t bus, uint8_t slot, uint8_t func,
                               uint8_t bar_offset) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  /* Real hardware is sensitive to BAR sizing/probing during bring-up. */
+  return pci_read_bar(bus, slot, func, bar_offset);
+#else
   uint32_t bar_raw = pci_read32(bus, slot, func, bar_offset);
   uint32_t flags = bar_raw & 0xF;
 
   /* Check if BAR is already assigned with valid address */
   if ((bar_raw & 0xFFFFFFF0) != 0 && bar_raw != 0xFFFFFFFF) {
-    return bar_raw & 0xFFFFFFF0;
+    return pci_read_bar(bus, slot, func, bar_offset);
   }
 
   /* BAR is unassigned - try to size and allocate */
@@ -117,6 +142,7 @@ static uint64_t pci_alloc_bar(uint8_t bus, uint8_t slot, uint8_t func,
   printk("PCI:   [%02x:%02x.%x] BAR@0x%02x allocated at 0x%llx (size 0x%x)\n",
          bus, slot, func, bar_offset, addr, size);
   return addr;
+#endif
 }
 
 static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {

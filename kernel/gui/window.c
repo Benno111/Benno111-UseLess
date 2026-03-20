@@ -6369,17 +6369,21 @@ static void draw_dock(void) {
     return;
 
   int icon_sizes[MAX_DOCK_ITEMS];
-  int base_dock_w =
-      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
-  int base_dock_x = (primary_display.width - base_dock_w) / 2;
-  int base_y = primary_display.height - DOCK_HEIGHT + 6;
+  int dock_h = DOCK_HEIGHT;
+  int dock_x = 0;
+  int dock_y = (int)primary_display.height - dock_h;
+  int launcher_btn_size = DOCK_ICON_SIZE + 6;
+  int launcher_btn_x = 14;
+  int launcher_btn_y = dock_y + (dock_h - launcher_btn_size) / 2;
+  int icon_start_x = launcher_btn_x + launcher_btn_size + 18;
   int hovered_idx = -1;
+  int hovered_launcher = 0;
 
   for (int i = 0; i < dock_item_count; i++) {
-    int base_center_x = base_dock_x + 16 + i * (DOCK_ICON_SIZE + DOCK_PADDING) +
+    int base_center_x = icon_start_x + i * (DOCK_ICON_SIZE + DOCK_PADDING) +
                         DOCK_ICON_SIZE / 2;
     int base_icon_x = base_center_x - DOCK_ICON_SIZE / 2;
-    int base_icon_y = base_y + ((DOCK_HEIGHT - 12) - DOCK_ICON_SIZE) / 2;
+    int base_icon_y = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
 
     icon_sizes[i] = DOCK_ICON_SIZE;
     if (mouse_x >= base_icon_x && mouse_x < base_icon_x + DOCK_ICON_SIZE &&
@@ -6388,29 +6392,28 @@ static void draw_dock(void) {
     }
   }
 
-  int total_content_w = 0;
-  for (int i = 0; i < dock_item_count; i++) {
-    total_content_w += icon_sizes[i];
-    if (i < dock_item_count - 1)
-      total_content_w += DOCK_PADDING;
+  if (mouse_x >= launcher_btn_x && mouse_x < launcher_btn_x + launcher_btn_size &&
+      mouse_y >= launcher_btn_y && mouse_y < launcher_btn_y + launcher_btn_size) {
+    hovered_launcher = 1;
   }
-  int dock_w = total_content_w + 32;
-  int dock_h = DOCK_HEIGHT - 12;
-  int dock_x = (primary_display.width - dock_w) / 2;
-  int dock_y = base_y;
 
-  gui_fill_rect_alpha(dock_x + 12, dock_y + dock_h - 9, dock_w - 24, 4,
-                      0x12000000);
-  draw_top_rounded_rect_alpha(dock_x - 1, dock_y - 2, dock_w + 2, dock_h - 4,
-                              18, 0x225E6E84);
-  draw_top_rounded_rect_alpha(dock_x, dock_y - 1, dock_w, dock_h - 5, 17,
-                              0x14313B4D);
-  for (int i = dock_x + 18; i < dock_x + dock_w - 18; i++) {
-    draw_pixel_alpha(i, dock_y + 1, 0x56FFFFFF);
-  }
+  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, dock_h, 0xA118202C);
+  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, 1, 0x72FFFFFF);
+  gui_fill_rect_alpha(dock_x, dock_y + 1, primary_display.width, 1, 0x28495D78);
+  gui_fill_rect_alpha(dock_x, dock_y + dock_h - 1, primary_display.width, 1,
+                      0x64060A10);
+
+  gui_fill_rect_alpha(launcher_btn_x, launcher_btn_y, launcher_btn_size,
+                      launcher_btn_size, hovered_launcher ? 0x36566F92
+                                                          : 0x2437455B);
+  gui_draw_rect_outline(launcher_btn_x, launcher_btn_y, launcher_btn_size,
+                        launcher_btn_size,
+                        hovered_launcher ? 0x7EA7D8 : 0x506A87A8, 1);
+  gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
+                   0x89B4FA, 0x00000000);
 
   int center_y = dock_y + dock_h / 2;
-  int curr_x = dock_x + 16;
+  int curr_x = icon_start_x;
   int render_centers[MAX_DOCK_ITEMS];
   for (int i = 0; i < dock_item_count; i++) {
     render_centers[i] = curr_x + icon_sizes[i] / 2;
@@ -6460,7 +6463,7 @@ static void draw_dock(void) {
     int label_w = label_len * 8 + 16;
     int label_h = 24;
     int label_x = idx_x - label_w / 2;
-    int label_y = base_y - 45;
+    int label_y = dock_y - 32;
 
     draw_rounded_rect(label_x, label_y, label_w, label_h, 6, 0x303040);
     gui_draw_rect_outline(label_x, label_y, label_w, label_h, 0x505060, 1);
@@ -6475,6 +6478,17 @@ static void draw_dock(void) {
         }
       }
     }
+  }
+
+  if (hovered_launcher) {
+    int label_w = 88;
+    int label_h = 24;
+    int label_x = launcher_btn_x;
+    int label_y = dock_y - 32;
+
+    draw_rounded_rect(label_x, label_y, label_w, label_h, 6, 0x303040);
+    gui_draw_rect_outline(label_x, label_y, label_w, label_h, 0x505060, 1);
+    gui_draw_string(label_x + 8, label_y + 4, "Main Menu", 0xFFFFFF, 0x303040);
   }
 }
 
@@ -6638,10 +6652,12 @@ static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
 
 static int dock_handle_click(int x, int y) {
-  int dock_content_w;
   int dock_x;
   int dock_y;
   int dock_h;
+  int launcher_btn_size;
+  int launcher_btn_x;
+  int launcher_btn_y;
 
   if (!dock_is_visible())
     return 0;
@@ -6649,17 +6665,24 @@ static int dock_handle_click(int x, int y) {
     load_dock_config();
   }
 
-  dock_content_w =
-      dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
-  dock_x = (primary_display.width - dock_content_w) / 2;
-  dock_y = primary_display.height - DOCK_HEIGHT + 6;
-  dock_h = DOCK_HEIGHT - 12;
+  dock_x = 0;
+  dock_y = primary_display.height - DOCK_HEIGHT;
+  dock_h = DOCK_HEIGHT;
+  launcher_btn_size = DOCK_ICON_SIZE + 6;
+  launcher_btn_x = 14;
+  launcher_btn_y = dock_y + (dock_h - launcher_btn_size) / 2;
 
   if (y < dock_y || y >= dock_y + dock_h)
     return 0;
 
+  if (x >= launcher_btn_x && x < launcher_btn_x + launcher_btn_size &&
+      y >= launcher_btn_y && y < launcher_btn_y + launcher_btn_size) {
+    menu_open = menu_open ? 0 : 1;
+    return 1;
+  }
+
   {
-    int icon_x = dock_x + 16;
+    int icon_x = launcher_btn_x + launcher_btn_size + 18;
     int icon_y_start = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
 
     for (int i = 0; i < dock_item_count; i++) {
