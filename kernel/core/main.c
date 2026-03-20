@@ -688,6 +688,7 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_make_dir(prefix, "Downloads");
   seed_make_dir(prefix, "Pictures");
   seed_make_dir(prefix, "assets");
+  seed_make_dir(prefix, "assets/wallpapers");
   seed_make_dir(prefix, "System");
   seed_make_dir(prefix, "Desktop");
   seed_make_dir(prefix, "System/Apps");
@@ -707,6 +708,18 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
   seed_write_bytes(prefix, "assets/logo.png", 0644, bootstrap_logo_png,
                    bootstrap_logo_png_len);
+  seed_write_bytes(prefix, "assets/wallpapers/landscape.jpg", 0644,
+                   bootstrap_landscape_jpg, bootstrap_landscape_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/nature.jpg", 0644,
+                   bootstrap_nature_jpg, bootstrap_nature_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/city.jpg", 0644,
+                   bootstrap_city_jpg, bootstrap_city_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/portrait.jpg", 0644,
+                   bootstrap_portrait_jpg, bootstrap_portrait_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/square.jpg", 0644,
+                   bootstrap_square_jpg, bootstrap_square_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/wallpaper.jpg", 0644,
+                   bootstrap_wallpaper_jpg, bootstrap_wallpaper_jpg_len);
   seed_write_bytes(prefix, "Pictures/test.png", 0644, bootstrap_test_png,
                    bootstrap_test_png_len);
 
@@ -910,10 +923,12 @@ void refresh_external_storage_views(void) {
   extern int storage_get_disk_location(int index, char *buf, int max);
   char location[32];
   char external_root[128];
+  char media_root[128];
   char source_root[128];
   int boot_disk = boot_hdd_disk_index();
 
   seed_make_dir("", "/External");
+  seed_make_dir("", "/Media");
 
   for (int i = 0; i < storage_get_disk_count(); i++) {
     int kind = storage_get_disk_kind(i);
@@ -928,9 +943,14 @@ void refresh_external_storage_views(void) {
     seed_make_dir("", external_root);
 
     if (kind == STORAGE_KIND_CDROM) {
-      if (iso9660_copy_to_ramfs(location, external_root) == 0)
+      build_seed_path(media_root, sizeof(media_root), "/Media", location);
+      seed_make_dir("", media_root);
+      if (iso9660_copy_to_ramfs(location, media_root) == 0) {
+        copy_tree_to_prefix(media_root, external_root, 0);
         continue;
+      }
       if (boot_is_installer_mode()) {
+        copy_tree_to_prefix("/setup", media_root, 0);
         copy_tree_to_prefix("/setup", external_root, 0);
         continue;
       }

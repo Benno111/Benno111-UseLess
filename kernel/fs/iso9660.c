@@ -11,6 +11,11 @@ typedef struct iso_copy_ctx {
   const char *dst_root;
 } iso_copy_ctx_t;
 
+typedef struct iso_remove_ctx {
+  char root[256];
+  int failed;
+} iso_remove_ctx_t;
+
 static uint32_t iso_le32(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
          ((uint32_t)p[3] << 24);
@@ -87,6 +92,71 @@ static int iso_write_file(const char *path, const uint8_t *data, size_t size) {
   return (written < 0) ? -1 : 0;
 }
 
+static int iso_remove_tree_callback(void *ctx, const char *name, int len,
+                                    loff_t offset, ino_t ino, unsigned type) {
+  iso_remove_ctx_t *rm = (iso_remove_ctx_t *)ctx;
+  char path[256];
+  struct file *dir;
+
+  (void)offset;
+  (void)ino;
+
+  if (!rm || !name || len <= 0)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+  if (iso_build_path(path, sizeof(path), rm->root, name) != 0)
+    return 0;
+
+  if (type == 4) {
+    iso_remove_ctx_t child = {{0}, 0};
+    int i = 0;
+    while (path[i] && i < (int)sizeof(child.root) - 1) {
+      child.root[i] = path[i];
+      i++;
+    }
+    child.root[i] = '\0';
+    dir = vfs_open(path, O_RDONLY, 0);
+    if (dir) {
+      vfs_readdir(dir, &child, iso_remove_tree_callback);
+      vfs_close(dir);
+    }
+    if (child.failed)
+      rm->failed = child.failed;
+    if (vfs_rmdir(path) != 0)
+      rm->failed = 1;
+    return 0;
+  }
+
+  if (vfs_unlink(path) != 0)
+    rm->failed = 1;
+  return 0;
+}
+
+static int iso_clear_destination(const char *dst_root) {
+  struct file *dir;
+  iso_remove_ctx_t ctx = {{0}, 0};
+  int i = 0;
+
+  if (!dst_root)
+    return -1;
+  while (dst_root[i] && i < (int)sizeof(ctx.root) - 1) {
+    ctx.root[i] = dst_root[i];
+    i++;
+  }
+  ctx.root[i] = '\0';
+
+  dir = vfs_open(dst_root, O_RDONLY, 0);
+  if (!dir) {
+    vfs_mkdir(dst_root, 0755);
+    return 0;
+  }
+  vfs_readdir(dir, &ctx, iso_remove_tree_callback);
+  vfs_close(dir);
+  return ctx.failed ? -1 : 0;
+}
+
 static int iso_copy_file_from_extent(int disk_index, uint32_t extent,
                                      uint32_t file_size, const char *dst_path) {
   uint8_t *data;
@@ -140,25 +210,41 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
       dir_data[i * ISO_BLOCK_SIZE + j] = sector[j];
   }
 
-  while (pos < total_size) {
+  while (pos < size) {
     uint8_t record_len = dir_data[pos];
     char name[NAME_MAX + 1];
     char child_path[256];
     uint32_t child_extent;
     uint32_t child_size;
     uint8_t flags;
+    uint8_t name_len;
 
     if (record_len == 0) {
       pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
       continue;
     }
+    if (record_len < 34) {
+      printk(KERN_WARNING
+             "ISO9660: invalid record length %u at offset %u in '%s'\n",
+             record_len, pos, dst_root ? dst_root : "/");
+      pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
+      continue;
+    }
     if (pos + record_len > total_size)
       break;
+    name_len = dir_data[pos + 32];
+    if ((uint32_t)(33 + name_len) > record_len) {
+      printk(KERN_WARNING
+             "ISO9660: invalid name length %u at offset %u in '%s'\n",
+             name_len, pos, dst_root ? dst_root : "/");
+      pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
+      continue;
+    }
 
     child_extent = iso_le32(&dir_data[pos + 2]);
     child_size = iso_le32(&dir_data[pos + 10]);
     flags = dir_data[pos + 25];
-    iso_trim_name(name, sizeof(name), &dir_data[pos + 33], dir_data[pos + 32]);
+    iso_trim_name(name, sizeof(name), &dir_data[pos + 33], name_len);
 
     if (name[0] != '\0' &&
         !(name[0] == '.' && name[1] == '\0') &&
@@ -166,9 +252,17 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
       iso_build_path(child_path, sizeof(child_path), dst_root, name);
       if (flags & 0x02) {
         vfs_mkdir(child_path, 0755);
-        iso_copy_dir_recursive(disk_index, child_extent, child_size, child_path);
+        if (iso_copy_dir_recursive(disk_index, child_extent, child_size,
+                                   child_path) != 0) {
+          kfree(dir_data);
+          return -1;
+        }
       } else {
-        iso_copy_file_from_extent(disk_index, child_extent, child_size, child_path);
+        if (iso_copy_file_from_extent(disk_index, child_extent, child_size,
+                                      child_path) != 0) {
+          kfree(dir_data);
+          return -1;
+        }
       }
     }
 
@@ -199,6 +293,8 @@ int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
 
   root_extent = iso_le32(&pvd[158]);
   root_size = iso_le32(&pvd[166]);
+  if (iso_clear_destination(dst_root) != 0)
+    return -1;
   vfs_mkdir(dst_root, 0755);
   printk(KERN_INFO "ISO9660: Copying '%s' to '%s'\n", disk_location, dst_root);
   return iso_copy_dir_recursive(disk_index, root_extent, root_size, dst_root);

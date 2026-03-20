@@ -1484,6 +1484,61 @@ static int window_minimize_disabled(const struct window *win) {
   return gui_is_installer_mode() && window_title_equals(win, "Installer");
 }
 
+static int window_matches_app_kind(const struct window *win,
+                                   gui_app_kind_t kind) {
+  if (!win || !win->visible)
+    return 0;
+
+  switch (kind) {
+  case GUI_APP_TERMINAL:
+    return win->title[0] == 'T' && win->title[1] == 'e' && win->title[2] == 'r';
+  case GUI_APP_FILES:
+    return win->title[0] == 'F' && win->title[1] == 'i' &&
+           win->title[2] == 'l';
+  case GUI_APP_CALCULATOR:
+    return win->title[0] == 'C' && win->title[1] == 'a' &&
+           win->title[2] == 'l';
+  case GUI_APP_NOTES:
+    return win->title[0] == 'N' && win->title[1] == 'o' &&
+           win->title[2] == 't';
+  case GUI_APP_SETTINGS:
+    return win->title[0] == 'S' && win->title[1] == 'e' &&
+           win->title[2] == 't';
+  case GUI_APP_CLOCK:
+    return win->title[0] == 'C' && win->title[1] == 'l' &&
+           win->title[2] == 'o';
+  case GUI_APP_SNAKE:
+    return win->title[0] == 'S' && win->title[1] == 'n' &&
+           win->title[2] == 'a';
+  case GUI_APP_HELP:
+    return win->title[0] == 'H' && win->title[1] == 'e';
+  case GUI_APP_BROWSER:
+    return win->title[0] == 'B' && win->title[1] == 'r' &&
+           win->title[2] == 'o';
+  case GUI_APP_APPSTORE:
+    return win->title[0] == 'A' && win->title[1] == 'p' &&
+           win->title[2] == 'p' && win->title[3] == ' ';
+  }
+  return 0;
+}
+
+static int count_windows_for_app_kind(gui_app_kind_t kind) {
+  int count = 0;
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (window_matches_app_kind(win, kind))
+      count++;
+  }
+  return count;
+}
+
+static struct window *find_window_for_app_kind(gui_app_kind_t kind) {
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (window_matches_app_kind(win, kind))
+      return win;
+  }
+  return NULL;
+}
+
 static void build_windows_string(char *buf) {
   int idx = 0;
   int count = 0;
@@ -2925,6 +2980,25 @@ int gui_launch_app_by_id(const char *app_id) {
   spawn_x = (spawn_x + 40) % 250 + 80;
   spawn_y = (spawn_y + 30) % 150 + 60;
   return 0;
+}
+
+static int gui_focus_or_launch_app_by_id(const char *app_id) {
+  const dock_app_def_t *app = find_catalog_app(app_id);
+  struct window *existing;
+
+  if (!app)
+    return -1;
+
+  existing = find_window_for_app_kind(app->kind);
+  if (existing) {
+    existing->visible = true;
+    if (existing->state == WINDOW_MINIMIZED)
+      existing->state = WINDOW_NORMAL;
+    gui_focus_window(existing);
+    return 0;
+  }
+
+  return gui_launch_app_by_id(app_id);
 }
 
 static void draw_app_store(int content_x, int content_y, int content_w,
@@ -6211,6 +6285,110 @@ static void draw_window(struct window *win) {
 /* Menu dropdown state */
 static int menu_open = 0; /* 0=closed, 1=Apple menu open */
 
+#define MAIN_MENU_X 8
+#define MAIN_MENU_Y MENU_BAR_HEIGHT
+#define MAIN_MENU_W 250
+#define MAIN_MENU_H 244
+#define MAIN_MENU_HEADER_H 34
+#define MAIN_MENU_ROW_H 24
+
+enum {
+  MAIN_MENU_ITEM_NONE = -1,
+  MAIN_MENU_ITEM_ABOUT = 0,
+  MAIN_MENU_ITEM_TERMINAL,
+  MAIN_MENU_ITEM_FILES,
+  MAIN_MENU_ITEM_NOTES,
+  MAIN_MENU_ITEM_SETTINGS,
+  MAIN_MENU_ITEM_BROWSER,
+  MAIN_MENU_ITEM_APPSTORE,
+  MAIN_MENU_ITEM_SHUTDOWN,
+  MAIN_MENU_ITEM_RESTART,
+  MAIN_MENU_ITEM_COUNT
+};
+
+static int main_menu_item_top(int item_index) {
+  if (item_index < 0)
+    return MAIN_MENU_Y;
+  if (item_index <= MAIN_MENU_ITEM_APPSTORE)
+    return MAIN_MENU_Y + MAIN_MENU_HEADER_H + 10 + item_index * MAIN_MENU_ROW_H;
+  return MAIN_MENU_Y + MAIN_MENU_HEADER_H + 10 + 7 * MAIN_MENU_ROW_H +
+         10 + (item_index - MAIN_MENU_ITEM_SHUTDOWN) * MAIN_MENU_ROW_H;
+}
+
+static int main_menu_item_at(int x, int y) {
+  if (!menu_open)
+    return MAIN_MENU_ITEM_NONE;
+  if (x < MAIN_MENU_X || x >= MAIN_MENU_X + MAIN_MENU_W || y < MAIN_MENU_Y ||
+      y >= MAIN_MENU_Y + MAIN_MENU_H)
+    return MAIN_MENU_ITEM_NONE;
+
+  for (int i = 0; i < MAIN_MENU_ITEM_COUNT; i++) {
+    int top = main_menu_item_top(i);
+    if (y >= top && y < top + MAIN_MENU_ROW_H)
+      return i;
+  }
+  return MAIN_MENU_ITEM_NONE;
+}
+
+static void draw_main_menu_row(int item_index, const char *label,
+                               const char *hint, uint32_t accent) {
+  int row_x = MAIN_MENU_X + 10;
+  int row_y = main_menu_item_top(item_index);
+  int row_w = MAIN_MENU_W - 20;
+  int hovered = (main_menu_item_at(mouse_x, mouse_y) == item_index);
+
+  if (hovered) {
+    gui_fill_rect_alpha(row_x, row_y, row_w, MAIN_MENU_ROW_H, 0x4A5B8AC6);
+    gui_draw_rect_outline(row_x, row_y, row_w, MAIN_MENU_ROW_H, 0x75B6DAFF, 1);
+  }
+
+  gui_draw_rect(row_x + 8, row_y + 6, 12, 12, accent);
+  gui_draw_string(row_x + 28, row_y + 5, label, 0xFFFFFF, 0x00000000);
+  if (hint)
+    gui_draw_string(row_x + row_w - 54, row_y + 5, hint, 0xB8C4D7, 0x00000000);
+}
+
+static int main_menu_activate(int item_index) {
+  switch (item_index) {
+  case MAIN_MENU_ITEM_ABOUT:
+    gui_create_window("About", 280, 180, 420, 260);
+    break;
+  case MAIN_MENU_ITEM_TERMINAL:
+    gui_launch_app_by_id("terminal");
+    break;
+  case MAIN_MENU_ITEM_FILES:
+    gui_launch_app_by_id("files");
+    break;
+  case MAIN_MENU_ITEM_NOTES:
+    gui_launch_app_by_id("notes");
+    break;
+  case MAIN_MENU_ITEM_SETTINGS:
+    gui_launch_app_by_id("settings");
+    break;
+  case MAIN_MENU_ITEM_BROWSER:
+    gui_launch_app_by_id("browser");
+    break;
+  case MAIN_MENU_ITEM_APPSTORE:
+    gui_launch_app_by_id("appstore");
+    break;
+  case MAIN_MENU_ITEM_SHUTDOWN: {
+    extern void arch_poweroff(void);
+    arch_poweroff();
+    break;
+  }
+  case MAIN_MENU_ITEM_RESTART: {
+    extern void arch_reboot(void);
+    arch_reboot();
+    break;
+  }
+  default:
+    return 0;
+  }
+
+  menu_open = 0;
+  return 1;
+}
+
 static void draw_menu_bar(void) {
   char time_str[9];
   int hours24, minutes, seconds;
@@ -6250,33 +6428,36 @@ static void draw_menu_bar(void) {
 
   /* Draw dropdown if open */
   if (menu_open == 1) {
-    int dropdown_x = 8;
-    int dropdown_y = MENU_BAR_HEIGHT;
-    int dropdown_w = 160;
-    int dropdown_h = 104;
-
     /* Dropdown shadow */
-    gui_fill_rect_alpha(dropdown_x + 3, dropdown_y + 3, dropdown_w, dropdown_h,
-                        0x3410151E);
+    gui_fill_rect_alpha(MAIN_MENU_X + 4, MAIN_MENU_Y + 4, MAIN_MENU_W,
+                        MAIN_MENU_H, 0x3410151E);
 
-    gui_draw_glass_panel(dropdown_x, dropdown_y, dropdown_w, dropdown_h,
-                         0x88303A4C, 0x34FFFFFF, 0x9067758C, 1);
+    gui_draw_glass_panel(MAIN_MENU_X, MAIN_MENU_Y, MAIN_MENU_W, MAIN_MENU_H,
+                         0x9A263141, 0x34FFFFFF, 0x9067758C, 1);
 
-    /* Menu items */
-    gui_draw_string(dropdown_x + 12, dropdown_y + 10, "About OS", 0xFFFFFF,
+    gui_draw_string(MAIN_MENU_X + 14, MAIN_MENU_Y + 10, "Main Menu", 0xFFFFFF,
                     0x00000000);
+    gui_draw_string(MAIN_MENU_X + MAIN_MENU_W - 84, MAIN_MENU_Y + 10, "Launcher",
+                    0xAFC0D4, 0x00000000);
 
-    /* Separator line */
-    for (int i = dropdown_x + 8; i < dropdown_x + dropdown_w - 8; i++) {
-      draw_pixel(i, dropdown_y + 32, 0x555565);
+    for (int i = MAIN_MENU_X + 10; i < MAIN_MENU_X + MAIN_MENU_W - 10; i++) {
+      draw_pixel(i, MAIN_MENU_Y + MAIN_MENU_HEADER_H, 0x55607282);
+      draw_pixel(i, MAIN_MENU_Y + MAIN_MENU_HEADER_H + 178, 0x444F6276);
     }
 
-    gui_draw_string(dropdown_x + 12, dropdown_y + 40, "Settings...", 0xCCCCCC,
-                    0x00000000);
-    gui_draw_string(dropdown_x + 12, dropdown_y + 58, "Shutdown", 0xCCCCCC,
-                    0x00000000);
-    gui_draw_string(dropdown_x + 12, dropdown_y + 78, "Restart", 0xCCCCCC,
-                    0x00000000);
+    draw_main_menu_row(MAIN_MENU_ITEM_ABOUT, "About OS", NULL, 0x89B4FA);
+    draw_main_menu_row(MAIN_MENU_ITEM_TERMINAL, "Terminal", ">", 0x1F2937);
+    draw_main_menu_row(MAIN_MENU_ITEM_FILES, "Files", ">", 0x3B82F6);
+    draw_main_menu_row(MAIN_MENU_ITEM_NOTES, "Notepad", ">", 0xFACC15);
+    draw_main_menu_row(MAIN_MENU_ITEM_SETTINGS, "Settings", ">", 0x9CA3AF);
+    draw_main_menu_row(MAIN_MENU_ITEM_BROWSER, "Browser", ">", 0x0EA5E9);
+    draw_main_menu_row(MAIN_MENU_ITEM_APPSTORE, "App Store", ">", 0x7C3AED);
+    draw_main_menu_row(MAIN_MENU_ITEM_SHUTDOWN, "Shutdown", NULL, 0xDC2626);
+    draw_main_menu_row(MAIN_MENU_ITEM_RESTART, "Restart", NULL, 0xF59E0B);
+
+    gui_draw_string(MAIN_MENU_X + 14, MAIN_MENU_Y + MAIN_MENU_H - 18,
+                    "Dock launcher and menu bar share this menu",
+                    0x9AA7BA, 0x00000000);
   }
 }
 
@@ -6544,6 +6725,37 @@ int gui_draw_system_app_icon(const char *app_id, int x, int y, int size) {
 }
 
 /* Draw dock with fixed icon sizes and a top-rounded background */
+static void draw_dock_status_indicators(int dock_y, int dock_h) {
+  char time_str[9];
+  int hours24, minutes, seconds;
+  int panel_w = 122;
+  int panel_h = 34;
+  int panel_x = (int)primary_display.width - panel_w - 16;
+  int panel_y = dock_y + (dock_h - panel_h) / 2;
+  int wx = panel_x + 16;
+  int wy = panel_y + 16;
+
+  clock_get_time(&hours24, &minutes, &seconds);
+  clock_format_time(time_str, hours24, minutes, seconds);
+  time_str[5] = '\0';
+
+  gui_fill_rect_alpha(panel_x, panel_y, panel_w, panel_h, 0x28405268);
+  gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x50738BA3, 1);
+  gui_fill_rect_alpha(panel_x, panel_y, panel_w, 1, 0x46FFFFFF);
+
+  /* WiFi status */
+  gui_draw_rect(wx, wy + 6, 2, 2, 0xFFFFFF);
+  gui_draw_line(wx - 3, wy + 3, wx, wy, 0xFFFFFF);
+  gui_draw_line(wx, wy, wx + 3, wy + 3, 0xFFFFFF);
+  gui_draw_line(wx - 6, wy, wx, wy - 3, 0xFFFFFF);
+  gui_draw_line(wx, wy - 3, wx + 6, wy, 0xFFFFFF);
+
+  /* Small green status dot */
+  draw_filled_circle(panel_x + 38, panel_y + panel_h / 2, 3, 0x22C55E);
+
+  gui_draw_string(panel_x + 50, panel_y + 9, time_str, 0xFFFFFF, 0x00000000);
+}
+
 static void draw_dock(void) {
   if (!dock_is_visible())
     return;
@@ -6597,11 +6809,15 @@ static void draw_dock(void) {
   gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
                    0x89B4FA, 0x00000000);
 
+  draw_dock_status_indicators(dock_y, dock_h);
+
   int center_y = dock_y + dock_h / 2;
   int curr_x = icon_start_x;
   int render_centers[MAX_DOCK_ITEMS];
+  int running_counts[MAX_DOCK_ITEMS];
   for (int i = 0; i < dock_item_count; i++) {
     render_centers[i] = curr_x + icon_sizes[i] / 2;
+    running_counts[i] = count_windows_for_app_kind(dock_items[i]->kind);
     curr_x += icon_sizes[i] + DOCK_PADDING;
   }
 
@@ -6637,12 +6853,43 @@ static void draw_dock(void) {
 
     draw_system_app_icon_kind(dock_items[i]->kind, draw_x + size / 8,
                               draw_y + size / 8, size * 3 / 4);
+
+    if (running_counts[i] > 0) {
+      int dots = running_counts[i] > 3 ? 3 : running_counts[i];
+      int start_x = draw_x + size / 2 - ((dots * 6) - 2) / 2;
+      int dot_y = draw_y + size + 6;
+
+      for (int dot = 0; dot < dots; dot++) {
+        draw_filled_circle(start_x + dot * 6, dot_y, 2,
+                           i == hovered_idx ? 0xFFFFFF : 0xC7D2FE);
+      }
+    }
   }
 
   if (hovered_idx >= 0) {
+    char label_buf[80];
     const char *label = dock_items[hovered_idx]->label;
     int idx_x = render_centers[hovered_idx];
     int label_len = 0;
+    int running = running_counts[hovered_idx];
+    int out = 0;
+
+    while (label[out] && out < (int)sizeof(label_buf) - 1) {
+      label_buf[out] = label[out];
+      out++;
+    }
+    if (running > 0 && out < (int)sizeof(label_buf) - 10) {
+      label_buf[out++] = ' ';
+      label_buf[out++] = '(';
+      if (running >= 10) {
+        label_buf[out++] = (char)('0' + ((running / 10) % 10));
+      }
+      label_buf[out++] = (char)('0' + (running % 10));
+      label_buf[out++] = ')';
+    }
+    label_buf[out] = '\0';
+    label = label_buf;
+
     while (label[label_len])
       label_len++;
     int label_w = label_len * 8 + 16;
@@ -6871,7 +7118,7 @@ static int dock_handle_click(int x, int y) {
     for (int i = 0; i < dock_item_count; i++) {
       if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
           y < icon_y_start + DOCK_ICON_SIZE) {
-        gui_launch_app_by_id(dock_items[i]->id);
+        gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
       }
       icon_x += DOCK_ICON_SIZE + DOCK_PADDING;
@@ -7120,24 +7367,38 @@ void gui_compose(void) {
 }
 
 /* ===================================================================== */
-/* Mouse Cursor (Mac-style arrow - drawn to backbuffer, no flicker) */
+/* Mouse Cursor (Windows-style arrow - drawn to backbuffer, no flicker) */
 /* ===================================================================== */
 
-#define CURSOR_WIDTH 12
-#define CURSOR_HEIGHT 19
+#define CURSOR_WIDTH 16
+#define CURSOR_HEIGHT 24
 
-/* Classic Mac arrow: 1=black, 2=white, 0=transparent */
+/* 1=black outline, 2=white fill, 0=transparent */
 static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0},
-    {1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0}, {1, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0},
-    {1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0}, {1, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0},
-    {1, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0}, {1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0},
-    {1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0}, {1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1},
-    {1, 2, 2, 2, 1, 2, 2, 1, 0, 0, 0, 0}, {1, 2, 2, 1, 0, 1, 2, 2, 1, 0, 0, 0},
-    {1, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0, 0}, {1, 1, 0, 0, 0, 0, 1, 2, 2, 1, 0, 0},
-    {1, 0, 0, 0, 0, 0, 1, 2, 2, 1, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0},
+    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0},
+    {1, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 1, 0, 0},
+    {1, 2, 2, 2, 2, 1, 1, 0, 0, 1, 2, 2, 2, 1, 0, 0},
+    {1, 2, 2, 2, 1, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0, 0},
+    {1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0},
+    {1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0},
+    {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 1},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 1},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
 /* Draw cursor directly to backbuffer - no save/restore needed since we redraw
@@ -7625,44 +7886,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     /* Check menu bar dropdown BEFORE desktop icons (dropdown overlaps desktop
      * area) */
-    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 104 &&
-        x >= 8 && x < 168) {
-      int dropdown_y = MENU_BAR_HEIGHT;
-      int rel_y = y - dropdown_y;
-
-      printk("DROPDOWN CLICK: x=%d y=%d rel_y=%d\\n", x, y, rel_y);
-
-      /* About Vib-OS (y+10) */
-      if (rel_y >= 2 && rel_y < 32) {
-        printk("Opening About window\\n");
-        gui_create_window("About", 280, 180, 420, 260);
-        menu_open = 0;
+    if (menu_open == 1 && x >= MAIN_MENU_X && x < MAIN_MENU_X + MAIN_MENU_W &&
+        y >= MAIN_MENU_Y && y < MAIN_MENU_Y + MAIN_MENU_H) {
+      if (main_menu_activate(main_menu_item_at(x, y))) {
         return;
       }
-      /* Settings (y+40) */
-      if (rel_y >= 32 && rel_y < 58) {
-        printk("Opening Settings window\\n");
-        gui_create_window("Settings", 200, 120, 560, 420);
-        menu_open = 0;
-        return;
-      }
-      /* Shutdown (y+58) */
-      if (rel_y >= 58 && rel_y < 80) {
-        printk("Shutdown requested\\n");
-        extern void arch_poweroff(void);
-        arch_poweroff();
-        menu_open = 0;
-        return;
-      }
-      /* Restart (y+78) */
-      if (rel_y >= 80 && rel_y < 102) {
-        printk("Restart requested\\n");
-        extern void arch_reboot(void);
-        arch_reboot();
-        menu_open = 0;
-        return;
-      }
-      /* Click in dropdown but not on item - close menu */
       menu_open = 0;
       return;
     }
@@ -7731,48 +7959,16 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
   /* Check menu bar and dropdown clicks */
   if (y < MENU_BAR_HEIGHT ||
-      (menu_open && y < MENU_BAR_HEIGHT + 104 && x < 170)) {
+      (menu_open && x < MAIN_MENU_X + MAIN_MENU_W &&
+       y < MAIN_MENU_Y + MAIN_MENU_H)) {
 
     printk("MENU DEBUG: x=%d y=%d menu_open=%d MBH=%d\\n", x, y, menu_open,
            MENU_BAR_HEIGHT);
 
     /* If dropdown is open, check dropdown item clicks */
-    if (menu_open == 1 && y >= MENU_BAR_HEIGHT && y < MENU_BAR_HEIGHT + 104 &&
-        x >= 8 && x < 168) {
-      int dropdown_y = MENU_BAR_HEIGHT;
-      int rel_y = y - dropdown_y;
-
-      printk("MENU CLICK: x=%d y=%d rel_y=%d dropdown_y=%d\\n", x, y, rel_y,
-             dropdown_y);
-
-      /* About Vib-OS (y+10) - expanded range */
-      if (rel_y >= 2 && rel_y < 32) {
-        printk("MENU: Opening About window\\n");
-        gui_create_window("About", 280, 180, 420, 260);
-        menu_open = 0;
-        return;
-      }
-      /* Settings (y+40) - expanded range */
-      if (rel_y >= 32 && rel_y < 58) {
-        printk("MENU: Opening Settings window\\n");
-        gui_create_window("Settings", 200, 120, 560, 420);
-        menu_open = 0;
-        return;
-      }
-      /* Shutdown (y+58) - expanded range */
-      if (rel_y >= 58 && rel_y < 80) {
-        printk("MENU: Shutdown requested\\n");
-        extern void arch_poweroff(void);
-        arch_poweroff();
-        menu_open = 0;
-        return;
-      }
-      /* Restart (y+78) - expanded range */
-      if (rel_y >= 80 && rel_y < 102) {
-        printk("MENU: Restart requested\\n");
-        extern void arch_reboot(void);
-        arch_reboot();
-        menu_open = 0;
+    if (menu_open == 1 && x >= MAIN_MENU_X && x < MAIN_MENU_X + MAIN_MENU_W &&
+        y >= MAIN_MENU_Y && y < MAIN_MENU_Y + MAIN_MENU_H) {
+      if (main_menu_activate(main_menu_item_at(x, y))) {
         return;
       }
       menu_open = 0;
