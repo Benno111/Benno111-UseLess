@@ -22,6 +22,7 @@ struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
 int gui_launch_app_by_id(const char *app_id);
+typedef enum gui_app_kind gui_app_kind_t;
 
 /* Forward declarations for drawing helpers used before their definitions. */
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
@@ -1929,7 +1930,7 @@ static void str_copy_safe(char *dst, const char *src, int max) {
   dst[i] = '\0';
 }
 
-typedef enum {
+typedef enum gui_app_kind {
   GUI_APP_TERMINAL,
   GUI_APP_FILES,
   GUI_APP_CALCULATOR,
