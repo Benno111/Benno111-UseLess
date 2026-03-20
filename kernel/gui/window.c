@@ -36,6 +36,8 @@ static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color);
 static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride);
+static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
+                                        uint32_t color);
 static int startup_flow_active(void);
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
@@ -7786,7 +7788,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        int content_w = win->width - BORDER_WIDTH * 2;
         int sidebar_w = 118;
         int panel_x = content_x + sidebar_w + 14;
         int panel_y = content_y + 14;
