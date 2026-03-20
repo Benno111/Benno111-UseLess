@@ -3756,6 +3756,12 @@ struct fm_state {
   char path[256];
   char selected[256];
   int scroll_y;
+  int context_menu_visible;
+  int context_menu_x;
+  int context_menu_y;
+  int context_menu_target_type;
+  int context_menu_target_on_item;
+  char context_menu_target[256];
 };
 
 #define FM_MAX_ITEMS 96
@@ -3877,6 +3883,7 @@ static void fm_navigate_to(struct window *win, struct fm_state *st,
   }
   st->selected[0] = '\0';
   st->scroll_y = 0;
+  st->context_menu_visible = 0;
   fm_set_window_title(win, st->path);
 }
 
@@ -3900,7 +3907,17 @@ static void fm_go_parent(struct window *win, struct fm_state *st) {
   }
   st->selected[0] = '\0';
   st->scroll_y = 0;
+  st->context_menu_visible = 0;
   fm_set_window_title(win, st->path);
+}
+
+static void fm_hide_context_menu(struct fm_state *st) {
+  if (!st)
+    return;
+  st->context_menu_visible = 0;
+  st->context_menu_target_on_item = 0;
+  st->context_menu_target_type = 0;
+  st->context_menu_target[0] = '\0';
 }
 
 static int fm_collect_callback(void *ctx, const char *name, int len, loff_t off,
@@ -3950,6 +3967,87 @@ static int fm_collect_items(const char *path, struct fm_item *items,
   vfs_readdir(dir, &ctx, fm_collect_callback);
   vfs_close(dir);
   return ctx.count;
+}
+
+static void fm_open_item(struct window *win, struct fm_state *st, const char *name,
+                         unsigned type) {
+  char full_path[512];
+
+  if (!win || !st || !name || !name[0])
+    return;
+
+  fm_join_path(st->path, name, full_path, sizeof(full_path));
+
+  if (type == 4) {
+    fm_navigate_to(win, st, full_path);
+    return;
+  }
+
+  if (str_ends_with_ci(name, ".txt") || str_ends_with_ci(name, ".log")) {
+    gui_open_notepad(full_path);
+  } else if (str_ends_with_ci(name, ".app")) {
+    char app_id[32];
+    if (load_app_id_from_manifest_file(full_path, name, app_id, sizeof(app_id)) ==
+        0) {
+      gui_launch_app_by_id(app_id);
+    }
+  } else if (str_ends_with_ci(name, ".jpg") || str_ends_with_ci(name, ".jpeg") ||
+             str_ends_with_ci(name, ".png")) {
+    gui_open_image_viewer(full_path);
+  } else if (str_ends_with_ci(name, ".mp3")) {
+    gui_play_mp3_file(full_path);
+  } else if (str_ends_with_ci(name, ".py") || str_ends_with_ci(name, ".nano")) {
+    extern void term_set_active(struct terminal * term);
+    extern void term_puts(struct terminal * term, const char *str);
+    extern void term_execute_command(struct terminal * term, const char *cmd);
+    extern void term_set_content_pos(struct terminal * t, int x, int y);
+    static int term_spawn_x = 120;
+    static int term_spawn_y = 100;
+
+    struct window *term_win =
+        gui_create_window("Terminal", term_spawn_x, term_spawn_y, 500, 350);
+    if (term_win) {
+      int content_x = term_spawn_x + BORDER_WIDTH;
+      int content_y = term_spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+      struct terminal *term = term_create(content_x, content_y, 60, 18);
+      if (term) {
+        term_win->userdata = term;
+        term_set_active(term);
+        term_set_content_pos(term, content_x, content_y);
+
+        char run_cmd[300] = "run ";
+        int j = 4;
+        for (int i = 0; full_path[i] && j < 298; i++)
+          run_cmd[j++] = full_path[i];
+        run_cmd[j] = '\0';
+        term_execute_command(term, run_cmd);
+        term_puts(term, "\n\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+      }
+    }
+
+    term_spawn_x = (term_spawn_x + 40) % 300 + 80;
+    term_spawn_y = (term_spawn_y + 35) % 200 + 70;
+  }
+}
+
+static void fm_delete_context_target(struct fm_state *st) {
+  char full_path[512];
+  int ret;
+
+  if (!st || !st->context_menu_target_on_item || !st->context_menu_target[0])
+    return;
+
+  fm_join_path(st->path, st->context_menu_target, full_path, sizeof(full_path));
+  if (st->context_menu_target_type == 4) {
+    extern int vfs_rmdir(const char *path);
+    ret = vfs_rmdir(full_path);
+  } else {
+    extern int vfs_unlink(const char *path);
+    ret = vfs_unlink(full_path);
+  }
+
+  if (ret == 0 && str_cmp(st->selected, st->context_menu_target) == 0)
+    st->selected[0] = '\0';
 }
 
 static const unsigned char *fm_icon_for_item(const char *name, unsigned type,
@@ -4262,7 +4360,7 @@ static void gui_play_mp3_file(const char *path);
 /* File Manager Mouse Handler */
 static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
   struct fm_state *st = (struct fm_state *)win->userdata;
-  (void)buttons;
+  int is_right_click = (buttons & 2) != 0;
   if (!st)
     return;
 
@@ -4276,8 +4374,64 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
   int list_y = content_y + toolbar_h + info_h + 8;
   int list_w = win->width - BORDER_WIDTH * 2 - sidebar_w - details_w - 24;
   int row_h = 44;
+  int menu_x = st->context_menu_x;
+  int menu_y = st->context_menu_y;
+  int menu_w = st->context_menu_target_on_item ? 132 : 120;
+  int menu_h = st->context_menu_target_on_item ? 78 : 54;
+
+  if (menu_x + menu_w > win->width - BORDER_WIDTH)
+    menu_x = win->width - BORDER_WIDTH - menu_w;
+  if (menu_y + menu_h > win->height - BORDER_WIDTH)
+    menu_y = win->height - BORDER_WIDTH - menu_h;
+  if (menu_x < content_x + 4)
+    menu_x = content_x + 4;
+  if (menu_y < content_y + 4)
+    menu_y = content_y + 4;
+
+  if (st->context_menu_visible) {
+    if (x >= menu_x && x < menu_x + menu_w && y >= menu_y && y < menu_y + menu_h) {
+      int item_idx = (y - menu_y - 6) / 24;
+      if (st->context_menu_target_on_item) {
+        if (item_idx == 0) {
+          fm_open_item(win, st, st->context_menu_target,
+                       (unsigned)st->context_menu_target_type);
+        } else if (item_idx == 1) {
+          char full_path[512];
+          extern void gui_open_rename(const char *path);
+          fm_join_path(st->path, st->context_menu_target, full_path,
+                       sizeof(full_path));
+          gui_open_rename(full_path);
+        } else if (item_idx == 2) {
+          fm_delete_context_target(st);
+        }
+      } else {
+        if (item_idx == 0) {
+          char new_path[512];
+          extern int vfs_mkdir(const char *path, mode_t mode);
+          fm_build_unique_child_path(st->path, "New Folder", "", new_path,
+                                     sizeof(new_path));
+          vfs_mkdir(new_path, 0755);
+        } else if (item_idx == 1) {
+          char new_path[512];
+          extern int vfs_create(const char *path, mode_t mode);
+          fm_build_unique_child_path(st->path, "New File", ".txt", new_path,
+                                     sizeof(new_path));
+          vfs_create(new_path, 0644);
+        }
+      }
+      fm_hide_context_menu(st);
+      return;
+    }
+
+    if (!is_right_click)
+      fm_hide_context_menu(st);
+  }
 
   if (y >= content_y + 10 && y < content_y + 42) {
+    if (is_right_click) {
+      fm_hide_context_menu(st);
+      return;
+    }
     if (x >= content_x + 10 && x < content_x + 74) {
       fm_go_parent(win, st);
       return;
@@ -4314,6 +4468,10 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
   }
 
   if (x >= content_x + 10 && x < content_x + sidebar_w - 10) {
+    if (is_right_click) {
+      fm_hide_context_menu(st);
+      return;
+    }
     if (y >= content_y + 88 && y < content_y + 116)
       fm_navigate_to(win, st, "/");
     else if (y >= content_y + 118 && y < content_y + 146)
@@ -4335,8 +4493,16 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
 
   struct fm_item items[FM_MAX_ITEMS];
   int item_count = fm_collect_items(st->path, items, FM_MAX_ITEMS);
-  if (item_count <= 0)
+  if (item_count <= 0) {
+    if (is_right_click) {
+      st->context_menu_visible = 1;
+      st->context_menu_target_on_item = 0;
+      st->context_menu_x = x;
+      st->context_menu_y = y;
+      st->selected[0] = '\0';
+    }
     return;
+  }
 
   for (int i = 0; i < item_count; i++) {
     int row_y = list_y + i * row_h;
@@ -4344,79 +4510,37 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
       int was_selected = str_cmp(st->selected, items[i].name) == 0;
       str_copy_safe(st->selected, items[i].name, sizeof(st->selected));
 
-      if (items[i].type == 4 && was_selected) {
-        char next_path[512];
-        fm_join_path(st->path, items[i].name, next_path, sizeof(next_path));
-        fm_navigate_to(win, st, next_path);
+      if (is_right_click) {
+        st->context_menu_visible = 1;
+        st->context_menu_target_on_item = 1;
+        st->context_menu_x = x;
+        st->context_menu_y = y;
+        st->context_menu_target_type = (int)items[i].type;
+        str_copy_safe(st->context_menu_target, items[i].name,
+                      sizeof(st->context_menu_target));
         return;
       }
+
+      fm_hide_context_menu(st);
 
       if (!was_selected)
         return;
 
-      char full_path[512];
-      fm_join_path(st->path, st->selected, full_path, sizeof(full_path));
-
-      if (str_ends_with_ci(st->selected, ".txt") ||
-          str_ends_with_ci(st->selected, ".log")) {
-        gui_open_notepad(full_path);
-      } else if (str_ends_with_ci(st->selected, ".app")) {
-        char app_id[32];
-        if (load_app_id_from_manifest_file(full_path, st->selected, app_id,
-                                           sizeof(app_id)) == 0) {
-          gui_launch_app_by_id(app_id);
-        }
-      } else if (str_ends_with_ci(st->selected, ".jpg") ||
-                 str_ends_with_ci(st->selected, ".jpeg") ||
-                 str_ends_with_ci(st->selected, ".png")) {
-        gui_open_image_viewer(full_path);
-      } else if (str_ends_with_ci(st->selected, ".mp3")) {
-        gui_play_mp3_file(full_path);
-      } else if (str_ends_with_ci(st->selected, ".py") ||
-                 str_ends_with_ci(st->selected, ".nano")) {
-        /* Python/NanoLang file - open new terminal and run it */
-        extern void term_set_active(struct terminal * term);
-        extern void term_puts(struct terminal * term, const char *str);
-        extern void term_execute_command(struct terminal * term, const char *cmd);
-        extern void term_set_content_pos(struct terminal * t, int x, int y);
-
-        /* Stagger window positions */
-        static int term_spawn_x = 120;
-        static int term_spawn_y = 100;
-
-        struct window *term_win =
-            gui_create_window("Terminal", term_spawn_x, term_spawn_y, 500, 350);
-        if (term_win) {
-          /* Create terminal with position relative to window content area */
-          int content_x = term_spawn_x + BORDER_WIDTH;
-          int content_y = term_spawn_y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-          struct terminal *term = term_create(content_x, content_y, 60, 18);
-          if (term) {
-            /* Store terminal in window and set as active */
-            term_win->userdata = term;
-            term_set_active(term);
-            term_set_content_pos(term, content_x, content_y);
-
-            /* Build run command */
-            char run_cmd[300] = "run ";
-            int j = 4;
-            for (int i = 0; full_path[i] && j < 298; i++) {
-              run_cmd[j++] = full_path[i];
-            }
-            run_cmd[j] = '\0';
-            /* Execute the run command */
-            term_execute_command(term, run_cmd);
-            term_puts(term,
-                      "\n\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
-          }
-        }
-
-        /* Stagger next window */
-        term_spawn_x = (term_spawn_x + 40) % 300 + 80;
-        term_spawn_y = (term_spawn_y + 35) % 200 + 70;
-      }
+      fm_open_item(win, st, items[i].name, items[i].type);
+      return;
     }
   }
+
+  if (is_right_click) {
+    st->context_menu_visible = 1;
+    st->context_menu_target_on_item = 0;
+    st->context_menu_x = x;
+    st->context_menu_y = y;
+    st->selected[0] = '\0';
+    return;
+  }
+
+  fm_hide_context_menu(st);
 }
 
 static void image_viewer_on_close(struct window *win) {
@@ -4979,6 +5103,53 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + content_w - details_w + 8,
                     content_y + content_h - 22, "Root Desktop Docs",
                     0xCBD5E1, 0x111827);
+
+    if (st && st->context_menu_visible) {
+      int menu_x = win->x + st->context_menu_x;
+      int menu_y = win->y + st->context_menu_y;
+      int menu_w = st->context_menu_target_on_item ? 132 : 120;
+      int menu_h = st->context_menu_target_on_item ? 78 : 54;
+      const char *row1 = st->context_menu_target_on_item ? "Open" : "New Folder";
+      const char *row2 = st->context_menu_target_on_item ? "Rename" : "New File";
+      const char *row3 = st->context_menu_target_on_item ? "Delete" : NULL;
+
+      if (menu_x + menu_w > win->x + win->width - BORDER_WIDTH)
+        menu_x = win->x + win->width - BORDER_WIDTH - menu_w;
+      if (menu_y + menu_h > win->y + win->height - BORDER_WIDTH)
+        menu_y = win->y + win->height - BORDER_WIDTH - menu_h;
+      if (menu_x < content_x + 4)
+        menu_x = content_x + 4;
+      if (menu_y < content_y + 4)
+        menu_y = content_y + 4;
+
+      gui_fill_rect_alpha(menu_x + 2, menu_y + 2, menu_w, menu_h, 0x24000000);
+      gui_draw_glass_panel(menu_x, menu_y, menu_w, menu_h, 0xD11A2230,
+                           0x28FFFFFF, 0x80465C78, 1);
+
+      gui_draw_rect(menu_x + 6, menu_y + 6, menu_w - 12, 20,
+                    mouse_x >= menu_x + 6 && mouse_x < menu_x + menu_w - 6 &&
+                            mouse_y >= menu_y + 6 && mouse_y < menu_y + 26
+                        ? 0x1D4ED8
+                        : 0x00000000);
+      gui_draw_string(menu_x + 14, menu_y + 10, row1, 0xFFFFFF, 0x00000000);
+
+      gui_draw_rect(menu_x + 6, menu_y + 30, menu_w - 12, 20,
+                    mouse_x >= menu_x + 6 && mouse_x < menu_x + menu_w - 6 &&
+                            mouse_y >= menu_y + 30 && mouse_y < menu_y + 50
+                        ? 0x1D4ED8
+                        : 0x00000000);
+      gui_draw_string(menu_x + 14, menu_y + 34, row2, 0xFFFFFF, 0x00000000);
+
+      if (row3) {
+        gui_draw_rect(menu_x + 6, menu_y + 54, menu_w - 12, 20,
+                      mouse_x >= menu_x + 6 &&
+                              mouse_x < menu_x + menu_w - 6 &&
+                              mouse_y >= menu_y + 54 && mouse_y < menu_y + 74
+                          ? 0x7F1D1D
+                          : 0x00000000);
+        gui_draw_string(menu_x + 14, menu_y + 58, row3, 0xFECACA, 0x00000000);
+      }
+    }
   }
   /* Paint */
   else if (win->title[0] == 'P' && win->title[1] == 'a' &&
@@ -8324,6 +8495,12 @@ struct window *gui_create_file_manager(int x, int y) {
       st->path[1] = '\0';
       st->selected[0] = '\0';
       st->scroll_y = 0;
+      st->context_menu_visible = 0;
+      st->context_menu_x = 0;
+      st->context_menu_y = 0;
+      st->context_menu_target_type = 0;
+      st->context_menu_target_on_item = 0;
+      st->context_menu_target[0] = '\0';
       win->userdata = st;
       win->on_mouse = fm_on_mouse;
       fm_set_window_title(win, st->path);
@@ -8362,6 +8539,12 @@ struct window *gui_create_file_manager_path(int x, int y, const char *path) {
       }
       st->selected[0] = '\0';
       st->scroll_y = 0;
+      st->context_menu_visible = 0;
+      st->context_menu_x = 0;
+      st->context_menu_y = 0;
+      st->context_menu_target_type = 0;
+      st->context_menu_target_on_item = 0;
+      st->context_menu_target[0] = '\0';
       win->userdata = st;
       win->on_mouse = fm_on_mouse;
       fm_set_window_title(win, st->path);

@@ -230,7 +230,23 @@ static void panic_fb_draw_wrapped(uint32_t *fb, uint32_t pitch_pixels,
   }
 }
 
-static void panic_draw_screen(const char *msg) {
+static void panic_halt_forever(void) __attribute__((noreturn));
+
+static void panic_halt_forever(void) {
+  for (;;) {
+    arch_irq_disable();
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+    asm volatile("hlt");
+#elif defined(ARCH_ARM64)
+    asm volatile("wfi");
+#else
+    arch_halt();
+#endif
+  }
+}
+
+static void panic_draw_screen(const char *msg, uintptr_t caller_hint,
+                              uintptr_t stack_hint) {
   uint32_t *fb = NULL;
   uint32_t fb_w = 0;
   uint32_t fb_h = 0;
@@ -253,8 +269,6 @@ static void panic_draw_screen(const char *msg) {
   int panel_h;
   int max_log_chars;
   uint64_t uptime_ms;
-  uintptr_t stack_hint;
-  uintptr_t caller_hint;
 
   extern int fb_init(void);
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
@@ -271,8 +285,6 @@ static void panic_draw_screen(const char *msg) {
 
   pitch_pixels = pitch ? (pitch / 4) : fb_w;
   uptime_ms = arch_timer_get_ms();
-  stack_hint = (uintptr_t)&fb;
-  caller_hint = (uintptr_t)__builtin_return_address(0);
   arch_cpu_info(cpu_info, sizeof(cpu_info));
 
   panic_make_kv_u64(line0, sizeof(line0), "Uptime", uptime_ms, " ms");
@@ -1462,7 +1474,7 @@ void panic(const char *msg) {
     printk(KERN_EMERG "Latest panic: %s\n", msg ? msg : "(null)");
     printk(KERN_EMERG "Caller: 0x%lx Stack: 0x%lx\n", (unsigned long)caller_hint,
            (unsigned long)stack_hint);
-    arch_halt();
+    panic_halt_forever();
   }
   panic_in_progress = 1;
 
@@ -1480,10 +1492,9 @@ void panic(const char *msg) {
   printk(KERN_EMERG "============================================\n");
   printk(KERN_EMERG "Rendering panic screen...\n");
 
-  panic_draw_screen(msg);
+  panic_draw_screen(msg, caller_hint, stack_hint);
 
   printk(KERN_EMERG "System halted.\n");
 
-  /* Infinite loop */
-  arch_halt();
+  panic_halt_forever();
 }
