@@ -61,6 +61,30 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
   }
 }
 
+static uint64_t intel_gfx_read_bar(const pci_device_t *pci_dev,
+                                   uint8_t bar_offset) {
+  uint32_t low;
+  uint64_t addr;
+
+  if (!pci_dev)
+    return 0;
+
+  low = pci_read32(pci_dev->bus, pci_dev->slot, pci_dev->func, bar_offset);
+  if (low == 0 || low == 0xFFFFFFFF)
+    return 0;
+  if (low & 0x1)
+    return 0;
+
+  addr = (uint64_t)(low & 0xFFFFFFF0U);
+  if ((low & 0x6) == 0x4) {
+    uint32_t high =
+        pci_read32(pci_dev->bus, pci_dev->slot, pci_dev->func, bar_offset + 4);
+    addr |= ((uint64_t)high << 32);
+  }
+
+  return addr;
+}
+
 int intel_gfx_init(pci_device_t *pci_dev) {
   uint32_t *fb = NULL;
   uint32_t width = 0;
@@ -74,15 +98,23 @@ int intel_gfx_init(pci_device_t *pci_dev) {
 
   pci_enable_device(pci_dev);
 
+  intel_gfx_state = (intel_gfx_state_t){0};
   intel_gfx_state.device_id = pci_dev->device_id;
-  intel_gfx_state.mmio_base = pci_dev->bar0;
-  intel_gfx_state.aperture_base = pci_dev->bar2;
+  intel_gfx_state.mmio_base = intel_gfx_read_bar(pci_dev, PCI_BAR0);
+  intel_gfx_state.aperture_base = intel_gfx_read_bar(pci_dev, PCI_BAR2);
   intel_gfx_state.irq = pci_dev->irq;
 
   if (intel_gfx_state.mmio_base) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+    printk(KERN_INFO "IGFX: MMIO BAR present at 0x%llx, deferred on x86 bring-up "
+                     "path\n",
+           (unsigned long long)intel_gfx_state.mmio_base);
+#else
     vmm_map_range(intel_gfx_state.mmio_base, intel_gfx_state.mmio_base,
                   INTEL_GFX_MMIO_MAP_SIZE, VM_DEVICE);
-    intel_gfx_state.mmio = (volatile uint8_t *)(uintptr_t)intel_gfx_state.mmio_base;
+    intel_gfx_state.mmio =
+        (volatile uint8_t *)(uintptr_t)intel_gfx_state.mmio_base;
+#endif
   }
 
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);

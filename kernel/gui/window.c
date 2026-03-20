@@ -6356,7 +6356,7 @@ int gui_draw_system_app_icon(const char *app_id, int x, int y, int size) {
   return 0;
 }
 
-/* Draw dock with hover animations - using vector icons */
+/* Draw dock with fixed icon sizes and a top-rounded background */
 static void draw_dock(void) {
   if (!dock_is_visible())
     return;
@@ -6366,127 +6366,66 @@ static void draw_dock(void) {
   if (dock_item_count <= 0)
     return;
 
-  int mouse_active =
-      (mouse_y >= (int)primary_display.height - DOCK_HEIGHT - 40);
-
-  /* 1. Calculate target sizes for all icons based on magnification */
   int icon_sizes[MAX_DOCK_ITEMS];
-  static int smooth_sizes[MAX_DOCK_ITEMS] = {0};
-
-  /* Initial base positions for hit testing (fixed grid for stability) */
   int base_dock_w =
       dock_item_count * (DOCK_ICON_SIZE + DOCK_PADDING) - DOCK_PADDING + 32;
   int base_dock_x = (primary_display.width - base_dock_w) / 2;
   int base_y = primary_display.height - DOCK_HEIGHT + 6;
-
-  int max_magnify = 42;    /* Max magnify */
-  int magnify_range = 140; /* Wider range for wave */
   int hovered_idx = -1;
 
   for (int i = 0; i < dock_item_count; i++) {
-    int target = DOCK_ICON_SIZE;
-    /* Use fixed base positions for hit test stability so icons don't run away
-     */
     int base_center_x = base_dock_x + 16 + i * (DOCK_ICON_SIZE + DOCK_PADDING) +
                         DOCK_ICON_SIZE / 2;
+    int base_icon_x = base_center_x - DOCK_ICON_SIZE / 2;
+    int base_icon_y = base_y + ((DOCK_HEIGHT - 12) - DOCK_ICON_SIZE) / 2;
 
-    if (mouse_active) {
-      int dist = mouse_x - base_center_x;
-      if (dist < 0)
-        dist = -dist;
-
-      if (dist < magnify_range) {
-        /* Sine wave magnification: scale = (1 - dist/range)^2 */
-        int scale = (magnify_range - dist) * 256 / magnify_range;
-        scale = scale * scale / 256; /* Quadratic ease */
-        target += max_magnify * scale / 256;
-
-        if (dist < DOCK_ICON_SIZE / 2 + 5)
-          hovered_idx = i;
-      }
+    icon_sizes[i] = DOCK_ICON_SIZE;
+    if (mouse_x >= base_icon_x && mouse_x < base_icon_x + DOCK_ICON_SIZE &&
+        mouse_y >= base_icon_y && mouse_y < base_icon_y + DOCK_ICON_SIZE) {
+      hovered_idx = i;
     }
-
-    /* Smooth interpolation */
-    if (smooth_sizes[i] == 0)
-      smooth_sizes[i] = DOCK_ICON_SIZE;
-    int diff = target - smooth_sizes[i];
-    if (diff > 0)
-      smooth_sizes[i] += (diff > 8) ? 8 : diff;
-    else if (diff < 0)
-      smooth_sizes[i] += (diff < -8) ? -8 : diff;
-
-    icon_sizes[i] = smooth_sizes[i];
   }
 
-  /* 2. Calculate dynamic total width */
   int total_content_w = 0;
   for (int i = 0; i < dock_item_count; i++) {
     total_content_w += icon_sizes[i];
     if (i < dock_item_count - 1)
       total_content_w += DOCK_PADDING;
   }
-  int dock_w = total_content_w + 32;    /* Padding */
+  int dock_w = total_content_w + 32;
   int dock_h = DOCK_HEIGHT - 12;
   int dock_x = (primary_display.width - dock_w) / 2;
   int dock_y = base_y;
 
-  /* 3. Draw Background behind everything */
-  gui_draw_glass_panel(dock_x - 2, dock_y - 2, dock_w + 4, dock_h + 4,
-                       0x74303B4E, 0x30FFFFFF, 0x9066758D, 2);
-  draw_rounded_rect(dock_x - 1, dock_y - 1, dock_w + 2, dock_h + 2, 16,
-                    0x3A72819A);
-  draw_rounded_rect(dock_x, dock_y, dock_w, dock_h, 15, 0x18343F54);
-  /* Highlights */
-  for (int i = dock_x + 14; i < dock_x + dock_w - 14; i++) {
-    draw_pixel_alpha(i, dock_y + 1, 0x60FFFFFF);
-    draw_pixel_alpha(i, dock_y + dock_h - 1, 0x3A0D1016);
+  gui_fill_rect_alpha(dock_x + 12, dock_y + dock_h - 9, dock_w - 24, 4,
+                      0x12000000);
+  draw_top_rounded_rect_alpha(dock_x - 1, dock_y - 2, dock_w + 2, dock_h - 4,
+                              18, 0x225E6E84);
+  draw_top_rounded_rect_alpha(dock_x, dock_y - 1, dock_w, dock_h - 5, 17,
+                              0x14313B4D);
+  for (int i = dock_x + 18; i < dock_x + dock_w - 18; i++) {
+    draw_pixel_alpha(i, dock_y + 1, 0x56FFFFFF);
   }
 
-  /* 4. Determine Draw Order (Small -> Large) so large icons draw ON TOP of
-   * neighbors */
-  int draw_order[MAX_DOCK_ITEMS];
-  for (int i = 0; i < dock_item_count; i++)
-    draw_order[i] = i;
-
-  /* Bubble sort by size (stable) */
-  for (int i = 0; i < dock_item_count - 1; i++) {
-    for (int j = 0; j < dock_item_count - i - 1; j++) {
-      if (icon_sizes[draw_order[j]] > icon_sizes[draw_order[j + 1]]) {
-        int temp = draw_order[j];
-        draw_order[j] = draw_order[j + 1];
-        draw_order[j + 1] = temp;
-      }
-    }
-  }
-
-  /* 5. Draw Icons */
   int center_y = dock_y + dock_h / 2;
   int curr_x = dock_x + 16;
-
-  /* Calculate render centers first - strictly left-to-right based on dynamic
-   * width */
   int render_centers[MAX_DOCK_ITEMS];
   for (int i = 0; i < dock_item_count; i++) {
     render_centers[i] = curr_x + icon_sizes[i] / 2;
     curr_x += icon_sizes[i] + DOCK_PADDING;
   }
 
-  for (int k = 0; k < dock_item_count; k++) {
-    int i = draw_order[k]; /* Draw in sorted order */
+  for (int i = 0; i < dock_item_count; i++) {
     int size = icon_sizes[i];
     int cx = render_centers[i];
-    int cy = center_y - (size - DOCK_ICON_SIZE) / 2; /* Move up as it grows */
-
+    int cy = center_y;
     int draw_x = cx - size / 2;
     int draw_y = cy - size / 2;
-
     int icon_r = size / 5;
     uint32_t bg_color = dock_items[i]->icon_color;
 
-    /* Icon Background */
     gui_draw_rect(draw_x + icon_r, draw_y, size - 2 * icon_r, size, bg_color);
     gui_draw_rect(draw_x, draw_y + icon_r, size, size - 2 * icon_r, bg_color);
-    /* Corners */
     for (int dy = -icon_r; dy <= icon_r; dy++) {
       for (int dx = -icon_r; dx <= icon_r; dx++) {
         if (dx * dx + dy * dy <= icon_r * icon_r) {
@@ -6501,7 +6440,6 @@ static void draw_dock(void) {
       }
     }
 
-    /* Top Highlight */
     for (int x = draw_x + icon_r; x < draw_x + size - icon_r; x++) {
       draw_pixel(x, draw_y + 2, bg_color + 0x202020);
       draw_pixel(x, draw_y + 3, bg_color + 0x202020);
@@ -6511,29 +6449,28 @@ static void draw_dock(void) {
                               draw_y + size / 8, size * 3 / 4);
   }
 
-  /* Draw label for hovered item on top */
   if (hovered_idx >= 0) {
     const char *label = dock_items[hovered_idx]->label;
     int idx_x = render_centers[hovered_idx];
-
     int label_len = 0;
     while (label[label_len])
       label_len++;
     int label_w = label_len * 8 + 16;
     int label_h = 24;
     int label_x = idx_x - label_w / 2;
-    int label_y = base_y - 45; /* Fixed height above dock */
+    int label_y = base_y - 45;
 
     draw_rounded_rect(label_x, label_y, label_w, label_h, 6, 0x303040);
     gui_draw_rect_outline(label_x, label_y, label_w, label_h, 0x505060, 1);
     gui_draw_string(label_x + 8, label_y + 4, label, 0xFFFFFF, 0x303040);
 
-    /* Triangle */
-    int tri_x = label_x + label_w / 2;
-    int tri_y = label_y + label_h;
-    for (int i = 0; i < 4; i++) {
-      for (int j = -i; j <= i; j++) {
-        draw_pixel(tri_x + j, tri_y + i, 0x303040);
+    {
+      int tri_x = label_x + label_w / 2;
+      int tri_y = label_y + label_h;
+      for (int i = 0; i < 4; i++) {
+        for (int j = -i; j <= i; j++) {
+          draw_pixel(tri_x + j, tri_y + i, 0x303040);
+        }
       }
     }
   }
@@ -6622,17 +6559,58 @@ static void draw_desktop(void) {
     const char *build_info = "OS 8 ARM64";
 #endif
     int build_len = 0;
+    int uuid_len = 0;
     while (build_info[build_len]) {
       build_len++;
     }
+    while (BUILD_UUID[uuid_len]) {
+      uuid_len++;
+    }
 
-    int text_w = build_len * 8;
-    int text_x = (int)primary_display.width - text_w - 16;
+    int text_w = build_len > uuid_len ? build_len * 8 : uuid_len * 8;
+    int text_x = (int)primary_display.width - text_w - 24;
     int text_y =
-        (int)primary_display.height - dock_reserved_height() - 24;
+        (int)primary_display.height - dock_reserved_height() - 40;
+
+    if (text_x < 12)
+      text_x = 12;
 
     gui_draw_string(text_x, text_y, build_info, 0xD9E4F4, 0x00000000);
     gui_draw_string(text_x, text_y + 16, BUILD_UUID, 0xAEB9CB, 0x00000000);
+  }
+}
+
+static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
+                                        uint32_t color) {
+  if (w <= 0 || h <= 0)
+    return;
+  if (r < 0)
+    r = 0;
+  if (r * 2 > w)
+    r = w / 2;
+  if (r > h)
+    r = h;
+
+  if (r == 0) {
+    gui_fill_rect_alpha(x, y, w, h, color);
+    return;
+  }
+
+  gui_fill_rect_alpha(x, y + r, w, h - r, color);
+  gui_fill_rect_alpha(x + r, y, w - 2 * r, r, color);
+  gui_fill_rect_alpha(x, y + r, r, h - r, color);
+  gui_fill_rect_alpha(x + w - r, y + r, r, h - r, color);
+
+  for (int cy = -r; cy <= r; cy++) {
+    for (int cx = -r; cx <= r; cx++) {
+      if (cx * cx + cy * cy <= r * r) {
+        int py = y + r + cy;
+        if (py <= y + r) {
+          draw_pixel_alpha(x + r + cx, py, color);
+          draw_pixel_alpha(x + w - r - 1 + cx, py, color);
+        }
+      }
+    }
   }
 }
 
