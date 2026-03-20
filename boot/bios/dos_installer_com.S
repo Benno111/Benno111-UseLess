@@ -149,15 +149,15 @@ wait_for_keypress:
 print_string:
     push    %ax
     push    %bx
-.print_loop:
+print_string_loop:
     lodsb
     test    %al, %al
-    jz      .done
+    jz      print_string_done
     mov     $0x0E, %ah
     mov     $0x0007, %bx
     int     $0x10
-    jmp     .print_loop
-.done:
+    jmp     print_string_loop
+print_string_done:
     pop     %bx
     pop     %ax
     ret
@@ -175,10 +175,10 @@ print_char:
 print_hex_nibble:
     and     $0x0F, %al
     cmp     $10, %al
-    jb      .digit
+    jb      print_hex_nibble_digit
     add     $'A' - 10, %al
     jmp     print_char
-.digit:
+print_hex_nibble_digit:
     add     $'0', %al
     jmp     print_char
 
@@ -214,13 +214,13 @@ print_target_summary:
     call    print_string
     movb    selected_drive, %al
     test    %al, %al
-    jz      .none
+    jz      print_target_summary_none
     call    print_drive_id
     mov     $crlf_text, %si
     call    print_string
     pop     %ax
     ret
-.none:
+print_target_summary_none:
     mov     $none_text, %si
     call    print_string
     pop     %ax
@@ -234,16 +234,16 @@ probe_drive:
     mov     $0x55AA, %bx
     mov     $0x4100, %ax
     int     $0x13
-    jc      .fail
+    jc      dos_probe_drive_fail
     cmp     $0xAA55, %bx
-    jne     .fail
+    jne     dos_probe_drive_fail
     test    $0x0001, %cx
-    jz      .fail
+    jz      dos_probe_drive_fail
     clc
-    jmp     .done
-.fail:
+    jmp     dos_probe_drive_done
+dos_probe_drive_fail:
     stc
-.done:
+dos_probe_drive_done:
     pop     %dx
     pop     %cx
     pop     %bx
@@ -253,18 +253,18 @@ probe_drive:
 find_default_target:
     movb    $0, selected_drive
     movb    $0x81, %bl
-.scan:
+dos_find_target_scan:
     cmpb    $0x88, %bl
-    jae     .done
+    jae     dos_find_target_done
     movb    %bl, %dl
     call    probe_drive
-    jc      .next
+    jc      dos_find_target_next
     movb    %bl, selected_drive
     ret
-.next:
+dos_find_target_next:
     inc     %bl
-    jmp     .scan
-.done:
+    jmp     dos_find_target_scan
+dos_find_target_done:
     ret
 
 select_next_target:
@@ -273,28 +273,28 @@ select_next_target:
     push    %dx
     movb    selected_drive, %bl
     cmpb    $0x81, %bl
-    jae     .cycle
+    jae     dos_select_target_cycle
     movb    $0x80, %bl
-.cycle:
+dos_select_target_cycle:
     movb    $8, %cl
-.next_try:
+dos_select_target_try:
     inc     %bl
     cmpb    $0x88, %bl
-    jb      .check
+    jb      dos_select_target_check
     movb    $0x81, %bl
-.check:
+dos_select_target_check:
     movb    %bl, %dl
     call    probe_drive
-    jc      .continue
+    jc      dos_select_target_continue
     movb    %bl, selected_drive
     clc
-    jmp     .done
-.continue:
+    jmp     dos_select_target_done
+dos_select_target_continue:
     dec     %cl
-    jnz     .next_try
+    jnz     dos_select_target_try
     movb    $0, selected_drive
     stc
-.done:
+dos_select_target_done:
     pop     %dx
     pop     %cx
     pop     %bx
@@ -325,18 +325,18 @@ install_image_to_target:
     mov     %ax, current_lba + 4
     mov     %ax, current_lba + 6
 
-.read_loop:
+dos_install_read_loop:
     mov     file_handle, %bx
     mov     $sector_buffer, %dx
     mov     $512, %cx
     mov     $0x3F, %ah
     int     $0x21
-    jc      .read_failed
+    jc      dos_install_read_failed
     test    %ax, %ax
-    jz      .success_close
+    jz      dos_install_success_close
 
     cmp     $512, %ax
-    je      .write_sector
+    je      dos_install_write_sector
 
     mov     %ax, %cx
     mov     $sector_buffer, %di
@@ -347,7 +347,7 @@ install_image_to_target:
     mov     %bx, %cx
     rep stosb
 
-.write_sector:
+dos_install_write_sector:
     movw    $1, dap_sector_count
     movw    $sector_buffer, dap_buffer_offset
     mov     %ds, %ax
@@ -366,7 +366,7 @@ install_image_to_target:
     mov     $dap, %si
     mov     $0x4300, %ax
     int     $0x13
-    jc      .write_failed
+    jc      dos_install_write_failed
 
     incw    current_lba
     jnz     .progress
@@ -376,15 +376,15 @@ install_image_to_target:
     jnz     .progress
     incw    current_lba + 6
 
-.progress:
+.dos_install_progress:
     incw    progress_divider
     testw   $0x003F, progress_divider
-    jnz     .read_loop
+    jnz     dos_install_read_loop
     mov     $'.', %al
     call    print_char
-    jmp     .read_loop
+    jmp     dos_install_read_loop
 
-.success_close:
+dos_install_success_close:
     mov     file_handle, %bx
     mov     $0x3E, %ah
     int     $0x21
@@ -392,15 +392,15 @@ install_image_to_target:
     mov     $crlf_text, %si
     call    print_string
     clc
-    jmp     .done
+    jmp     dos_install_done
 
-.file_open_failed:
+dos_install_file_open_failed:
     mov     $file_missing_text, %si
     call    print_string
     stc
-    jmp     .done
+    jmp     dos_install_done
 
-.read_failed:
+dos_install_read_failed:
     mov     file_handle, %bx
     mov     $0x3E, %ah
     int     $0x21
@@ -408,9 +408,9 @@ install_image_to_target:
     mov     $file_read_error_text, %si
     call    print_string
     stc
-    jmp     .done
+    jmp     dos_install_done
 
-.write_failed:
+dos_install_write_failed:
     mov     file_handle, %bx
     mov     $0x3E, %ah
     int     $0x21
@@ -418,12 +418,12 @@ install_image_to_target:
     mov     $disk_write_error_text, %si
     call    print_string
     stc
-    jmp     .done
+    jmp     dos_install_done
 
-.fail:
+dos_install_fail:
     stc
 
-.done:
+dos_install_done:
     pop     %di
     pop     %si
     pop     %dx

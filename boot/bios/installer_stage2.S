@@ -291,16 +291,16 @@ probe_drive:
     mov     $0x55AA, %bx
     mov     $0x4100, %ax
     int     $0x13
-    jc      .fail
+    jc      probe_drive_fail
     cmp     $0xAA55, %bx
-    jne     .fail
+    jne     probe_drive_fail
     test    $0x0001, %cx
-    jz      .fail
+    jz      probe_drive_fail
     clc
-    jmp     .done
-.fail:
+    jmp     probe_drive_done
+probe_drive_fail:
     stc
-.done:
+probe_drive_done:
     pop     %dx
     pop     %cx
     pop     %bx
@@ -310,20 +310,20 @@ probe_drive:
 find_default_target:
     movb    $0, selected_drive
     movb    $0x80, %bl
-.find_loop:
+find_default_target_loop:
     cmpb    $0x88, %bl
-    jae     .done
+    jae     find_default_target_done
     cmpb    boot_drive, %bl
-    je      .next
+    je      find_default_target_next
     movb    %bl, %dl
     call    probe_drive
-    jc      .next
+    jc      find_default_target_next
     movb    %bl, selected_drive
     ret
-.next:
+find_default_target_next:
     inc     %bl
-    jmp     .find_loop
-.done:
+    jmp     find_default_target_loop
+find_default_target_done:
     ret
 
 select_next_target:
@@ -333,30 +333,30 @@ select_next_target:
     push    %dx
     movb    selected_drive, %bl
     cmpb    $0x80, %bl
-    jae     .cycle
+    jae     select_next_target_cycle
     movb    $0x7F, %bl
-.cycle:
+select_next_target_cycle:
     movb    $8, %cl
-.next_try:
+select_next_target_try:
     inc     %bl
     cmpb    $0x88, %bl
-    jb      .check
+    jb      select_next_target_check
     movb    $0x80, %bl
-.check:
+select_next_target_check:
     cmpb    boot_drive, %bl
-    je      .continue
+    je      select_next_target_continue
     movb    %bl, %dl
     call    probe_drive
-    jc      .continue
+    jc      select_next_target_continue
     movb    %bl, selected_drive
     clc
-    jmp     .done
-.continue:
+    jmp     select_next_target_done
+select_next_target_continue:
     dec     %cl
-    jnz     .next_try
+    jnz     select_next_target_try
     movb    $0, selected_drive
     stc
-.done:
+select_next_target_done:
     pop     %dx
     pop     %cx
     pop     %bx
@@ -372,10 +372,10 @@ clone_installer_image:
 
     movb    boot_drive, %dl
     call    probe_drive
-    jc      .fail
+    jc      clone_installer_image_fail
     movb    selected_drive, %dl
     call    probe_drive
-    jc      .fail
+    jc      clone_installer_image_fail
 
     movl    image_total_sectors, %eax
     movl    %eax, remaining_sectors
@@ -383,18 +383,18 @@ clone_installer_image:
     movl    %eax, current_lba
     movl    %eax, current_lba + 4
 
-.copy_loop:
+clone_installer_image_copy_loop:
     movl    remaining_sectors, %eax
     testl   %eax, %eax
-    jz      .success
+    jz      clone_installer_image_success
     cmpw    $COPY_CHUNK_SECTORS, %ax
-    jbe     .use_remaining
+    jbe     clone_installer_image_use_remaining
     movw    $COPY_CHUNK_SECTORS, dap_sector_count
-    jmp     .read_chunk
-.use_remaining:
+    jmp     clone_installer_image_read_chunk
+clone_installer_image_use_remaining:
     movw    %ax, dap_sector_count
 
-.read_chunk:
+clone_installer_image_read_chunk:
     movl    current_lba, %eax
     movl    %eax, dap_lba
     movl    current_lba + 4, %eax
@@ -404,13 +404,13 @@ clone_installer_image:
     mov     $dap, %si
     mov     $0x4200, %ax
     int     $0x13
-    jc      .fail
+    jc      clone_installer_image_fail
 
     movb    selected_drive, %dl
     mov     $dap, %si
     mov     $0x4300, %ax
     int     $0x13
-    jc      .fail
+    jc      clone_installer_image_fail
 
     movw    dap_sector_count, %ax
     addl    %eax, current_lba
@@ -419,18 +419,18 @@ clone_installer_image:
 
     mov     $'.', %al
     call    print_char
-    jmp     .copy_loop
+    jmp     clone_installer_image_copy_loop
 
-.success:
+clone_installer_image_success:
     mov     $crlf_text, %si
     call    print_string
     clc
-    jmp     .done
+    jmp     clone_installer_image_done
 
-.fail:
+clone_installer_image_fail:
     stc
 
-.done:
+clone_installer_image_done:
     pop     %si
     pop     %dx
     pop     %cx
