@@ -22,6 +22,8 @@ struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
 int gui_launch_app_by_id(const char *app_id);
+extern int bochs_init(uint32_t width, uint32_t height);
+extern void bochs_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
 
 /* Forward declarations for drawing helpers used before their definitions. */
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
@@ -409,6 +411,10 @@ static const settings_resolution_option_t settings_resolution_options[] = {
 
 static int settings_resolution_current_idx = -1;
 static int settings_resolution_pending_idx = -1;
+static struct window *window_stack;
+static uint32_t *g_saved_backbuffer;
+static int wallpaper_cached;
+static int wallpaper_cached_idx;
 
 static void notepad_append_to_buf(char *dst, int max, const char *src) {
   int idx = 0;
@@ -1422,6 +1428,87 @@ static int settings_resolution_button_bounds(int panel_x, int panel_y, int index
   if (h)
     *h = 22;
   return 1;
+}
+
+static void gui_clamp_windows_to_display(void) {
+  int max_y = (int)primary_display.height - dock_reserved_height() - 12;
+
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (!win->visible)
+      continue;
+
+    if (win->state == WINDOW_MAXIMIZED) {
+      win->x = 0;
+      win->y = MENU_BAR_HEIGHT;
+      win->width = primary_display.width;
+      win->height = primary_display.height - MENU_BAR_HEIGHT -
+                    dock_reserved_height() - 12;
+      continue;
+    }
+
+    if (win->width > (int)primary_display.width)
+      win->width = primary_display.width;
+    if (win->height > (int)primary_display.height - dock_reserved_height())
+      win->height = primary_display.height - dock_reserved_height();
+    if (win->x + win->width > (int)primary_display.width)
+      win->x = (int)primary_display.width - win->width;
+    if (win->x < 0)
+      win->x = 0;
+    if (win->y < MENU_BAR_HEIGHT)
+      win->y = MENU_BAR_HEIGHT;
+    if (win->y + win->height > max_y)
+      win->y = max_y - win->height;
+    if (win->y < MENU_BAR_HEIGHT)
+      win->y = MENU_BAR_HEIGHT;
+  }
+}
+
+static int gui_apply_resolution(uint32_t width, uint32_t height) {
+  uint32_t *new_framebuffer = NULL;
+  uint32_t new_width = 0;
+  uint32_t new_height = 0;
+  uint32_t *new_backbuffer = NULL;
+  uint32_t new_pitch;
+
+  if (width == primary_display.width && height == primary_display.height)
+    return 0;
+
+#if !defined(ARCH_X86_64) && !defined(ARCH_X86)
+  return -1;
+#endif
+
+  if ((uintptr_t)primary_display.framebuffer != 0x10000000UL)
+    return -1;
+
+  if (bochs_init(width, height) != 0)
+    return -1;
+
+  bochs_get_info(&new_framebuffer, &new_width, &new_height);
+  if (!new_framebuffer || new_width != width || new_height != height)
+    return -1;
+
+  new_pitch = new_width * 4;
+  new_backbuffer = kmalloc(new_pitch * new_height);
+
+  if (primary_display.backbuffer)
+    kfree(primary_display.backbuffer);
+
+  primary_display.framebuffer = new_framebuffer;
+  primary_display.width = new_width;
+  primary_display.height = new_height;
+  primary_display.pitch = new_pitch;
+  primary_display.backbuffer = new_backbuffer;
+  g_saved_backbuffer = new_backbuffer;
+  wallpaper_cached = 0;
+  wallpaper_cached_idx = -1;
+
+  mouse_x = (int)new_width / 2;
+  mouse_y = (int)new_height / 2;
+  gui_clamp_windows_to_display();
+  compositor_mark_full_redraw();
+
+  printk(KERN_INFO "GUI: Resolution changed to %ux%u\n", new_width, new_height);
+  return 0;
 }
 
 static void build_device_ports_string(char *buf, int connected, int total) {
@@ -8611,9 +8698,17 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               str_copy_safe(settings_status, "That resolution is already active.",
                             sizeof(settings_status));
             } else {
-              str_copy_safe(settings_status,
-                            "Resolution saved in Settings. Live switching is not available on this build.",
-                            sizeof(settings_status));
+              const settings_resolution_option_t *opt =
+                  &settings_resolution_options[settings_resolution_pending_idx];
+              if (gui_apply_resolution(opt->width, opt->height) == 0) {
+                settings_sync_resolution_picker();
+                str_copy_safe(settings_status, "Resolution changed successfully.",
+                              sizeof(settings_status));
+              } else {
+                str_copy_safe(settings_status,
+                              "Live resolution switching is unavailable on this display backend.",
+                              sizeof(settings_status));
+              }
             }
             break;
           }
