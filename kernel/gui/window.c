@@ -1532,6 +1532,7 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   uint32_t new_height = 0;
   uint32_t *new_backbuffer = NULL;
   uint32_t new_pitch;
+  uint32_t *old_backbuffer = primary_display.backbuffer;
 
   if (width == primary_display.width && height == primary_display.height)
     return 0;
@@ -1550,15 +1551,16 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   new_pitch = new_width * 4;
   new_backbuffer = kmalloc(new_pitch * new_height);
 
-  if (primary_display.backbuffer)
-    kfree(primary_display.backbuffer);
-
   primary_display.framebuffer = new_framebuffer;
   primary_display.width = new_width;
   primary_display.height = new_height;
   primary_display.pitch = new_pitch;
   primary_display.backbuffer = new_backbuffer;
   g_saved_backbuffer = new_backbuffer;
+
+  if (old_backbuffer)
+    kfree(old_backbuffer);
+
   wallpaper_cached = 0;
   wallpaper_cached_idx = -1;
 
@@ -7812,8 +7814,7 @@ static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
-/* Draw cursor directly to backbuffer - no save/restore needed since we redraw
- * every frame */
+/* Draw cursor directly to the active render target. */
 void gui_draw_cursor(void) {
   extern void mouse_get_position(int *x, int *y);
   int cx, cy;
@@ -7823,8 +7824,9 @@ void gui_draw_cursor(void) {
   mouse_x = cx;
   mouse_y = cy;
 
-  /* Draw cursor to backbuffer (not framebuffer!) */
-  uint32_t *target = primary_display.backbuffer;
+  uint32_t *target =
+      primary_display.backbuffer ? primary_display.backbuffer
+                                 : primary_display.framebuffer;
   if (!target)
     return;
 
