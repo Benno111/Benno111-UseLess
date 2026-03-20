@@ -6286,6 +6286,7 @@ static void draw_window(struct window *win) {
 
 /* Menu dropdown state */
 static int menu_open = 0; /* 0=closed, 1=main menu open */
+static int main_menu_power_open = 0;
 
 #define MAIN_MENU_W 364
 #define MAIN_MENU_H 350
@@ -6304,17 +6305,18 @@ enum {
   MAIN_MENU_ITEM_SETTINGS,
   MAIN_MENU_ITEM_BROWSER,
   MAIN_MENU_ITEM_APPSTORE,
-  MAIN_MENU_ITEM_SHUTDOWN,
-  MAIN_MENU_ITEM_RESTART,
+  MAIN_MENU_ITEM_POWER,
+  MAIN_MENU_ITEM_POWER_SHUTDOWN,
+  MAIN_MENU_ITEM_POWER_RESTART,
   MAIN_MENU_ITEM_COUNT
 };
 
 static void main_menu_launcher_button_rect(int *x, int *y, int *w, int *h) {
   int dock_y = (int)primary_display.height - DOCK_HEIGHT;
-  int size = 50;
+  int size = 18;
 
   if (x)
-    *x = 14;
+    *x = 8;
   if (y)
     *y = dock_y + (DOCK_HEIGHT - size) / 2;
   if (w)
@@ -6403,7 +6405,7 @@ static int main_menu_item_bounds(int item_index, int *x, int *y, int *w,
     if (h)
       *h = MAIN_MENU_RIGHT_ROW_H;
     return 1;
-  case MAIN_MENU_ITEM_SHUTDOWN:
+  case MAIN_MENU_ITEM_POWER:
     if (x)
       *x = right_x;
     if (y)
@@ -6413,13 +6415,39 @@ static int main_menu_item_bounds(int item_index, int *x, int *y, int *w,
     if (h)
       *h = MAIN_MENU_RIGHT_ROW_H;
     return 1;
-  case MAIN_MENU_ITEM_RESTART:
+  default:
+    return 0;
+  }
+}
+
+static int main_menu_power_item_bounds(int item_index, int *x, int *y, int *w,
+                                       int *h) {
+  int power_x, power_y, power_w, power_h;
+
+  if (!main_menu_power_open)
+    return 0;
+  if (!main_menu_item_bounds(MAIN_MENU_ITEM_POWER, &power_x, &power_y, &power_w,
+                             &power_h))
+    return 0;
+
+  switch (item_index) {
+  case MAIN_MENU_ITEM_POWER_SHUTDOWN:
     if (x)
-      *x = right_x;
+      *x = power_x + 8;
     if (y)
-      *y = panel_y + MAIN_MENU_H - 74;
+      *y = power_y + power_h + 8;
     if (w)
-      *w = right_w;
+      *w = power_w - 8;
+    if (h)
+      *h = MAIN_MENU_RIGHT_ROW_H;
+    return 1;
+  case MAIN_MENU_ITEM_POWER_RESTART:
+    if (x)
+      *x = power_x + 8;
+    if (y)
+      *y = power_y + power_h + 8 + MAIN_MENU_RIGHT_ROW_H + 4;
+    if (w)
+      *w = power_w - 8;
     if (h)
       *h = MAIN_MENU_RIGHT_ROW_H;
     return 1;
@@ -6442,6 +6470,15 @@ static int main_menu_item_at(int x, int y) {
         y < item_y + item_h)
       return i;
   }
+  for (int i = MAIN_MENU_ITEM_POWER_SHUTDOWN;
+       i <= MAIN_MENU_ITEM_POWER_RESTART; i++) {
+    int item_x, item_y, item_w, item_h;
+    if (!main_menu_power_item_bounds(i, &item_x, &item_y, &item_w, &item_h))
+      continue;
+    if (x >= item_x && x < item_x + item_w && y >= item_y &&
+        y < item_y + item_h)
+      return i;
+  }
   return MAIN_MENU_ITEM_NONE;
 }
 
@@ -6454,23 +6491,61 @@ static void draw_main_menu_row(int item_index, const char *label,
   if (!main_menu_item_bounds(item_index, &row_x, &row_y, &row_w, &row_h))
     return;
 
-  if (hovered) {
-    gui_fill_rect_alpha(row_x, row_y, row_w, row_h, 0x5069A7E4);
-    gui_draw_rect_outline(row_x, row_y, row_w, row_h, 0x8AD7F1FF, 1);
-  }
-
   if (!compact) {
+    gui_fill_rect_alpha(row_x, row_y, row_w, row_h,
+                        hovered ? 0x4A355177 : 0x24202A38);
+    gui_draw_rect_outline(row_x, row_y, row_w, row_h,
+                          hovered ? 0x8AB7DAFF : 0x304A586B, 1);
     gui_fill_rect_alpha(row_x + 6, row_y + 5, 22, 22, accent | 0x66000000);
     gui_draw_rect_outline(row_x + 6, row_y + 5, 22, 22, 0x90FFFFFF, 1);
-    gui_draw_string(row_x + 36, row_y + 6, label, 0x0C1722, 0x00000000);
+    gui_draw_string(row_x + 36, row_y + 6, label, 0xF4F7FB, 0x00000000);
     if (subtitle)
-      gui_draw_string(row_x + 36, row_y + 18, subtitle, 0x5E6A78, 0x00000000);
+      gui_draw_string(row_x + 36, row_y + 18, subtitle, 0xA7B4C4, 0x00000000);
   } else {
+    gui_fill_rect_alpha(row_x, row_y, row_w, row_h,
+                        hovered ? 0x42486178 : 0x24313D50);
+    gui_draw_rect_outline(row_x, row_y, row_w, row_h,
+                          hovered ? 0x8AB7DAFF : 0x304A586B, 1);
     gui_draw_string(row_x + 10, row_y + 7, label,
                     hovered ? 0xFFFFFF : 0xEAF2FF, 0x00000000);
     if (subtitle)
       gui_draw_string(row_x + row_w - 56, row_y + 7, subtitle,
                       hovered ? 0xE6F4FF : 0xBAC8D7, 0x00000000);
+  }
+}
+
+static void draw_main_menu_power_dropdown(void) {
+  int power_x, power_y, power_w, power_h;
+  int item_x, item_y, item_w, item_h;
+  int hovered_item = main_menu_item_at(mouse_x, mouse_y);
+
+  if (!main_menu_power_open)
+    return;
+  if (!main_menu_item_bounds(MAIN_MENU_ITEM_POWER, &power_x, &power_y, &power_w,
+                             &power_h))
+    return;
+
+  gui_fill_rect_alpha(power_x + 6, power_y + power_h + 6, power_w - 2, 64,
+                      0x28070C14);
+  gui_draw_glass_panel(power_x, power_y + power_h + 4, power_w, 62, 0x6A2C3446,
+                       0x24FFFFFF, 0x8C75839A, 1);
+
+  if (main_menu_power_item_bounds(MAIN_MENU_ITEM_POWER_SHUTDOWN, &item_x, &item_y,
+                                  &item_w, &item_h)) {
+    if (hovered_item == MAIN_MENU_ITEM_POWER_SHUTDOWN) {
+      gui_fill_rect_alpha(item_x, item_y, item_w, item_h, 0x50C84C4C);
+      gui_draw_rect_outline(item_x, item_y, item_w, item_h, 0xA5F6B0B0, 1);
+    }
+    gui_draw_string(item_x + 8, item_y + 7, "Shutdown", 0xFFFFFF, 0x00000000);
+  }
+
+  if (main_menu_power_item_bounds(MAIN_MENU_ITEM_POWER_RESTART, &item_x, &item_y,
+                                  &item_w, &item_h)) {
+    if (hovered_item == MAIN_MENU_ITEM_POWER_RESTART) {
+      gui_fill_rect_alpha(item_x, item_y, item_w, item_h, 0x50D98F38);
+      gui_draw_rect_outline(item_x, item_y, item_w, item_h, 0xA8FFE2B6, 1);
+    }
+    gui_draw_string(item_x + 8, item_y + 7, "Restart", 0xFFFFFF, 0x00000000);
   }
 }
 
@@ -6496,32 +6571,49 @@ static void draw_main_menu_panel(void) {
   gui_fill_rect_alpha(connector_x + 4, panel_y + panel_h - 2, 20, 16,
                       0x24050910);
 
-  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0xDCE3EEF9,
-                       0x5EFFFFFF, 0xB15A7CA7, 2);
-  gui_fill_rect_alpha(panel_x + 2, panel_y + 2, MAIN_MENU_LEFT_W - 4,
-                      panel_h - 4, 0xBDF3F7FB);
-  gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W, panel_y + 2,
-                      panel_w - MAIN_MENU_LEFT_W - 2, panel_h - 4,
-                      0x8A495C75);
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0x6A2C3446,
+                       0x42FFFFFF, 0x8C75839A, 2);
+  gui_fill_rect_alpha(panel_x + BORDER_WIDTH, panel_y + BORDER_WIDTH,
+                      panel_w - BORDER_WIDTH * 2, TITLEBAR_HEIGHT, 0x344D6488);
+  gui_fill_rect_alpha(panel_x + BORDER_WIDTH,
+                      panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
+                      panel_w - BORDER_WIDTH * 2, 1, 0x48DCE8F5);
 
-  for (int i = 0; i < panel_w - 4; i++) {
-    draw_pixel_alpha(panel_x + 2 + i, panel_y + 2,
-                     (i & 1) ? 0x42FFFFFF : 0x28FFFFFF);
+  {
+    int btn_cy = panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT / 2;
+    draw_filled_circle(panel_x + BORDER_WIDTH + 14, btn_cy, 5, COLOR_BTN_CLOSE);
+    draw_filled_circle(panel_x + BORDER_WIDTH + 30, btn_cy, 5, COLOR_BTN_MINIMIZE);
+    draw_filled_circle(panel_x + BORDER_WIDTH + 46, btn_cy, 5, COLOR_BTN_ZOOM);
   }
 
-  gui_fill_rect_alpha(panel_x + 14, panel_y + 12, 42, 42, 0x7081A7D6);
-  draw_filled_circle(panel_x + 35, panel_y + 33, 16, 0xFFFFFFFF);
-  gui_draw_os_logo(panel_x + 24, panel_y + 22, 2, 0x3B82F6, 0x1D4ED8,
-                   0x00000000);
-  gui_draw_string(panel_x + 68, panel_y + 17, "OS next stage", 0x122033,
+  gui_draw_string(panel_x + 76, panel_y + 8, "Main Menu", 0xFFF7FBFF,
                   0x00000000);
-  gui_draw_string(panel_x + 68, panel_y + 31, "Pinned and system tools",
-                  0x607080, 0x00000000);
+  gui_draw_string(panel_x + panel_w - 98, panel_y + 8, "Dock", 0xD8DDE6F2,
+                  0x00000000);
 
-  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 16, "System",
+  gui_fill_rect_alpha(panel_x + BORDER_WIDTH, panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT,
+                      MAIN_MENU_LEFT_W - BORDER_WIDTH, panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,
+                      0x141824);
+  gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W, panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT,
+                      panel_w - MAIN_MENU_LEFT_W - BORDER_WIDTH, panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,
+                      0x1F2937);
+  gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W - 1,
+                      panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT, 1,
+                      panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2, 0x30566C86);
+
+  gui_fill_rect_alpha(panel_x + 14, panel_y + 40, 42, 42, 0x40556F92);
+  draw_filled_circle(panel_x + 35, panel_y + 61, 16, 0xFFFFFFFF);
+  gui_draw_os_logo(panel_x + 24, panel_y + 50, 2, 0x3B82F6, 0x1D4ED8,
+                   0x00000000);
+  gui_draw_string(panel_x + 68, panel_y + 45, "OS next stage", 0xFFFFFF,
+                  0x00000000);
+  gui_draw_string(panel_x + 68, panel_y + 59, "Pinned and system tools",
+                  0xA7B4C4, 0x00000000);
+
+  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 46, "System",
                   0xFFFFFF, 0x00000000);
-  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 30,
-                  "Quick actions and power", 0xD5E4F6, 0x00000000);
+  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 60,
+                  "Quick actions and power", 0xCBD5E1, 0x00000000);
 
   draw_main_menu_row(MAIN_MENU_ITEM_TERMINAL, "Terminal", "Console and shell",
                      0x1F2937, 0);
@@ -6537,15 +6629,16 @@ static void draw_main_menu_panel(void) {
                      0x7C3AED, 0);
 
   draw_main_menu_row(MAIN_MENU_ITEM_ABOUT, "About OS", NULL, 0x89B4FA, 1);
-  draw_main_menu_row(MAIN_MENU_ITEM_SHUTDOWN, "Shutdown", NULL, 0xDC2626, 1);
-  draw_main_menu_row(MAIN_MENU_ITEM_RESTART, "Restart", NULL, 0xF59E0B, 1);
+  draw_main_menu_row(MAIN_MENU_ITEM_POWER, "Power", main_menu_power_open ? "v" : ">",
+                     0xDC2626, 1);
+  draw_main_menu_power_dropdown();
 
   gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W + 14,
                       panel_y + panel_h - MAIN_MENU_FOOTER_H + 4,
-                      panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x26FFFFFF);
+                      panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x2234475E);
   gui_draw_rect_outline(panel_x + MAIN_MENU_LEFT_W + 14,
                         panel_y + panel_h - MAIN_MENU_FOOTER_H + 4,
-                        panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x40D9E7F5, 1);
+                        panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x50738BA3, 1);
   gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 22,
                   panel_y + panel_h - MAIN_MENU_FOOTER_H + 12,
                   "Dock launcher menu", 0xEAF4FF, 0x00000000);
@@ -6579,13 +6672,18 @@ static int main_menu_activate(int item_index) {
   case MAIN_MENU_ITEM_APPSTORE:
     gui_launch_app_by_id("appstore");
     break;
-  case MAIN_MENU_ITEM_SHUTDOWN: {
+  case MAIN_MENU_ITEM_POWER:
+    main_menu_power_open = main_menu_power_open ? 0 : 1;
+    return 1;
+  case MAIN_MENU_ITEM_POWER_SHUTDOWN: {
     extern void arch_poweroff(void);
+    main_menu_power_open = 0;
     arch_poweroff();
     break;
   }
-  case MAIN_MENU_ITEM_RESTART: {
+  case MAIN_MENU_ITEM_POWER_RESTART: {
     extern void arch_reboot(void);
+    main_menu_power_open = 0;
     arch_reboot();
     break;
   }
@@ -6594,6 +6692,7 @@ static int main_menu_activate(int item_index) {
   }
 
   menu_open = 0;
+  main_menu_power_open = 0;
   return 1;
 }
 
@@ -6909,12 +7008,10 @@ static void draw_dock(void) {
   int dock_h = DOCK_HEIGHT;
   int dock_x = 0;
   int dock_y = (int)primary_display.height - dock_h;
-  int launcher_btn_size = DOCK_ICON_SIZE + 6;
-  int launcher_btn_x = 14;
-  int launcher_btn_y = dock_y + (dock_h - launcher_btn_size) / 2;
-  int icon_start_x = launcher_btn_x + launcher_btn_size + 18;
+  int menu_hotspot_x = 8;
+  int menu_hotspot_w = 18;
+  int icon_start_x = 32;
   int hovered_idx = -1;
-  int hovered_launcher = 0;
 
   for (int i = 0; i < dock_item_count; i++) {
     int base_center_x = icon_start_x + i * (DOCK_ICON_SIZE + DOCK_PADDING) +
@@ -6929,11 +7026,6 @@ static void draw_dock(void) {
     }
   }
 
-  if (mouse_x >= launcher_btn_x && mouse_x < launcher_btn_x + launcher_btn_size &&
-      mouse_y >= launcher_btn_y && mouse_y < launcher_btn_y + launcher_btn_size) {
-    hovered_launcher = 1;
-  }
-
   gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, dock_h, 0xA118202C);
   gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, 1, 0x72FFFFFF);
   gui_fill_rect_alpha(dock_x, dock_y + 1, primary_display.width, 1, 0x28495D78);
@@ -6941,19 +7033,6 @@ static void draw_dock(void) {
                       0x64060A10);
 
   draw_main_menu_panel();
-
-  gui_fill_rect_alpha(launcher_btn_x, launcher_btn_y, launcher_btn_size,
-                      launcher_btn_size,
-                      menu_open ? 0x5A78A9DA
-                                : (hovered_launcher ? 0x36566F92
-                                                    : 0x2437455B));
-  gui_draw_rect_outline(launcher_btn_x, launcher_btn_y, launcher_btn_size,
-                        launcher_btn_size,
-                        menu_open ? 0xB8E8FFFF
-                                  : (hovered_launcher ? 0x7EA7D8 : 0x506A87A8),
-                        1);
-  gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
-                   0x89B4FA, 0x00000000);
 
   draw_dock_status_indicators(dock_y, dock_h);
 
@@ -7058,10 +7137,11 @@ static void draw_dock(void) {
     }
   }
 
-  if (hovered_launcher) {
+  if (mouse_x >= menu_hotspot_x && mouse_x < menu_hotspot_x + menu_hotspot_w &&
+      mouse_y >= dock_y && mouse_y < dock_y + dock_h) {
     int label_w = 88;
     int label_h = 24;
-    int label_x = launcher_btn_x;
+    int label_x = 8;
     int label_y = dock_y - 32;
 
     draw_rounded_rect(label_x, label_y, label_w, label_h, 6, 0x303040);
@@ -7232,9 +7312,8 @@ static char g_gpu_backend_name[32] = "software";
 static int dock_handle_click(int x, int y) {
   int dock_y;
   int dock_h;
-  int launcher_btn_size;
-  int launcher_btn_x;
-  int launcher_btn_y;
+  int menu_hotspot_x;
+  int menu_hotspot_w;
 
   if (!dock_is_visible())
     return 0;
@@ -7244,27 +7323,28 @@ static int dock_handle_click(int x, int y) {
 
   dock_y = primary_display.height - DOCK_HEIGHT;
   dock_h = DOCK_HEIGHT;
-  launcher_btn_size = DOCK_ICON_SIZE + 6;
-  launcher_btn_x = 14;
-  launcher_btn_y = dock_y + (dock_h - launcher_btn_size) / 2;
+  menu_hotspot_x = 8;
+  menu_hotspot_w = 18;
 
   if (y < dock_y || y >= dock_y + dock_h)
     return 0;
 
-  if (x >= launcher_btn_x && x < launcher_btn_x + launcher_btn_size &&
-      y >= launcher_btn_y && y < launcher_btn_y + launcher_btn_size) {
+  if (x >= menu_hotspot_x && x < menu_hotspot_x + menu_hotspot_w) {
     menu_open = menu_open ? 0 : 1;
+    if (!menu_open)
+      main_menu_power_open = 0;
     return 1;
   }
 
   {
-    int icon_x = launcher_btn_x + launcher_btn_size + 18;
+    int icon_x = 32;
     int icon_y_start = dock_y + (dock_h - DOCK_ICON_SIZE) / 2;
 
     for (int i = 0; i < dock_item_count; i++) {
       if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
           y < icon_y_start + DOCK_ICON_SIZE) {
         menu_open = 0;
+        main_menu_power_open = 0;
         gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
       }
@@ -8038,11 +8118,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         return;
       }
       menu_open = 0;
+      main_menu_power_open = 0;
       return;
     }
 
     if (y < MENU_BAR_HEIGHT) {
       menu_open = 0;
+      main_menu_power_open = 0;
       return;
     }
 
@@ -8110,12 +8192,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         return;
       }
       menu_open = 0;
+      main_menu_power_open = 0;
       return;
     }
 
     /* Menu bar clicks */
     if (y < MENU_BAR_HEIGHT) {
       menu_open = 0;
+      main_menu_power_open = 0;
       return;
     }
   }
@@ -8123,6 +8207,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   /* Close menu if clicking elsewhere */
   if (menu_open) {
     menu_open = 0;
+    main_menu_power_open = 0;
   }
 
   for (struct window *win = window_stack; win; win = win->next) {
