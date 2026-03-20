@@ -1542,7 +1542,8 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   return -1;
 #endif
 
-  if (!pci_find_device(0x1234, 0x1111))
+  if (str_cmp(g_gpu_backend_name, "bochs-vbe") != 0 &&
+      !pci_find_device(0x1234, 0x1111))
     return -1;
 
   if (bochs_init(width, height) != 0)
@@ -7621,7 +7622,7 @@ int gui_is_gpu_rendering_enabled(void) { return g_gpu_rendering_enabled; }
 
 void gui_refresh_hardware_acceleration_policy(void) {
   int enable = 0;
-  const char *backend = "software";
+  const char *backend = "framebuffer";
   extern int intel_gfx_is_ready(void);
   extern int intel_gfx_has_framebuffer(void);
   extern bool virtio_gpu_is_available(void);
@@ -7633,6 +7634,8 @@ void gui_refresh_hardware_acceleration_policy(void) {
   } else if (intel_gfx_is_ready() && intel_gfx_has_framebuffer()) {
     enable = 1;
     backend = "intel-gfx";
+  } else if (pci_find_device(0x1234, 0x1111)) {
+    backend = "bochs-vbe";
   }
 
   str_copy_safe(g_gpu_backend_name, backend, sizeof(g_gpu_backend_name));
