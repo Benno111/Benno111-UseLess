@@ -133,11 +133,31 @@ EOF
 
 cp "$ISO_ROOT/dos/README.TXT" "$INSTALL_ROOT/dos/README.TXT"
 
+cat > "$ISO_ROOT/INSTALLERS.TXT" <<EOF
+OS next stage Installer Types
+
+1. Graphical Installer
+   Boot menu entry: "OS next stage Graphical Installer"
+   Use this for the normal desktop installer flow.
+
+2. DOS Rescue Installer
+   Boot menu entry: "OS next stage DOS Rescue Installer"
+   Use this only as a fallback when the graphical installer path fails.
+
+DOS rescue files are also mirrored in /dos:
+- OSINST.COM
+- OSINST.IMG
+- README.TXT
+EOF
+
+cp "$ISO_ROOT/INSTALLERS.TXT" "$INSTALL_ROOT/INSTALLERS.TXT"
+
 cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
 OS next stage System Image
 
 This ISO contains:
-- a bootable installer environment
+- a graphical installer environment
+- a separate DOS rescue installer path
 - a bundled system image payload at /install/system-image
 
 Primary payload files:
@@ -160,6 +180,7 @@ DOS fallback tools included in the ISO:
 - /dos/OSINST.COM
 - /dos/OSINST.IMG
 - /dos/README.TXT
+- /INSTALLERS.TXT
 
 The installer GUI boots from the top-level ISO files and installs the bundled
 desktop/system layout represented by this image payload.
@@ -235,6 +256,7 @@ require_iso_path "/EFI/BOOT/BOOTX64.EFI"
 require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
+require_iso_path "/INSTALLERS.TXT"
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     require_iso_path "/boot/dos-installer.img"
     require_iso_path "/install/system-image/boot/dos-installer.img"
@@ -246,6 +268,7 @@ if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
     require_iso_path "/install/system-image/dos/OSINST.COM"
 fi
 require_iso_path "/dos/README.TXT"
+require_iso_path "/install/system-image/INSTALLERS.TXT"
 require_iso_path "/install/system-image/dos/README.TXT"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"

@@ -1010,13 +1010,13 @@ static void populate_installer_payload(void) {
       "timeout: 5\n"
       "default_entry: 1\n"
       "\n"
-      "/OS next stage Installer\n"
+      "/OS next stage Graphical Installer\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n"
       "    cmdline: boot=usb mode=installer\n"
       "\n"
-      "/OS next stage DOS-style Installer\n"
-      "    comment: BIOS-only 16-bit real-mode fallback installer with 64-bit handoff disabled\n"
+      "/OS next stage DOS Rescue Installer\n"
+      "    comment: BIOS-only fallback installer, separate from the graphical installer path\n"
       "    protocol: bios_chainload\n"
       "    partition: 2\n";
   static const char *image_info =
