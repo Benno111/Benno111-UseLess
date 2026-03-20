@@ -106,7 +106,7 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 /* Menu Bar - Frosted glass effect */
 #define COLOR_MENU_BG 0x18181B   /* Very dark */
 #define COLOR_MENU_TEXT 0xFAFAFA /* White text */
-#define MENU_BAR_HEIGHT 28
+#define MENU_BAR_HEIGHT 0
 
 /* Dock - Modern glass dock */
 #define COLOR_DOCK_BG 0x1F1F23     /* Dark dock */
@@ -6284,14 +6284,15 @@ static void draw_window(struct window *win) {
 /* ===================================================================== */
 
 /* Menu dropdown state */
-static int menu_open = 0; /* 0=closed, 1=Apple menu open */
+static int menu_open = 0; /* 0=closed, 1=main menu open */
 
-#define MAIN_MENU_X 8
-#define MAIN_MENU_Y MENU_BAR_HEIGHT
-#define MAIN_MENU_W 250
-#define MAIN_MENU_H 244
-#define MAIN_MENU_HEADER_H 34
-#define MAIN_MENU_ROW_H 24
+#define MAIN_MENU_W 364
+#define MAIN_MENU_H 350
+#define MAIN_MENU_HEADER_H 60
+#define MAIN_MENU_LEFT_W 214
+#define MAIN_MENU_ROW_H 34
+#define MAIN_MENU_RIGHT_ROW_H 28
+#define MAIN_MENU_FOOTER_H 52
 
 enum {
   MAIN_MENU_ITEM_NONE = -1,
@@ -6307,46 +6308,251 @@ enum {
   MAIN_MENU_ITEM_COUNT
 };
 
-static int main_menu_item_top(int item_index) {
-  if (item_index < 0)
-    return MAIN_MENU_Y;
-  if (item_index <= MAIN_MENU_ITEM_APPSTORE)
-    return MAIN_MENU_Y + MAIN_MENU_HEADER_H + 10 + item_index * MAIN_MENU_ROW_H;
-  return MAIN_MENU_Y + MAIN_MENU_HEADER_H + 10 + 7 * MAIN_MENU_ROW_H +
-         10 + (item_index - MAIN_MENU_ITEM_SHUTDOWN) * MAIN_MENU_ROW_H;
+static void main_menu_launcher_button_rect(int *x, int *y, int *w, int *h) {
+  int dock_y = (int)primary_display.height - DOCK_HEIGHT;
+  int size = DOCK_ICON_SIZE + 6;
+
+  if (x)
+    *x = 14;
+  if (y)
+    *y = dock_y + (DOCK_HEIGHT - size) / 2;
+  if (w)
+    *w = size;
+  if (h)
+    *h = size;
+}
+
+static int main_menu_panel_x(void) {
+  int launcher_x, launcher_y, launcher_w, launcher_h;
+  int x;
+
+  main_menu_launcher_button_rect(&launcher_x, &launcher_y, &launcher_w,
+                                 &launcher_h);
+  x = launcher_x - 6;
+  if (x < 8)
+    x = 8;
+  if (x + MAIN_MENU_W > (int)primary_display.width - 8)
+    x = (int)primary_display.width - MAIN_MENU_W - 8;
+  return x;
+}
+
+static int main_menu_panel_y(void) {
+  int dock_y = (int)primary_display.height - DOCK_HEIGHT;
+  int y = dock_y - MAIN_MENU_H + 10;
+  if (y < MENU_BAR_HEIGHT + 8)
+    y = MENU_BAR_HEIGHT + 8;
+  return y;
+}
+
+static void main_menu_panel_rect(int *x, int *y, int *w, int *h) {
+  if (x)
+    *x = main_menu_panel_x();
+  if (y)
+    *y = main_menu_panel_y();
+  if (w)
+    *w = MAIN_MENU_W;
+  if (h)
+    *h = MAIN_MENU_H;
+}
+
+static int main_menu_contains_point(int x, int y) {
+  int panel_x, panel_y, panel_w, panel_h;
+  main_menu_panel_rect(&panel_x, &panel_y, &panel_w, &panel_h);
+  return x >= panel_x && x < panel_x + panel_w && y >= panel_y &&
+         y < panel_y + panel_h;
+}
+
+static int main_menu_item_bounds(int item_index, int *x, int *y, int *w,
+                                 int *h) {
+  int panel_x = main_menu_panel_x();
+  int panel_y = main_menu_panel_y();
+  int left_x = panel_x + 12;
+  int left_y = panel_y + MAIN_MENU_HEADER_H + 14;
+  int left_w = MAIN_MENU_LEFT_W - 24;
+  int right_x = panel_x + MAIN_MENU_LEFT_W + 10;
+  int right_y = panel_y + MAIN_MENU_HEADER_H + 18;
+  int right_w = MAIN_MENU_W - MAIN_MENU_LEFT_W - 22;
+
+  if (item_index < 0 || item_index >= MAIN_MENU_ITEM_COUNT)
+    return 0;
+
+  switch (item_index) {
+  case MAIN_MENU_ITEM_TERMINAL:
+  case MAIN_MENU_ITEM_FILES:
+  case MAIN_MENU_ITEM_NOTES:
+  case MAIN_MENU_ITEM_SETTINGS:
+  case MAIN_MENU_ITEM_BROWSER:
+  case MAIN_MENU_ITEM_APPSTORE:
+    if (x)
+      *x = left_x;
+    if (y)
+      *y = left_y + (item_index - MAIN_MENU_ITEM_TERMINAL) * MAIN_MENU_ROW_H;
+    if (w)
+      *w = left_w;
+    if (h)
+      *h = MAIN_MENU_ROW_H - 2;
+    return 1;
+  case MAIN_MENU_ITEM_ABOUT:
+    if (x)
+      *x = right_x;
+    if (y)
+      *y = right_y;
+    if (w)
+      *w = right_w;
+    if (h)
+      *h = MAIN_MENU_RIGHT_ROW_H;
+    return 1;
+  case MAIN_MENU_ITEM_SHUTDOWN:
+    if (x)
+      *x = right_x;
+    if (y)
+      *y = panel_y + MAIN_MENU_H - 108;
+    if (w)
+      *w = right_w;
+    if (h)
+      *h = MAIN_MENU_RIGHT_ROW_H;
+    return 1;
+  case MAIN_MENU_ITEM_RESTART:
+    if (x)
+      *x = right_x;
+    if (y)
+      *y = panel_y + MAIN_MENU_H - 74;
+    if (w)
+      *w = right_w;
+    if (h)
+      *h = MAIN_MENU_RIGHT_ROW_H;
+    return 1;
+  default:
+    return 0;
+  }
 }
 
 static int main_menu_item_at(int x, int y) {
   if (!menu_open)
     return MAIN_MENU_ITEM_NONE;
-  if (x < MAIN_MENU_X || x >= MAIN_MENU_X + MAIN_MENU_W || y < MAIN_MENU_Y ||
-      y >= MAIN_MENU_Y + MAIN_MENU_H)
+  if (!main_menu_contains_point(x, y))
     return MAIN_MENU_ITEM_NONE;
 
   for (int i = 0; i < MAIN_MENU_ITEM_COUNT; i++) {
-    int top = main_menu_item_top(i);
-    if (y >= top && y < top + MAIN_MENU_ROW_H)
+    int item_x, item_y, item_w, item_h;
+    if (!main_menu_item_bounds(i, &item_x, &item_y, &item_w, &item_h))
+      continue;
+    if (x >= item_x && x < item_x + item_w && y >= item_y &&
+        y < item_y + item_h)
       return i;
   }
   return MAIN_MENU_ITEM_NONE;
 }
 
 static void draw_main_menu_row(int item_index, const char *label,
-                               const char *hint, uint32_t accent) {
-  int row_x = MAIN_MENU_X + 10;
-  int row_y = main_menu_item_top(item_index);
-  int row_w = MAIN_MENU_W - 20;
+                               const char *subtitle, uint32_t accent,
+                               int compact) {
+  int row_x, row_y, row_w, row_h;
   int hovered = (main_menu_item_at(mouse_x, mouse_y) == item_index);
 
+  if (!main_menu_item_bounds(item_index, &row_x, &row_y, &row_w, &row_h))
+    return;
+
   if (hovered) {
-    gui_fill_rect_alpha(row_x, row_y, row_w, MAIN_MENU_ROW_H, 0x4A5B8AC6);
-    gui_draw_rect_outline(row_x, row_y, row_w, MAIN_MENU_ROW_H, 0x75B6DAFF, 1);
+    gui_fill_rect_alpha(row_x, row_y, row_w, row_h, 0x5069A7E4);
+    gui_draw_rect_outline(row_x, row_y, row_w, row_h, 0x8AD7F1FF, 1);
   }
 
-  gui_draw_rect(row_x + 8, row_y + 6, 12, 12, accent);
-  gui_draw_string(row_x + 28, row_y + 5, label, 0xFFFFFF, 0x00000000);
-  if (hint)
-    gui_draw_string(row_x + row_w - 54, row_y + 5, hint, 0xB8C4D7, 0x00000000);
+  if (!compact) {
+    gui_fill_rect_alpha(row_x + 6, row_y + 5, 22, 22, accent | 0x66000000);
+    gui_draw_rect_outline(row_x + 6, row_y + 5, 22, 22, 0x90FFFFFF, 1);
+    gui_draw_string(row_x + 36, row_y + 6, label, 0x0C1722, 0x00000000);
+    if (subtitle)
+      gui_draw_string(row_x + 36, row_y + 18, subtitle, 0x5E6A78, 0x00000000);
+  } else {
+    gui_draw_string(row_x + 10, row_y + 7, label,
+                    hovered ? 0xFFFFFF : 0xEAF2FF, 0x00000000);
+    if (subtitle)
+      gui_draw_string(row_x + row_w - 56, row_y + 7, subtitle,
+                      hovered ? 0xE6F4FF : 0xBAC8D7, 0x00000000);
+  }
+}
+
+static void draw_main_menu_panel(void) {
+  int panel_x, panel_y, panel_w, panel_h;
+  int launcher_x, launcher_y, launcher_w, launcher_h;
+  int connector_x;
+
+  if (!menu_open)
+    return;
+
+  main_menu_panel_rect(&panel_x, &panel_y, &panel_w, &panel_h);
+  main_menu_launcher_button_rect(&launcher_x, &launcher_y, &launcher_w,
+                                 &launcher_h);
+  connector_x = launcher_x + launcher_w / 2 - 10;
+  if (connector_x < panel_x + 20)
+    connector_x = panel_x + 20;
+  if (connector_x > panel_x + panel_w - 20)
+    connector_x = panel_x + panel_w - 20;
+
+  gui_fill_rect_alpha(panel_x + 8, panel_y + 8, panel_w, panel_h + 2,
+                      0x28050910);
+  gui_fill_rect_alpha(connector_x + 4, panel_y + panel_h - 2, 20, 16,
+                      0x24050910);
+
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0xDCE3EEF9,
+                       0x5EFFFFFF, 0xB15A7CA7, 2);
+  gui_fill_rect_alpha(panel_x + 2, panel_y + 2, MAIN_MENU_LEFT_W - 4,
+                      panel_h - 4, 0xBDF3F7FB);
+  gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W, panel_y + 2,
+                      panel_w - MAIN_MENU_LEFT_W - 2, panel_h - 4,
+                      0x8A495C75);
+
+  for (int i = 0; i < panel_w - 4; i++) {
+    draw_pixel_alpha(panel_x + 2 + i, panel_y + 2,
+                     (i & 1) ? 0x42FFFFFF : 0x28FFFFFF);
+  }
+
+  gui_fill_rect_alpha(panel_x + 14, panel_y + 12, 42, 42, 0x7081A7D6);
+  draw_filled_circle(panel_x + 35, panel_y + 33, 16, 0xFFFFFFFF);
+  gui_draw_os_logo(panel_x + 24, panel_y + 22, 2, 0x3B82F6, 0x1D4ED8,
+                   0x00000000);
+  gui_draw_string(panel_x + 68, panel_y + 17, "OS next stage", 0x122033,
+                  0x00000000);
+  gui_draw_string(panel_x + 68, panel_y + 31, "Pinned and system tools",
+                  0x607080, 0x00000000);
+
+  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 16, "System",
+                  0xFFFFFF, 0x00000000);
+  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 30,
+                  "Quick actions and power", 0xD5E4F6, 0x00000000);
+
+  draw_main_menu_row(MAIN_MENU_ITEM_TERMINAL, "Terminal", "Console and shell",
+                     0x1F2937, 0);
+  draw_main_menu_row(MAIN_MENU_ITEM_FILES, "Files", "Browse folders",
+                     0x3B82F6, 0);
+  draw_main_menu_row(MAIN_MENU_ITEM_NOTES, "Notepad", "Quick editing",
+                     0xFACC15, 0);
+  draw_main_menu_row(MAIN_MENU_ITEM_SETTINGS, "Settings", "System controls",
+                     0x9CA3AF, 0);
+  draw_main_menu_row(MAIN_MENU_ITEM_BROWSER, "Browser", "Open the web",
+                     0x0EA5E9, 0);
+  draw_main_menu_row(MAIN_MENU_ITEM_APPSTORE, "App Store", "Install apps",
+                     0x7C3AED, 0);
+
+  draw_main_menu_row(MAIN_MENU_ITEM_ABOUT, "About OS", NULL, 0x89B4FA, 1);
+  draw_main_menu_row(MAIN_MENU_ITEM_SHUTDOWN, "Shutdown", NULL, 0xDC2626, 1);
+  draw_main_menu_row(MAIN_MENU_ITEM_RESTART, "Restart", NULL, 0xF59E0B, 1);
+
+  gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W + 14,
+                      panel_y + panel_h - MAIN_MENU_FOOTER_H + 4,
+                      panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x26FFFFFF);
+  gui_draw_rect_outline(panel_x + MAIN_MENU_LEFT_W + 14,
+                        panel_y + panel_h - MAIN_MENU_FOOTER_H + 4,
+                        panel_w - MAIN_MENU_LEFT_W - 28, 28, 0x40D9E7F5, 1);
+  gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 22,
+                  panel_y + panel_h - MAIN_MENU_FOOTER_H + 12,
+                  "Dock launcher menu", 0xEAF4FF, 0x00000000);
+
+  gui_fill_rect_alpha(connector_x, panel_y + panel_h - 2, 20, 12, 0xDCE3EEF9);
+  gui_fill_rect_alpha(connector_x + 2, panel_y + panel_h, 16, 10, 0x8A495C75);
+  gui_draw_rect_outline(connector_x, panel_y + panel_h - 2, 20, 12,
+                        0x805A7CA7, 1);
 }
 
 static int main_menu_activate(int item_index) {
@@ -6391,75 +6597,7 @@ static int main_menu_activate(int item_index) {
 }
 
 static void draw_menu_bar(void) {
-  char time_str[9];
-  int hours24, minutes, seconds;
-
-  gui_draw_glass_panel(0, 0, primary_display.width, MENU_BAR_HEIGHT, 0x7A243246,
-                       0x3FFFFFFF, 0x904D5B72, 2);
-  gui_fill_rect_alpha(0, 0, primary_display.width, 1, 0x5AFFFFFF);
-  gui_fill_rect_alpha(0, MENU_BAR_HEIGHT - 1, primary_display.width, 1,
-                      0x4A10141C);
-
-  /* OS next stage logo */
-  gui_draw_os_logo(10, 4, 1, 0xFFFFFF, 0x89B4FA, 0x00000000);
-
-  /* OS next stage name (bold) */
-  gui_draw_string(32, 6, "OS next stage", 0xFFFFFF, 0x00000000);
-
-  clock_get_time(&hours24, &minutes, &seconds);
-  clock_format_time(time_str, hours24, minutes, seconds);
-  time_str[5] = '\0';
-  gui_draw_string(primary_display.width - 52, 6, time_str, 0xFFFFFF,
-                  0x00000000);
-
-  /* WiFi Icon (Static Connected) */
-  {
-    int wx = primary_display.width - 86;
-    int wy = 12;
-    /* Draw arcs using simple lines/pixels */
-    /* Center dot */
-    gui_draw_rect(wx, wy + 6, 2, 2, 0xFFFFFF);
-    /* Middle arc */
-    gui_draw_line(wx - 3, wy + 3, wx, wy, 0xFFFFFF);
-    gui_draw_line(wx, wy, wx + 3, wy + 3, 0xFFFFFF);
-    /* Top arc */
-    gui_draw_line(wx - 6, wy, wx, wy - 3, 0xFFFFFF);
-    gui_draw_line(wx, wy - 3, wx + 6, wy, 0xFFFFFF);
-  }
-
-  /* Draw dropdown if open */
-  if (menu_open == 1) {
-    /* Dropdown shadow */
-    gui_fill_rect_alpha(MAIN_MENU_X + 4, MAIN_MENU_Y + 4, MAIN_MENU_W,
-                        MAIN_MENU_H, 0x3410151E);
-
-    gui_draw_glass_panel(MAIN_MENU_X, MAIN_MENU_Y, MAIN_MENU_W, MAIN_MENU_H,
-                         0x9A263141, 0x34FFFFFF, 0x9067758C, 1);
-
-    gui_draw_string(MAIN_MENU_X + 14, MAIN_MENU_Y + 10, "Main Menu", 0xFFFFFF,
-                    0x00000000);
-    gui_draw_string(MAIN_MENU_X + MAIN_MENU_W - 84, MAIN_MENU_Y + 10, "Launcher",
-                    0xAFC0D4, 0x00000000);
-
-    for (int i = MAIN_MENU_X + 10; i < MAIN_MENU_X + MAIN_MENU_W - 10; i++) {
-      draw_pixel(i, MAIN_MENU_Y + MAIN_MENU_HEADER_H, 0x55607282);
-      draw_pixel(i, MAIN_MENU_Y + MAIN_MENU_HEADER_H + 178, 0x444F6276);
-    }
-
-    draw_main_menu_row(MAIN_MENU_ITEM_ABOUT, "About OS", NULL, 0x89B4FA);
-    draw_main_menu_row(MAIN_MENU_ITEM_TERMINAL, "Terminal", ">", 0x1F2937);
-    draw_main_menu_row(MAIN_MENU_ITEM_FILES, "Files", ">", 0x3B82F6);
-    draw_main_menu_row(MAIN_MENU_ITEM_NOTES, "Notepad", ">", 0xFACC15);
-    draw_main_menu_row(MAIN_MENU_ITEM_SETTINGS, "Settings", ">", 0x9CA3AF);
-    draw_main_menu_row(MAIN_MENU_ITEM_BROWSER, "Browser", ">", 0x0EA5E9);
-    draw_main_menu_row(MAIN_MENU_ITEM_APPSTORE, "App Store", ">", 0x7C3AED);
-    draw_main_menu_row(MAIN_MENU_ITEM_SHUTDOWN, "Shutdown", NULL, 0xDC2626);
-    draw_main_menu_row(MAIN_MENU_ITEM_RESTART, "Restart", NULL, 0xF59E0B);
-
-    gui_draw_string(MAIN_MENU_X + 14, MAIN_MENU_Y + MAIN_MENU_H - 18,
-                    "Dock launcher and menu bar share this menu",
-                    0x9AA7BA, 0x00000000);
-  }
+  return;
 }
 
 /* Dock icons */
@@ -6801,12 +6939,18 @@ static void draw_dock(void) {
   gui_fill_rect_alpha(dock_x, dock_y + dock_h - 1, primary_display.width, 1,
                       0x64060A10);
 
+  draw_main_menu_panel();
+
   gui_fill_rect_alpha(launcher_btn_x, launcher_btn_y, launcher_btn_size,
-                      launcher_btn_size, hovered_launcher ? 0x36566F92
-                                                          : 0x2437455B);
+                      launcher_btn_size,
+                      menu_open ? 0x5A78A9DA
+                                : (hovered_launcher ? 0x36566F92
+                                                    : 0x2437455B));
   gui_draw_rect_outline(launcher_btn_x, launcher_btn_y, launcher_btn_size,
                         launcher_btn_size,
-                        hovered_launcher ? 0x7EA7D8 : 0x506A87A8, 1);
+                        menu_open ? 0xB8E8FFFF
+                                  : (hovered_launcher ? 0x7EA7D8 : 0x506A87A8),
+                        1);
   gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
                    0x89B4FA, 0x00000000);
 
@@ -7119,6 +7263,7 @@ static int dock_handle_click(int x, int y) {
     for (int i = 0; i < dock_item_count; i++) {
       if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
           y < icon_y_start + DOCK_ICON_SIZE) {
+        menu_open = 0;
         gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
       }
@@ -7887,8 +8032,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     /* Check menu bar dropdown BEFORE desktop icons (dropdown overlaps desktop
      * area) */
-    if (menu_open == 1 && x >= MAIN_MENU_X && x < MAIN_MENU_X + MAIN_MENU_W &&
-        y >= MAIN_MENU_Y && y < MAIN_MENU_Y + MAIN_MENU_H) {
+    if (menu_open == 1 && main_menu_contains_point(x, y)) {
       if (main_menu_activate(main_menu_item_at(x, y))) {
         return;
       }
@@ -7897,16 +8041,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
 
     if (y < MENU_BAR_HEIGHT) {
-      if (x < 90) {
-        menu_open = menu_open ? 0 : 1;
-      } else {
-        menu_open = 0;
-      }
+      menu_open = 0;
       return;
     }
 
     if (dock_handle_click(x, y)) {
-      menu_open = 0;
       return;
     }
 
@@ -7959,16 +8098,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     return;
 
   /* Check menu bar and dropdown clicks */
-  if (y < MENU_BAR_HEIGHT ||
-      (menu_open && x < MAIN_MENU_X + MAIN_MENU_W &&
-       y < MAIN_MENU_Y + MAIN_MENU_H)) {
+  if (y < MENU_BAR_HEIGHT || (menu_open && main_menu_contains_point(x, y))) {
 
     printk("MENU DEBUG: x=%d y=%d menu_open=%d MBH=%d\\n", x, y, menu_open,
            MENU_BAR_HEIGHT);
 
     /* If dropdown is open, check dropdown item clicks */
-    if (menu_open == 1 && x >= MAIN_MENU_X && x < MAIN_MENU_X + MAIN_MENU_W &&
-        y >= MAIN_MENU_Y && y < MAIN_MENU_Y + MAIN_MENU_H) {
+    if (menu_open == 1 && main_menu_contains_point(x, y)) {
       if (main_menu_activate(main_menu_item_at(x, y))) {
         return;
       }
@@ -7978,16 +8114,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     /* Menu bar clicks */
     if (y < MENU_BAR_HEIGHT) {
-      /* Apple menu / Vib-OS logo area (x < 90) - toggle dropdown */
-      if (x < 90) {
-        menu_open = menu_open ? 0 : 1;
-        return;
-      }
-
-      /* Close menu if clicking elsewhere on menu bar */
       menu_open = 0;
+      return;
     }
-    return;
   }
 
   /* Close menu if clicking elsewhere */
