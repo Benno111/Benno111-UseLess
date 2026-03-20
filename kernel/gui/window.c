@@ -7,6 +7,7 @@
 #include "build_uuid.h"
 #include "arch/arch.h"
 #include "desktop.h"         /* Desktop manager */
+#include "drivers/pci.h"
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
 #include "drivers/uart.h"
 #include "fs/vfs.h"          /* VFS headers */
@@ -1540,6 +1541,9 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
 #if !defined(ARCH_X86_64) && !defined(ARCH_X86)
   return -1;
 #endif
+
+  if (!pci_find_device(0x1234, 0x1111))
+    return -1;
 
   if (bochs_init(width, height) != 0)
     return -1;
