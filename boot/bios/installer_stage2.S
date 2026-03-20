@@ -11,17 +11,19 @@
 .section .text
 .global _start
 
+#define BOOT_STAGE2_SEGMENT 0x07E0
 #define DISK_BUFFER_SEGMENT 0x2000
 #define COPY_CHUNK_SECTORS  4
 
 _start:
-    ljmp    $0x0000, $real_mode_entry
+    ljmp    $BOOT_STAGE2_SEGMENT, $real_mode_entry
 
 real_mode_entry:
     cli
-    xor     %ax, %ax
+    mov     %cs, %ax
     mov     %ax, %ds
     mov     %ax, %es
+    xor     %ax, %ax
     mov     %ax, %ss
     mov     $0x9000, %sp
     sti

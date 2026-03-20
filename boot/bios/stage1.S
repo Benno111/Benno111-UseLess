@@ -10,6 +10,9 @@
 .section .text
 .global _start
 
+#define BOOT_STAGE1_SEGMENT 0x07C0
+#define BOOT_STAGE2_SEGMENT 0x07E0
+
 _start:
     jmp     real_mode_entry
     nop
@@ -35,15 +38,16 @@ hidden_sectors:
     .ascii  "OSKSETUP   "       /* volume label */
     .ascii  "FAT16   "
 
-    ljmp    $0x0000, $real_mode_entry
+    ljmp    $BOOT_STAGE1_SEGMENT, $real_mode_entry
 
 real_mode_entry:
     /* ================================================================= */
     /* Set up segments and stack */
     /* ================================================================= */
     cli
-    xor     %ax, %ax
+    mov     %cs, %ax
     mov     %ax, %ds
+    xor     %ax, %ax
     mov     %ax, %es
     mov     %ax, %ss
     mov     $0x7C00, %sp
@@ -69,7 +73,7 @@ real_mode_entry:
     mov     $msg_stage2, %si
     call    print_string
     
-    ljmp    $0x0000, $0x7E00
+    ljmp    $BOOT_STAGE2_SEGMENT, $0x0000
     
 /* ===================================================================== */
 /* Error Handling */
