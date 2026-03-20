@@ -14,6 +14,7 @@ LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine
 INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
 DOS_INSTALLER_IMAGE="${DOS_INSTALLER_IMAGE:-${IMAGE_DIR}/os-x86_64-dos-installer.img}"
+DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -53,14 +54,22 @@ log "Preparing ISO root at $ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
+mkdir -p "$ISO_ROOT/dos"
 mkdir -p "$INSTALL_ROOT/boot"
 mkdir -p "$INSTALL_ROOT/EFI/BOOT"
 mkdir -p "$INSTALL_ROOT/limine"
+mkdir -p "$INSTALL_ROOT/dos"
 
 if [ -f "$DOS_INSTALLER_IMAGE" ]; then
     DOS_INSTALLER_ENABLED=1
 else
     DOS_INSTALLER_ENABLED=0
+fi
+
+if [ -f "$DOS_INSTALLER_COM" ]; then
+    DOS_INSTALLER_COM_ENABLED=1
+else
+    DOS_INSTALLER_COM_ENABLED=0
 fi
 
 if [ -d "${BUILD_DIR}/assets" ]; then
@@ -97,7 +106,32 @@ cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
     cp "$DOS_INSTALLER_IMAGE" "$INSTALL_ROOT/boot/dos-installer.img"
+    cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/dos/OSINST.IMG"
+    cp "$DOS_INSTALLER_IMAGE" "$INSTALL_ROOT/dos/OSINST.IMG"
 fi
+
+if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
+    cp "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
+    cp "$DOS_INSTALLER_COM" "$INSTALL_ROOT/dos/OSINST.COM"
+fi
+
+cat > "$ISO_ROOT/dos/README.TXT" <<EOF
+OS next stage DOS Rescue Tools
+
+This folder contains the DOS-side fallback installer package:
+- OSINST.COM : run this from an existing DOS system
+- OSINST.IMG : raw fallback installer disk image
+
+Usage from DOS:
+1. Copy both files to a DOS machine or DOS boot disk.
+2. Boot DOS and change into the directory containing these files.
+3. Run OSINST.COM.
+4. Choose a target BIOS disk and confirm the write.
+
+The target disk will be overwritten sector-by-sector.
+EOF
+
+cp "$ISO_ROOT/dos/README.TXT" "$INSTALL_ROOT/dos/README.TXT"
 
 cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
 OS next stage System Image
@@ -120,6 +154,12 @@ Primary payload files:
 
 If present, repo assets are mirrored under:
 - /install/system-image/assets
+
+DOS fallback tools included in the ISO:
+- /boot/dos-installer.img
+- /dos/OSINST.COM
+- /dos/OSINST.IMG
+- /dos/README.TXT
 
 The installer GUI boots from the top-level ISO files and installs the bundled
 desktop/system layout represented by this image payload.
@@ -198,7 +238,15 @@ require_iso_path "/EFI/BOOT/limine.conf"
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     require_iso_path "/boot/dos-installer.img"
     require_iso_path "/install/system-image/boot/dos-installer.img"
+    require_iso_path "/dos/OSINST.IMG"
+    require_iso_path "/install/system-image/dos/OSINST.IMG"
 fi
+if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
+    require_iso_path "/dos/OSINST.COM"
+    require_iso_path "/install/system-image/dos/OSINST.COM"
+fi
+require_iso_path "/dos/README.TXT"
+require_iso_path "/install/system-image/dos/README.TXT"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"
 require_iso_path "/install/system-image/limine.conf"
