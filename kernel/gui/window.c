@@ -411,10 +411,11 @@ static const settings_resolution_option_t settings_resolution_options[] = {
 
 static int settings_resolution_current_idx = -1;
 static int settings_resolution_pending_idx = -1;
-static struct window *window_stack;
 static uint32_t *g_saved_backbuffer;
 static int wallpaper_cached;
 static int wallpaper_cached_idx;
+static void gui_clamp_windows_to_display(void);
+static int gui_apply_resolution(uint32_t width, uint32_t height);
 
 static void notepad_append_to_buf(char *dst, int max, const char *src) {
   int idx = 0;
@@ -1430,6 +1431,68 @@ static int settings_resolution_button_bounds(int panel_x, int panel_y, int index
   return 1;
 }
 
+static void build_device_ports_string(char *buf, int connected, int total) {
+  int idx = 0;
+  append_decimal(buf, &idx, connected);
+  buf[idx++] = '/';
+  append_decimal(buf, &idx, total);
+  buf[idx++] = ' ';
+  buf[idx++] = 'p';
+  buf[idx++] = 'o';
+  buf[idx++] = 'r';
+  buf[idx++] = 't';
+  if (total != 1) {
+    buf[idx++] = 's';
+  }
+  buf[idx] = '\0';
+}
+
+/* ===================================================================== */
+/* Window System */
+/* ===================================================================== */
+
+#define MAX_WINDOWS 64
+#define TITLEBAR_HEIGHT 28
+#define BORDER_WIDTH 2
+
+typedef enum {
+  WINDOW_NORMAL,
+  WINDOW_MINIMIZED,
+  WINDOW_MAXIMIZED,
+  WINDOW_FULLSCREEN
+} window_state_t;
+
+struct window {
+  int id;
+  char title[64];
+  int x, y;
+  int width, height;
+  window_state_t state;
+  bool visible;
+  bool focused;
+  bool has_titlebar;
+  bool resizable;
+  uint32_t *content_buffer;
+  void *userdata;
+
+  /* Saved position for restore from maximize */
+  int saved_x, saved_y;
+  int saved_width, saved_height;
+
+  /* Callbacks */
+  void (*on_draw)(struct window *win);
+  void (*on_key)(struct window *win, int key);
+  void (*on_mouse)(struct window *win, int x, int y, int buttons);
+  void (*on_close)(struct window *win);
+
+  struct window *next;
+};
+
+static struct window windows[MAX_WINDOWS];
+static struct window *window_stack = NULL; /* Z-order, top is focused */
+static struct window *focused_window = NULL;
+static int next_window_id = 1;
+
 static void gui_clamp_windows_to_display(void) {
   int max_y = (int)primary_display.height - dock_reserved_height() - 12;
 
@@ -1510,68 +1573,6 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   printk(KERN_INFO "GUI: Resolution changed to %ux%u\n", new_width, new_height);
   return 0;
 }
-
-static void build_device_ports_string(char *buf, int connected, int total) {
-  int idx = 0;
-  append_decimal(buf, &idx, connected);
-  buf[idx++] = '/';
-  append_decimal(buf, &idx, total);
-  buf[idx++] = ' ';
-  buf[idx++] = 'p';
-  buf[idx++] = 'o';
-  buf[idx++] = 'r';
-  buf[idx++] = 't';
-  if (total != 1) {
-    buf[idx++] = 's';
-  }
-  buf[idx] = '\0';
-}
-
-/* ===================================================================== */
-/* Window System */
-/* ===================================================================== */
-
-#define MAX_WINDOWS 64
-#define TITLEBAR_HEIGHT 28
-#define BORDER_WIDTH 2
-
-typedef enum {
-  WINDOW_NORMAL,
-  WINDOW_MINIMIZED,
-  WINDOW_MAXIMIZED,
-  WINDOW_FULLSCREEN
-} window_state_t;
-
-struct window {
-  int id;
-  char title[64];
-  int x, y;
-  int width, height;
-  window_state_t state;
-  bool visible;
-  bool focused;
-  bool has_titlebar;
-  bool resizable;
-  uint32_t *content_buffer;
-  void *userdata;
-
-  /* Saved position for restore from maximize */
-  int saved_x, saved_y;
-  int saved_width, saved_height;
-
-  /* Callbacks */
-  void (*on_draw)(struct window *win);
-  void (*on_key)(struct window *win, int key);
-  void (*on_mouse)(struct window *win, int x, int y, int buttons);
-  void (*on_close)(struct window *win);
-
-  struct window *next;
-};
-
-static struct window windows[MAX_WINDOWS];
-static struct window *window_stack = NULL; /* Z-order, top is focused */
-static struct window *focused_window = NULL;
-static int next_window_id = 1;
 
 static struct window *notepad_find_window(void) {
   for (int i = 0; i < MAX_WINDOWS; i++) {
