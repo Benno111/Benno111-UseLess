@@ -5589,8 +5589,15 @@ static void draw_window(struct window *win) {
     } else {
       blur_status = "Blur: Off";
     }
-    gpu_status = gui_is_gpu_rendering_enabled() ? "GPU rendering active"
-                                                : "Software rendering active";
+    if (gui_is_gpu_rendering_enabled()) {
+      gpu_status = "GPU rendering active";
+    } else if (str_cmp(g_gpu_backend_name, "bochs-vbe") == 0) {
+      gpu_status = "Bochs/QEMU display backend active";
+    } else if (str_cmp(g_gpu_backend_name, "framebuffer") == 0) {
+      gpu_status = "Framebuffer display backend active";
+    } else {
+      gpu_status = "Software rendering active";
+    }
 
     dock_count_buf[0] = '\0';
     append_decimal(dock_count_buf, &dock_count_buf_idx, dock_item_count);
