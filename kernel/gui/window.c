@@ -53,6 +53,7 @@ static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
 static int write_text_file(const char *path, const char *content);
 static void str_copy_safe(char *dst, const char *src, int max);
+static int str_cmp(const char *s1, const char *s2);
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 void compositor_mark_full_redraw(void);
