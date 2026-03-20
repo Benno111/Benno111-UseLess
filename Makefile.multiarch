@@ -189,7 +189,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image dos-installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-binary qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -220,6 +220,7 @@ help:
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
 	@echo "  dos-installer-image - Create BIOS real-mode text installer image"
+	@echo "  dos-installer-binary - Create DOS runnable installer utility"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -329,6 +330,8 @@ INSTALLER_BOOT_STAGE1_OBJ := $(BUILD_DIR)/boot/installer_stage1.o
 INSTALLER_BOOT_STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
 INSTALLER_BOOT_STAGE1_BIN := $(BUILD_DIR)/boot/installer_stage1.bin
 INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
+DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
+DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
 
 $(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
@@ -340,11 +343,20 @@ $(INSTALLER_BOOT_STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD
 	@echo "[AS] $<"
 	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
 
+$(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@echo "[AS] $<"
+	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
+
 $(INSTALLER_BOOT_STAGE1_BIN): $(INSTALLER_BOOT_STAGE1_OBJ)
 	@echo "[OBJCOPY] $@"
 	@$(OBJCOPY) -O binary $< $@
 
 $(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_OBJ)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O binary $< $@
+
+$(DOS_INSTALLER_COM_BIN): $(DOS_INSTALLER_COM_OBJ)
 	@echo "[OBJCOPY] $@"
 	@$(OBJCOPY) -O binary $< $@
 
@@ -394,6 +406,19 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
 else
 	@echo "[IMAGE] dos-installer-image is currently supported only for ARCH=x86_64"
+	@exit 1
+endif
+
+dos-installer-binary: $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN) $(DOS_INSTALLER_COM_BIN)
+ifeq ($(ARCH),x86_64)
+	@echo "[IMAGE] Creating DOS runnable installer utility package..."
+	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@cp "$(DOS_INSTALLER_COM_BIN)" "$(IMAGE_DIR)/OSINST.COM"
+	@cp "$(IMAGE_DIR)/os-x86_64-dos-installer.img" "$(IMAGE_DIR)/OSINST.IMG"
+	@echo "[IMAGE] Created: $(IMAGE_DIR)/OSINST.COM"
+	@echo "[IMAGE] Created: $(IMAGE_DIR)/OSINST.IMG"
+else
+	@echo "[IMAGE] dos-installer-binary is currently supported only for ARCH=x86_64"
 	@exit 1
 endif
 
