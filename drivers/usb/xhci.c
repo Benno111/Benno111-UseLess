@@ -161,6 +161,19 @@ struct xhci_device {
 
 static struct xhci_device xhci = {0};
 static int xhci_ready = 0;
+static int xhci_probe_attempted = 0;
+static int xhci_init_failed = 0;
+
+static int xhci_mmio_base_is_sane(phys_addr_t mmio_base) {
+  if (!mmio_base)
+    return 0;
+  if (mmio_base == (phys_addr_t)0xFFFFFFFFULL ||
+      mmio_base == (phys_addr_t)0xFFFFFFFFFFFFFFFFULL)
+    return 0;
+  if ((mmio_base & 0xFFF) != 0)
+    return 0;
+  return 1;
+}
 
 static const char *xhci_speed_name(uint8_t speed) {
   switch (speed) {
@@ -491,9 +504,35 @@ static void xhci_check_port(int port) {
 int xhci_init(phys_addr_t mmio_base) {
   printk(KERN_INFO "XHCI: Initializing USB 3.x Host Controller\n");
 
+  if (xhci_ready)
+    return 0;
+  if (xhci_probe_attempted && xhci_init_failed)
+    return -1;
+
+  xhci_probe_attempted = 1;
+
+  if (!xhci_mmio_base_is_sane(mmio_base)) {
+    printk(KERN_WARNING "XHCI: Refusing unsafe MMIO base 0x%llx\n",
+           (unsigned long long)mmio_base);
+    xhci_init_failed = 1;
+    return -1;
+  }
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  printk(KERN_WARNING
+         "XHCI: Deferred on x86 bring-up path for hardware stability\n");
+  xhci_init_failed = 1;
+  return -1;
+#endif
+
   /* Map MMIO */
   xhci.base = (volatile uint8_t *)mmio_base;
-  vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE);
+  if (vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE) != 0) {
+    printk(KERN_ERR "XHCI: Failed to map controller MMIO at 0x%llx\n",
+           (unsigned long long)mmio_base);
+    xhci_init_failed = 1;
+    return -1;
+  }
 
   /* Read capability registers */
   uint8_t cap_length = xhci.base[XHCI_CAPLENGTH];
@@ -565,6 +604,7 @@ int xhci_init(phys_addr_t mmio_base) {
 
   printk(KERN_INFO "XHCI: Controller started\n");
   xhci_ready = 1;
+  xhci_init_failed = 0;
   return 0;
 }
 
