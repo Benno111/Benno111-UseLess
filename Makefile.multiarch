@@ -149,16 +149,9 @@ KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/drivers -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sync -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sandbox -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C := $(filter-out \
-	$(KERNEL_DIR)/media/bootstrap_landscape_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_portrait_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_square_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_wallpaper_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_nature_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_city_jpg.c \
-	$(KERNEL_DIR)/media/bootstrap_httpbin_jpg.c \
 	$(KERNEL_DIR)/media/hd_wallpaper_landscape.c \
 	$(KERNEL_DIR)/media/hd_wallpaper_nature.c \
-	$(KERNEL_DIR)/media/hd_wallpaper_city.c, \
+	$(KERNEL_DIR)/media/hd_wallpaper_city.c \
 	$(KERNEL_SOURCES_C))
 
 # Architecture-specific sources
