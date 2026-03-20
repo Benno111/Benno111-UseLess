@@ -16,7 +16,10 @@
 
 typedef struct {
   bool initialized;
+  bool probe_attempted;
+  bool init_failed;
   bool has_framebuffer;
+  bool mmio_mapped;
   uint16_t device_id;
   uint64_t mmio_base;
   uint64_t aperture_base;
@@ -61,6 +64,35 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
   }
 }
 
+static int intel_gfx_is_supported_subclass(const pci_device_t *pci_dev) {
+  if (!pci_dev)
+    return 0;
+  return pci_dev->subclass == 0x00 || pci_dev->subclass == 0x80;
+}
+
+static int intel_gfx_mmio_bar_is_sane(uint64_t addr) {
+  if (!addr)
+    return 0;
+  if (addr == 0xFFFFFFFFULL || addr == 0xFFFFFFFFFFFFFFFFULL)
+    return 0;
+  if ((addr & 0xFFFULL) != 0)
+    return 0;
+  return 1;
+}
+
+static int intel_gfx_framebuffer_is_sane(uint32_t *fb, uint32_t width,
+                                         uint32_t height, uint32_t pitch) {
+  if (!fb || !width || !height)
+    return 0;
+  if (width > 16384 || height > 16384)
+    return 0;
+  if (pitch < width * sizeof(uint32_t))
+    return 0;
+  if (pitch > width * sizeof(uint32_t) * 8)
+    return 0;
+  return 1;
+}
+
 static uint64_t intel_gfx_read_bar(const pci_device_t *pci_dev,
                                    uint8_t bar_offset) {
   uint32_t low;
@@ -90,19 +122,45 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   uint32_t width = 0;
   uint32_t height = 0;
   uint32_t pitch = 0;
+  int safe_framebuffer = 0;
 
   if (!intel_gfx_is_display_device(pci_dev))
     return -1;
+  if (!intel_gfx_is_supported_subclass(pci_dev)) {
+    printk(KERN_WARNING "IGFX: Unsupported display subclass 0x%02x, skipping\n",
+           pci_dev->subclass);
+    return -1;
+  }
   if (intel_gfx_state.initialized)
     return 0;
+  if (intel_gfx_state.probe_attempted && intel_gfx_state.init_failed)
+    return -1;
+
+  intel_gfx_state = (intel_gfx_state_t){0};
+  intel_gfx_state.probe_attempted = true;
+  intel_gfx_state.device_id = pci_dev->device_id;
+  intel_gfx_state.irq = pci_dev->irq;
 
   pci_enable_device(pci_dev);
 
-  intel_gfx_state = (intel_gfx_state_t){0};
-  intel_gfx_state.device_id = pci_dev->device_id;
   intel_gfx_state.mmio_base = intel_gfx_read_bar(pci_dev, PCI_BAR0);
   intel_gfx_state.aperture_base = intel_gfx_read_bar(pci_dev, PCI_BAR2);
-  intel_gfx_state.irq = pci_dev->irq;
+
+  if (!intel_gfx_mmio_bar_is_sane(intel_gfx_state.mmio_base)) {
+    if (intel_gfx_state.mmio_base) {
+      printk(KERN_WARNING "IGFX: Ignoring unsafe MMIO BAR0=0x%llx\n",
+             (unsigned long long)intel_gfx_state.mmio_base);
+    }
+    intel_gfx_state.mmio_base = 0;
+  }
+
+  if (!intel_gfx_mmio_bar_is_sane(intel_gfx_state.aperture_base)) {
+    if (intel_gfx_state.aperture_base) {
+      printk(KERN_WARNING "IGFX: Ignoring unsafe aperture BAR2=0x%llx\n",
+             (unsigned long long)intel_gfx_state.aperture_base);
+    }
+    intel_gfx_state.aperture_base = 0;
+  }
 
   if (intel_gfx_state.mmio_base) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
@@ -110,10 +168,16 @@ int intel_gfx_init(pci_device_t *pci_dev) {
                      "path\n",
            (unsigned long long)intel_gfx_state.mmio_base);
 #else
-    vmm_map_range(intel_gfx_state.mmio_base, intel_gfx_state.mmio_base,
-                  INTEL_GFX_MMIO_MAP_SIZE, VM_DEVICE);
-    intel_gfx_state.mmio =
-        (volatile uint8_t *)(uintptr_t)intel_gfx_state.mmio_base;
+    if (vmm_map_range(intel_gfx_state.mmio_base, intel_gfx_state.mmio_base,
+                      INTEL_GFX_MMIO_MAP_SIZE, VM_DEVICE) == 0) {
+      intel_gfx_state.mmio =
+          (volatile uint8_t *)(uintptr_t)intel_gfx_state.mmio_base;
+      intel_gfx_state.mmio_mapped = true;
+    } else {
+      printk(KERN_WARNING "IGFX: Failed to map MMIO BAR0=0x%llx\n",
+             (unsigned long long)intel_gfx_state.mmio_base);
+      intel_gfx_state.mmio_base = 0;
+    }
 #endif
   }
 
@@ -122,11 +186,26 @@ int intel_gfx_init(pci_device_t *pci_dev) {
 
   fb_get_info(&fb, &width, &height);
   pitch = fb_get_pitch();
+  safe_framebuffer = intel_gfx_framebuffer_is_sane(fb, width, height, pitch);
 
-  intel_gfx_state.width = width;
-  intel_gfx_state.height = height;
-  intel_gfx_state.pitch = pitch;
-  intel_gfx_state.has_framebuffer = (fb != NULL && width != 0 && height != 0);
+  if (safe_framebuffer) {
+    intel_gfx_state.width = width;
+    intel_gfx_state.height = height;
+    intel_gfx_state.pitch = pitch;
+    intel_gfx_state.has_framebuffer = true;
+  } else if (fb || width || height || pitch) {
+    printk(KERN_WARNING
+           "IGFX: Ignoring invalid framebuffer handoff fb=%p %ux%u pitch=%u\n",
+           fb, width, height, pitch);
+  }
+
+  if (!intel_gfx_state.has_framebuffer && !intel_gfx_state.mmio_base) {
+    intel_gfx_state.init_failed = true;
+    printk(KERN_WARNING
+           "IGFX: No safe framebuffer or MMIO path available, driver disabled\n");
+    return -1;
+  }
+
   intel_gfx_state.initialized = true;
 
   printk(KERN_INFO "IGFX: %s detected (%04x:%04x) at %02x:%02x.%x\n",
@@ -140,6 +219,8 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   if (intel_gfx_state.has_framebuffer) {
     printk(KERN_INFO "IGFX: Using boot framebuffer %ux%u pitch=%u\n",
            intel_gfx_state.width, intel_gfx_state.height, intel_gfx_state.pitch);
+  } else if (intel_gfx_state.mmio_base) {
+    printk(KERN_INFO "IGFX: Running in conservative MMIO-only mode\n");
   } else {
     printk(KERN_WARNING "IGFX: No active framebuffer available yet\n");
   }
