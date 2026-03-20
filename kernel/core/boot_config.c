@@ -310,3 +310,15 @@ int boot_is_installer_mode(void)
 {
     return boot_installer_mode ? 1 : 0;
 }
+
+int boot_should_show_splash(void)
+{
+    return boot_cfg.show_splash ? 1 : 0;
+}
+
+void boot_force_verbose_console(void)
+{
+    boot_cfg.verbose_boot = true;
+    boot_cfg.show_splash = false;
+    printk(KERN_INFO "BOOT: verbose console forced by keyboard override\n");
+}

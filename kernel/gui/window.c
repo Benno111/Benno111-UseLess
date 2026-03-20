@@ -1260,18 +1260,30 @@ static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
                              uint32_t accent, uint32_t bg) {
   int s = scale < 1 ? 1 : scale;
   int outer = 14 * s;
-  int inner = 8 * s;
+  int inset = 3 * s;
+  int inner = outer - inset * 2;
+  int cutout = inner / 2;
+  int cutout_x = x + (outer - cutout) / 2;
+  int cutout_y = y + (outer - cutout) / 2;
   int has_bg = bg != 0x00000000;
 
   if (has_bg)
     gui_draw_rect(x, y, outer, outer, bg);
   gui_draw_rect_outline(x, y, outer, outer, fg, s);
-  gui_draw_rect(x + 3 * s, y + 3 * s, inner, inner, accent);
-  if (has_bg)
-    gui_draw_rect(x + 5 * s, y + 5 * s, 4 * s, 4 * s, bg);
+  gui_draw_rect(x + inset, y + inset, inner, inner, accent);
 
-  gui_draw_line(x + 2 * s, y + 2 * s, x + 12 * s, y + 12 * s, fg);
-  gui_draw_line(x + 12 * s, y + 2 * s, x + 2 * s, y + 12 * s, fg);
+  if (has_bg) {
+    gui_draw_rect(cutout_x, cutout_y, cutout, cutout, bg);
+  } else {
+    gui_draw_rect_outline(cutout_x, cutout_y, cutout, cutout, fg, s > 1 ? 2 : 1);
+  }
+
+  for (int i = 0; i < s; i++) {
+    gui_draw_line(x + 2 * s, y + 2 * s + i, x + outer - 3 * s, y + outer - 3 * s + i,
+                  fg);
+    gui_draw_line(x + outer - 3 * s, y + 2 * s + i, x + 2 * s, y + outer - 3 * s + i,
+                  fg);
+  }
 }
 
 /* ===================================================================== */
@@ -8364,6 +8376,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
              uint32_t pitch) {
   printk(KERN_INFO "GUI: Initializing windowing system\n");
+  extern int boot_should_show_splash(void);
 
   if (gui_is_installer_mode()) {
     installer_has_run = 0;
@@ -8381,65 +8394,70 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   /* LOADING SCREEN - Show during initialization  */
   /* ============================================= */
 
-  /* Fill with dark gradient background */
-  for (int y = 0; y < (int)height; y++) {
-    int progress = (y * 256) / height;
-    uint8_t r = 15 + (progress * 10) / 256;
-    uint8_t g = 15 + (progress * 5) / 256;
-    uint8_t b = 30 + (progress * 25) / 256;
-    uint32_t color = (r << 16) | (g << 8) | b;
-    for (int x = 0; x < (int)width; x++) {
-      framebuffer[y * (pitch / 4) + x] = color;
+  if (boot_should_show_splash()) {
+    /* Fill with dark gradient background */
+    for (int y = 0; y < (int)height; y++) {
+      int progress = (y * 256) / height;
+      uint8_t r = 15 + (progress * 10) / 256;
+      uint8_t g = 15 + (progress * 5) / 256;
+      uint8_t b = 30 + (progress * 25) / 256;
+      uint32_t color = (r << 16) | (g << 8) | b;
+      for (int x = 0; x < (int)width; x++) {
+        framebuffer[y * (pitch / 4) + x] = color;
+      }
     }
-  }
 
-  /* Draw OS next stage logo text (large, centered) */
-  const char *logo = "OS next stage";
-  int logo_x =
-      (width - 6 * 16) / 2; /* 6 chars, roughly 16px each for "big" text */
-  int logo_y = height / 2 - 60;
+    /* Draw the actual OS logo and centered brand text */
+    {
+      const char *logo = "OS next stage";
+      int logo_len = 0;
+      int logo_scale = 5;
+      int logo_size = 14 * logo_scale;
+      int logo_x = ((int)width - logo_size) / 2;
+      int logo_y = (int)height / 2 - 110;
+      int text_y;
+      int text_x;
 
-  /* Draw each character larger (2x scale simulation) */
-  for (int i = 0; logo[i]; i++) {
-    int cx = logo_x + i * 20;
-    /* Draw character with bold effect */
-    gui_draw_char(cx, logo_y, logo[i], 0xFFFFFF, 0x000000);
-    gui_draw_char(cx + 1, logo_y, logo[i], 0xFFFFFF, 0x000000);
-    gui_draw_char(cx, logo_y + 1, logo[i], 0xFFFFFF, 0x000000);
-    gui_draw_char(cx + 1, logo_y + 1, logo[i], 0xFFFFFF, 0x000000);
-  }
+      while (logo[logo_len])
+        logo_len++;
 
-  /* Draw version text */
-  const char *version = "v1.0 - Modern Desktop Experience";
-  int ver_x = (width - 33 * 8) / 2;
-  int ver_y = logo_y + 40;
-  gui_draw_string(ver_x, ver_y, version, 0x9CA3AF, 0x000000);
+      gui_draw_os_logo(logo_x, logo_y, logo_scale, 0xFFFFFF, 0x89B4FA,
+                       0x00000000);
 
-  /* Draw loading bar background */
-  int bar_w = 300;
-  int bar_h = 8;
-  int bar_x = (width - bar_w) / 2;
-  int bar_y = height / 2 + 40;
-  gui_draw_rect(bar_x, bar_y, bar_w, bar_h, 0x27272A);
-  gui_draw_rect(bar_x, bar_y, bar_w, 1, 0x3F3F46);
+      text_y = logo_y + logo_size + 20;
+      text_x = ((int)width - logo_len * 8) / 2;
+      gui_draw_string(text_x, text_y, logo, 0xFFFFFF, 0x00000000);
+    }
 
-  /* Animate loading bar */
-  const char *loading_msgs[] = {"Initializing hardware...",
-                                "Loading desktop environment...",
-                                "Starting services...", "Welcome to OS next stage!"};
+    /* Draw version text */
+    {
+      const char *version = "v1.0 - Modern Desktop Experience";
+      int ver_x = (width - 33 * 8) / 2;
+      int ver_y = height / 2 + 4;
+      int bar_w = 300;
+      int bar_h = 8;
+      int bar_x = (width - bar_w) / 2;
+      int bar_y = height / 2 + 40;
+      const char *loading_msgs[] = {"Initializing hardware...",
+                                    "Loading desktop environment...",
+                                    "Starting services...",
+                                    "Welcome to OS next stage!"};
 
-  for (int stage = 0; stage < 4; stage++) {
-    /* Update progress bar */
-    int fill = (bar_w * (stage + 1)) / 4;
-    gui_draw_rect(bar_x + 1, bar_y + 1, fill - 2, bar_h - 2, 0x6366F1);
+      gui_draw_string(ver_x, ver_y, version, 0x9CA3AF, 0x00000000);
+      gui_draw_rect(bar_x, bar_y, bar_w, bar_h, 0x27272A);
+      gui_draw_rect(bar_x, bar_y, bar_w, 1, 0x3F3F46);
 
-    /* Draw loading message */
-    int msg_x = (width - 30 * 8) / 2;
-    int msg_y = bar_y + 20;
-    gui_draw_rect(msg_x - 10, msg_y - 2, 260, 20,
-                  0x000000); /* Clear previous */
-    gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7, 0x000000);
+      for (int stage = 0; stage < 4; stage++) {
+        int fill = (bar_w * (stage + 1)) / 4;
+        int msg_x = (width - 30 * 8) / 2;
+        int msg_y = bar_y + 20;
 
+        gui_draw_rect(bar_x + 1, bar_y + 1, fill - 2, bar_h - 2, 0x6366F1);
+        gui_draw_rect(msg_x - 10, msg_y - 2, 260, 20, 0x000000);
+        gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7,
+                        0x000000);
+      }
+    }
   }
 
   /* ============================================= */

@@ -72,6 +72,8 @@ static struct {
     bool initialized;
 } framebuffer = {0};
 
+extern int boot_should_show_splash(void);
+
 /* ===================================================================== */
 /* Framebuffer Operations */
 /* ===================================================================== */
@@ -224,7 +226,9 @@ int fb_init(void)
         printk(KERN_INFO "FB: Using Limine framebuffer %ux%u at 0x%lx\n",
                framebuffer.width, framebuffer.height,
                (unsigned long)framebuffer.buffer);
-        fb_show_splash();
+        if (boot_should_show_splash()) {
+            fb_show_splash();
+        }
         return 0;
     }
 
@@ -257,7 +261,9 @@ int fb_init(void)
 #endif
     
     /* Show boot splash */
-    fb_show_splash();
+    if (boot_should_show_splash()) {
+        fb_show_splash();
+    }
     
     printk(KERN_INFO "FB: Initialization complete\n");
     

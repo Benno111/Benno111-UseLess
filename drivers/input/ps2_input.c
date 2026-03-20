@@ -48,6 +48,7 @@ static int ctrl_pressed = 0;
 static int alt_pressed = 0;
 static int caps_lock = 0;
 static int extended_scancode = 0;
+static int boot_verbose_requested = 0;
 
 static int mouse_x = 400;
 static int mouse_y = 300;
@@ -244,6 +245,10 @@ static void dispatch_key(int key) {
 
   if (!key) {
     return;
+  }
+
+  if (key == 'v' || key == 'V') {
+    boot_verbose_requested = 1;
   }
 
   if (key_callback) {
@@ -568,6 +573,8 @@ void input_poll(void) {
     }
   }
 }
+
+int input_boot_verbose_requested(void) { return boot_verbose_requested; }
 
 void mouse_get_position(int *x, int *y) {
   if (trackpad_has_pointer()) {

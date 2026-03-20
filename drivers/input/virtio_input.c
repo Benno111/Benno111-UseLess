@@ -149,6 +149,7 @@ static void (*gui_key_callback)(int key) = 0;
 static int shift_held = 0;
 static int ctrl_held = 0;
 static int alt_held = 0;
+static int boot_verbose_requested = 0;
 
 #define KEY_WINDOW_SWITCHER 0x110
 #define KEY_CTRL_ALT_DEL 0x111
@@ -715,6 +716,7 @@ static void keyboard_poll(void) {
         if (ev->value == 1) {
           int processed = 0;
           int vibe_key = 0;
+          char ascii = 0;
 
           if (ev->code == 103)
             vibe_key = 0x100;
@@ -742,6 +744,9 @@ static void keyboard_poll(void) {
             vibe_key = KEY_CTRL_ALT_DEL;
 
           if (vibe_key) {
+            if (vibe_key == 'v' || vibe_key == 'V') {
+              boot_verbose_requested = 1;
+            }
             if (key_callback)
               key_callback(vibe_key);
             if (gui_key_callback)
@@ -750,8 +755,6 @@ static void keyboard_poll(void) {
           }
 
           if (!processed && ev->code < 128) {
-            char ascii;
-
             if (ctrl_held) {
               char base = keycode_to_ascii[ev->code];
               if (base >= 'a' && base <= 'z') {
@@ -767,6 +770,9 @@ static void keyboard_poll(void) {
               ascii = keycode_to_ascii[ev->code];
             }
 
+            if (ascii == 'v' || ascii == 'V') {
+              boot_verbose_requested = 1;
+            }
             if (key_callback && ascii) {
               key_callback(ascii);
             }
@@ -877,3 +883,5 @@ void input_poll(void) {
   /* Poll mouse */
   mouse_poll();
 }
+
+int input_boot_verbose_requested(void) { return boot_verbose_requested; }

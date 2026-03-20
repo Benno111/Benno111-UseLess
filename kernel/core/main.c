@@ -466,7 +466,9 @@ static void start_x86_64_bringup(void) {
   extern void acpi_init(void *rsdp_ptr);
   extern void boot_parse_cmdline(const char *cmdline);
   extern int boot_is_installer_mode(void);
+  extern void boot_force_verbose_console(void);
   extern int input_init(void);
+  extern int input_boot_verbose_requested(void);
   extern void input_poll(void);
   extern void input_set_key_callback(void (*callback)(int key));
   extern void input_set_mouse_bounds(int width, int height);
@@ -489,6 +491,18 @@ static void start_x86_64_bringup(void) {
   uint64_t last_refresh = 0;
   const uint64_t REFRESH_MS = 33;
 
+  boot_parse_cmdline(limine_get_kernel_cmdline());
+  input_init();
+  for (int attempt = 0; attempt < 2000; attempt++) {
+    input_poll();
+    if (input_boot_verbose_requested()) {
+      boot_force_verbose_console();
+      break;
+    }
+    for (volatile int i = 0; i < 5000; i++) {
+    }
+  }
+
   if (fb_init() != 0) {
     panic("Failed to initialize framebuffer on x86_64!");
   }
@@ -499,8 +513,6 @@ static void start_x86_64_bringup(void) {
   if (!fb_buffer || !fb_width || !fb_height) {
     panic("No usable framebuffer available on x86_64!");
   }
-
-  boot_parse_cmdline(limine_get_kernel_cmdline());
 
   kmalloc_init();
   arch_timer_init();
@@ -525,7 +537,6 @@ static void start_x86_64_bringup(void) {
   pci_init();
   refresh_external_storage_views();
 
-  input_init();
   input_set_key_callback(keyboard_handler);
   input_set_mouse_bounds((int)fb_width, (int)fb_height);
   input_set_mouse_scale(2);
