@@ -152,8 +152,16 @@ ISR_ERROR_CODE 30       # Security exception
 ISR_NO_ERROR_CODE 31    # Reserved
 
 /* IRQ handlers (32-47) */
+.macro IRQ_NO_ERROR_CODE num
+.global isr\num
+isr\num:
+    push    $0
+    push    $\num
+    jmp     isr_irq_common
+.endm
+
 .irp num,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
-ISR_NO_ERROR_CODE \num
+IRQ_NO_ERROR_CODE \num
 .endr
 
 /* System call handler (128) */
@@ -206,4 +214,47 @@ isr_common:
     add     $16, %rsp
     
     /* Return from interrupt */
+    iretq
+
+/* Common hardware IRQ handler */
+isr_irq_common:
+    push    %rax
+    push    %rbx
+    push    %rcx
+    push    %rdx
+    push    %rsi
+    push    %rdi
+    push    %rbp
+    push    %r8
+    push    %r9
+    push    %r10
+    push    %r11
+    push    %r12
+    push    %r13
+    push    %r14
+    push    %r15
+
+    sub     $8, %rsp
+    mov     %rsp, %rdi
+    add     $8, %rdi
+    call    handle_irq
+    add     $8, %rsp
+
+    pop     %r15
+    pop     %r14
+    pop     %r13
+    pop     %r12
+    pop     %r11
+    pop     %r10
+    pop     %r9
+    pop     %r8
+    pop     %rbp
+    pop     %rdi
+    pop     %rsi
+    pop     %rdx
+    pop     %rcx
+    pop     %rbx
+    pop     %rax
+
+    add     $16, %rsp
     iretq

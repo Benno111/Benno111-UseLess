@@ -115,12 +115,7 @@ int boot_add_entry(const char *name, const char *path, const char *cmdline)
 /* ASCII art logo */
 static const char *splash_logo[] = {
     "",
-    "        _  _         ___  ____  ",
-    " __   _(_)| |__     / _ \\/ ___| ",
-    " \\ \\ / / || '_ \\   | | | \\___ \\ ",
-    "  \\ V /| || |_) |  | |_| |___) |",
-    "   \\_/ |_||_.__/    \\___/|____/ ",
-    "",
+    "Starting OS8",
     "        ARM64 Operating System",
     "",
     NULL

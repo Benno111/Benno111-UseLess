@@ -8,16 +8,92 @@
 #include "types.h"
 
 /* ===================================================================== */
+/* Legacy PIC support for x86_64 bring-up */
+/* ===================================================================== */
+
+#define PIC1_COMMAND    0x20
+#define PIC1_DATA       0x21
+#define PIC2_COMMAND    0xA0
+#define PIC2_DATA       0xA1
+
+#define PIC_EOI         0x20
+#define ICW1_INIT       0x10
+#define ICW1_ICW4       0x01
+#define ICW4_8086       0x01
+
+static inline uint8_t pic_inb(uint16_t port)
+{
+    uint8_t value;
+    asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static inline void pic_io_wait(void)
+{
+    outb(0x80, 0);
+}
+
+void pic_init(void)
+{
+    uint8_t mask1 = 0xFF;
+    uint8_t mask2 = 0xFF;
+
+    outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
+    pic_io_wait();
+    outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+    pic_io_wait();
+
+    outb(PIC1_DATA, 0x20);
+    pic_io_wait();
+    outb(PIC2_DATA, 0x28);
+    pic_io_wait();
+
+    outb(PIC1_DATA, 0x04);
+    pic_io_wait();
+    outb(PIC2_DATA, 0x02);
+    pic_io_wait();
+
+    outb(PIC1_DATA, ICW4_8086);
+    pic_io_wait();
+    outb(PIC2_DATA, ICW4_8086);
+    pic_io_wait();
+
+    /* Keep everything masked except cascade; PIT unmasks IRQ0 later. */
+    mask1 &= (uint8_t)~(1u << 2);
+    outb(PIC1_DATA, mask1);
+    outb(PIC2_DATA, mask2);
+}
+
+void pic_send_eoi(uint8_t irq)
+{
+    if (irq >= 8)
+        outb(PIC2_COMMAND, PIC_EOI);
+    outb(PIC1_COMMAND, PIC_EOI);
+}
+
+void pic_clear_mask(uint8_t irq)
+{
+    uint16_t port;
+    uint8_t value;
+
+    if (irq < 8) {
+        port = PIC1_DATA;
+    } else {
+        port = PIC2_DATA;
+        irq -= 8;
+    }
+
+    value = pic_inb(port) & (uint8_t)~(1u << irq);
+    outb(port, value);
+}
+
+/* ===================================================================== */
 /* Early Initialization */
 /* ===================================================================== */
 
 void arch_early_init(void)
 {
-    /* Disable PIC (we'll use APIC) */
-    outb(0x21, 0xFF);
-    outb(0xA1, 0xFF);
-    
-    printk(KERN_INFO "x86_64: Early initialization complete\n");
+    printk(KERN_INFO "x86_64: Early initialization complete (legacy PIC/PIT mode)\n");
 }
 
 void arch_init(void)
@@ -53,9 +129,8 @@ void arch_irq_restore(unsigned long flags)
 
 void arch_irq_init(void)
 {
-    /* Initialize APIC/PIC - implemented in separate driver */
-    extern void apic_init(void);
-    apic_init();
+    printk(KERN_INFO "x86_64: Initializing legacy PIC for bring-up\n");
+    pic_init();
 }
 
 /* ===================================================================== */
@@ -430,4 +505,22 @@ void handle_exception(interrupt_frame_t *frame)
 
     x86_64_boot_emergency_exception(frame->int_no, frame->rip, frame->err_code,
                                     cr2_valid, cr2);
+}
+
+void handle_irq(interrupt_frame_t *frame)
+{
+    uint8_t irq;
+
+    if (!frame || frame->int_no < 32 || frame->int_no > 47)
+        return;
+
+    irq = (uint8_t)(frame->int_no - 32);
+
+    if (irq == 0) {
+        extern void pit_handler(void);
+        pit_handler();
+        return;
+    }
+
+    pic_send_eoi(irq);
 }
