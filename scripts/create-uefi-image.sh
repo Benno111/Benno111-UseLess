@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create a BIOS+UEFI bootable FAT disk image for x86_64 without loop devices.
+# Create a BIOS+UEFI bootable MBR disk image for x86_64 without loop devices.
 
 set -e
 
@@ -45,10 +45,21 @@ require_file "$LIMINE_BIN_DIR/limine"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy
+require_cmd sfdisk
 
 log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M)"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" status=none
-mkfs.fat -F 32 -n OSNEXT64 "$IMAGE_PATH" >/dev/null
+
+PART_START_SECTORS=2048
+TOTAL_SECTORS=$((IMAGE_SIZE_MB * 1024 * 1024 / 512))
+PART_SIZE_SECTORS=$((TOTAL_SECTORS - PART_START_SECTORS))
+FAT_OFFSET_BYTES=$((PART_START_SECTORS * 512))
+MTOOLS_IMAGE="${IMAGE_PATH}@@${FAT_OFFSET_BYTES}"
+
+printf 'label: dos\nlabel-id: 0x4f534e58\nunit: sectors\n\n%s,%s,0x0c,*\n' \
+    "$PART_START_SECTORS" "$PART_SIZE_SECTORS" | sfdisk "$IMAGE_PATH" >/dev/null
+
+mkfs.fat -F 32 --offset "$PART_START_SECTORS" -n OSNEXT64 "$IMAGE_PATH" >/dev/null
 
 cat > "$TMP_DIR/limine.conf" <<'EOF'
 # Limine Configuration File
@@ -97,31 +108,31 @@ source=installer
 EOF
 
 log "Seeding UEFI boot files into FAT image"
-mmd -i "$IMAGE_PATH" ::/EFI
-mmd -i "$IMAGE_PATH" ::/EFI/BOOT
-mmd -i "$IMAGE_PATH" ::/boot
-mmd -i "$IMAGE_PATH" ::/limine
-mmd -i "$IMAGE_PATH" ::/System
+mmd -i "$MTOOLS_IMAGE" ::/EFI
+mmd -i "$MTOOLS_IMAGE" ::/EFI/BOOT
+mmd -i "$MTOOLS_IMAGE" ::/boot
+mmd -i "$MTOOLS_IMAGE" ::/limine
+mmd -i "$MTOOLS_IMAGE" ::/System
 
-mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/main.sys
-mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/bootloader.sys
-mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine-bios.sys
-mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/boot/limine-bios.sys
-mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine/limine-bios.sys
-mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine.conf
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/boot/limine.conf
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine/limine.conf
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/EFI/BOOT/BOOTABLE.CFG
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/bios-bootable.cfg" ::/boot/BOOTABLE.CFG
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/installer-state.txt" ::/System/installer-state.txt
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
-mcopy -i "$IMAGE_PATH" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
+mcopy -i "$MTOOLS_IMAGE" "$KERNEL_PATH" ::/boot/main.sys
+mcopy -i "$MTOOLS_IMAGE" "$KERNEL_PATH" ::/boot/bootloader.sys
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine-bios.sys
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/boot/limine-bios.sys
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine/limine-bios.sys
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/limine.conf
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/boot/limine.conf
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/limine/limine.conf
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bootable.cfg" ::/EFI/BOOT/BOOTABLE.CFG
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bios-bootable.cfg" ::/boot/BOOTABLE.CFG
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/installer-state.txt" ::/System/installer-state.txt
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
+mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
-"$LIMINE_BIN_DIR/limine" bios-install "$IMAGE_PATH" >/dev/null 2>&1 || {
-    echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
+"$LIMINE_BIN_DIR/limine" bios-install "$IMAGE_PATH" 1 >/dev/null 2>&1 || {
+    echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH partition 1" >&2
     exit 1
 }
 
