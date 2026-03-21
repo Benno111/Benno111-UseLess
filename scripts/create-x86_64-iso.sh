@@ -141,8 +141,8 @@ OS next stage Installer Types
    Use this for the normal desktop installer flow.
 
 2. DOS Rescue Installer
-   Boot menu entry: "OS next stage DOS Rescue Installer"
-   Use this only as a fallback when the graphical installer path fails.
+   Provided as /dos/OSINST.COM and /dos/OSINST.IMG
+   Use this from an existing DOS system when the graphical installer path fails.
 
 DOS rescue files are also mirrored in /dos:
 - OSINST.COM

@@ -1013,12 +1013,7 @@ static void populate_installer_payload(void) {
       "/OS next stage Graphical Installer\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n"
-      "    cmdline: boot=usb mode=installer\n"
-      "\n"
-      "/OS next stage DOS Rescue Installer\n"
-      "    comment: BIOS-only fallback installer, separate from the graphical installer path\n"
-      "    protocol: bios_chainload\n"
-      "    partition: 2\n";
+      "    cmdline: boot=usb mode=installer\n";
   static const char *image_info =
       "OS next stage System Image\n"
       "\n"
