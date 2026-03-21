@@ -189,7 +189,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-binary qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-iso dos-installer-binary qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -220,6 +220,7 @@ help:
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
 	@echo "  dos-installer-image - Create BIOS real-mode text installer image"
+	@echo "  dos-installer-iso - Create standalone BIOS DOS installer ISO"
 	@echo "  dos-installer-binary - Create DOS runnable installer utility"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
@@ -406,6 +407,17 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
 else
 	@echo "[IMAGE] dos-installer-image is currently supported only for ARCH=x86_64"
+	@exit 1
+endif
+
+dos-installer-iso: $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN) $(DOS_INSTALLER_COM_BIN)
+ifeq ($(ARCH),x86_64)
+	@echo "[IMAGE] Creating standalone BIOS DOS installer ISO..."
+	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@DOS_INSTALLER_IMAGE="$(IMAGE_DIR)/os-x86_64-dos-installer.img" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" bash ./scripts/create-dos-installer-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-dos-installer.iso"
+else
+	@echo "[IMAGE] dos-installer-iso is currently supported only for ARCH=x86_64"
 	@exit 1
 endif
 

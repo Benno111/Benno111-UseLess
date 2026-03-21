@@ -45,6 +45,11 @@ jobs:
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 installer-image
 
+      - name: Build x86_64 DOS Installer ISO
+        run: |
+          set -euxo pipefail
+          make -f Makefile.multiarch ARCH=x86_64 dos-installer-iso
+
       - name: Build ARM64 ISO
         run: |
           set -euxo pipefail
@@ -57,6 +62,8 @@ jobs:
           file image/os8-x86_64.iso
           ls -lh image/os-x86_64-installer.iso
           file image/os-x86_64-installer.iso
+          ls -lh image/os-x86_64-dos-installer.iso
+          file image/os-x86_64-dos-installer.iso
           ls -lh image/os-arm64.iso
           file image/os-arm64.iso
 
@@ -72,11 +79,13 @@ jobs:
           - ARM64 ISO: success
           - x86_64 ISO: success
           - x86_64 Installer ISO: success
+          - x86_64 DOS Installer ISO: success
 
           ## Bootable Media
 
           - \`os8-x86_64.iso\`
           - \`os-x86_64-installer.iso\`
+          - \`os-x86_64-dos-installer.iso\`
           - \`os-arm64.iso\`
 
           ## Branch
@@ -98,9 +107,9 @@ jobs:
           files: |
             image/os8-x86_64.iso
             image/os-x86_64-installer.iso
+            image/os-x86_64-dos-installer.iso
             image/os-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
 
