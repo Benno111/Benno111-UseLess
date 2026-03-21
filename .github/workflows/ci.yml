@@ -25,6 +25,8 @@ jobs:
             ccache \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
+            dosfstools \
+            mtools \
             qemu-system-x86 \
             qemu-system-arm \
             qemu-system-aarch64 \
@@ -111,5 +113,4 @@ jobs:
             image/os-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 

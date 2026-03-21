@@ -29,6 +29,8 @@ jobs:
             ccache \
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
+            dosfstools \
+            mtools \
             qemu-system-arm \
             qemu-system-x86 \
             make \

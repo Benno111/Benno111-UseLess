@@ -1,15 +1,16 @@
 #!/bin/bash
-# Create UEFI bootable disk image for x86_64
-# Works on both macOS and Linux
+# Create a UEFI-bootable FAT disk image for x86_64 without loop devices.
 
 set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-IMAGE_NAME="vibos-x86_64.img"
-IMAGE_SIZE="100M"
+IMAGE_NAME="${IMAGE_NAME:-vibos-x86_64.img}"
+IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-100}"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
+LIMINE_BIN_DIR="${ROOT_DIR}/vib-os-x86_64/limine/bin"
 
-# Colors
 GREEN='\033[0;32m'
 NC='\033[0m'
 
@@ -17,116 +18,70 @@ log() {
     echo -e "${GREEN}[UEFI-IMAGE]${NC} $1"
 }
 
-# Create image directory
+require_file() {
+    if [ ! -f "$1" ]; then
+        echo "[ERROR] Required file not found: $1" >&2
+        exit 1
+    fi
+}
+
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "[ERROR] Required command not found: $1" >&2
+        exit 1
+    fi
+}
+
 mkdir -p "$IMAGE_DIR"
 
 IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-log "Creating UEFI disk image: $IMAGE_PATH ($IMAGE_SIZE)"
+require_file "$KERNEL_PATH"
+require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
+require_cmd mkfs.fat
+require_cmd mmd
+require_cmd mcopy
 
-# Detect OS
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    log "Detected macOS"
-    
-    # Create empty disk image
-    dd if=/dev/zero of="$IMAGE_PATH" bs=1m count=100 2>/dev/null
-    
-    # Attach the disk image
-    DISK=$(hdiutil attach -nomount "$IMAGE_PATH" | head -1 | awk '{print $1}')
-    
-    if [ -z "$DISK" ]; then
-        log "Failed to attach disk image"
-        exit 1
-    fi
-    
-    log "Attached disk image as $DISK"
-    
-    # Create GPT partition table with EFI partition
-    diskutil partitionDisk "$DISK" GPT FAT32 EFI 100M 2>/dev/null || {
-        log "Using fallback partition method..."
-        diskutil eraseDisk GPT VibOS "$DISK"
-    }
-    
-    # Get EFI partition
-    EFI_PART="${DISK}s1"
-    
-    log "EFI partition: $EFI_PART"
-    
-    # Mount EFI partition
-    EFI_MOUNT=$(mktemp -d)
-    mount -t msdos "$EFI_PART" "$EFI_MOUNT" 2>/dev/null || {
-        diskutil mount "$EFI_PART"
-        EFI_MOUNT="/Volumes/EFI"
-    }
-    
-    log "EFI mounted at $EFI_MOUNT"
-    
-    # Create EFI boot structure
-    mkdir -p "$EFI_MOUNT/EFI/BOOT"
-    
-    # Copy kernel as EFI application
-    if [ -f "$BUILD_DIR/kernel/vibos-x86_64.elf" ]; then
-        cp "$BUILD_DIR/kernel/vibos-x86_64.elf" "$EFI_MOUNT/EFI/BOOT/BOOTX64.EFI"
-        log "Copied kernel as BOOTX64.EFI"
-    else
-        log "Kernel not found, creating placeholder..."
-        echo "Vib-OS x86_64 kernel placeholder" > "$EFI_MOUNT/EFI/BOOT/README.txt"
-    fi
-    
-    # Sync and unmount
-    sync
-    umount "$EFI_MOUNT" 2>/dev/null || diskutil unmount "$EFI_PART" 2>/dev/null || true
-    
-    # Detach disk image
-    hdiutil detach "$DISK" 2>/dev/null || hdiutil detach "$DISK" -force
-    
-else
-    # Linux
-    log "Detected Linux"
-    
-    # Create empty disk image
-    dd if=/dev/zero of="$IMAGE_PATH" bs=1M count=100 2>/dev/null
-    
-    # Create partition table
-    parted -s "$IMAGE_PATH" mklabel gpt
-    parted -s "$IMAGE_PATH" mkpart ESP fat32 1MiB 100%
-    parted -s "$IMAGE_PATH" set 1 esp on
-    
-    # Set up loop device
-    LOOP_DEV=$(losetup -f)
-    losetup -P "$LOOP_DEV" "$IMAGE_PATH"
-    
-    # Format EFI partition
-    mkfs.fat -F32 "${LOOP_DEV}p1"
-    
-    # Mount EFI partition
-    EFI_MOUNT=$(mktemp -d)
-    mount "${LOOP_DEV}p1" "$EFI_MOUNT"
-    
-    log "EFI mounted at $EFI_MOUNT"
-    
-    # Create EFI boot structure
-    mkdir -p "$EFI_MOUNT/EFI/BOOT"
-    
-    # Copy kernel as EFI application
-    if [ -f "$BUILD_DIR/kernel/vibos-x86_64.elf" ]; then
-        cp "$BUILD_DIR/kernel/vibos-x86_64.elf" "$EFI_MOUNT/EFI/BOOT/BOOTX64.EFI"
-        log "Copied kernel as BOOTX64.EFI"
-    else
-        log "Kernel not found, creating placeholder..."
-        echo "Vib-OS x86_64 kernel placeholder" > "$EFI_MOUNT/EFI/BOOT/README.txt"
-    fi
-    
-    # Sync and unmount
-    sync
-    umount "$EFI_MOUNT"
-    losetup -d "$LOOP_DEV"
-fi
+log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M)"
+dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" status=none
+mkfs.fat -F 32 -n OSNEXT64 "$IMAGE_PATH" >/dev/null
+
+cat > "$TMP_DIR/limine.conf" <<'EOF'
+# Limine Configuration File
+# OS next stage x64
+
+timeout: 0
+default_entry: 1
+
+/OS next stage
+    protocol: limine
+    kernel_path: boot():/boot/main.sys
+EOF
+
+cat > "$TMP_DIR/bootable.cfg" <<'EOF'
+bootable=1
+loader=limine
+source=dos-system-image
+EOF
+
+log "Seeding UEFI boot files into FAT image"
+mmd -i "$IMAGE_PATH" ::/EFI
+mmd -i "$IMAGE_PATH" ::/EFI/BOOT
+mmd -i "$IMAGE_PATH" ::/boot
+mmd -i "$IMAGE_PATH" ::/limine
+
+mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/main.sys
+mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/bootloader.sys
+mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine.conf
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/boot/limine.conf
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine/limine.conf
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
 
 log "UEFI boot image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
-
 echo ""
-log "To test in QEMU: make ARCH=x86_64 qemu"
 log "To write to USB: sudo dd if=$IMAGE_PATH of=/dev/sdX bs=4M status=progress"
