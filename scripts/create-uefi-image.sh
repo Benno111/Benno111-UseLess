@@ -10,6 +10,8 @@ IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-100}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="${ROOT_DIR}/vib-os-x86_64/limine/bin"
+LIMINE_SRC_DIR="${ROOT_DIR}/vib-os-x86_64/limine"
+LIMINE_TOOL_PATH="${LIMINE_BIN_DIR}/limine"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -43,6 +45,49 @@ ensure_executable() {
     fi
 }
 
+tool_runs() {
+    local path="$1"
+    if [ ! -x "$path" ]; then
+        return 1
+    fi
+    if "$path" --help >/dev/null 2>&1; then
+        return 0
+    fi
+    case $? in
+        126|127)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+resolve_limine_tool() {
+    local host_tool="${LIMINE_SRC_DIR}/limine-host"
+
+    if tool_runs "$LIMINE_TOOL_PATH"; then
+        printf '%s\n' "$LIMINE_TOOL_PATH"
+        return 0
+    fi
+
+    require_file "${LIMINE_SRC_DIR}/limine.c"
+    require_cmd cc
+
+    if ! tool_runs "$host_tool"; then
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
+        ensure_executable "$host_tool"
+    fi
+
+    if ! tool_runs "$host_tool"; then
+        echo "[ERROR] Failed to build a runnable Limine host tool: $host_tool" >&2
+        exit 1
+    fi
+
+    printf '%s\n' "$host_tool"
+}
+
 mkdir -p "$IMAGE_DIR"
 
 IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
@@ -52,12 +97,12 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
-require_file "$LIMINE_BIN_DIR/limine"
-ensure_executable "$LIMINE_BIN_DIR/limine"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy
 require_cmd sfdisk
+
+LIMINE_TOOL="$(resolve_limine_tool)"
 
 log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M)"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" status=none
@@ -143,7 +188,7 @@ mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/installer-state.txt" ::/System/installer-stat
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
-"$LIMINE_BIN_DIR/limine" bios-install --force-mbr "$IMAGE_PATH" || {
+"$LIMINE_TOOL" bios-install --force-mbr "$IMAGE_PATH" || {
     echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
     exit 1
 }

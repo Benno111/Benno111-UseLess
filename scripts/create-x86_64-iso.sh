@@ -10,6 +10,8 @@ ISO_NAME="${ISO_NAME:-os8-x86_64.iso}"
 ISO_ROOT="${BUILD_DIR}/iso_root"
 KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
 LIMINE_BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine/bin"
+LIMINE_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine"
+LIMINE_TOOL_PATH="${LIMINE_BIN_DIR}/limine"
 LIMINE_CFG="${LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-os-x86_64/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
@@ -49,6 +51,49 @@ ensure_executable() {
     fi
 }
 
+tool_runs() {
+    local path="$1"
+    if [ ! -x "$path" ]; then
+        return 1
+    fi
+    if "$path" --help >/dev/null 2>&1; then
+        return 0
+    fi
+    case $? in
+        126|127)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+resolve_limine_tool() {
+    local host_tool="${LIMINE_SRC_DIR}/limine-host"
+
+    if tool_runs "$LIMINE_TOOL_PATH"; then
+        printf '%s\n' "$LIMINE_TOOL_PATH"
+        return 0
+    fi
+
+    require_file "${LIMINE_SRC_DIR}/limine.c"
+    require_cmd cc
+
+    if ! tool_runs "$host_tool"; then
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
+        ensure_executable "$host_tool"
+    fi
+
+    if ! tool_runs "$host_tool"; then
+        echo "[ERROR] Failed to build a runnable Limine host tool: $host_tool" >&2
+        exit 1
+    fi
+
+    printf '%s\n' "$host_tool"
+}
+
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_CFG"
 require_file "$INSTALL_LIMINE_CFG"
@@ -56,9 +101,9 @@ require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
-require_file "$LIMINE_BIN_DIR/limine"
-ensure_executable "$LIMINE_BIN_DIR/limine"
 require_cmd xorriso
+
+LIMINE_TOOL="$(resolve_limine_tool)"
 
 mkdir -p "$IMAGE_DIR"
 rm -rf "$ISO_ROOT"
@@ -227,7 +272,7 @@ xorriso -as mkisofs \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
-"$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+"$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
 
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     patch_dos_installer_partition() {
@@ -260,7 +305,7 @@ if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
 
     log "Patching DOS installer partition chainload base"
     patch_dos_installer_partition "$ISO_PATH"
-    "$LIMINE_BIN_DIR/limine" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+    "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
 fi
 
 log "Validating ISO contents..."
