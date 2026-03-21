@@ -17,6 +17,15 @@ log() {
     echo -e "${GREEN}[DOS-INSTALLER-ISO]${NC} $1"
 }
 
+link_or_copy() {
+    local src="$1"
+    local dst="$2"
+    rm -f "$dst"
+    if ! ln "$src" "$dst" 2>/dev/null; then
+        cp "$src" "$dst"
+    fi
+}
+
 require_file() {
     if [ ! -f "$1" ]; then
         echo "[ERROR] Required file not found: $1" >&2
@@ -41,11 +50,11 @@ log "Preparing DOS installer ISO root at $ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/dos"
 
-cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
-cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/dos/OSINST.IMG"
+link_or_copy "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
+link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$ISO_ROOT/dos/OSINST.IMG"
 
 if [ -f "$DOS_INSTALLER_COM" ]; then
-    cp "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
+    link_or_copy "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
 fi
 
 cat > "$ISO_ROOT/README.TXT" <<EOF
@@ -69,6 +78,7 @@ rm -f "$ISO_PATH"
 
 log "Creating standalone BIOS DOS installer ISO: $ISO_PATH"
 xorriso -as mkisofs \
+    -hardlinks on \
     -V "OSK-DOS-INSTALL" \
     -c boot/boot.cat \
     -b boot/dos-installer.img \

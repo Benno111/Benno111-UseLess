@@ -26,6 +26,15 @@ log() {
     echo -e "${GREEN}[X86_64-ISO]${NC} $1"
 }
 
+link_or_copy() {
+    local src="$1"
+    local dst="$2"
+    rm -f "$dst"
+    if ! ln "$src" "$dst" 2>/dev/null; then
+        cp "$src" "$dst"
+    fi
+}
+
 require_file() {
     if [ ! -f "$1" ]; then
         echo "[ERROR] Required file not found: $1" >&2
@@ -168,20 +177,20 @@ cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
 
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
-    cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
-    cp "$DOS_INSTALLER_IMAGE" "$INSTALL_ROOT/boot/dos-installer.img"
-    cp "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/dos/OSINST.IMG"
-    cp "$DOS_INSTALLER_IMAGE" "$INSTALL_ROOT/dos/OSINST.IMG"
+    link_or_copy "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
+    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$INSTALL_ROOT/boot/dos-installer.img"
+    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$ISO_ROOT/dos/OSINST.IMG"
+    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$INSTALL_ROOT/dos/OSINST.IMG"
 fi
 
 if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
-    cp "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
-    cp "$DOS_INSTALLER_COM" "$INSTALL_ROOT/dos/OSINST.COM"
+    link_or_copy "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
+    link_or_copy "$ISO_ROOT/dos/OSINST.COM" "$INSTALL_ROOT/dos/OSINST.COM"
 fi
 
 if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
-    cp "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
-    cp "$DOS_SYSTEM_IMAGE" "$INSTALL_ROOT/dos/OSSYS.IMG"
+    link_or_copy "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
+    link_or_copy "$ISO_ROOT/dos/OSSYS.IMG" "$INSTALL_ROOT/dos/OSSYS.IMG"
 fi
 
 cat > "$ISO_ROOT/dos/README.TXT" <<EOF
@@ -260,6 +269,7 @@ rm -f "$ISO_PATH"
 
 log "Creating hybrid BIOS+UEFI ISO: $ISO_PATH"
 xorriso -as mkisofs \
+    -hardlinks on \
     -b boot/limine-bios-cd.bin \
     -no-emul-boot \
     -boot-load-size 4 \
