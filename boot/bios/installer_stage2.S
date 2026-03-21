@@ -440,7 +440,7 @@ clone_system_image_copy_loop:
     movl    remaining_sectors, %eax
     testl   %eax, %eax
     jz      clone_system_image_success
-    cmpw    $COPY_CHUNK_SECTORS, %ax
+    cmpl    $COPY_CHUNK_SECTORS, %eax
     jbe     clone_system_image_use_remaining
     movw    $COPY_CHUNK_SECTORS, dap_sector_count
     jmp     clone_system_image_read_chunk
@@ -525,7 +525,7 @@ apply_bootloader_copy_loop:
     movl    remaining_sectors, %eax
     testl   %eax, %eax
     jz      apply_bootloader_success
-    cmpw    $COPY_CHUNK_SECTORS, %ax
+    cmpl    $COPY_CHUNK_SECTORS, %eax
     jbe     apply_bootloader_use_remaining
     movw    $COPY_CHUNK_SECTORS, dap_sector_count
     jmp     apply_bootloader_read_chunk
