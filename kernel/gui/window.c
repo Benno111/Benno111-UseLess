@@ -3662,6 +3662,12 @@ static int installer_write_raw_system_image_to_disk(int disk_index) {
     return -1;
   }
 
+  if (size < 512 || data[510] != 0x55 || data[511] != 0xAA) {
+    installer_log("install failed: raw system image is not BIOS bootable");
+    media_free_file(data);
+    return -1;
+  }
+
   str_copy_safe(msg, "writing raw system image from ", sizeof(msg));
   installer_append_to_buf(msg, sizeof(msg), image_path);
   installer_log(msg);

@@ -102,21 +102,34 @@ int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
 
   size_t size = (size_t)inode->i_size;
   uint8_t *buf = (uint8_t *)kmalloc(size, GFP_KERNEL);
+  size_t total_read = 0;
   if (!buf) {
     vfs_close(f);
     return -ENOMEM;
   }
 
-  ssize_t read_bytes = vfs_read(f, (char *)buf, size);
+  while (total_read < size) {
+    ssize_t read_bytes = vfs_read(f, (char *)buf + total_read, size - total_read);
+    if (read_bytes < 0) {
+      vfs_close(f);
+      kfree(buf);
+      return (int)read_bytes;
+    }
+    if (read_bytes == 0)
+      break;
+    total_read += (size_t)read_bytes;
+  }
   vfs_close(f);
 
-  if (read_bytes < 0) {
+  if (total_read != size) {
+    printk(KERN_ERR "MEDIA: short read for '%s' (%u/%u bytes)\n", path,
+           (unsigned)total_read, (unsigned)size);
     kfree(buf);
-    return (int)read_bytes;
+    return -EIO;
   }
 
   *out_data = buf;
-  *out_size = (size_t)read_bytes;
+  *out_size = total_read;
   return 0;
 }
 
