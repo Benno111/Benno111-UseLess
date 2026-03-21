@@ -3622,6 +3622,14 @@ static const char *installer_system_disk_image_path(void) {
       "/setup/install/system-image/dos/OSSYS.IMG",
       "/dos/OSSYS.IMG",
       "/setup/dos/OSSYS.IMG",
+      "/External/cd0/dos/OSSYS.IMG",
+      "/External/cd1/dos/OSSYS.IMG",
+      "/External/cd2/dos/OSSYS.IMG",
+      "/External/cd3/dos/OSSYS.IMG",
+      "/Media/cd0/dos/OSSYS.IMG",
+      "/Media/cd1/dos/OSSYS.IMG",
+      "/Media/cd2/dos/OSSYS.IMG",
+      "/Media/cd3/dos/OSSYS.IMG",
   };
 
   for (int i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); i++) {
