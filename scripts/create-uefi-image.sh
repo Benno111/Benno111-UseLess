@@ -122,8 +122,7 @@ cat > "$TMP_DIR/limine.conf" <<'EOF'
 # Limine Configuration File
 # OS next stage x64
 
-timeout: 0
-default_entry: 1
+timeout: 671
 
 /OS next stage
     protocol: limine
