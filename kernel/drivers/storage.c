@@ -747,6 +747,81 @@ static int storage_disk_write_sector(int disk_index, uint32_t lba,
   }
 }
 
+static int storage_fixup_bios_boot_disk(int disk_index) {
+  uint8_t sector[STORAGE_SECTOR_SIZE];
+  uint64_t disk_sectors;
+  int first_present = -1;
+  int active_entry = -1;
+  int present_count = 0;
+  uint32_t first_start_lba = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  if (storage_disk_read_sector(disk_index, 0, sector) != 0)
+    return -1;
+  if (sector[STORAGE_MBR_SIGNATURE_OFFSET] != 0x55 ||
+      sector[STORAGE_MBR_SIGNATURE_OFFSET + 1] != 0xAA) {
+    return 0;
+  }
+
+  disk_sectors = (uint64_t)storage_disks[disk_index].capacity_mib * 2048ULL;
+
+  for (int entry = 0; entry < 4; entry++) {
+    uint8_t *mbr_entry = &sector[STORAGE_MBR_PARTITION_OFFSET + entry * 16];
+    uint8_t status = mbr_entry[0];
+    uint8_t type = mbr_entry[4];
+    uint32_t start_lba = storage_read_le32(&mbr_entry[8]);
+    uint32_t sector_count = storage_read_le32(&mbr_entry[12]);
+
+    if (type == 0 || sector_count == 0)
+      continue;
+
+    if (first_present < 0) {
+      first_present = entry;
+      first_start_lba = start_lba;
+    }
+    if (status == 0x80)
+      active_entry = entry;
+    present_count++;
+  }
+
+  if (first_present < 0)
+    return 0;
+  if (active_entry < 0)
+    active_entry = first_present;
+
+  if (present_count == 1 && first_start_lba > 0 && disk_sectors > first_start_lba) {
+    uint8_t *mbr_entry =
+        &sector[STORAGE_MBR_PARTITION_OFFSET + first_present * 16];
+    uint32_t sector_count = storage_read_le32(&mbr_entry[12]);
+    uint64_t max_partition_sectors = disk_sectors - (uint64_t)first_start_lba;
+    if (max_partition_sectors > 0xFFFFFFFFULL)
+      max_partition_sectors = 0xFFFFFFFFULL;
+    if (max_partition_sectors > sector_count) {
+      storage_write_le32(&mbr_entry[12], (uint32_t)max_partition_sectors);
+    }
+  }
+
+  for (int entry = 0; entry < 4; entry++) {
+    uint8_t *mbr_entry = &sector[STORAGE_MBR_PARTITION_OFFSET + entry * 16];
+    uint8_t type = mbr_entry[4];
+    uint32_t sector_count = storage_read_le32(&mbr_entry[12]);
+
+    if (type == 0 || sector_count == 0) {
+      mbr_entry[0] = 0x00;
+      continue;
+    }
+    mbr_entry[0] = (entry == active_entry) ? 0x80 : 0x00;
+  }
+
+  if (storage_disk_write_sector(disk_index, 0, sector) != 0)
+    return -1;
+
+  storage_load_mbr_partitions(disk_index);
+  return 0;
+}
+
 int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size) {
   uint8_t sector[STORAGE_SECTOR_SIZE];
   uint64_t disk_sectors;
@@ -776,6 +851,9 @@ int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size) {
     if (storage_disk_write_sector(disk_index, (uint32_t)sector_index, sector) != 0)
       return -1;
   }
+
+  if (storage_fixup_bios_boot_disk(disk_index) != 0)
+    return -1;
 
   return 0;
 }
@@ -900,6 +978,8 @@ static void storage_load_mbr_partitions(int disk_index) {
       continue;
     if (type == 0xEF)
       kind = STORAGE_PARTITION_EFI;
+    else if (type == 0x0B || type == 0x0C || type == 0x0E)
+      kind = STORAGE_PARTITION_SYSTEM;
     else if (type == 0x82)
       kind = STORAGE_PARTITION_SWAP;
     else if (type == 0x83)
