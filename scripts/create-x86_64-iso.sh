@@ -209,6 +209,7 @@ if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     patch_dos_installer_partition() {
         local image_path="$1"
         local start_lba
+        local partition_entry_offset=462
         local byte0
         local byte1
         local byte2
@@ -219,6 +220,10 @@ if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
             echo "[ERROR] Failed to locate appended DOS installer partition in $image_path" >&2
             exit 1
         fi
+
+        # Mark appended partition 2 active so BIOS chainloading treats it as
+        # a bootable volume instead of a passive data partition.
+        printf '\200' | dd of="$image_path" bs=1 seek="$partition_entry_offset" conv=notrunc status=none
 
         byte0=$(( start_lba        & 0xFF ))
         byte1=$(( (start_lba >> 8) & 0xFF ))

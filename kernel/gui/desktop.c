@@ -116,8 +116,10 @@ typedef struct menu_item {
 typedef struct context_menu {
   int x, y;
   int width, height;
+  int content_height;
   int visible;
   int hover_index;
+  int scroll_offset;
   menu_item_t items[16];
   int item_count;
   void *context; /* Context data for actions */
@@ -160,6 +162,12 @@ static dirty_rect_t dirty_regions[32];
 static int dirty_count = 0;
 static int full_redraw_needed = 1;
 
+#define CONTEXT_MENU_ITEM_HEIGHT 24
+#define CONTEXT_MENU_SEPARATOR_HEIGHT 8
+#define CONTEXT_MENU_PADDING_Y 4
+#define CONTEXT_MENU_SCROLLBAR_W 12
+#define CONTEXT_MENU_SCROLL_BTN_H 12
+
 /* ===================================================================== */
 /* Helper Functions */
 /* ===================================================================== */
@@ -182,6 +190,111 @@ static int str_cmp_nocase(const char *a, const char *b) {
     b++;
   }
   return (unsigned char)*a - (unsigned char)*b;
+}
+
+static int ctx_menu_item_block_height(int index) {
+  int h = CONTEXT_MENU_ITEM_HEIGHT;
+
+  if (index >= 0 && index < ctx_menu.item_count && ctx_menu.items[index].separator)
+    h += CONTEXT_MENU_SEPARATOR_HEIGHT;
+  return h;
+}
+
+static int ctx_menu_max_height(void) {
+  int screen_h = (int)gui_get_screen_height();
+  int max_height = screen_h - 70 - 8;
+
+  if (max_height < 80)
+    max_height = 80;
+  return max_height;
+}
+
+static int ctx_menu_has_scrollbar(void) {
+  return ctx_menu.content_height > ctx_menu.height;
+}
+
+static int ctx_menu_inner_width(void) {
+  return ctx_menu.width - (ctx_menu_has_scrollbar() ? CONTEXT_MENU_SCROLLBAR_W : 0);
+}
+
+static int ctx_menu_scroll_max(void) {
+  int viewport_h = ctx_menu.height - CONTEXT_MENU_PADDING_Y * 2;
+  int remaining = ctx_menu.content_height;
+
+  for (int i = 0; i < ctx_menu.item_count; i++) {
+    if (remaining <= viewport_h)
+      return i;
+    remaining -= ctx_menu_item_block_height(i);
+  }
+
+  return 0;
+}
+
+static void ctx_menu_clamp_scroll(void) {
+  int max_scroll = ctx_menu_scroll_max();
+  if (ctx_menu.scroll_offset < 0)
+    ctx_menu.scroll_offset = 0;
+  if (ctx_menu.scroll_offset > max_scroll)
+    ctx_menu.scroll_offset = max_scroll;
+}
+
+static int ctx_menu_scroll_pixel_offset(void) {
+  int offset = 0;
+
+  for (int i = 0; i < ctx_menu.scroll_offset && i < ctx_menu.item_count; i++)
+    offset += ctx_menu_item_block_height(i);
+  return offset;
+}
+
+static void ctx_menu_scroll_by(int delta) {
+  if (!ctx_menu_has_scrollbar() || delta == 0)
+    return;
+  ctx_menu.scroll_offset += delta;
+  ctx_menu_clamp_scroll();
+}
+
+static int ctx_menu_visible_items_estimate(void) {
+  int viewport_h = ctx_menu.height - CONTEXT_MENU_PADDING_Y * 2;
+  int used = 0;
+  int count = 0;
+
+  for (int i = ctx_menu.scroll_offset; i < ctx_menu.item_count; i++) {
+    int block_h = ctx_menu_item_block_height(i);
+    if (used + block_h > viewport_h)
+      break;
+    used += block_h;
+    count++;
+  }
+
+  return count > 0 ? count : 1;
+}
+
+static int ctx_menu_item_at(int mx, int my) {
+  int x = ctx_menu.x;
+  int y = ctx_menu.y;
+  int w = ctx_menu_inner_width();
+  int viewport_top = y + CONTEXT_MENU_PADDING_Y;
+  int viewport_bottom = y + ctx_menu.height - CONTEXT_MENU_PADDING_Y;
+  int item_y = viewport_top - ctx_menu_scroll_pixel_offset();
+
+  if (mx < x || mx >= x + w || my < viewport_top || my >= viewport_bottom)
+    return -1;
+
+  for (int i = 0; i < ctx_menu.item_count; i++) {
+    int text_top = item_y;
+    int text_bottom = item_y + CONTEXT_MENU_ITEM_HEIGHT;
+
+    if (text_top >= viewport_top && text_bottom <= viewport_bottom &&
+        my >= text_top && my < text_bottom) {
+      return i;
+    }
+
+    item_y += CONTEXT_MENU_ITEM_HEIGHT;
+    if (ctx_menu.items[i].separator)
+      item_y += CONTEXT_MENU_SEPARATOR_HEIGHT;
+  }
+
+  return -1;
 }
 
 static void str_copy(char *dst, const char *src, int max) {
@@ -744,6 +857,7 @@ void desktop_show_context_menu(int x, int y, int on_icon) {
   ctx_menu.x = x;
   ctx_menu.y = y;
   ctx_menu.hover_index = -1;
+  ctx_menu.scroll_offset = 0;
   ctx_menu.visible = 1;
 
   printk(KERN_INFO "MENU: Showing context menu at %d,%d visible=%d\n", x, y,
@@ -777,13 +891,20 @@ void desktop_show_context_menu(int x, int y, int on_icon) {
 
   /* Calculate menu size */
   ctx_menu.width = 160;
-  ctx_menu.height = ctx_menu.item_count * 24 + 8;
+  ctx_menu.content_height = ctx_menu.item_count * CONTEXT_MENU_ITEM_HEIGHT +
+                            CONTEXT_MENU_PADDING_Y * 2;
 
   /* Add space for separators */
   for (int i = 0; i < ctx_menu.item_count; i++) {
     if (ctx_menu.items[i].separator) {
-      ctx_menu.height += 8;
+      ctx_menu.content_height += CONTEXT_MENU_SEPARATOR_HEIGHT;
     }
+  }
+  ctx_menu.height = ctx_menu.content_height;
+
+  if (ctx_menu.content_height > ctx_menu_max_height()) {
+    ctx_menu.height = ctx_menu_max_height();
+    ctx_menu.width += CONTEXT_MENU_SCROLLBAR_W;
   }
 
   /* Ensure menu stays on screen */
@@ -793,9 +914,13 @@ void desktop_show_context_menu(int x, int y, int on_icon) {
   if (x + ctx_menu.width > (int)screen_w) {
     ctx_menu.x = screen_w - ctx_menu.width - 4;
   }
+  if (ctx_menu.x < 4)
+    ctx_menu.x = 4;
   if (y + ctx_menu.height > (int)screen_h - 70) {
     ctx_menu.y = screen_h - 70 - ctx_menu.height - 4;
   }
+  if (ctx_menu.y < 4)
+    ctx_menu.y = 4;
 
   desktop_mark_dirty(ctx_menu.x, ctx_menu.y, ctx_menu.width + 4,
                      ctx_menu.height + 4);
@@ -816,6 +941,10 @@ void draw_context_menu(void) {
   int x = ctx_menu.x;
   int y = ctx_menu.y;
   int w = ctx_menu.width;
+  int inner_w = ctx_menu_inner_width();
+  int viewport_top = y + CONTEXT_MENU_PADDING_Y;
+  int viewport_bottom = y + ctx_menu.height - CONTEXT_MENU_PADDING_Y;
+  int item_y = viewport_top - ctx_menu_scroll_pixel_offset();
 
   /* Shadow */
   gui_draw_rect(x + 4, y + 4, w, ctx_menu.height, 0x000000);
@@ -825,29 +954,70 @@ void draw_context_menu(void) {
   gui_draw_rect_outline(x, y, w, ctx_menu.height, COLOR_MENU_BORDER, 1);
 
   /* Items */
-  int item_y = y + 4;
   for (int i = 0; i < ctx_menu.item_count; i++) {
     menu_item_t *item = &ctx_menu.items[i];
+    int text_top = item_y;
+    int text_bottom = item_y + CONTEXT_MENU_ITEM_HEIGHT;
 
     /* Hover highlight */
-    if (i == ctx_menu.hover_index && item->enabled) {
-      gui_draw_rect(x + 2, item_y, w - 4, 22, COLOR_MENU_HOVER);
+    if (text_top >= viewport_top && text_bottom <= viewport_bottom) {
+      if (i == ctx_menu.hover_index && item->enabled) {
+        gui_draw_rect(x + 2, text_top, inner_w - 4, 22, COLOR_MENU_HOVER);
+      }
+
+      /* Text */
+      uint32_t text_color = item->enabled ? COLOR_MENU_TEXT : 0x808080;
+      gui_draw_string(x + 12, text_top + 4, item->label, text_color,
+                      (i == ctx_menu.hover_index && item->enabled)
+                          ? COLOR_MENU_HOVER
+                          : COLOR_MENU_BG);
     }
 
-    /* Text */
-    uint32_t text_color = item->enabled ? COLOR_MENU_TEXT : 0x808080;
-    gui_draw_string(x + 12, item_y + 4, item->label, text_color,
-                    (i == ctx_menu.hover_index && item->enabled)
-                        ? COLOR_MENU_HOVER
-                        : COLOR_MENU_BG);
-
-    item_y += 24;
+    item_y += CONTEXT_MENU_ITEM_HEIGHT;
 
     /* Separator */
     if (item->separator) {
-      gui_draw_line(x + 8, item_y, x + w - 8, item_y, 0x555555);
-      item_y += 8;
+      if (item_y >= viewport_top && item_y < viewport_bottom) {
+        gui_draw_line(x + 8, item_y, x + inner_w - 8, item_y, 0x555555);
+      }
+      item_y += CONTEXT_MENU_SEPARATOR_HEIGHT;
     }
+  }
+
+  if (ctx_menu_has_scrollbar()) {
+    int sb_x = x + inner_w;
+    int sb_y = y + 2;
+    int sb_h = ctx_menu.height - 4;
+    int track_y = sb_y + CONTEXT_MENU_SCROLL_BTN_H;
+    int track_h = sb_h - CONTEXT_MENU_SCROLL_BTN_H * 2;
+    int viewport_h = ctx_menu.height - CONTEXT_MENU_PADDING_Y * 2;
+    int thumb_h =
+        (viewport_h * track_h) / (ctx_menu.content_height ? ctx_menu.content_height : 1);
+    int scrollable = ctx_menu.content_height - viewport_h;
+    int thumb_y = track_y;
+
+    if (thumb_h < 18)
+      thumb_h = 18;
+    if (thumb_h > track_h)
+      thumb_h = track_h;
+    if (scrollable > 0 && track_h > thumb_h) {
+      thumb_y += (ctx_menu_scroll_pixel_offset() * (track_h - thumb_h)) / scrollable;
+    }
+
+    gui_draw_rect(sb_x, sb_y, CONTEXT_MENU_SCROLLBAR_W - 2, sb_h, 0x383838);
+    gui_draw_rect(sb_x + 1, sb_y + 1, CONTEXT_MENU_SCROLLBAR_W - 4,
+                  CONTEXT_MENU_SCROLL_BTN_H - 1, 0x4A4A4A);
+    gui_draw_rect(sb_x + 1, sb_y + sb_h - CONTEXT_MENU_SCROLL_BTN_H,
+                  CONTEXT_MENU_SCROLLBAR_W - 4, CONTEXT_MENU_SCROLL_BTN_H - 1,
+                  0x4A4A4A);
+    gui_draw_line(sb_x + 3, sb_y + 6, sb_x + CONTEXT_MENU_SCROLLBAR_W - 6,
+                  sb_y + 6, 0xD0D0D0);
+    gui_draw_line(sb_x + 3, sb_y + sb_h - 6, sb_x + CONTEXT_MENU_SCROLLBAR_W - 6,
+                  sb_y + sb_h - 6, 0xD0D0D0);
+    gui_draw_rect(sb_x + 1, track_y, CONTEXT_MENU_SCROLLBAR_W - 4, track_h, 0x333333);
+    gui_draw_rect(sb_x + 1, thumb_y, CONTEXT_MENU_SCROLLBAR_W - 4, thumb_h, 0x8A8A8A);
+    gui_draw_rect_outline(sb_x, sb_y, CONTEXT_MENU_SCROLLBAR_W - 2, sb_h, 0x5E5E5E,
+                          1);
   }
 }
 
@@ -862,22 +1032,53 @@ int desktop_context_menu_click(int mx, int my) {
     return 1; /* Consumed click to close menu */
   }
 
-  /* Find clicked item */
-  int item_y = ctx_menu.y + 4;
-  for (int i = 0; i < ctx_menu.item_count; i++) {
-    menu_item_t *item = &ctx_menu.items[i];
+  if (ctx_menu_has_scrollbar()) {
+    int inner_w = ctx_menu_inner_width();
+    int sb_x = ctx_menu.x + inner_w;
+    int sb_y = ctx_menu.y + 2;
+    int sb_h = ctx_menu.height - 4;
+    int track_y = sb_y + CONTEXT_MENU_SCROLL_BTN_H;
+    int track_h = sb_h - CONTEXT_MENU_SCROLL_BTN_H * 2;
+    int viewport_h = ctx_menu.height - CONTEXT_MENU_PADDING_Y * 2;
+    int thumb_h =
+        (viewport_h * track_h) / (ctx_menu.content_height ? ctx_menu.content_height : 1);
+    int scrollable = ctx_menu.content_height - viewport_h;
+    int thumb_y = track_y;
 
-    if (my >= item_y && my < item_y + 24) {
-      if (item->enabled && item->action) {
-        item->action(ctx_menu.context);
-      }
-      desktop_hide_context_menu();
-      return 1;
+    if (thumb_h < 18)
+      thumb_h = 18;
+    if (thumb_h > track_h)
+      thumb_h = track_h;
+    if (scrollable > 0 && track_h > thumb_h) {
+      thumb_y += (ctx_menu_scroll_pixel_offset() * (track_h - thumb_h)) / scrollable;
     }
 
-    item_y += 24;
-    if (item->separator)
-      item_y += 8;
+    if (mx >= sb_x && mx < ctx_menu.x + ctx_menu.width - 1) {
+      if (my < track_y) {
+        ctx_menu_scroll_by(-1);
+      } else if (my >= track_y + track_h) {
+        ctx_menu_scroll_by(1);
+      } else if (my < thumb_y) {
+        ctx_menu_scroll_by(-ctx_menu_visible_items_estimate());
+      } else if (my >= thumb_y + thumb_h) {
+        ctx_menu_scroll_by(ctx_menu_visible_items_estimate());
+      }
+
+      desktop_mark_dirty(ctx_menu.x, ctx_menu.y, ctx_menu.width + 4,
+                         ctx_menu.height + 4);
+      return 1;
+    }
+  }
+
+  /* Find clicked item */
+  int item_index = ctx_menu_item_at(mx, my);
+  if (item_index >= 0) {
+    menu_item_t *item = &ctx_menu.items[item_index];
+    if (item->enabled && item->action) {
+      item->action(ctx_menu.context);
+    }
+    desktop_hide_context_menu();
+    return 1;
   }
 
   return 1;
@@ -890,19 +1091,9 @@ int desktop_context_menu_hover(int mx, int my) {
   int old_hover = ctx_menu.hover_index;
   ctx_menu.hover_index = -1;
 
-  if (mx >= ctx_menu.x && mx < ctx_menu.x + ctx_menu.width &&
+  if (mx >= ctx_menu.x && mx < ctx_menu.x + ctx_menu_inner_width() &&
       my >= ctx_menu.y && my < ctx_menu.y + ctx_menu.height) {
-
-    int item_y = ctx_menu.y + 4;
-    for (int i = 0; i < ctx_menu.item_count; i++) {
-      if (my >= item_y && my < item_y + 24) {
-        ctx_menu.hover_index = i;
-        break;
-      }
-      item_y += 24;
-      if (ctx_menu.items[i].separator)
-        item_y += 8;
-    }
+    ctx_menu.hover_index = ctx_menu_item_at(mx, my);
   }
 
   if (old_hover != ctx_menu.hover_index) {
