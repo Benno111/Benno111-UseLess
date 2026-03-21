@@ -28,6 +28,7 @@ _start:
     /* Disable interrupts during initialization */
     /* ================================================================= */
     cli
+    cld                         # Limine may not guarantee DF=0 for string ops
     
     /* ================================================================= */
     /* Set up kernel stack */
