@@ -2657,13 +2657,30 @@ static void startup_open_modal_window(void) {
 }
 
 static void ensure_startup_flow(void) {
+  int needs_account_setup = 0;
+
   if (gui_is_installer_mode())
     return;
 
   seed_all_system_apps_once();
-  session_authenticated = 1;
-  startup_flow = STARTUP_FLOW_NONE;
+  load_account_state();
+  startup_input_username[0] = '\0';
+  startup_input_password[0] = '\0';
+  startup_active_field = 0;
+  set_startup_status("");
+
+  needs_account_setup = !account_username[0] || !account_password[0];
+  if (!needs_account_setup) {
+    session_authenticated = 1;
+    startup_flow = STARTUP_FLOW_NONE;
+    startup_window = NULL;
+    return;
+  }
+
+  session_authenticated = 0;
+  startup_flow = STARTUP_FLOW_CREATE_ACCOUNT;
   startup_window = NULL;
+  startup_open_modal_window();
 }
 
 static void complete_startup_auth(void) {
@@ -2700,12 +2717,7 @@ static void submit_startup_flow(void) {
     vfs_mkdir(user_home, 0755);
     save_account_state();
     startup_input_password[0] = '\0';
-    startup_active_field = 1;
-    startup_flow = STARTUP_FLOW_LOGIN;
-    set_startup_status("Account created. Log in with your new credentials.");
-    if (startup_window) {
-      str_copy_safe(startup_window->title, "Login", sizeof(startup_window->title));
-    }
+    complete_startup_auth();
     return;
   }
 
@@ -2732,7 +2744,7 @@ static void startup_handle_key(int key) {
   append_input_char(target, 32, key);
 }
 
-int gui_requires_login(void) { return 0; }
+int gui_requires_login(void) { return startup_flow_active() || !session_authenticated; }
 
 static void ensure_gui_app_dirs(void) {
   vfs_mkdir(GUI_SYSTEM_DIR, 0755);
@@ -3700,20 +3712,36 @@ static int installer_reboot_seconds_remaining(void) {
 
 static int installer_finalize_install(void) {
   char summary[96];
+  const char *installer_state =
+      "installed=1\nprofile=system-image\nsource=installer-iso\n"
+      "first_boot_setup=1\n";
+  int user_partition_result = 0;
+
+  extern int storage_prepare_user_partition(int disk_index);
 
   dock_loaded = 0;
   load_dock_config();
   desktop_refresh();
   installer_write_target_config();
 
-  write_text_file("/System/installer-state.txt",
-                  "installed=1\nprofile=system-image\nsource=installer-iso\n");
+  user_partition_result =
+      storage_prepare_user_partition(installer_selected_disk);
+  if (user_partition_result > 0) {
+    installer_log("created HDD user data partition for first boot");
+  } else if (user_partition_result == 0) {
+    installer_log("user data partition already present or not required");
+  } else {
+    installer_log("warning: could not prepare HDD user data partition");
+  }
+
+  write_text_file("/System/installer-state.txt", installer_state);
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed bootable system image to disk",
+  str_copy_safe(summary, "Installed system image; first boot will run setup",
                 sizeof(summary));
   installer_log("install complete");
   installer_log("selected hard disk now contains the bootable system image");
+  installer_log("first boot will prompt for account creation");
   installer_set_status(summary);
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
@@ -3932,7 +3960,10 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                   "- installs BIOS+UEFI boot data from that image", 0xE5E7EB,
                   0x232337);
   gui_draw_string(card_x + 30, disk_y + 186,
-                  "- reboots so the VM can boot from the HDD", 0xE5E7EB,
+                  "- prepares a user data partition on the HDD", 0xE5E7EB,
+                  0x232337);
+  gui_draw_string(card_x + 30, disk_y + 206,
+                  "- runs first-boot account setup after restart", 0xE5E7EB,
                   0x232337);
   gui_draw_string(card_x + 18, card_y + 254, "Status:", 0x89B4FA, 0x232337);
   gui_draw_rect(card_x + 18, card_y + 274, card_w - 36, 34, 0x1B1B2B);

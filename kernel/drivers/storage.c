@@ -1563,3 +1563,86 @@ int storage_ensure_install_partitions(int disk_index) {
 
   return changed;
 }
+
+int storage_prepare_user_partition(int disk_index) {
+  int has_data = 0;
+  int visible_index = 0;
+  int system_partition_index = -1;
+  int system_partition_slot = -1;
+  int present_count = 0;
+  uint32_t free_mib;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    present_count++;
+    if (storage_partitions[disk_index][i].kind == STORAGE_PARTITION_DATA)
+      has_data = 1;
+    if (storage_partitions[disk_index][i].kind == STORAGE_PARTITION_SYSTEM &&
+        system_partition_index < 0) {
+      system_partition_index = visible_index;
+      system_partition_slot = i;
+    }
+    visible_index++;
+  }
+
+  if (has_data)
+    return 0;
+
+  free_mib = storage_disks[disk_index].capacity_mib >
+                     storage_partition_used_mib(disk_index)
+                 ? storage_disks[disk_index].capacity_mib -
+                       storage_partition_used_mib(disk_index)
+                 : 0;
+  if (free_mib >= 4096) {
+    uint32_t data_size = free_mib;
+    if (data_size > 32768)
+      data_size = 32768;
+    if (storage_create_partition(disk_index, STORAGE_PARTITION_DATA,
+                                 data_size) != 0)
+      return -1;
+    printk(KERN_INFO
+           "STORAGE: Added user data partition on disk %s (%u MiB free space)\n",
+           storage_disks[disk_index].location, data_size);
+    return 1;
+  }
+
+  if (present_count == 1 && system_partition_index >= 0) {
+    uint32_t original_system_size =
+        storage_partitions[disk_index][system_partition_slot].size_mib;
+    uint32_t data_size = original_system_size / 4;
+    uint32_t new_system_size;
+
+    if (data_size < 4096)
+      data_size = 4096;
+    if (data_size > 16384)
+      data_size = 16384;
+    if (original_system_size <= data_size + 8192)
+      return 0;
+
+    new_system_size = original_system_size - data_size;
+    if (new_system_size < 8192)
+      return 0;
+
+    if (storage_update_partition(disk_index, system_partition_index,
+                                 STORAGE_PARTITION_SYSTEM,
+                                 new_system_size) != 0)
+      return -1;
+    if (storage_create_partition(disk_index, STORAGE_PARTITION_DATA,
+                                 data_size) != 0) {
+      storage_update_partition(disk_index, system_partition_index,
+                               STORAGE_PARTITION_SYSTEM,
+                               original_system_size);
+      return -1;
+    }
+    printk(KERN_INFO
+           "STORAGE: Split disk %s into system (%u MiB) and user data (%u MiB)\n",
+           storage_disks[disk_index].location, new_system_size, data_size);
+    return 1;
+  }
+
+  return 0;
+}

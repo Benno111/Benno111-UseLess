@@ -68,6 +68,7 @@ int storage_update_partition(int disk_index, int partition_index,
 int storage_delete_partition(int disk_index, int partition_index);
 int storage_has_efi_partition(int disk_index);
 int storage_ensure_install_partitions(int disk_index);
+int storage_prepare_user_partition(int disk_index);
 const char *storage_partition_kind_name(storage_partition_kind_t kind);
 
 #endif
