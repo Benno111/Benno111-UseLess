@@ -131,7 +131,7 @@ mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/installer-state.txt" ::/System/installer-stat
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
-"$LIMINE_BIN_DIR/limine" bios-install "$IMAGE_PATH" >/dev/null 2>&1 || {
+"$LIMINE_BIN_DIR/limine" bios-install --force-mbr "$IMAGE_PATH" || {
     echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
     exit 1
 }
