@@ -12,32 +12,22 @@
 .code64
 .section .text.boot
 .global _start
-.extern kernel_main
+.global idt64
+.extern limine_entry_main
+.extern x86_64_boot_init_idt
 .extern __bss_start
 .extern __bss_end
 .extern __stack_top
 
 /*
  * Kernel entry point
- * Called by UEFI or multiboot2 bootloader with:
- * - rdi: Pointer to boot info structure
- * - rsi: 0 (reserved)
- * 
- * CPU state on entry:
- * - Long mode (64-bit) enabled
- * - Paging enabled with identity mapping
- * - Interrupts disabled
+ * Called by Limine in 64-bit mode with paging enabled.
  */
 _start:
     /* ================================================================= */
     /* Disable interrupts during initialization */
     /* ================================================================= */
     cli
-    
-    /* ================================================================= */
-    /* Save boot info pointer */
-    /* ================================================================= */
-    mov     %rdi, %r15              # Save boot info in callee-saved register
     
     /* ================================================================= */
     /* Set up kernel stack */
@@ -78,6 +68,7 @@ _start:
     /* ================================================================= */
     /* Set up IDT (Interrupt Descriptor Table) */
     /* ================================================================= */
+    call    x86_64_boot_init_idt
     lea     idt64_pointer(%rip), %rax
     lidt    (%rax)
     
@@ -94,10 +85,9 @@ _start:
     mov     %rax, %cr4
     
     /* ================================================================= */
-    /* Call kernel_main(boot_info) */
+    /* Continue in Limine-specific C bootstrap */
     /* ================================================================= */
-    mov     %r15, %rdi              # Restore boot info as first argument
-    call    kernel_main
+    call    limine_entry_main
     
     /* ================================================================= */
     /* kernel_main returned - halt the system */
@@ -124,11 +114,11 @@ gdt64_pointer:
     .quad   gdt64                   # Base
 
 /* ===================================================================== */
-/* Interrupt Descriptor Table (IDT) - Placeholder */
+/* Interrupt Descriptor Table (IDT) */
 /* ===================================================================== */
 .align 16
 idt64:
-    .fill   256, 16, 0              # 256 entries, 16 bytes each
+    .fill   256, 16, 0
 idt64_end:
 
 idt64_pointer:

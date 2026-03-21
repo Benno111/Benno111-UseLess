@@ -268,45 +268,10 @@ xorriso -as mkisofs \
     -efi-boot-part \
     --efi-boot-image \
     --protective-msdos-label \
-    $(if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then printf '%s ' -append_partition 2 0x06 "$DOS_INSTALLER_IMAGE"; fi) \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
 "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
-
-if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
-    patch_dos_installer_partition() {
-        local image_path="$1"
-        local start_lba
-        local partition_entry_offset=462
-        local byte0
-        local byte1
-        local byte2
-        local byte3
-
-        start_lba=$(od -An -t u4 -j 470 -N 4 "$image_path" | tr -d ' \n')
-        if [ -z "$start_lba" ] || [ "$start_lba" = "0" ]; then
-            echo "[ERROR] Failed to locate appended DOS installer partition in $image_path" >&2
-            exit 1
-        fi
-
-        # Mark appended partition 2 active so BIOS chainloading treats it as
-        # a bootable volume instead of a passive data partition.
-        printf '\200' | dd of="$image_path" bs=1 seek="$partition_entry_offset" conv=notrunc status=none
-
-        byte0=$(( start_lba        & 0xFF ))
-        byte1=$(( (start_lba >> 8) & 0xFF ))
-        byte2=$(( (start_lba >> 16) & 0xFF ))
-        byte3=$(( (start_lba >> 24) & 0xFF ))
-
-        printf "\\$(printf '%03o' "$byte0")\\$(printf '%03o' "$byte1")\\$(printf '%03o' "$byte2")\\$(printf '%03o' "$byte3")" \
-            | dd of="$image_path" bs=1 seek=$(( start_lba * 512 + 28 )) conv=notrunc status=none
-    }
-
-    log "Patching DOS installer partition chainload base"
-    patch_dos_installer_partition "$ISO_PATH"
-    "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
-fi
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"

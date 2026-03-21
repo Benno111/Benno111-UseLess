@@ -203,6 +203,135 @@ static const char *g_kernel_cmdline = 0;
 static void *g_kernel_file_addr = 0;
 static uint64_t g_kernel_file_size = 0;
 
+struct idt_entry64 {
+    uint16_t offset_low;
+    uint16_t selector;
+    uint8_t ist;
+    uint8_t type_attr;
+    uint16_t offset_mid;
+    uint32_t offset_high;
+    uint32_t reserved;
+} __attribute__((packed));
+
+extern struct idt_entry64 idt64[256];
+extern void isr0(void);
+extern void isr1(void);
+extern void isr2(void);
+extern void isr3(void);
+extern void isr4(void);
+extern void isr5(void);
+extern void isr6(void);
+extern void isr7(void);
+extern void isr8(void);
+extern void isr9(void);
+extern void isr10(void);
+extern void isr11(void);
+extern void isr12(void);
+extern void isr13(void);
+extern void isr14(void);
+extern void isr15(void);
+extern void isr16(void);
+extern void isr17(void);
+extern void isr18(void);
+extern void isr19(void);
+extern void isr20(void);
+extern void isr21(void);
+extern void isr22(void);
+extern void isr23(void);
+extern void isr24(void);
+extern void isr25(void);
+extern void isr26(void);
+extern void isr27(void);
+extern void isr28(void);
+extern void isr29(void);
+extern void isr30(void);
+extern void isr31(void);
+extern void isr32(void);
+extern void isr33(void);
+extern void isr34(void);
+extern void isr35(void);
+extern void isr36(void);
+extern void isr37(void);
+extern void isr38(void);
+extern void isr39(void);
+extern void isr40(void);
+extern void isr41(void);
+extern void isr42(void);
+extern void isr43(void);
+extern void isr44(void);
+extern void isr45(void);
+extern void isr46(void);
+extern void isr47(void);
+extern void isr128(void);
+
+static void set_idt_gate(int vector, void (*handler)(void)) {
+    uintptr_t addr = (uintptr_t)handler;
+
+    idt64[vector].offset_low = (uint16_t)(addr & 0xFFFF);
+    idt64[vector].selector = 0x08;
+    idt64[vector].ist = 0;
+    idt64[vector].type_attr = 0x8E;
+    idt64[vector].offset_mid = (uint16_t)((addr >> 16) & 0xFFFF);
+    idt64[vector].offset_high = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
+    idt64[vector].reserved = 0;
+}
+
+void x86_64_boot_init_idt(void) {
+    for (int i = 0; i < 256; i++) {
+        idt64[i] = (struct idt_entry64){0};
+    }
+
+    set_idt_gate(0, isr0);
+    set_idt_gate(1, isr1);
+    set_idt_gate(2, isr2);
+    set_idt_gate(3, isr3);
+    set_idt_gate(4, isr4);
+    set_idt_gate(5, isr5);
+    set_idt_gate(6, isr6);
+    set_idt_gate(7, isr7);
+    set_idt_gate(8, isr8);
+    set_idt_gate(9, isr9);
+    set_idt_gate(10, isr10);
+    set_idt_gate(11, isr11);
+    set_idt_gate(12, isr12);
+    set_idt_gate(13, isr13);
+    set_idt_gate(14, isr14);
+    set_idt_gate(15, isr15);
+    set_idt_gate(16, isr16);
+    set_idt_gate(17, isr17);
+    set_idt_gate(18, isr18);
+    set_idt_gate(19, isr19);
+    set_idt_gate(20, isr20);
+    set_idt_gate(21, isr21);
+    set_idt_gate(22, isr22);
+    set_idt_gate(23, isr23);
+    set_idt_gate(24, isr24);
+    set_idt_gate(25, isr25);
+    set_idt_gate(26, isr26);
+    set_idt_gate(27, isr27);
+    set_idt_gate(28, isr28);
+    set_idt_gate(29, isr29);
+    set_idt_gate(30, isr30);
+    set_idt_gate(31, isr31);
+    set_idt_gate(32, isr32);
+    set_idt_gate(33, isr33);
+    set_idt_gate(34, isr34);
+    set_idt_gate(35, isr35);
+    set_idt_gate(36, isr36);
+    set_idt_gate(37, isr37);
+    set_idt_gate(38, isr38);
+    set_idt_gate(39, isr39);
+    set_idt_gate(40, isr40);
+    set_idt_gate(41, isr41);
+    set_idt_gate(42, isr42);
+    set_idt_gate(43, isr43);
+    set_idt_gate(44, isr44);
+    set_idt_gate(45, isr45);
+    set_idt_gate(46, isr46);
+    set_idt_gate(47, isr47);
+    set_idt_gate(128, isr128);
+}
+
 /* ========== Framebuffer Info for kernel ========== */
 
 int limine_get_framebuffer(uint32_t **buffer, uint32_t *width,
@@ -293,21 +422,14 @@ static void halt(void) {
 /* ========== Kernel Main Declaration ========== */
 
 extern void kernel_main(void *dtb);
-extern char __bss_start[];
-extern char __bss_end[];
 
 /* ========== Entry Point ========== */
 
-void _start(void) {
+void limine_entry_main(void) {
     /* Initialize serial for debug output */
     serial_init();
     serial_puts("\n\n=== OS next stage ===\n");
     serial_puts("Kernel entry point reached!\n");
-
-    /* Clear BSS */
-    for (char *p = __bss_start; p < __bss_end; ++p) {
-        *p = 0;
-    }
 
     /* Verify base revision was accepted */
     if (limine_base_revision[2] != 0) {
