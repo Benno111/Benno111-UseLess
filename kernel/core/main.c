@@ -845,7 +845,7 @@ static void populate_installer_payload(void) {
       "# Limine Configuration File\n"
       "# OS next stage x64\n"
       "\n"
-      "timeout: 671\n"
+      "timeout: 0\n"
       "\n"
       "/OS next stage\n"
       "    protocol: limine\n"

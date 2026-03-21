@@ -2551,7 +2551,26 @@ static void set_startup_status(const char *message) {
 }
 
 static int startup_flow_active(void) {
-  return 0;
+  return startup_flow != STARTUP_FLOW_NONE;
+}
+
+static int installer_first_boot_setup_required(void) {
+  char manifest[192];
+  char value[16];
+
+  if (read_text_file("/System/installer-state.txt", manifest,
+                     sizeof(manifest)) < 0)
+    return 0;
+  if (manifest_get_value(manifest, "first_boot_setup", value,
+                         sizeof(value)) != 0)
+    return 0;
+  return value[0] == '1';
+}
+
+static void installer_clear_first_boot_setup_flag(void) {
+  write_text_file("/System/installer-state.txt",
+                  "installed=1\nprofile=system-image\nsource=installer-iso\n"
+                  "first_boot_setup=0\n");
 }
 
 static void mask_secret(const char *src, char *dst, int max) {
@@ -2658,18 +2677,21 @@ static void startup_open_modal_window(void) {
 
 static void ensure_startup_flow(void) {
   int needs_account_setup = 0;
+  int force_first_boot_setup = 0;
 
   if (gui_is_installer_mode())
     return;
 
   seed_all_system_apps_once();
   load_account_state();
+  force_first_boot_setup = installer_first_boot_setup_required();
   startup_input_username[0] = '\0';
   startup_input_password[0] = '\0';
   startup_active_field = 0;
   set_startup_status("");
 
-  needs_account_setup = !account_username[0] || !account_password[0];
+  needs_account_setup =
+      force_first_boot_setup || !account_username[0] || !account_password[0];
   if (!needs_account_setup) {
     session_authenticated = 1;
     startup_flow = STARTUP_FLOW_NONE;
@@ -2687,6 +2709,7 @@ static void complete_startup_auth(void) {
   session_authenticated = 1;
   startup_flow = STARTUP_FLOW_NONE;
   set_startup_status("");
+  installer_clear_first_boot_setup_flag();
   if (startup_window) {
     gui_destroy_window(startup_window);
     startup_window = NULL;
@@ -5469,7 +5492,7 @@ static void draw_window(struct window *win) {
                   0xFFFFFF);
 
     /* Mock Page Content */
-    gui_draw_string(content_x + 20, content_y + 60, "Welcome to VibBrowser",
+    gui_draw_string(content_x + 20, content_y + 60, "Welcome to Browser",
                     0x000000, 0xFFFFFF);
     gui_draw_rect(content_x + 20, content_y + 78, 200, 2,
                   0x007AFF); /* Underline */
