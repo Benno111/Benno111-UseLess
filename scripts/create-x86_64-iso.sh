@@ -15,6 +15,7 @@ INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-$(cd "$(dirname "$0")/.." && pwd)/vib-
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
 DOS_INSTALLER_IMAGE="${DOS_INSTALLER_IMAGE:-${IMAGE_DIR}/os-x86_64-dos-installer.img}"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
+DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -72,6 +73,12 @@ else
     DOS_INSTALLER_COM_ENABLED=0
 fi
 
+if [ -f "$DOS_SYSTEM_IMAGE" ]; then
+    DOS_SYSTEM_IMAGE_ENABLED=1
+else
+    DOS_SYSTEM_IMAGE_ENABLED=0
+fi
+
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
     cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
@@ -115,18 +122,23 @@ if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
     cp "$DOS_INSTALLER_COM" "$INSTALL_ROOT/dos/OSINST.COM"
 fi
 
+if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
+    cp "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
+    cp "$DOS_SYSTEM_IMAGE" "$INSTALL_ROOT/dos/OSSYS.IMG"
+fi
+
 cat > "$ISO_ROOT/dos/README.TXT" <<EOF
 OS next stage DOS Rescue Tools
 
 This folder contains the DOS-side fallback installer package:
 - OSINST.COM : run this from an existing DOS system
-- OSINST.IMG : raw fallback installer disk image
+- OSSYS.IMG  : raw regular OS system disk image
 
 Usage from DOS:
 1. Copy both files to a DOS machine or DOS boot disk.
 2. Boot DOS and change into the directory containing these files.
 3. Run OSINST.COM.
-4. Choose a target BIOS disk and confirm the write.
+4. Choose a target BIOS disk and confirm the write of OSSYS.IMG.
 
 The target disk will be overwritten sector-by-sector.
 EOF
@@ -141,12 +153,12 @@ OS next stage Installer Types
    Use this for the normal desktop installer flow.
 
 2. DOS Rescue Installer
-   Provided as /dos/OSINST.COM and /dos/OSINST.IMG
-   Use this from an existing DOS system when the graphical installer path fails.
+   Provided as /dos/OSINST.COM and /dos/OSSYS.IMG
+   Use this from an existing DOS system to write the regular system image.
 
 DOS rescue files are also mirrored in /dos:
 - OSINST.COM
-- OSINST.IMG
+- OSSYS.IMG
 - README.TXT
 EOF
 
@@ -178,7 +190,7 @@ If present, repo assets are mirrored under:
 DOS fallback tools included in the ISO:
 - /boot/dos-installer.img
 - /dos/OSINST.COM
-- /dos/OSINST.IMG
+- /dos/OSSYS.IMG
 - /dos/README.TXT
 - /INSTALLERS.TXT
 
@@ -265,12 +277,14 @@ require_iso_path "/INSTALLERS.TXT"
 if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
     require_iso_path "/boot/dos-installer.img"
     require_iso_path "/install/system-image/boot/dos-installer.img"
-    require_iso_path "/dos/OSINST.IMG"
-    require_iso_path "/install/system-image/dos/OSINST.IMG"
 fi
 if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
     require_iso_path "/dos/OSINST.COM"
     require_iso_path "/install/system-image/dos/OSINST.COM"
+fi
+if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
+    require_iso_path "/dos/OSSYS.IMG"
+    require_iso_path "/install/system-image/dos/OSSYS.IMG"
 fi
 require_iso_path "/dos/README.TXT"
 require_iso_path "/install/system-image/INSTALLERS.TXT"

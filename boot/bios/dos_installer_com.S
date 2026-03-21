@@ -1,7 +1,7 @@
 /*
  * OS next stage DOS runnable rescue installer utility.
  *
- * Build output is a flat .COM binary intended to be copied next to OSINST.IMG
+ * Build output is a flat .COM binary intended to be copied next to OSSYS.IMG
  * on an existing DOS system. The program writes that image to a selected BIOS
  * hard disk using Int 13h extensions.
  */
@@ -11,7 +11,7 @@
 .global _start
 .org 0x100
 
-#define IMAGE_FILENAME "OSINST.IMG"
+#define IMAGE_FILENAME "OSSYS.IMG"
 
 _start:
     cli
@@ -437,23 +437,23 @@ exit_to_dos:
     int     $0x21
 
 title_text:
-    .asciz  "OS next stage DOS Rescue Installer Utility\r\n"
+    .asciz  "OS next stage DOS System Image Writer\r\n"
 subtitle_text:
-    .asciz  "Run this from an existing DOS system with OSINST.IMG nearby.\r\nIt writes the fallback installer image to another BIOS disk.\r\n\r\n"
+    .asciz  "Run this from an existing DOS system with OSSYS.IMG nearby.\r\nIt writes the regular OS system image to another BIOS disk.\r\n\r\n"
 menu_text:
-    .asciz  "  1. Write OSINST.IMG to target disk\r\n  2. Change target disk\r\n  3. Help\r\n  4. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
+    .asciz  "  1. Write OSSYS.IMG to target disk\r\n  2. Change target disk\r\n  3. Help\r\n  4. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
 help_text:
-    .asciz  "Usage:\r\n  Place OSINST.COM and OSINST.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  The utility writes the raw installer image to the selected BIOS disk.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
+    .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  The utility writes the regular raw system image to the selected BIOS disk.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
 install_intro_text:
-    .asciz  "This writes the fallback installer image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
+    .asciz  "This writes the regular OS system image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
 confirm_text:
     .asciz  "WARNING: continue only if you selected the correct target.\r\nPress Y to start or any other key to cancel.\r\n"
 copy_begin_text:
-    .asciz  "Writing installer image to target disk...\r\nProgress: "
+    .asciz  "Writing system image to target disk...\r\nProgress: "
 copy_success_text:
-    .asciz  "Install image write complete.\r\nYou can now boot the target disk into the fallback installer.\r\n\r\n"
+    .asciz  "System image write complete.\r\nYou can now boot the target disk into OS next stage.\r\n\r\n"
 copy_failed_text:
-    .asciz  "\r\nInstall image write failed.\r\n\r\n"
+    .asciz  "\r\nSystem image write failed.\r\n\r\n"
 no_target_text:
     .asciz  "No alternate BIOS target disk is available.\r\n\r\n"
 target_updated_text:
@@ -461,9 +461,9 @@ target_updated_text:
 target_missing_text:
     .asciz  "No alternate BIOS disk could be selected.\r\n\r\n"
 file_missing_text:
-    .asciz  "\r\nOSINST.IMG was not found in the current DOS directory.\r\n\r\n"
+    .asciz  "\r\nOSSYS.IMG was not found in the current DOS directory.\r\n\r\n"
 file_read_error_text:
-    .asciz  "\r\nDOS file read failed while reading OSINST.IMG.\r\n\r\n"
+    .asciz  "\r\nDOS file read failed while reading OSSYS.IMG.\r\n\r\n"
 disk_write_error_text:
     .asciz  "\r\nBIOS disk write failed on the selected target.\r\n\r\n"
 press_key_text:

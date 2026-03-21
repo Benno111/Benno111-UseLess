@@ -127,8 +127,8 @@ jobs:
           xorriso -indev "$ISO" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-bios.sys -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/dos-installer.img -quit >/dev/null 2>&1
-          xorriso -indev "$ISO" -find /dos/OSINST.IMG -quit >/dev/null 2>&1
-          xorriso -indev "$ISO" -find /install/system-image/boot/dos-installer.img -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /dos/OSSYS.IMG -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /install/system-image/dos/OSSYS.IMG -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /INSTALLERS.TXT -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find / -type f -exec lsdl >/tmp/x86_64-installer-iso-files.txt
           cat /tmp/x86_64-installer-iso-files.txt
