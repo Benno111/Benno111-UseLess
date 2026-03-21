@@ -3616,6 +3616,59 @@ static int installer_validate_system_image_payload(void) {
   return 0;
 }
 
+static const char *installer_system_disk_image_path(void) {
+  static const char *paths[] = {
+      "/install/system-image/dos/OSSYS.IMG",
+      "/setup/install/system-image/dos/OSSYS.IMG",
+      "/dos/OSSYS.IMG",
+      "/setup/dos/OSSYS.IMG",
+  };
+
+  for (int i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); i++) {
+    if (installer_payload_file_exists(paths[i]))
+      return paths[i];
+  }
+
+  return NULL;
+}
+
+static int installer_write_raw_system_image_to_disk(int disk_index) {
+  const char *image_path;
+  uint8_t *data = NULL;
+  size_t size = 0;
+  char msg[320];
+
+  extern int storage_write_disk_image(int disk_index, const uint8_t *data,
+                                      size_t size);
+
+  image_path = installer_system_disk_image_path();
+  if (!image_path) {
+    installer_log("install failed: raw system disk image missing");
+    return -1;
+  }
+
+  if (media_load_file(image_path, &data, &size) != 0) {
+    str_copy_safe(msg, "install failed: could not read ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), image_path);
+    installer_log(msg);
+    return -1;
+  }
+
+  str_copy_safe(msg, "writing raw system image from ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), image_path);
+  installer_log(msg);
+
+  if (storage_write_disk_image(disk_index, data, size) != 0) {
+    installer_log("install failed: raw disk image write failed");
+    media_free_file(data);
+    return -1;
+  }
+
+  media_free_file(data);
+  installer_log("raw system image written to target disk");
+  return 0;
+}
+
 static int installer_reboot_seconds_remaining(void) {
   uint64_t now;
   uint64_t remaining_ms;
@@ -3633,9 +3686,6 @@ static int installer_reboot_seconds_remaining(void) {
 
 static int installer_finalize_install(void) {
   char summary[96];
-  char target_state_path[128];
-  char bios_boot_cfg[192];
-  char efi_boot_cfg[192];
 
   dock_loaded = 0;
   load_dock_config();
@@ -3644,58 +3694,13 @@ static int installer_finalize_install(void) {
 
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=system-image\nsource=installer-iso\n");
-  str_copy_safe(target_state_path, installer_target_root,
-                sizeof(target_state_path));
-  {
-    int idx = 0;
-    while (target_state_path[idx] && idx < (int)sizeof(target_state_path) - 1)
-      idx++;
-    if (idx < (int)sizeof(target_state_path) - 1)
-      target_state_path[idx++] = '/';
-    for (const char *p = "installer-state.txt";
-         *p && idx < (int)sizeof(target_state_path) - 1; p++)
-      target_state_path[idx++] = *p;
-    target_state_path[idx] = '\0';
-  }
-  installer_write_target_text_file(
-      target_state_path,
-      "installed=1\nprofile=system-image\nsource=installer-iso\n");
-
-  write_text_file("/System/efi-boot.cfg",
-                  "bootable=1\nloader=limine\nsource=installer\n");
-  str_copy_safe(efi_boot_cfg, installer_efi_root, sizeof(efi_boot_cfg));
-  installer_append_to_buf(efi_boot_cfg, sizeof(efi_boot_cfg), "/BOOT/BOOTABLE.CFG");
-  installer_write_target_text_file(
-      efi_boot_cfg, "bootable=1\nloader=limine\nsource=installer\n");
-  write_text_file("/System/mbr-boot.cfg",
-                  "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\nsource=installer\n");
-  str_copy_safe(bios_boot_cfg, installer_update_root, sizeof(bios_boot_cfg));
-  installer_append_to_buf(bios_boot_cfg, sizeof(bios_boot_cfg), "/BOOTABLE.CFG");
-  installer_write_target_text_file(
-      bios_boot_cfg,
-      "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\nsource=installer\n");
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed ", sizeof(summary));
-  {
-    int idx = 0;
-    while (summary[idx] && idx < (int)sizeof(summary) - 1)
-      idx++;
-    append_decimal(summary, &idx, installer_copied_files);
-    for (const char *p = " files"; *p && idx < (int)sizeof(summary) - 1; p++)
-      summary[idx++] = *p;
-    if (installer_ensured_changes > 0 && idx < (int)sizeof(summary) - 18) {
-      const char *suffix = " with EFI fixup";
-      for (int i = 0; suffix[i] && idx < (int)sizeof(summary) - 1; i++)
-        summary[idx++] = suffix[i];
-    }
-    summary[idx] = '\0';
-  }
+  str_copy_safe(summary, "Installed bootable system image to disk",
+                sizeof(summary));
   installer_log("install complete");
-  installer_log("system image written to target root");
+  installer_log("selected hard disk now contains the bootable system image");
   installer_set_status(summary);
-  installer_log("EFI marked bootable");
-  installer_log("MBR active partition marked bootable");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_show_restart_screen = 1;
@@ -3713,7 +3718,7 @@ static void installer_start_background_install(void) {
   installer_active = 1;
   installer_phase = 1;
   installer_progress_done = 0;
-  installer_progress_total = 5;
+  installer_progress_total = 4;
   installer_copied_files = 0;
   installer_failed_files = 0;
   installer_ensured_changes = 0;
@@ -3756,21 +3761,17 @@ static void installer_process_background_install(void) {
                                 "install blocked: no real target disk");
       return;
     }
-    installer_set_status("Ensuring target partitions...");
+    installer_set_status("Checking target disk...");
     installer_progress_done = 1;
     installer_phase = 2;
     return;
   case 2: {
-    extern int storage_ensure_install_partitions(int disk_index);
-    installer_ensured_changes =
-        storage_ensure_install_partitions(installer_selected_disk);
-    if (installer_ensured_changes < 0) {
-      installer_fail_background("Install blocked. Required partitions failed.",
-                                "install blocked: required partitions failed");
+    extern int storage_disk_supports_partition_writes(int disk_index);
+    if (!storage_disk_supports_partition_writes(installer_selected_disk)) {
+      installer_fail_background("Install blocked. Target disk is not writable.",
+                                "install blocked: target disk is not writable");
       return;
     }
-    load_system_app_catalog();
-    ensure_gui_app_dirs();
     installer_target_root_path(installer_target_root,
                                sizeof(installer_target_root));
     installer_partition_root_path(installer_efi_root, sizeof(installer_efi_root),
@@ -3779,43 +3780,34 @@ static void installer_process_background_install(void) {
                                   sizeof(installer_update_root), "boot");
     str_copy_safe(installer_log_target_root, installer_target_root,
                   sizeof(installer_log_target_root));
-    installer_log(installer_target_root);
-    if (installer_try_make_dir(installer_target_root) != 0 ||
-        installer_try_make_dir(installer_efi_root) != 0 ||
-        installer_try_make_dir(installer_update_root) != 0) {
-      installer_fail_background("Install failed. Could not create target layout.",
-                                "install failed: target layout creation failed");
-      return;
-    }
     if (installer_validate_system_image_payload() != 0) {
       installer_fail_background("Install blocked. Boot files are missing from the installer image.",
                                 "install blocked: boot payload incomplete");
       return;
     }
-    installer_set_status("Copying system image...");
+    if (!installer_system_disk_image_path()) {
+      installer_fail_background("Install blocked. Raw disk image is missing from the installer media.",
+                                "install blocked: raw disk image missing");
+      return;
+    }
+    installer_set_status("Writing system image to disk...");
     installer_progress_done = 2;
     installer_phase = 3;
     return;
   }
   case 3:
-    if (installer_copy_system_image_to_root(installer_target_root,
-                                            &installer_copied_files,
-                                            &installer_failed_files) != 0) {
-      installer_fail_background("Install failed. System image copy failed.",
-                                "install failed: system image copy failed");
+    if (installer_write_raw_system_image_to_disk(installer_selected_disk) != 0) {
+      installer_fail_background("Install failed. Raw system image write failed.",
+                                "install failed: raw system image write failed");
       return;
     }
-    installer_set_status("Preparing boot metadata...");
+    installer_copied_files = 1;
+    installer_set_status("Finalizing install...");
     installer_progress_done = 3;
     installer_phase = 4;
     return;
   case 4:
-    installer_set_status("Finalizing boot files...");
     installer_progress_done = 4;
-    installer_phase = 5;
-    return;
-  case 5:
-    installer_progress_done = 5;
     if (installer_finalize_install() != 0) {
       installer_fail_background("Install failed during finalization.",
                                 "install failed: finalization failed");
@@ -3919,13 +3911,15 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   gui_draw_string(card_x + 18, disk_y + 104, "Install actions:", 0x89B4FA,
                   0x232337);
   gui_draw_string(card_x + 30, disk_y + 126,
-                  "- installs to the selected hard disk", 0xE5E7EB, 0x232337);
+                  "- overwrites the selected hard disk", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, disk_y + 146,
-                  "- copies /install/system-image", 0xE5E7EB, 0x232337);
+                  "- writes the bundled raw system image", 0xE5E7EB, 0x232337);
   gui_draw_string(card_x + 30, disk_y + 166,
-                  "- writes boot files and shell assets", 0xE5E7EB, 0x232337);
+                  "- installs BIOS+UEFI boot data from that image", 0xE5E7EB,
+                  0x232337);
   gui_draw_string(card_x + 30, disk_y + 186,
-                  "- saves the selected install target", 0xE5E7EB, 0x232337);
+                  "- reboots so the VM can boot from the HDD", 0xE5E7EB,
+                  0x232337);
   gui_draw_string(card_x + 18, card_y + 254, "Status:", 0x89B4FA, 0x232337);
   gui_draw_rect(card_x + 18, card_y + 274, card_w - 36, 34, 0x1B1B2B);
   gui_draw_string(card_x + 28, card_y + 285, installer_status, 0xFFFFFF,

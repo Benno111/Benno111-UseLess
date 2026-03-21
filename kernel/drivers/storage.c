@@ -747,6 +747,39 @@ static int storage_disk_write_sector(int disk_index, uint32_t lba,
   }
 }
 
+int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size) {
+  uint8_t sector[STORAGE_SECTOR_SIZE];
+  uint64_t disk_sectors;
+  uint64_t image_sectors;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count || !data || size == 0)
+    return -1;
+  if (storage_disks[disk_index].kind == STORAGE_KIND_CDROM)
+    return -1;
+
+  disk_sectors = (uint64_t)storage_disks[disk_index].capacity_mib * 2048ULL;
+  image_sectors = ((uint64_t)size + (STORAGE_SECTOR_SIZE - 1)) /
+                  STORAGE_SECTOR_SIZE;
+  if (image_sectors > disk_sectors)
+    return -1;
+
+  for (uint64_t sector_index = 0; sector_index < image_sectors; sector_index++) {
+    size_t src_offset = (size_t)(sector_index * STORAGE_SECTOR_SIZE);
+    size_t remaining = size - src_offset;
+    size_t chunk = remaining > STORAGE_SECTOR_SIZE ? STORAGE_SECTOR_SIZE : remaining;
+
+    for (size_t i = 0; i < STORAGE_SECTOR_SIZE; i++)
+      sector[i] = 0;
+    for (size_t i = 0; i < chunk; i++)
+      sector[i] = data[src_offset + i];
+
+    if (storage_disk_write_sector(disk_index, (uint32_t)sector_index, sector) != 0)
+      return -1;
+  }
+
+  return 0;
+}
+
 static void storage_recompute_partition_layout(int disk_index) {
   uint32_t next_lba = 2048;
 
