@@ -78,13 +78,16 @@ gdt64_pointer:
     .quad   gdt64                   # Base
 
 /* ===================================================================== */
-/* Interrupt Descriptor Table (IDT) */
-/* ===================================================================== */
+/* Interrupt Descriptor Table (IDT)
+ * Must be writable because early C boot code populates it.
+ * ===================================================================== */
+.section .bss, "aw", @nobits
 .align 16
 idt64:
     .fill   256, 16, 0
 idt64_end:
 
+.section .rodata
 idt64_pointer:
     .word   idt64_end - idt64 - 1   # Limit
     .quad   idt64                   # Base
