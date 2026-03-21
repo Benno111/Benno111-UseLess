@@ -269,7 +269,6 @@ rm -f "$ISO_PATH"
 
 log "Creating hybrid BIOS+UEFI ISO: $ISO_PATH"
 xorriso -as mkisofs \
-    -hardlinks on \
     -b boot/limine-bios-cd.bin \
     -no-emul-boot \
     -boot-load-size 4 \

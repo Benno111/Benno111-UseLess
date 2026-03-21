@@ -78,7 +78,6 @@ rm -f "$ISO_PATH"
 
 log "Creating standalone BIOS DOS installer ISO: $ISO_PATH"
 xorriso -as mkisofs \
-    -hardlinks on \
     -V "OSK-DOS-INSTALL" \
     -c boot/boot.cat \
     -b boot/dos-installer.img \
