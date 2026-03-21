@@ -40,8 +40,10 @@ main_menu:
     cmp     $'2', %al
     je      select_target_disk
     cmp     $'3', %al
-    je      show_help
+    je      apply_bootloader_menu
     cmp     $'4', %al
+    je      show_help
+    cmp     $'5', %al
     je      exit_to_dos
     cmp     $27, %al
     je      exit_to_dos
@@ -87,6 +89,44 @@ install_failed:
 
 no_target_disk:
     mov     $no_target_text, %si
+    call    print_string
+    call    wait_for_keypress
+    jmp     main_menu
+
+apply_bootloader_menu:
+    call    clear_screen
+    mov     $bootloader_intro_text, %si
+    call    print_string
+    call    print_target_summary
+
+    movb    selected_drive, %al
+    test    %al, %al
+    jz      no_target_disk
+
+    mov     $bootloader_confirm_text, %si
+    call    print_string
+    call    read_key
+    cmp     $'y', %al
+    je      do_apply_bootloader
+    cmp     $'Y', %al
+    je      do_apply_bootloader
+    jmp     main_menu
+
+do_apply_bootloader:
+    call    clear_screen
+    mov     $bootloader_begin_text, %si
+    call    print_string
+    call    print_target_summary
+    call    install_bootloader_to_target
+    jc      bootloader_failed
+
+    mov     $bootloader_success_text, %si
+    call    print_string
+    call    wait_for_keypress
+    jmp     main_menu
+
+bootloader_failed:
+    mov     $bootloader_failed_text, %si
     call    print_string
     call    wait_for_keypress
     jmp     main_menu
@@ -432,6 +472,88 @@ dos_install_done:
     pop     %ax
     ret
 
+install_bootloader_to_target:
+    push    %ax
+    push    %bx
+    push    %cx
+    push    %dx
+    push    %si
+
+    movb    selected_drive, %dl
+    call    probe_drive
+    jc      dos_install_bootloader_fail
+
+    mov     $image_filename_dos, %dx
+    mov     $0x3D00, %ax
+    int     $0x21
+    jc      dos_install_bootloader_open_failed
+    mov     %ax, file_handle
+
+    mov     file_handle, %bx
+    mov     $sector_buffer, %dx
+    mov     $512, %cx
+    mov     $0x3F, %ah
+    int     $0x21
+    jc      dos_install_bootloader_read_failed
+    cmp     $512, %ax
+    jne     dos_install_bootloader_read_failed
+
+    movw    $1, dap_sector_count
+    movw    $sector_buffer, dap_buffer_offset
+    mov     %ds, %ax
+    movw    %ax, dap_buffer_segment
+    xor     %ax, %ax
+    movw    %ax, dap_lba
+    movw    %ax, dap_lba + 2
+    movw    %ax, dap_lba + 4
+    movw    %ax, dap_lba + 6
+
+    movb    selected_drive, %dl
+    mov     $dap, %si
+    mov     $0x4300, %ax
+    int     $0x13
+    jc      dos_install_bootloader_write_failed
+
+    mov     file_handle, %bx
+    mov     $0x3E, %ah
+    int     $0x21
+    movw    $0xFFFF, file_handle
+    clc
+    jmp     dos_install_bootloader_done
+
+dos_install_bootloader_open_failed:
+    mov     $file_missing_text, %si
+    call    print_string
+    stc
+    jmp     dos_install_bootloader_done
+
+dos_install_bootloader_read_failed:
+    mov     file_handle, %bx
+    mov     $0x3E, %ah
+    int     $0x21
+    movw    $0xFFFF, file_handle
+    mov     $file_read_error_text, %si
+    call    print_string
+    stc
+    jmp     dos_install_bootloader_done
+
+dos_install_bootloader_write_failed:
+    mov     file_handle, %bx
+    mov     $0x3E, %ah
+    int     $0x21
+    movw    $0xFFFF, file_handle
+    mov     $disk_write_error_text, %si
+    call    print_string
+    stc
+
+dos_install_bootloader_done:
+    pop     %si
+    pop     %dx
+    pop     %cx
+    pop     %bx
+    pop     %ax
+    ret
+
 exit_to_dos:
     mov     $0x4C00, %ax
     int     $0x21
@@ -441,19 +563,29 @@ title_text:
 subtitle_text:
     .asciz  "Run this from an existing DOS system with OSSYS.IMG nearby.\r\nIt writes the regular OS system image to another BIOS disk.\r\n\r\n"
 menu_text:
-    .asciz  "  1. Write OSSYS.IMG to target disk\r\n  2. Change target disk\r\n  3. Help\r\n  4. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
+    .asciz  "  1. Write OSSYS.IMG to target disk\r\n  2. Change target disk\r\n  3. Apply bootloader to disk\r\n  4. Help\r\n  5. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
 help_text:
-    .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  The utility writes the regular raw system image to the selected BIOS disk.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
+    .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  Option 1 writes the regular raw system image to the selected BIOS disk.\r\n  Option 3 writes only the bootloader sector from OSSYS.IMG.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
 install_intro_text:
     .asciz  "This writes the regular OS system image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
+bootloader_intro_text:
+    .asciz  "This writes only the bootloader sector from OSSYS.IMG to the\r\nselected BIOS disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:
     .asciz  "WARNING: continue only if you selected the correct target.\r\nPress Y to start or any other key to cancel.\r\n"
+bootloader_confirm_text:
+    .asciz  "WARNING: this overwrites the target disk boot sector only.\r\nPress Y to continue or any other key to cancel.\r\n"
 copy_begin_text:
     .asciz  "Writing system image to target disk...\r\nProgress: "
+bootloader_begin_text:
+    .asciz  "Applying bootloader to target disk...\r\n"
 copy_success_text:
     .asciz  "System image write complete.\r\nYou can now boot the target disk into OS next stage.\r\n\r\n"
+bootloader_success_text:
+    .asciz  "Bootloader applied successfully.\r\n\r\n"
 copy_failed_text:
     .asciz  "\r\nSystem image write failed.\r\n\r\n"
+bootloader_failed_text:
+    .asciz  "\r\nBootloader apply failed.\r\n\r\n"
 no_target_text:
     .asciz  "No alternate BIOS target disk is available.\r\n\r\n"
 target_updated_text:

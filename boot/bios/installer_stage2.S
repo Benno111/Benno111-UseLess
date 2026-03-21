@@ -50,10 +50,12 @@ main_menu:
     cmp     $'2', %al
     je      select_target_disk
     cmp     $'3', %al
-    je      show_disk_info
+    je      apply_bootloader_menu
     cmp     $'4', %al
-    je      show_shell
+    je      show_disk_info
     cmp     $'5', %al
+    je      show_shell
+    cmp     $'6', %al
     je      reboot_system
     cmp     $27, %al
     je      halt_system
@@ -105,6 +107,46 @@ no_target_disk:
     call    wait_for_keypress
     jmp     main_menu
 
+apply_bootloader_menu:
+    call    clear_screen
+    mov     $bootloader_intro_text, %si
+    call    print_string
+    call    print_drive_summary
+
+    movb    selected_drive, %al
+    test    %al, %al
+    jz      no_target_disk
+    cmpb    boot_drive, %al
+    je      no_target_disk
+
+    mov     $bootloader_confirm_text, %si
+    call    print_string
+    call    read_key
+    cmp     $'y', %al
+    je      do_apply_bootloader
+    cmp     $'Y', %al
+    je      do_apply_bootloader
+    jmp     main_menu
+
+do_apply_bootloader:
+    call    clear_screen
+    mov     $bootloader_begin_text, %si
+    call    print_string
+    call    print_drive_summary
+    call    apply_bootloader_to_target
+    jc      bootloader_failed
+
+    mov     $bootloader_success_text, %si
+    call    print_string
+    call    wait_for_keypress
+    jmp     main_menu
+
+bootloader_failed:
+    mov     $bootloader_failed_text, %si
+    call    print_string
+    call    wait_for_keypress
+    jmp     main_menu
+
 select_target_disk:
     call    select_next_target
     call    clear_screen
@@ -145,6 +187,8 @@ shell_loop:
     je      show_disk_info
     cmp     $'n', %al
     je      shell_next_disk
+    cmp     $'b', %al
+    je      apply_bootloader_menu
     cmp     $'d', %al
     je      deploy_installer_media
     cmp     $'r', %al
@@ -444,6 +488,57 @@ clone_system_image_done:
     pop     %ax
     ret
 
+apply_bootloader_to_target:
+    push    %ax
+    push    %bx
+    push    %cx
+    push    %dx
+    push    %si
+
+    movb    boot_drive, %dl
+    call    probe_drive
+    jc      apply_bootloader_fail
+    movb    selected_drive, %dl
+    call    probe_drive
+    jc      apply_bootloader_fail
+
+    movl    system_image_start_lba, %eax
+    testl   %eax, %eax
+    jz      apply_bootloader_fail
+    movl    %eax, dap_lba
+    movl    $0, dap_lba + 4
+    movw    $1, dap_sector_count
+
+    movb    boot_drive, %dl
+    mov     $dap, %si
+    mov     $0x4200, %ax
+    int     $0x13
+    jc      apply_bootloader_fail
+
+    xorl    %eax, %eax
+    movl    %eax, dap_lba
+    movl    %eax, dap_lba + 4
+
+    movb    selected_drive, %dl
+    mov     $dap, %si
+    mov     $0x4300, %ax
+    int     $0x13
+    jc      apply_bootloader_fail
+
+    clc
+    jmp     apply_bootloader_done
+
+apply_bootloader_fail:
+    stc
+
+apply_bootloader_done:
+    pop     %si
+    pop     %dx
+    pop     %cx
+    pop     %bx
+    pop     %ax
+    ret
+
 reboot_system:
     movw    $0x1234, 0x472
     ljmp    $0xFFFF, $0x0000
@@ -459,17 +554,27 @@ title_text:
 subtitle_text:
     .asciz  "16-bit real mode fallback path\r\nDeploys the bundled regular OS system image to another BIOS disk\r\n\r\n"
 menu_text:
-    .asciz  "  1. Deploy regular system image\r\n  2. Change target disk\r\n  3. Show disk info\r\n  4. Enter installer shell\r\n  5. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
+    .asciz  "  1. Deploy regular system image\r\n  2. Change target disk\r\n  3. Apply bootloader to disk\r\n  4. Show disk info\r\n  5. Enter installer shell\r\n  6. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
 install_intro_text:
     .asciz  "This fallback path writes the bundled regular OS system image\r\nonto another BIOS disk. That target can then boot OS next stage\r\neven when the GUI or EFI install flow is unavailable.\r\n\r\n"
+bootloader_intro_text:
+    .asciz  "This writes only the bundled regular system boot sector to the\r\nselected target disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:
     .asciz  "\r\nWARNING: target contents will be overwritten.\r\nPress Y to continue or any other key to cancel.\r\n"
+bootloader_confirm_text:
+    .asciz  "\r\nWARNING: this overwrites the target disk boot sector only.\r\nPress Y to continue or any other key to cancel.\r\n"
 copy_begin_text:
     .asciz  "Deploying regular system image to target disk...\r\nProgress: "
+bootloader_begin_text:
+    .asciz  "Applying bootloader to target disk...\r\n"
 copy_success_text:
     .asciz  "Deployment complete.\r\nBoot the target disk to start OS next stage.\r\n\r\n"
+bootloader_success_text:
+    .asciz  "Bootloader applied successfully.\r\n\r\n"
 copy_failed_text:
     .asciz  "\r\nDeployment failed.\r\nCheck BIOS disk access, bundled image payload, and choose a different target.\r\n\r\n"
+bootloader_failed_text:
+    .asciz  "\r\nBootloader apply failed.\r\nCheck BIOS disk access and bundled image payload.\r\n\r\n"
 no_target_text:
     .asciz  "No alternate BIOS target disk is available.\r\nAttach another disk and try again.\r\n\r\n"
 target_updated_text:
@@ -483,7 +588,7 @@ disk_info_hint_text:
 shell_text:
     .asciz  "Installer shell\r\nCommands: h=help, i=info, n=next disk, d=deploy, r=reboot, q=back\r\n\r\n"
 shell_help_text:
-    .asciz  "\r\nHelp:\r\n  h  Show this help\r\n  i  Show current disk info\r\n  n  Select next target disk\r\n  d  Deploy bundled regular system image\r\n  r  Reboot\r\n  q  Return to menu\r\n\r\n"
+    .asciz  "\r\nHelp:\r\n  h  Show this help\r\n  i  Show current disk info\r\n  n  Select next target disk\r\n  b  Apply bundled bootloader to target disk\r\n  d  Deploy bundled regular system image\r\n  r  Reboot\r\n  q  Return to menu\r\n\r\n"
 prompt_text:
     .asciz  "> "
 unknown_text:
