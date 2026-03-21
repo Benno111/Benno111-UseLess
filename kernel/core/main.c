@@ -437,178 +437,27 @@ static void print_banner(void) {
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void) {
   printk(KERN_INFO "[INIT] x86_64 bring-up mode\n");
-  printk(KERN_INFO "  Using Limine framebuffer and minimal GUI path\n");
+  printk(KERN_INFO "  Using conservative Limine framebuffer path\n");
 
   extern int fb_init(void);
-  extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
-  extern uint32_t fb_get_pitch(void);
-  extern void kmalloc_init(void);
-  extern int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
-                      uint32_t pitch);
-  extern struct window *gui_create_window(const char *title, int x, int y,
-                                          int w, int h);
-  extern void gui_focus_window(struct window *win);
-  extern void gui_compose(void);
-  extern struct terminal *term_create(int x, int y, int cols, int rows);
-  extern void term_set_active(struct terminal * term);
-  extern void gui_set_window_userdata(struct window *win, void *data);
-  extern void desktop_manager_init(void);
-  extern void pci_init(void);
-  extern void storage_init(void);
-  extern void arch_timer_init(void);
-  extern int vfs_mount(const char *source, const char *target,
-                       const char *filesystemtype, unsigned long mountflags,
-                       const void *data);
-  extern void vfs_init(void);
-  extern int ramfs_init(void);
-  extern void *limine_get_rsdp(void);
   extern const char *limine_get_kernel_cmdline(void);
-  extern void acpi_init(void *rsdp_ptr);
   extern void boot_parse_cmdline(const char *cmdline);
-  extern int boot_is_installer_mode(void);
-  extern void boot_force_verbose_console(void);
-  extern int input_init(void);
-  extern int input_boot_verbose_requested(void);
-  extern void input_poll(void);
-  extern void input_set_key_callback(void (*callback)(int key));
-  extern void input_set_mouse_bounds(int width, int height);
-  extern void input_set_mouse_scale(int scale);
-  extern void mouse_get_position(int *x, int *y);
-  extern int mouse_get_buttons(void);
-  extern void gui_handle_mouse_event(int x, int y, int buttons);
-  extern void gui_handle_key_event(int key);
-
-  uint32_t *fb_buffer = 0;
-  uint32_t fb_width = 0;
-  uint32_t fb_height = 0;
-  uint32_t fb_pitch = 0;
-  struct window *term_window = 0;
-  struct window *installer_window = 0;
-  int last_mx = -1;
-  int last_my = -1;
-  int last_buttons = -1;
-  int needs_redraw = 1;
-  uint64_t last_refresh = 0;
-  const uint64_t REFRESH_MS = 33;
+  extern void fb_show_x86_64_bringup_screen(void);
+  extern void arch_idle(void);
 
   boot_parse_cmdline(limine_get_kernel_cmdline());
-  input_init();
-  for (int attempt = 0; attempt < 2000; attempt++) {
-    input_poll();
-    if (input_boot_verbose_requested()) {
-      boot_force_verbose_console();
-      break;
-    }
-    for (volatile int i = 0; i < 5000; i++) {
-    }
-  }
 
   if (fb_init() != 0) {
     panic("Failed to initialize framebuffer on x86_64!");
   }
 
-  fb_get_info(&fb_buffer, &fb_width, &fb_height);
-  fb_pitch = fb_get_pitch();
+  fb_show_x86_64_bringup_screen();
 
-  if (!fb_buffer || !fb_width || !fb_height) {
-    panic("No usable framebuffer available on x86_64!");
-  }
+  printk(KERN_INFO "x86_64: framebuffer bring-up stable, full GUI path disabled\n");
+  printk(KERN_INFO "x86_64: system parked in safe idle loop\n");
 
-  kmalloc_init();
-  arch_timer_init();
-  vfs_init();
-  ramfs_init();
-  if (vfs_mount("ramfs", "/", "ramfs", 0, NULL) != 0) {
-    panic("Failed to mount x86_64 root filesystem!");
-  }
-  acpi_init(limine_get_rsdp());
-  populate_seed_filesystem();
-  storage_init();
-  printk(KERN_INFO
-         "x86_64: Deferring PCI probe until after GUI initialization\n");
-
-  printk(KERN_INFO "  Framebuffer ready: %ux%u\n", fb_width, fb_height);
-  if (gui_init(fb_buffer, fb_width, fb_height,
-               fb_pitch ? fb_pitch : (fb_width * 4)) != 0) {
-    panic("Failed to initialize x86_64 GUI bring-up!");
-  }
-
-  printk(KERN_INFO "x86_64: Running late PCI probe\n");
-  pci_init();
-
-  input_set_key_callback(keyboard_handler);
-  input_set_mouse_bounds((int)fb_width, (int)fb_height);
-  input_set_mouse_scale(2);
-  if (boot_is_installer_mode()) {
-    int installer_w = 640;
-    int installer_h = 420;
-    int installer_x = (int)(fb_width > (uint32_t)installer_w
-                                ? (fb_width - (uint32_t)installer_w) / 2
-                                : 20);
-    int installer_y = (int)(fb_height > (uint32_t)installer_h
-                                ? (fb_height - (uint32_t)installer_h) / 2
-                                : 20);
-    installer_window =
-        gui_create_window("Installer", installer_x, installer_y, installer_w,
-                          installer_h);
-    if (installer_window) {
-      gui_focus_window(installer_window);
-    }
-  } else {
-    desktop_manager_init();
-    term_window = gui_create_window("Terminal", 50, 50, 700, 420);
-    if (term_window) {
-      struct terminal *term = term_create(52, 80, 80, 20);
-      if (term) {
-        gui_set_window_userdata(term_window, term);
-        term_set_active(term);
-      }
-      gui_focus_window(term_window);
-    }
-  }
-
-  printk(KERN_INFO "x86_64 minimal GUI ready.\n");
-  gui_compose();
-  last_refresh = arch_timer_get_ms();
-
-  while (1) {
-    extern int uart_getc_nonblock(void);
-    int mx, my, mbuttons;
-    int c;
-    uint64_t now;
-
-    input_poll();
-
-    c = uart_getc_nonblock();
-    if (c >= 0) {
-      gui_handle_key_event(c);
-      needs_redraw = 1;
-    }
-
-    mouse_get_position(&mx, &my);
-    mbuttons = mouse_get_buttons();
-    if (mx != last_mx || my != last_my || mbuttons != last_buttons) {
-      gui_handle_mouse_event(mx, my, mbuttons);
-      last_mx = mx;
-      last_my = my;
-      last_buttons = mbuttons;
-      needs_redraw = 1;
-    }
-
-    now = arch_timer_get_ms();
-    if (now - last_refresh >= REFRESH_MS) {
-      last_refresh = now;
-      needs_redraw = 1;
-    }
-
-    if (needs_redraw) {
-      gui_compose();
-      needs_redraw = 0;
-    }
-
-    for (volatile int i = 0; i < 500; i++) {
-    }
-  }
+  while (1)
+    arch_idle();
 }
 #endif
 
