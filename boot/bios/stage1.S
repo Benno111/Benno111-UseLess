@@ -14,7 +14,7 @@
 #define BOOT_STAGE2_SEGMENT 0x07E0
 
 _start:
-    jmp     real_mode_entry
+    jmp     stage1_entry
     nop
 
     .ascii  "OSKERNEL"
@@ -38,6 +38,7 @@ hidden_sectors:
     .ascii  "OSKSETUP   "       /* volume label */
     .ascii  "FAT16   "
 
+stage1_entry:
     ljmp    $BOOT_STAGE1_SEGMENT, $real_mode_entry
 
 real_mode_entry:
