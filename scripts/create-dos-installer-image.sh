@@ -123,21 +123,6 @@ with open(path, "r+b") as f:
     f.write(data)
 PATCHPY
 cp "$STAGE2" "$STAGE2_PADDED"
-python3 - "$STAGE2_PADDED" "$IMAGE_TOTAL_SECTORS" <<'PATCHPY'
-import sys
-path = sys.argv[1]
-sector_count = int(sys.argv[2])
-marker = (0x0BADF00D).to_bytes(4, "little")
-replacement = sector_count.to_bytes(4, "little")
-with open(path, "r+b") as f:
-    data = bytearray(f.read())
-    off = data.find(marker)
-    if off == -1:
-        raise SystemExit("image sector-count marker not found in stage2 image")
-    data[off:off+4] = replacement
-    f.seek(0)
-    f.write(data)
-PATCHPY
 if [ "$SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
 python3 - "$STAGE2_PADDED" "$RESERVED_SECTORS" "$FAT_SECTORS" "$ROOT_DIR_SECTORS" "$SYSTEM_IMAGE_SECTORS" <<'PATCHPY'
 import sys
