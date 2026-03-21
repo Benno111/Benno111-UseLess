@@ -73,7 +73,6 @@ xorriso -as mkisofs \
     -c boot/boot.cat \
     -b boot/dos-installer.img \
     -hard-disk-boot \
-    -boot-info-table \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
