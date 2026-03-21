@@ -1214,6 +1214,11 @@ static void keyboard_handler(int key) {
 }
 
 static void start_init_process(void) {
+  /* x86_64 still relies on a kernel-driven desktop loop for stability. */
+#ifdef ARCH_X86_64
+  printk(KERN_INFO
+         "x86_64: skipping /sbin/init spawn, using kernel desktop loop\n");
+#else
   /* Create and start init process asynchronously */
   printk(KERN_INFO "Spawning /sbin/init...\n");
 
@@ -1228,6 +1233,7 @@ static void start_init_process(void) {
   } else {
     printk(KERN_ERR "Failed to start /sbin/init\n");
   }
+#endif
 
   printk(KERN_INFO "System ready.\n\n");
 
