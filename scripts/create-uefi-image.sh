@@ -32,6 +32,17 @@ require_cmd() {
     fi
 }
 
+ensure_executable() {
+    local path="$1"
+    if [ ! -x "$path" ]; then
+        chmod +x "$path" 2>/dev/null || true
+    fi
+    if [ ! -x "$path" ]; then
+        echo "[ERROR] Required executable is not runnable: $path" >&2
+        exit 1
+    fi
+}
+
 mkdir -p "$IMAGE_DIR"
 
 IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
@@ -42,6 +53,7 @@ require_file "$KERNEL_PATH"
 require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine"
+ensure_executable "$LIMINE_BIN_DIR/limine"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy

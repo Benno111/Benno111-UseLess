@@ -38,6 +38,17 @@ require_cmd() {
     fi
 }
 
+ensure_executable() {
+    local path="$1"
+    if [ ! -x "$path" ]; then
+        chmod +x "$path" 2>/dev/null || true
+    fi
+    if [ ! -x "$path" ]; then
+        echo "[ERROR] Required executable is not runnable: $path" >&2
+        exit 1
+    fi
+}
+
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_CFG"
 require_file "$INSTALL_LIMINE_CFG"
@@ -46,6 +57,7 @@ require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine"
+ensure_executable "$LIMINE_BIN_DIR/limine"
 require_cmd xorriso
 
 mkdir -p "$IMAGE_DIR"
