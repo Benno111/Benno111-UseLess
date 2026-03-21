@@ -14,6 +14,7 @@
 #define BOOT_STAGE2_SEGMENT 0x07E0
 #define DISK_BUFFER_SEGMENT 0x2000
 #define COPY_CHUNK_SECTORS  4
+#define BOOT_AREA_SECTORS   2048
 
 _start:
     ljmp    $BOOT_STAGE2_SEGMENT, $real_mode_entry
@@ -427,6 +428,8 @@ clone_system_image:
     jz      clone_system_image_fail
     movl    %eax, current_lba
     movl    $0, current_lba + 4
+    movl    $0, target_lba
+    movl    $0, target_lba + 4
 
     movl    system_image_total_sectors, %eax
     testl   %eax, %eax
@@ -456,6 +459,11 @@ clone_system_image_read_chunk:
     int     $0x13
     jc      clone_system_image_fail
 
+    movl    target_lba, %eax
+    movl    %eax, dap_lba
+    movl    target_lba + 4, %eax
+    movl    %eax, dap_lba + 4
+
     movb    selected_drive, %dl
     mov     $dap, %si
     mov     $0x4300, %ax
@@ -465,6 +473,8 @@ clone_system_image_read_chunk:
     movw    dap_sector_count, %ax
     addl    %eax, current_lba
     adcl    $0, current_lba + 4
+    addl    %eax, target_lba
+    adcl    $0, target_lba + 4
     subl    %eax, remaining_sectors
 
     mov     $'.', %al
@@ -505,9 +515,28 @@ apply_bootloader_to_target:
     movl    system_image_start_lba, %eax
     testl   %eax, %eax
     jz      apply_bootloader_fail
+    movl    %eax, current_lba
+    movl    $0, current_lba + 4
+    movl    $0, target_lba
+    movl    $0, target_lba + 4
+    movl    $BOOT_AREA_SECTORS, remaining_sectors
+
+apply_bootloader_copy_loop:
+    movl    remaining_sectors, %eax
+    testl   %eax, %eax
+    jz      apply_bootloader_success
+    cmpw    $COPY_CHUNK_SECTORS, %ax
+    jbe     apply_bootloader_use_remaining
+    movw    $COPY_CHUNK_SECTORS, dap_sector_count
+    jmp     apply_bootloader_read_chunk
+apply_bootloader_use_remaining:
+    movw    %ax, dap_sector_count
+
+apply_bootloader_read_chunk:
+    movl    current_lba, %eax
     movl    %eax, dap_lba
-    movl    $0, dap_lba + 4
-    movw    $1, dap_sector_count
+    movl    current_lba + 4, %eax
+    movl    %eax, dap_lba + 4
 
     movb    boot_drive, %dl
     mov     $dap, %si
@@ -515,8 +544,9 @@ apply_bootloader_to_target:
     int     $0x13
     jc      apply_bootloader_fail
 
-    xorl    %eax, %eax
+    movl    target_lba, %eax
     movl    %eax, dap_lba
+    movl    target_lba + 4, %eax
     movl    %eax, dap_lba + 4
 
     movb    selected_drive, %dl
@@ -525,6 +555,15 @@ apply_bootloader_to_target:
     int     $0x13
     jc      apply_bootloader_fail
 
+    movw    dap_sector_count, %ax
+    addl    %eax, current_lba
+    adcl    $0, current_lba + 4
+    addl    %eax, target_lba
+    adcl    $0, target_lba + 4
+    subl    %eax, remaining_sectors
+    jmp     apply_bootloader_copy_loop
+
+apply_bootloader_success:
     clc
     jmp     apply_bootloader_done
 
@@ -558,11 +597,11 @@ menu_text:
 install_intro_text:
     .asciz  "This fallback path writes the bundled regular OS system image\r\nonto another BIOS disk. That target can then boot OS next stage\r\neven when the GUI or EFI install flow is unavailable.\r\n\r\n"
 bootloader_intro_text:
-    .asciz  "This writes only the bundled regular system boot sector to the\r\nselected target disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
+    .asciz  "This rewrites the bundled regular system BIOS boot area on the\r\nselected target disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:
     .asciz  "\r\nWARNING: target contents will be overwritten.\r\nPress Y to continue or any other key to cancel.\r\n"
 bootloader_confirm_text:
-    .asciz  "\r\nWARNING: this overwrites the target disk boot sector only.\r\nPress Y to continue or any other key to cancel.\r\n"
+    .asciz  "\r\nWARNING: this overwrites the target disk BIOS boot area.\r\nPress Y to continue or any other key to cancel.\r\n"
 copy_begin_text:
     .asciz  "Deploying regular system image to target disk...\r\nProgress: "
 bootloader_begin_text:
@@ -611,6 +650,8 @@ selected_drive:
 remaining_sectors:
     .long   0
 current_lba:
+    .quad   0
+target_lba:
     .quad   0
 system_image_start_lba:
     .long   0x13572468

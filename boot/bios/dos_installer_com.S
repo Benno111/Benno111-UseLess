@@ -12,6 +12,7 @@
 .org 0x100
 
 #define IMAGE_FILENAME "OSSYS.IMG"
+#define BOOT_AREA_SECTORS 2048
 
 _start:
     cli
@@ -489,6 +490,19 @@ install_bootloader_to_target:
     jc      dos_install_bootloader_open_failed
     mov     %ax, file_handle
 
+    xor     %ax, %ax
+    mov     %ax, current_lba
+    mov     %ax, current_lba + 2
+    mov     %ax, current_lba + 4
+    mov     %ax, current_lba + 6
+    mov     $BOOT_AREA_SECTORS, %ax
+    mov     %ax, bootloader_remaining_sectors
+
+dos_install_bootloader_copy_loop:
+    mov     bootloader_remaining_sectors, %cx
+    test    %cx, %cx
+    jz      dos_install_bootloader_success
+
     mov     file_handle, %bx
     mov     $sector_buffer, %dx
     mov     $512, %cx
@@ -502,10 +516,14 @@ install_bootloader_to_target:
     movw    $sector_buffer, dap_buffer_offset
     mov     %ds, %ax
     movw    %ax, dap_buffer_segment
-    xor     %ax, %ax
+
+    movw    current_lba, %ax
     movw    %ax, dap_lba
+    movw    current_lba + 2, %ax
     movw    %ax, dap_lba + 2
+    movw    current_lba + 4, %ax
     movw    %ax, dap_lba + 4
+    movw    current_lba + 6, %ax
     movw    %ax, dap_lba + 6
 
     movb    selected_drive, %dl
@@ -513,6 +531,19 @@ install_bootloader_to_target:
     mov     $0x4300, %ax
     int     $0x13
     jc      dos_install_bootloader_write_failed
+
+    incw    current_lba
+    jnz     .next
+    incw    current_lba + 2
+    jnz     .next
+    incw    current_lba + 4
+    jnz     .next
+    incw    current_lba + 6
+.next:
+    decw    bootloader_remaining_sectors
+    jmp     dos_install_bootloader_copy_loop
+
+dos_install_bootloader_success:
 
     mov     file_handle, %bx
     mov     $0x3E, %ah
@@ -565,15 +596,15 @@ subtitle_text:
 menu_text:
     .asciz  "  1. Write OSSYS.IMG to target disk\r\n  2. Change target disk\r\n  3. Apply bootloader to disk\r\n  4. Help\r\n  5. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
 help_text:
-    .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  Option 1 writes the regular raw system image to the selected BIOS disk.\r\n  Option 3 writes only the bootloader sector from OSSYS.IMG.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
+    .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  Option 1 writes the regular raw system image to the selected BIOS disk.\r\n  Option 3 rewrites the early BIOS boot area from OSSYS.IMG.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
 install_intro_text:
     .asciz  "This writes the regular OS system image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
 bootloader_intro_text:
-    .asciz  "This writes only the bootloader sector from OSSYS.IMG to the\r\nselected BIOS disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
+    .asciz  "This rewrites the early BIOS boot area from OSSYS.IMG to the\r\nselected BIOS disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:
     .asciz  "WARNING: continue only if you selected the correct target.\r\nPress Y to start or any other key to cancel.\r\n"
 bootloader_confirm_text:
-    .asciz  "WARNING: this overwrites the target disk boot sector only.\r\nPress Y to continue or any other key to cancel.\r\n"
+    .asciz  "WARNING: this overwrites the target disk BIOS boot area.\r\nPress Y to continue or any other key to cancel.\r\n"
 copy_begin_text:
     .asciz  "Writing system image to target disk...\r\nProgress: "
 bootloader_begin_text:
@@ -622,6 +653,8 @@ progress_divider:
     .word   0
 current_lba:
     .quad   0
+bootloader_remaining_sectors:
+    .word   0
 
 dap:
     .byte   0x10
