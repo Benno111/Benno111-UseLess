@@ -393,7 +393,6 @@ void kernel_main(void *dtb) {
 
 #ifdef ARCH_X86_64
   start_x86_64_bringup();
-  panic("x86_64 bring-up returned unexpectedly!");
 #endif
 
   /* Initialize all kernel subsystems */
@@ -436,14 +435,13 @@ static void print_banner(void) {
 
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void) {
-  printk(KERN_INFO "[INIT] x86_64 bring-up mode\n");
+  printk(KERN_INFO "[INIT] x86_64 early bring-up\n");
   printk(KERN_INFO "  Using conservative Limine framebuffer path\n");
 
   extern int fb_init(void);
   extern const char *limine_get_kernel_cmdline(void);
   extern void boot_parse_cmdline(const char *cmdline);
   extern void fb_show_x86_64_bringup_screen(void);
-  extern void arch_idle(void);
 
   boot_parse_cmdline(limine_get_kernel_cmdline());
 
@@ -453,11 +451,7 @@ static void start_x86_64_bringup(void) {
 
   fb_show_x86_64_bringup_screen();
 
-  printk(KERN_INFO "x86_64: framebuffer bring-up stable, full GUI path disabled\n");
-  printk(KERN_INFO "x86_64: system parked in safe idle loop\n");
-
-  while (1)
-    arch_idle();
+  printk(KERN_INFO "x86_64: framebuffer bring-up stable, continuing boot\n");
 }
 #endif
 
