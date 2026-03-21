@@ -266,6 +266,11 @@ static void setup_queue(int qidx, struct virt_queue *q) {
 
 int virtio_net_init(void) {
     printk(KERN_INFO "NET: Initializing virtio-net...\n");
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+    printk(KERN_INFO "NET: virtio-mmio network probe skipped on PC platform\n");
+    return -1;
+#endif
     
     net_base = find_virtio_net();
     if (!net_base) {
