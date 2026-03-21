@@ -7,6 +7,7 @@ BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
 IMAGE_NAME="${IMAGE_NAME:-os-x86_64-dos-installer.img}"
 IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-16}"
+DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -30,6 +31,20 @@ IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
 
 require_file "$STAGE1"
 require_file "$STAGE2"
+
+if [ -f "$DOS_SYSTEM_IMAGE" ]; then
+    SYSTEM_IMAGE_ENABLED=1
+    SYSTEM_IMAGE_SIZE=$(stat -c%s "$DOS_SYSTEM_IMAGE")
+    SYSTEM_IMAGE_SECTORS=$(((SYSTEM_IMAGE_SIZE + 511) / 512))
+    REQUIRED_MB=$((((SYSTEM_IMAGE_SIZE + (32 * 1024 * 1024) + 1048575)) / 1048576))
+    if [ "$REQUIRED_MB" -gt "$IMAGE_SIZE_MB" ]; then
+        IMAGE_SIZE_MB="$REQUIRED_MB"
+    fi
+else
+    SYSTEM_IMAGE_ENABLED=0
+    SYSTEM_IMAGE_SIZE=0
+    SYSTEM_IMAGE_SECTORS=0
+fi
 
 STAGE2_SIZE=$(stat -c%s "$STAGE2")
 STAGE2_SECTORS=$(((STAGE2_SIZE + 511) / 512))
@@ -123,6 +138,31 @@ with open(path, "r+b") as f:
     f.seek(0)
     f.write(data)
 PATCHPY
+if [ "$SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
+python3 - "$STAGE2_PADDED" "$RESERVED_SECTORS" "$FAT_SECTORS" "$ROOT_DIR_SECTORS" "$SYSTEM_IMAGE_SECTORS" <<'PATCHPY'
+import sys
+path = sys.argv[1]
+reserved = int(sys.argv[2])
+fat_sectors = int(sys.argv[3])
+root_dir_sectors = int(sys.argv[4])
+system_image_sectors = int(sys.argv[5])
+start_lba = reserved + fat_sectors + root_dir_sectors
+start_marker = (0x13572468).to_bytes(4, "little")
+count_marker = (0x24681357).to_bytes(4, "little")
+with open(path, "r+b") as f:
+    data = bytearray(f.read())
+    off = data.find(start_marker)
+    if off == -1:
+        raise SystemExit("system image start marker not found in stage2 image")
+    data[off:off+4] = start_lba.to_bytes(4, "little")
+    off = data.find(count_marker)
+    if off == -1:
+        raise SystemExit("system image sector-count marker not found in stage2 image")
+    data[off:off+4] = system_image_sectors.to_bytes(4, "little")
+    f.seek(0)
+    f.write(data)
+PATCHPY
+fi
 truncate -s $((STAGE2_SECTORS * 512)) "$STAGE2_PADDED"
 
 log "Writing stage 1 volume boot sector"
@@ -149,9 +189,18 @@ with open(path, "r+b") as f:
     f.write(b"\x00" * (root_dir_sectors * 512))
 PATCHPY
 
+if [ "$SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
+    SYSTEM_IMAGE_START_LBA=$((RESERVED_SECTORS + FAT_SECTORS + ROOT_DIR_SECTORS))
+    log "Embedding regular system image payload at LBA $SYSTEM_IMAGE_START_LBA ($SYSTEM_IMAGE_SECTORS sectors)"
+    dd if="$DOS_SYSTEM_IMAGE" of="$IMAGE_PATH" bs=512 seek="$SYSTEM_IMAGE_START_LBA" conv=notrunc 2>/dev/null
+fi
+
 log "Image created successfully: $IMAGE_PATH"
 log "Installer image size: $IMAGE_SIZE_MB MiB ($IMAGE_TOTAL_SECTORS sectors)"
 log "FAT16 layout: reserved=$RESERVED_SECTORS spc=$SECTORS_PER_CLUSTER fat_sectors=$FAT_SECTORS root_entries=$ROOT_ENTRIES"
+if [ "$SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
+    log "Bundled regular system image: $(basename "$DOS_SYSTEM_IMAGE")"
+fi
 ls -lh "$IMAGE_PATH"
 echo ""
 log "QEMU test: qemu-system-i386 -drive format=raw,file=$IMAGE_PATH"

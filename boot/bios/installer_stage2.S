@@ -2,9 +2,9 @@
  * OS next stage BIOS text installer - stage 2
  *
  * A standalone real-mode fallback installer shell. This variant does not boot
- * the kernel, but it can deploy the DOS-style recovery installer media onto
- * another BIOS disk so the system remains recoverable when the GUI installer
- * path is unavailable.
+ * the kernel, but it can deploy a bundled regular OS system image onto another
+ * BIOS disk so the system remains recoverable when the GUI installer path is
+ * unavailable.
  */
 
 .code16
@@ -85,7 +85,7 @@ do_clone:
     mov     $copy_begin_text, %si
     call    print_string
     call    print_drive_summary
-    call    clone_installer_image
+    call    clone_system_image
     jc      clone_failed
 
     mov     $copy_success_text, %si
@@ -364,7 +364,7 @@ select_next_target_done:
     pop     %ax
     ret
 
-clone_installer_image:
+clone_system_image:
     push    %ax
     push    %bx
     push    %cx
@@ -373,29 +373,34 @@ clone_installer_image:
 
     movb    boot_drive, %dl
     call    probe_drive
-    jc      clone_installer_image_fail
+    jc      clone_system_image_fail
     movb    selected_drive, %dl
     call    probe_drive
-    jc      clone_installer_image_fail
+    jc      clone_system_image_fail
 
-    movl    image_total_sectors, %eax
-    movl    %eax, remaining_sectors
-    xorl    %eax, %eax
+    movl    system_image_start_lba, %eax
+    testl   %eax, %eax
+    jz      clone_system_image_fail
     movl    %eax, current_lba
-    movl    %eax, current_lba + 4
+    movl    $0, current_lba + 4
 
-clone_installer_image_copy_loop:
+    movl    system_image_total_sectors, %eax
+    testl   %eax, %eax
+    jz      clone_system_image_fail
+    movl    %eax, remaining_sectors
+
+clone_system_image_copy_loop:
     movl    remaining_sectors, %eax
     testl   %eax, %eax
-    jz      clone_installer_image_success
+    jz      clone_system_image_success
     cmpw    $COPY_CHUNK_SECTORS, %ax
-    jbe     clone_installer_image_use_remaining
+    jbe     clone_system_image_use_remaining
     movw    $COPY_CHUNK_SECTORS, dap_sector_count
-    jmp     clone_installer_image_read_chunk
-clone_installer_image_use_remaining:
+    jmp     clone_system_image_read_chunk
+clone_system_image_use_remaining:
     movw    %ax, dap_sector_count
 
-clone_installer_image_read_chunk:
+clone_system_image_read_chunk:
     movl    current_lba, %eax
     movl    %eax, dap_lba
     movl    current_lba + 4, %eax
@@ -405,13 +410,13 @@ clone_installer_image_read_chunk:
     mov     $dap, %si
     mov     $0x4200, %ax
     int     $0x13
-    jc      clone_installer_image_fail
+    jc      clone_system_image_fail
 
     movb    selected_drive, %dl
     mov     $dap, %si
     mov     $0x4300, %ax
     int     $0x13
-    jc      clone_installer_image_fail
+    jc      clone_system_image_fail
 
     movw    dap_sector_count, %ax
     addl    %eax, current_lba
@@ -420,18 +425,18 @@ clone_installer_image_read_chunk:
 
     mov     $'.', %al
     call    print_char
-    jmp     clone_installer_image_copy_loop
+    jmp     clone_system_image_copy_loop
 
-clone_installer_image_success:
+clone_system_image_success:
     mov     $crlf_text, %si
     call    print_string
     clc
-    jmp     clone_installer_image_done
+    jmp     clone_system_image_done
 
-clone_installer_image_fail:
+clone_system_image_fail:
     stc
 
-clone_installer_image_done:
+clone_system_image_done:
     pop     %si
     pop     %dx
     pop     %cx
@@ -450,21 +455,21 @@ halt_system:
     jmp     .halt
 
 title_text:
-    .asciz  "OS next stage DOS-style Rescue Installer\r\n"
+    .asciz  "OS next stage DOS System Installer\r\n"
 subtitle_text:
-    .asciz  "16-bit real mode fallback path\r\nDeploys rescue media when higher-level installers fail\r\n\r\n"
+    .asciz  "16-bit real mode fallback path\r\nDeploys the bundled regular OS system image to another BIOS disk\r\n\r\n"
 menu_text:
-    .asciz  "  1. Deploy fallback installer disk\r\n  2. Change target disk\r\n  3. Show disk info\r\n  4. Enter installer shell\r\n  5. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
+    .asciz  "  1. Deploy regular system image\r\n  2. Change target disk\r\n  3. Show disk info\r\n  4. Enter installer shell\r\n  5. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
 install_intro_text:
-    .asciz  "This fallback path clones the current DOS-style installer media\r\nonto another BIOS disk. That target can then boot the rescue installer\r\nif the normal GUI or EFI install flow is unavailable.\r\n\r\n"
+    .asciz  "This fallback path writes the bundled regular OS system image\r\nonto another BIOS disk. That target can then boot OS next stage\r\neven when the GUI or EFI install flow is unavailable.\r\n\r\n"
 confirm_text:
     .asciz  "\r\nWARNING: target contents will be overwritten.\r\nPress Y to continue or any other key to cancel.\r\n"
 copy_begin_text:
-    .asciz  "Deploying installer media to target disk...\r\nProgress: "
+    .asciz  "Deploying regular system image to target disk...\r\nProgress: "
 copy_success_text:
-    .asciz  "Deployment complete.\r\nBoot the target disk to continue recovery install steps.\r\n\r\n"
+    .asciz  "Deployment complete.\r\nBoot the target disk to start OS next stage.\r\n\r\n"
 copy_failed_text:
-    .asciz  "\r\nDeployment failed.\r\nCheck BIOS disk access and choose a different target.\r\n\r\n"
+    .asciz  "\r\nDeployment failed.\r\nCheck BIOS disk access, bundled image payload, and choose a different target.\r\n\r\n"
 no_target_text:
     .asciz  "No alternate BIOS target disk is available.\r\nAttach another disk and try again.\r\n\r\n"
 target_updated_text:
@@ -478,7 +483,7 @@ disk_info_hint_text:
 shell_text:
     .asciz  "Installer shell\r\nCommands: h=help, i=info, n=next disk, d=deploy, r=reboot, q=back\r\n\r\n"
 shell_help_text:
-    .asciz  "\r\nHelp:\r\n  h  Show this help\r\n  i  Show current disk info\r\n  n  Select next target disk\r\n  d  Deploy fallback installer media\r\n  r  Reboot\r\n  q  Return to menu\r\n\r\n"
+    .asciz  "\r\nHelp:\r\n  h  Show this help\r\n  i  Show current disk info\r\n  n  Select next target disk\r\n  d  Deploy bundled regular system image\r\n  r  Reboot\r\n  q  Return to menu\r\n\r\n"
 prompt_text:
     .asciz  "> "
 unknown_text:
@@ -502,8 +507,11 @@ remaining_sectors:
     .long   0
 current_lba:
     .quad   0
-image_total_sectors:
-    .long   0x0BADF00D
+system_image_start_lba:
+    .long   0x13572468
+    .long   0
+system_image_total_sectors:
+    .long   0x24681357
 
 dap:
     .byte   0x10
