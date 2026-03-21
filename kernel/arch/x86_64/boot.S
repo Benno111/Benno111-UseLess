@@ -46,47 +46,10 @@ _start:
     rep     stosb                   # Clear BSS
     
     /* ================================================================= */
-    /* Set up GDT (Global Descriptor Table) */
-    /* ================================================================= */
-    lea     gdt64_pointer(%rip), %rax
-    lgdt    (%rax)
-    
-    /* Reload segment registers */
-    mov     $0x10, %ax              # Data segment selector
-    mov     %ax, %ds
-    mov     %ax, %es
-    mov     %ax, %fs
-    mov     %ax, %gs
-    mov     %ax, %ss
-    
-    /* Reload CS with far return */
-    lea     .reload_cs(%rip), %rax
-    push    $0x08                   # Code segment selector
-    push    %rax
-    lretq
-    
-.reload_cs:
-    /* ================================================================= */
-    /* Set up IDT (Interrupt Descriptor Table) */
-    /* ================================================================= */
-    call    x86_64_boot_init_idt
-    lea     idt64_pointer(%rip), %rax
-    lidt    (%rax)
-    
-    /* ================================================================= */
-    /* Enable SSE/AVX for floating point */
-    /* ================================================================= */
-    mov     %cr0, %rax
-    and     $~(1 << 2), %rax        # Clear EM (emulation) bit
-    or      $(1 << 1), %rax         # Set MP (monitor coprocessor) bit
-    mov     %rax, %cr0
-    
-    mov     %cr4, %rax
-    or      $(3 << 9), %rax         # Set OSFXSR and OSXMMEXCPT
-    mov     %rax, %cr4
-    
-    /* ================================================================= */
-    /* Continue in Limine-specific C bootstrap */
+    /* Continue in Limine-specific C bootstrap.
+     * Keep the assembly handoff minimal and avoid touching descriptor
+     * tables or control registers until serial diagnostics are available.
+     */
     /* ================================================================= */
     call    limine_entry_main
     

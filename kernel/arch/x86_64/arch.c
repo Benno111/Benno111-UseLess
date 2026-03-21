@@ -416,15 +416,18 @@ typedef struct {
 
 void handle_exception(interrupt_frame_t *frame)
 {
-    printk(KERN_ERR "Exception %llu at RIP=%p\n", frame->int_no, (void*)frame->rip);
-    
+    extern void x86_64_boot_emergency_exception(uint64_t int_no, uint64_t rip,
+                                                uint64_t err_code,
+                                                uint64_t cr2_valid,
+                                                uint64_t cr2);
+    uint64_t cr2 = 0;
+    uint64_t cr2_valid = 0;
+
     if (frame->int_no == 14) {
-        /* Page fault */
-        uint64_t cr2;
         asm volatile("mov %%cr2, %0" : "=r"(cr2));
-        printk(KERN_ERR "Page fault at address %p\n", (void*)cr2);
+        cr2_valid = 1;
     }
-    
-    /* Halt on exception for now */
-    arch_halt();
+
+    x86_64_boot_emergency_exception(frame->int_no, frame->rip, frame->err_code,
+                                    cr2_valid, cr2);
 }

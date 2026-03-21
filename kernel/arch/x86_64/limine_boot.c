@@ -264,11 +264,22 @@ extern void isr46(void);
 extern void isr47(void);
 extern void isr128(void);
 
+struct idt_descriptor64 {
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed));
+
+static uint16_t boot_read_cs_selector(void) {
+    uint16_t cs;
+    __asm__ volatile("mov %%cs, %0" : "=r"(cs));
+    return cs;
+}
+
 static void set_idt_gate(int vector, void (*handler)(void)) {
     uintptr_t addr = (uintptr_t)handler;
 
     idt64[vector].offset_low = (uint16_t)(addr & 0xFFFF);
-    idt64[vector].selector = 0x08;
+    idt64[vector].selector = boot_read_cs_selector();
     idt64[vector].ist = 0;
     idt64[vector].type_attr = 0x8E;
     idt64[vector].offset_mid = (uint16_t)((addr >> 16) & 0xFFFF);
@@ -330,6 +341,14 @@ void x86_64_boot_init_idt(void) {
     set_idt_gate(46, isr46);
     set_idt_gate(47, isr47);
     set_idt_gate(128, isr128);
+}
+
+static void x86_64_boot_install_idt(void) {
+    struct idt_descriptor64 idtr;
+    x86_64_boot_init_idt();
+    idtr.limit = (uint16_t)(sizeof(idt64) - 1);
+    idtr.base = (uint64_t)(uintptr_t)idt64;
+    __asm__ volatile("lidt %0" : : "m"(idtr));
 }
 
 /* ========== Framebuffer Info for kernel ========== */
@@ -419,6 +438,24 @@ static void halt(void) {
     }
 }
 
+void x86_64_boot_emergency_exception(uint64_t int_no, uint64_t rip,
+                                     uint64_t err_code, uint64_t cr2_valid,
+                                     uint64_t cr2) {
+    serial_init();
+    serial_puts("\nEARLY EXCEPTION ");
+    serial_puthex(int_no);
+    serial_puts(" RIP=");
+    serial_puthex(rip);
+    serial_puts(" ERR=");
+    serial_puthex(err_code);
+    if (cr2_valid) {
+        serial_puts(" CR2=");
+        serial_puthex(cr2);
+    }
+    serial_puts("\n");
+    halt();
+}
+
 /* ========== Kernel Main Declaration ========== */
 
 extern void kernel_main(void *dtb);
@@ -430,6 +467,9 @@ void limine_entry_main(void) {
     serial_init();
     serial_puts("\n\n=== OS next stage ===\n");
     serial_puts("Kernel entry point reached!\n");
+
+    x86_64_boot_install_idt();
+    serial_puts("Boot IDT installed\n");
 
     /* Verify base revision was accepted */
     if (limine_base_revision[2] != 0) {
