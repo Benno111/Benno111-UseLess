@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create a UEFI-bootable FAT disk image for x86_64 without loop devices.
+# Create a BIOS+UEFI bootable FAT disk image for x86_64 without loop devices.
 
 set -e
 
@@ -40,6 +40,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
+require_file "$LIMINE_BIN_DIR/limine-bios.sys"
+require_file "$LIMINE_BIN_DIR/limine"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy
@@ -103,6 +105,9 @@ mmd -i "$IMAGE_PATH" ::/System
 
 mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/main.sys
 mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/bootloader.sys
+mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine-bios.sys
+mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/boot/limine-bios.sys
+mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine/limine-bios.sys
 mcopy -i "$IMAGE_PATH" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine.conf
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/boot/limine.conf
@@ -115,7 +120,12 @@ mcopy -i "$IMAGE_PATH" "$TMP_DIR/installer-state.txt" ::/System/installer-state.
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
-log "UEFI boot image created successfully: $IMAGE_PATH"
+"$LIMINE_BIN_DIR/limine" bios-install "$IMAGE_PATH" >/dev/null 2>&1 || {
+    echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
+    exit 1
+}
+
+log "BIOS+UEFI boot image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
 echo ""
 log "To write to USB: sudo dd if=$IMAGE_PATH of=/dev/sdX bs=4M status=progress"
