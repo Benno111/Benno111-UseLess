@@ -175,9 +175,12 @@ isr_common:
     push    %r14
     push    %r15
     
-    /* Call C handler with pointer to registers */
+    /* Call C handler with SysV stack alignment preserved. */
+    sub     $8, %rsp
     mov     %rsp, %rdi
+    add     $8, %rdi
     call    handle_exception
+    add     $8, %rsp
     
     /* Restore registers */
     pop     %r15

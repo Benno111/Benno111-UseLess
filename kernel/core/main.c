@@ -391,6 +391,12 @@ void kernel_main(void *dtb) {
   (void)__kernel_start;
   (void)__kernel_end;
 
+  printk(KERN_INFO "[INIT] architecture early init\n");
+  arch_early_init();
+
+  printk(KERN_INFO "[INIT] architecture MMU init\n");
+  arch_mmu_init();
+
 #ifdef ARCH_X86_64
   start_x86_64_bringup();
 #endif
