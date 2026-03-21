@@ -535,7 +535,6 @@ static void start_x86_64_bringup(void) {
 
   printk(KERN_INFO "x86_64: Running late PCI probe\n");
   pci_init();
-  refresh_external_storage_views();
 
   input_set_key_callback(keyboard_handler);
   input_set_mouse_bounds((int)fb_width, (int)fb_height);

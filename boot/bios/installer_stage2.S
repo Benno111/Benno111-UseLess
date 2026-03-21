@@ -29,8 +29,7 @@ real_mode_entry:
     sti
 
     mov     %dl, boot_drive
-    mov     %dl, selected_drive
-    call    find_default_target
+    movb    $0, selected_drive
 
     mov     $0x0003, %ax
     int     $0x10

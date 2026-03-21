@@ -22,7 +22,7 @@ _start:
     mov     $stack_top, %sp
     sti
 
-    call    find_default_target
+    movb    $0, selected_drive
 
 main_menu:
     call    clear_screen
