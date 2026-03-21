@@ -97,6 +97,10 @@ jobs:
         run: |
           make -f Makefile.multiarch ARCH=x86_64 image
 
+      - name: Build x86_64 Installer ISO
+        run: |
+          make -f Makefile.multiarch ARCH=x86_64 installer-image
+
       - name: Verify x86_64 ISO boot contents
         run: |
           ISO=image/os8-x86_64.iso
@@ -111,12 +115,28 @@ jobs:
           xorriso -indev "$ISO" -find / -type f -exec lsdl >/tmp/x86_64-iso-files.txt
           cat /tmp/x86_64-iso-files.txt
 
+      - name: Verify x86_64 Installer ISO boot contents
+        run: |
+          ISO=image/os-x86_64-installer.iso
+          xorriso -indev "$ISO" -find /boot/main.sys -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/limine-bios.sys -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/dos-installer.img -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /dos/OSINST.IMG -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /install/system-image/boot/dos-installer.img -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /INSTALLERS.TXT -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find / -type f -exec lsdl >/tmp/x86_64-installer-iso-files.txt
+          cat /tmp/x86_64-installer-iso-files.txt
+
       - name: Package x86_64 release bundle
         run: |
           mkdir -p release/x86_64/boot-support
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
           cp image/os8-x86_64.iso release/x86_64/os8-x86_64.iso
+          cp image/os-x86_64-installer.iso release/x86_64/os-x86_64-installer.iso
           cp /tmp/x86_64-iso-files.txt release/x86_64/ISO_CONTENTS.txt
+          cp /tmp/x86_64-installer-iso-files.txt release/x86_64/INSTALLER_ISO_CONTENTS.txt
           cp vib-os-x86_64/limine.conf release/x86_64/limine.conf
           cp vib-os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
           cp vib-os-x86_64/limine/bin/limine-bios.sys release/x86_64/boot-support/limine-bios.sys
@@ -125,15 +145,18 @@ jobs:
           cat > release/x86_64/BOOTING.md << 'EOF'
           x86_64 boot files included in this bundle:
           - os8-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
+          - os-x86_64-installer.iso: installer ISO with graphical and DOS rescue installer paths
           - vibos-x86_64.elf: kernel binary
           - ISO_CONTENTS.txt: manifest of files verified inside the ISO
+          - INSTALLER_ISO_CONTENTS.txt: manifest of files verified inside the installer ISO
           - limine.conf: Limine boot menu configuration
           - boot-support/: Limine BIOS and UEFI boot files used to build the ISO
 
           Recommended boot path:
           1. Use os8-x86_64.iso directly in a VM.
-          2. Use Rufus in ISO mode to write os8-x86_64.iso to USB.
-          3. Use the boot-support files only if you are rebuilding or debugging the boot media layout.
+          2. Use os-x86_64-installer.iso when you need the installer environment or DOS rescue installer.
+          3. Use Rufus in ISO mode to write either ISO to USB.
+          4. Use the boot-support files only if you are rebuilding or debugging the boot media layout.
           EOF
 
           cd release/x86_64
