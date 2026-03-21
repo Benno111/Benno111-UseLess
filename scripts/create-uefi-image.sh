@@ -63,7 +63,7 @@ EOF
 cat > "$TMP_DIR/bootable.cfg" <<'EOF'
 bootable=1
 loader=limine
-source=dos-system-image
+source=installer
 EOF
 
 cat > "$TMP_DIR/bios-bootable.cfg" <<'EOF'
@@ -71,7 +71,27 @@ bootable=1
 scheme=mbr
 active_partition=System
 loader=limine
-source=dos-system-image
+source=installer
+EOF
+
+cat > "$TMP_DIR/installer-state.txt" <<'EOF'
+installed=1
+profile=system-image
+source=installer-iso
+EOF
+
+cat > "$TMP_DIR/efi-boot.cfg" <<'EOF'
+bootable=1
+loader=limine
+source=installer
+EOF
+
+cat > "$TMP_DIR/mbr-boot.cfg" <<'EOF'
+bootable=1
+scheme=mbr
+active_partition=System
+loader=limine
+source=installer
 EOF
 
 log "Seeding UEFI boot files into FAT image"
@@ -79,6 +99,7 @@ mmd -i "$IMAGE_PATH" ::/EFI
 mmd -i "$IMAGE_PATH" ::/EFI/BOOT
 mmd -i "$IMAGE_PATH" ::/boot
 mmd -i "$IMAGE_PATH" ::/limine
+mmd -i "$IMAGE_PATH" ::/System
 
 mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/main.sys
 mcopy -i "$IMAGE_PATH" "$KERNEL_PATH" ::/boot/bootloader.sys
@@ -90,6 +111,9 @@ mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/EFI/BOOT/BOOTABLE.CFG
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/bios-bootable.cfg" ::/boot/BOOTABLE.CFG
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/installer-state.txt" ::/System/installer-state.txt
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
 log "UEFI boot image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
