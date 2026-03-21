@@ -66,6 +66,14 @@ loader=limine
 source=dos-system-image
 EOF
 
+cat > "$TMP_DIR/bios-bootable.cfg" <<'EOF'
+bootable=1
+scheme=mbr
+active_partition=System
+loader=limine
+source=dos-system-image
+EOF
+
 log "Seeding UEFI boot files into FAT image"
 mmd -i "$IMAGE_PATH" ::/EFI
 mmd -i "$IMAGE_PATH" ::/EFI/BOOT
@@ -80,6 +88,8 @@ mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/boot/limine.conf
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/limine/limine.conf
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
 mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/bootable.cfg" ::/EFI/BOOT/BOOTABLE.CFG
+mcopy -i "$IMAGE_PATH" "$TMP_DIR/bios-bootable.cfg" ::/boot/BOOTABLE.CFG
 
 log "UEFI boot image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
