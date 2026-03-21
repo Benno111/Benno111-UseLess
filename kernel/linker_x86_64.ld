@@ -69,12 +69,13 @@ SECTIONS
     }
     
     /* =================================================================== */
-    /* Kernel Stack */
+    /* Kernel Stack - keep it inside the RW image. */
     /* =================================================================== */
-    . = ALIGN(16);
-    __stack_bottom = .;
-    . += 64K;  /* 64KB kernel stack */
-    __stack_top = .;
+    .boot_stack ALIGN(16) (NOLOAD) : AT(ADDR(.boot_stack) - KERNEL_VMA + KERNEL_LMA) {
+        __stack_bottom = .;
+        . += 64K;  /* 64KB kernel stack */
+        __stack_top = .;
+    }
     
     /* =================================================================== */
     /* End of Kernel */

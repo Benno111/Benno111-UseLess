@@ -48,11 +48,12 @@ SECTIONS {
         __bss_end = .;
     } :data
 
-    /* Stack */
-    . = ALIGN(16);
-    __stack_bottom = .;
-    . += 64K;  /* 64KB kernel stack */
-    __stack_top = .;
+    /* Early boot stack - must live inside a loadable RW segment. */
+    .boot_stack ALIGN(16) (NOLOAD) : AT(ADDR(.boot_stack) - KERNEL_VIRT + KERNEL_PHYS) {
+        __stack_bottom = .;
+        . += 64K;  /* 64KB kernel stack */
+        __stack_top = .;
+    } :data
 
     . = ALIGN(4K);
     __kernel_end = .;
