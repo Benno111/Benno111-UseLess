@@ -1522,6 +1522,7 @@ struct window {
 static struct window windows[MAX_WINDOWS];
 static struct window *window_stack = NULL; /* Z-order, top is focused */
 static struct window *focused_window = NULL;
+static int startup_window_opening = 0;
 static int next_window_id = 1;
 
 static void gui_clamp_windows_to_display(void) {
@@ -2215,7 +2216,6 @@ static char startup_input_password[32] = "";
 static int startup_active_field = 0;
 static char startup_status[96] = "";
 static struct window *startup_window = NULL;
-static int startup_window_opening = 0;
 
 static uint64_t parse_u64(const char *text) {
   uint64_t value = 0;
