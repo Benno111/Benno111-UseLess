@@ -3530,8 +3530,10 @@ static void seed_all_system_apps_once(void) {
     return;
   }
 
+  load_system_app_catalog();
   dock_item_count = 0;
   dock_loaded = 1;
+  dock_add_missing_preinstalled_apps();
   save_dock_config();
   save_setup_state(1, 1);
 }
