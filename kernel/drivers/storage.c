@@ -1439,7 +1439,16 @@ static int storage_commit_mbr_partitions(int disk_index) {
     return -1;
 
   storage_recompute_partition_layout(disk_index);
-  for (int i = 0; i < STORAGE_SECTOR_SIZE; i++)
+  if (storage_disk_read_sector(disk_index, 0, sector) != 0) {
+    for (int i = 0; i < STORAGE_SECTOR_SIZE; i++)
+      sector[i] = 0;
+  }
+
+  /* Keep the existing MBR bootstrap code intact and only rewrite the
+   * partition table entries plus the signature. This prevents post-install
+   * partition edits from erasing the already-installed BIOS boot sector. */
+  for (int i = STORAGE_MBR_PARTITION_OFFSET;
+       i < STORAGE_MBR_SIGNATURE_OFFSET; i++)
     sector[i] = 0;
 
   /* Legacy BIOS/MBR boot should point at the system/update partition when
