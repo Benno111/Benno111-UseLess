@@ -6386,10 +6386,15 @@ static void draw_window(struct window *win) {
            win->title[2] == 'r' && win->title[3] == 't') {
     draw_partition_manager_window(content_x, content_y, content_w, content_h);
   }
-  else if ((win->title[0] == 'A' && win->title[1] == 'c' &&
+  else if (win == startup_window || startup_flow_active() ||
+           (win->title[0] == 'A' && win->title[1] == 'c' &&
             win->title[2] == 'c') ||
            (win->title[0] == 'L' && win->title[1] == 'o' &&
-            win->title[2] == 'g')) {
+            win->title[2] == 'g') ||
+           (win->title[0] == 'W' && win->title[1] == 'e' &&
+            win->title[2] == 'l') ||
+           (win->title[0] == 'P' && win->title[1] == 'r' &&
+            win->title[2] == 'e')) {
     draw_startup_auth_window(win, content_x, content_y, content_w, content_h);
   }
   /* Image Viewer */
