@@ -50,9 +50,50 @@ static int storage_initialized = 0;
 
 static void storage_load_mbr_partitions(int disk_index);
 
+#define STORAGE_IO_TIMEOUT_MS 1000
+#define AHCI_SECTOR_SIZE 512
+#define NVME_ADMIN_Q_DEPTH 16
+#define NVME_IO_Q_DEPTH 16
+#define NVME_PAGE_SIZE 4096
+
 #define STORAGE_SECTOR_SIZE 512
 #define STORAGE_MBR_PARTITION_OFFSET 446
 #define STORAGE_MBR_SIGNATURE_OFFSET 510
+
+typedef struct {
+  volatile uint32_t *abar;
+  volatile uint8_t *port_mmio;
+  uint32_t sector_count;
+  int port_no;
+  int active;
+  uint8_t command_list[1024] __attribute__((aligned(1024)));
+  uint8_t rfis[256] __attribute__((aligned(256)));
+  uint8_t command_table[256] __attribute__((aligned(128)));
+  uint16_t identify_data[256] __attribute__((aligned(2)));
+} storage_ahci_port_ctx_t;
+
+typedef struct {
+  volatile uint32_t *regs;
+  uint32_t nsid;
+  uint32_t sector_size;
+  uint64_t sector_count;
+  uint16_t admin_sq_tail;
+  uint16_t admin_cq_head;
+  uint8_t admin_phase;
+  uint16_t io_sq_tail;
+  uint16_t io_cq_head;
+  uint8_t io_phase;
+  int active;
+  uint8_t admin_sq[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+  uint8_t admin_cq[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+  uint8_t io_sq[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+  uint8_t io_cq[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+  uint8_t identify_data[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+  uint8_t io_buffer[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
+} storage_nvme_ctx_t;
+
+static storage_ahci_port_ctx_t storage_ahci_ports[STORAGE_MAX_DISKS];
+static storage_nvme_ctx_t storage_nvme_contexts[STORAGE_MAX_DISKS];
 
 static void storage_copy_string(char *dst, const char *src, int max) {
   int i = 0;
@@ -632,11 +673,393 @@ static void storage_probe_ide_controller(int controller_index) {
 #endif
 }
 
+static uint64_t storage_get_deadline_ms(uint32_t timeout_ms) {
+  return arch_timer_get_ms() + timeout_ms;
+}
+
+static int storage_wait_for_bit32(volatile uint32_t *reg, uint32_t mask,
+                                  uint32_t value, uint32_t timeout_ms) {
+  uint64_t deadline = storage_get_deadline_ms(timeout_ms);
+  while (arch_timer_get_ms() <= deadline) {
+    if ((*reg & mask) == value)
+      return 0;
+    io_wait();
+  }
+  return -1;
+}
+
+typedef struct {
+  uint16_t flags;
+  uint16_t prdtl;
+  uint32_t prdbc;
+  uint32_t ctba;
+  uint32_t ctbau;
+  uint32_t reserved[4];
+} __attribute__((packed)) ahci_cmd_header_t;
+
+typedef struct {
+  uint8_t fis_type;
+  uint8_t pmport_c;
+  uint8_t command;
+  uint8_t featurel;
+  uint8_t lba0;
+  uint8_t lba1;
+  uint8_t lba2;
+  uint8_t device;
+  uint8_t lba3;
+  uint8_t lba4;
+  uint8_t lba5;
+  uint8_t featureh;
+  uint8_t countl;
+  uint8_t counth;
+  uint8_t icc;
+  uint8_t control;
+  uint8_t reserved[4];
+} __attribute__((packed)) ahci_fis_reg_h2d_t;
+
+typedef struct {
+  uint32_t dba;
+  uint32_t dbau;
+  uint32_t reserved0;
+  uint32_t dbc_i;
+} __attribute__((packed)) ahci_prdt_entry_t;
+
+typedef struct {
+  uint8_t cfis[64];
+  uint8_t acmd[16];
+  uint8_t reserved[48];
+  ahci_prdt_entry_t prdt[1];
+} __attribute__((packed)) ahci_cmd_table_t;
+
+static int storage_ahci_port_wait_ready(storage_ahci_port_ctx_t *ctx) {
+  volatile uint32_t *port;
+  uint64_t deadline;
+
+  if (!ctx || !ctx->port_mmio)
+    return -1;
+  port = (volatile uint32_t *)ctx->port_mmio;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    if ((port[0x20 / 4] & (0x80 | 0x08)) == 0)
+      return 0;
+    io_wait();
+  }
+  return -1;
+}
+
+static void storage_ahci_port_stop(storage_ahci_port_ctx_t *ctx) {
+  volatile uint32_t *port;
+  uint32_t cmd;
+
+  if (!ctx || !ctx->port_mmio)
+    return;
+  port = (volatile uint32_t *)ctx->port_mmio;
+  cmd = port[0x18 / 4];
+  cmd &= ~((uint32_t)(1U << 0) | (uint32_t)(1U << 4));
+  port[0x18 / 4] = cmd;
+  (void)storage_wait_for_bit32(&port[0x18 / 4], (1U << 15) | (1U << 14), 0,
+                               STORAGE_IO_TIMEOUT_MS);
+}
+
+static void storage_ahci_port_start(storage_ahci_port_ctx_t *ctx) {
+  volatile uint32_t *port;
+  uint32_t cmd;
+
+  if (!ctx || !ctx->port_mmio)
+    return;
+  port = (volatile uint32_t *)ctx->port_mmio;
+  cmd = port[0x18 / 4];
+  cmd |= (1U << 4);
+  port[0x18 / 4] = cmd;
+  cmd |= (1U << 0);
+  port[0x18 / 4] = cmd;
+}
+
+static void storage_ahci_setup_port(storage_ahci_port_ctx_t *ctx) {
+  volatile uint32_t *port;
+  ahci_cmd_header_t *header;
+
+  if (!ctx || !ctx->port_mmio)
+    return;
+  port = (volatile uint32_t *)ctx->port_mmio;
+  storage_ahci_port_stop(ctx);
+  port[0x00 / 4] = (uint32_t)(uintptr_t)ctx->command_list;
+  port[0x04 / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->command_list) >> 32);
+  port[0x08 / 4] = (uint32_t)(uintptr_t)ctx->rfis;
+  port[0x0C / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->rfis) >> 32);
+  port[0x10 / 4] = 0xFFFFFFFF;
+  for (int i = 0; i < (int)sizeof(ctx->command_list); i++)
+    ctx->command_list[i] = 0;
+  for (int i = 0; i < (int)sizeof(ctx->rfis); i++)
+    ctx->rfis[i] = 0;
+  for (int i = 0; i < (int)sizeof(ctx->command_table); i++)
+    ctx->command_table[i] = 0;
+  header = (ahci_cmd_header_t *)ctx->command_list;
+  header[0].flags = 5;
+  header[0].prdtl = 1;
+  header[0].ctba = (uint32_t)(uintptr_t)ctx->command_table;
+  header[0].ctbau =
+      (uint32_t)(((uint64_t)(uintptr_t)ctx->command_table) >> 32);
+  storage_ahci_port_start(ctx);
+}
+
+static int storage_ahci_issue(storage_ahci_port_ctx_t *ctx, uint8_t command,
+                              uint64_t lba, uint16_t count, void *buffer,
+                              int write) {
+  volatile uint32_t *port;
+  ahci_cmd_header_t *header;
+  ahci_cmd_table_t *table;
+  ahci_fis_reg_h2d_t *fis;
+  uint64_t deadline;
+
+  if (!ctx || !ctx->port_mmio || !buffer || count == 0)
+    return -1;
+  if (storage_ahci_port_wait_ready(ctx) != 0)
+    return -1;
+  port = (volatile uint32_t *)ctx->port_mmio;
+  header = (ahci_cmd_header_t *)ctx->command_list;
+  table = (ahci_cmd_table_t *)ctx->command_table;
+  for (int i = 0; i < (int)sizeof(ctx->command_table); i++)
+    ctx->command_table[i] = 0;
+  header[0].flags = (uint16_t)(5 | (write ? (1U << 6) : 0));
+  header[0].prdtl = 1;
+  header[0].prdbc = 0;
+  fis = (ahci_fis_reg_h2d_t *)table->cfis;
+  fis->fis_type = 0x27;
+  fis->pmport_c = 1U << 7;
+  fis->command = command;
+  fis->device = 1U << 6;
+  fis->lba0 = (uint8_t)(lba & 0xFF);
+  fis->lba1 = (uint8_t)((lba >> 8) & 0xFF);
+  fis->lba2 = (uint8_t)((lba >> 16) & 0xFF);
+  fis->lba3 = (uint8_t)((lba >> 24) & 0xFF);
+  fis->lba4 = (uint8_t)((lba >> 32) & 0xFF);
+  fis->lba5 = (uint8_t)((lba >> 40) & 0xFF);
+  fis->countl = (uint8_t)(count & 0xFF);
+  fis->counth = (uint8_t)((count >> 8) & 0xFF);
+  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
+  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  table->prdt[0].dbc_i =
+      (uint32_t)(count * AHCI_SECTOR_SIZE - 1) | (1U << 31);
+  port[0x10 / 4] = 0xFFFFFFFF;
+  port[0x38 / 4] = 1;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    if ((port[0x38 / 4] & 1U) == 0)
+      break;
+    if (port[0x10 / 4] & (1U << 30))
+      return -1;
+  }
+  if (port[0x38 / 4] & 1U)
+    return -1;
+  return (port[0x20 / 4] & 0x01) ? -1 : 0;
+}
+
+static int storage_ahci_read(uint64_t lba, uint32_t count, void *buffer,
+                             void *ctx_ptr) {
+  storage_ahci_port_ctx_t *ctx = (storage_ahci_port_ctx_t *)ctx_ptr;
+  uint8_t *dst = (uint8_t *)buffer;
+  for (uint32_t i = 0; i < count; i++) {
+    if (storage_ahci_issue(ctx, 0x25, lba + i, 1, dst + i * AHCI_SECTOR_SIZE,
+                           0) != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static int storage_ahci_write(uint64_t lba, uint32_t count, const void *buffer,
+                              void *ctx_ptr) {
+  storage_ahci_port_ctx_t *ctx = (storage_ahci_port_ctx_t *)ctx_ptr;
+  const uint8_t *src = (const uint8_t *)buffer;
+  for (uint32_t i = 0; i < count; i++) {
+    if (storage_ahci_issue(ctx, 0x35, lba + i, 1,
+                           (void *)(uintptr_t)(src + i * AHCI_SECTOR_SIZE),
+                           1) != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static void storage_ahci_extract_model(const uint16_t *identify, char *buf,
+                                       int max) {
+  int out = 0;
+  if (!identify || !buf || max <= 0)
+    return;
+  for (int word = 27; word <= 46 && out < max - 1; word++) {
+    char hi = (char)((identify[word] >> 8) & 0xFF);
+    char lo = (char)(identify[word] & 0xFF);
+    if (hi && out < max - 1)
+      buf[out++] = hi;
+    if (lo && out < max - 1)
+      buf[out++] = lo;
+  }
+  while (out > 0 && buf[out - 1] == ' ')
+    out--;
+  buf[out] = '\0';
+}
+
+typedef struct {
+  uint8_t opcode;
+  uint8_t flags;
+  uint16_t cid;
+  uint32_t nsid;
+  uint64_t rsvd2;
+  uint64_t mptr;
+  uint64_t prp1;
+  uint64_t prp2;
+  uint32_t cdw10;
+  uint32_t cdw11;
+  uint32_t cdw12;
+  uint32_t cdw13;
+  uint32_t cdw14;
+  uint32_t cdw15;
+} __attribute__((packed)) nvme_sqe_t;
+
+typedef struct {
+  uint32_t cdw0;
+  uint32_t rsvd;
+  uint16_t sq_head;
+  uint16_t sq_id;
+  uint16_t cid;
+  uint16_t status;
+} __attribute__((packed)) nvme_cqe_t;
+
+static uint32_t storage_nvme_db_stride(volatile uint32_t *regs) {
+  return 4U << ((regs[0] >> 20) & 0xF);
+}
+
+static volatile uint32_t *storage_nvme_db_reg(volatile uint32_t *regs,
+                                              uint16_t qid, int is_cq) {
+  uintptr_t base = (uintptr_t)regs + 0x1000;
+  uintptr_t stride = storage_nvme_db_stride(regs);
+  return (volatile uint32_t *)(base + ((qid * 2U + (is_cq ? 1U : 0U)) * stride));
+}
+
+static int storage_nvme_wait_ready(storage_nvme_ctx_t *ctx, int ready) {
+  uint64_t deadline;
+  if (!ctx || !ctx->regs)
+    return -1;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    if ((((ctx->regs[0x1C / 4] & 1U) != 0) ? 1 : 0) == (ready ? 1 : 0))
+      return 0;
+  }
+  return -1;
+}
+
+static int storage_nvme_submit_admin(storage_nvme_ctx_t *ctx, nvme_sqe_t *cmd) {
+  nvme_sqe_t *sq;
+  nvme_cqe_t *cq;
+  uint16_t cid;
+  uint64_t deadline;
+
+  if (!ctx || !ctx->regs || !cmd)
+    return -1;
+  sq = (nvme_sqe_t *)ctx->admin_sq;
+  cq = (nvme_cqe_t *)ctx->admin_cq;
+  cid = ctx->admin_sq_tail;
+  cmd->cid = cid;
+  sq[ctx->admin_sq_tail] = *cmd;
+  ctx->admin_sq_tail = (uint16_t)((ctx->admin_sq_tail + 1) % NVME_ADMIN_Q_DEPTH);
+  *storage_nvme_db_reg(ctx->regs, 0, 0) = ctx->admin_sq_tail;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    nvme_cqe_t *entry = &cq[ctx->admin_cq_head];
+    if (((entry->status >> 15) & 1U) == ctx->admin_phase) {
+      if (entry->cid != cid || ((entry->status >> 1) & 0x7FF) != 0)
+        return -1;
+      ctx->admin_cq_head =
+          (uint16_t)((ctx->admin_cq_head + 1) % NVME_ADMIN_Q_DEPTH);
+      if (ctx->admin_cq_head == 0)
+        ctx->admin_phase ^= 1U;
+      *storage_nvme_db_reg(ctx->regs, 0, 1) = ctx->admin_cq_head;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+static int storage_nvme_submit_io(storage_nvme_ctx_t *ctx, nvme_sqe_t *cmd) {
+  nvme_sqe_t *sq;
+  nvme_cqe_t *cq;
+  uint16_t cid;
+  uint64_t deadline;
+
+  if (!ctx || !ctx->regs || !cmd)
+    return -1;
+  sq = (nvme_sqe_t *)ctx->io_sq;
+  cq = (nvme_cqe_t *)ctx->io_cq;
+  cid = ctx->io_sq_tail;
+  cmd->cid = cid;
+  sq[ctx->io_sq_tail] = *cmd;
+  ctx->io_sq_tail = (uint16_t)((ctx->io_sq_tail + 1) % NVME_IO_Q_DEPTH);
+  *storage_nvme_db_reg(ctx->regs, 1, 0) = ctx->io_sq_tail;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    nvme_cqe_t *entry = &cq[ctx->io_cq_head];
+    if (((entry->status >> 15) & 1U) == ctx->io_phase) {
+      if (entry->cid != cid || ((entry->status >> 1) & 0x7FF) != 0)
+        return -1;
+      ctx->io_cq_head = (uint16_t)((ctx->io_cq_head + 1) % NVME_IO_Q_DEPTH);
+      if (ctx->io_cq_head == 0)
+        ctx->io_phase ^= 1U;
+      *storage_nvme_db_reg(ctx->regs, 1, 1) = ctx->io_cq_head;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+static int storage_nvme_rw(storage_nvme_ctx_t *ctx, uint64_t lba,
+                           uint32_t count, void *buffer, int write) {
+  nvme_sqe_t cmd;
+  uint32_t bytes;
+
+  if (!ctx || !ctx->active || !buffer || count == 0)
+    return -1;
+  bytes = count * ctx->sector_size;
+  if (bytes > sizeof(ctx->io_buffer))
+    return -1;
+  if (write) {
+    const uint8_t *src = (const uint8_t *)buffer;
+    for (uint32_t i = 0; i < bytes; i++)
+      ctx->io_buffer[i] = src[i];
+  }
+  for (int i = 0; i < (int)sizeof(cmd); i++)
+    ((uint8_t *)&cmd)[i] = 0;
+  cmd.opcode = write ? 0x01 : 0x02;
+  cmd.nsid = ctx->nsid;
+  cmd.prp1 = (uint64_t)(uintptr_t)ctx->io_buffer;
+  cmd.cdw10 = (uint32_t)(lba & 0xFFFFFFFFULL);
+  cmd.cdw11 = (uint32_t)(lba >> 32);
+  cmd.cdw12 = count - 1;
+  if (storage_nvme_submit_io(ctx, &cmd) != 0)
+    return -1;
+  if (!write) {
+    uint8_t *dst = (uint8_t *)buffer;
+    for (uint32_t i = 0; i < bytes; i++)
+      dst[i] = ctx->io_buffer[i];
+  }
+  return 0;
+}
+
+static int storage_nvme_read(uint64_t lba, uint32_t count, void *buffer,
+                             void *ctx_ptr) {
+  return storage_nvme_rw((storage_nvme_ctx_t *)ctx_ptr, lba, count, buffer, 0);
+}
+
+static int storage_nvme_write(uint64_t lba, uint32_t count, const void *buffer,
+                              void *ctx_ptr) {
+  return storage_nvme_rw((storage_nvme_ctx_t *)ctx_ptr, lba, count,
+                         (void *)(uintptr_t)buffer, 1);
+}
+
 static void storage_probe_ahci_controller(int controller_index,
                                           const pci_device_t *dev) {
   volatile uint32_t *abar;
   uint32_t ports_implemented;
   char location[24];
+  char model[48];
 
   if (!dev || !dev->bar0)
     return;
@@ -651,6 +1074,9 @@ static void storage_probe_ahci_controller(int controller_index,
     uint32_t sig;
     uint32_t det;
     uint32_t ipm;
+    int disk_slot;
+    storage_ahci_port_ctx_t *ctx;
+    uint64_t sectors;
 
     if (!(ports_implemented & (1U << port)))
       continue;
@@ -677,6 +1103,39 @@ static void storage_probe_ahci_controller(int controller_index,
     storage_append_location(location, sizeof(location), "sd", storage_disk_count);
     storage_record_disk(STORAGE_KIND_AHCI, controller_index, port,
                         "SATA Hard Disk", location);
+    disk_slot = storage_find_disk_by_location(location);
+    if (disk_slot < 0)
+      continue;
+
+    ctx = &storage_ahci_ports[disk_slot];
+    ctx->abar = abar;
+    ctx->port_mmio = (volatile uint8_t *)port_regs;
+    ctx->port_no = port;
+    ctx->active = 1;
+    storage_ahci_setup_port(ctx);
+
+    if (storage_ahci_issue(ctx, 0xEC, 0, 1, ctx->identify_data, 0) == 0) {
+      sectors = ((uint64_t)ctx->identify_data[100]) |
+                ((uint64_t)ctx->identify_data[101] << 16) |
+                ((uint64_t)ctx->identify_data[102] << 32) |
+                ((uint64_t)ctx->identify_data[103] << 48);
+      if (sectors == 0) {
+        sectors = (uint32_t)ctx->identify_data[60] |
+                  ((uint32_t)ctx->identify_data[61] << 16);
+      }
+      if (sectors > 0) {
+        ctx->sector_count = (uint32_t)(sectors > 0xFFFFFFFFULL ? 0xFFFFFFFFULL
+                                                               : sectors);
+        storage_disks[disk_slot].capacity_mib =
+            (uint32_t)(sectors / 2048ULL ? sectors / 2048ULL : 1ULL);
+      }
+      storage_ahci_extract_model(ctx->identify_data, model, sizeof(model));
+      if (model[0])
+        storage_copy_string(storage_disks[disk_slot].name, model,
+                            sizeof(storage_disks[disk_slot].name));
+    }
+    storage_register_disk_backend(location, storage_ahci_read, storage_ahci_write,
+                                  ctx);
   }
 }
 
@@ -687,6 +1146,14 @@ static void storage_probe_nvme_controller(int controller_index,
   uint32_t cap_hi;
   uint32_t version;
   char location[24];
+  int disk_slot;
+  storage_nvme_ctx_t *ctx;
+  nvme_sqe_t cmd;
+  uint32_t cc;
+  uint64_t nsze;
+  uint8_t flbas;
+  uint8_t lbaf_index;
+  uint8_t lbads;
 
   if (!dev || !dev->bar0)
     return;
@@ -706,6 +1173,85 @@ static void storage_probe_nvme_controller(int controller_index,
   storage_append_location(location, sizeof(location), "nvme", storage_disk_count);
   storage_record_disk(STORAGE_KIND_NVME, controller_index, 0, "NVMe Disk",
                       location);
+  disk_slot = storage_find_disk_by_location(location);
+  if (disk_slot < 0)
+    return;
+
+  ctx = &storage_nvme_contexts[disk_slot];
+  ctx->regs = regs;
+  ctx->nsid = 1;
+  ctx->sector_size = 512;
+  ctx->sector_count = 0;
+  ctx->admin_sq_tail = 0;
+  ctx->admin_cq_head = 0;
+  ctx->admin_phase = 1;
+  ctx->io_sq_tail = 0;
+  ctx->io_cq_head = 0;
+  ctx->io_phase = 1;
+
+  cc = regs[0x14 / 4];
+  if (cc & 1U) {
+    regs[0x14 / 4] = cc & ~1U;
+    if (storage_nvme_wait_ready(ctx, 0) != 0)
+      return;
+  }
+
+  regs[0x24 / 4] = ((NVME_ADMIN_Q_DEPTH - 1) << 16) | (NVME_ADMIN_Q_DEPTH - 1);
+  regs[0x28 / 4] = (uint32_t)(uintptr_t)ctx->admin_sq;
+  regs[0x2C / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->admin_sq) >> 32);
+  regs[0x30 / 4] = (uint32_t)(uintptr_t)ctx->admin_cq;
+  regs[0x34 / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->admin_cq) >> 32);
+  regs[0x14 / 4] = (6U << 20) | (4U << 16) | 1U;
+  if (storage_nvme_wait_ready(ctx, 1) != 0)
+    return;
+
+  for (int i = 0; i < (int)sizeof(cmd); i++)
+    ((uint8_t *)&cmd)[i] = 0;
+  cmd.opcode = 0x05;
+  cmd.prp1 = (uint64_t)(uintptr_t)ctx->io_cq;
+  cmd.cdw10 = ((NVME_IO_Q_DEPTH - 1) << 16) | 1U;
+  cmd.cdw11 = 1U;
+  if (storage_nvme_submit_admin(ctx, &cmd) != 0)
+    return;
+
+  for (int i = 0; i < (int)sizeof(cmd); i++)
+    ((uint8_t *)&cmd)[i] = 0;
+  cmd.opcode = 0x01;
+  cmd.prp1 = (uint64_t)(uintptr_t)ctx->io_sq;
+  cmd.cdw10 = ((NVME_IO_Q_DEPTH - 1) << 16) | 1U;
+  cmd.cdw11 = 1U | (1U << 16);
+  if (storage_nvme_submit_admin(ctx, &cmd) != 0)
+    return;
+
+  for (int i = 0; i < (int)sizeof(cmd); i++)
+    ((uint8_t *)&cmd)[i] = 0;
+  for (int i = 0; i < (int)sizeof(ctx->identify_data); i++)
+    ctx->identify_data[i] = 0;
+  cmd.opcode = 0x06;
+  cmd.nsid = 1;
+  cmd.prp1 = (uint64_t)(uintptr_t)ctx->identify_data;
+  cmd.cdw10 = 0;
+  if (storage_nvme_submit_admin(ctx, &cmd) != 0)
+    return;
+
+  nsze = (uint64_t)storage_read_le32(&ctx->identify_data[0]) |
+         ((uint64_t)storage_read_le32(&ctx->identify_data[4]) << 32);
+  flbas = ctx->identify_data[26];
+  lbaf_index = flbas & 0x0F;
+  lbads = ctx->identify_data[128 + lbaf_index * 4 + 2];
+  if (lbads >= 9 && lbads < 17)
+    ctx->sector_size = 1U << lbads;
+  if (ctx->sector_size != 512)
+    return;
+  ctx->sector_count = nsze;
+  ctx->active = 1;
+  if (nsze > 0) {
+    storage_disks[disk_slot].capacity_mib =
+        (uint32_t)(((nsze * (uint64_t)ctx->sector_size) >> 20) ? 
+                   ((nsze * (uint64_t)ctx->sector_size) >> 20) : 1ULL);
+  }
+  storage_register_disk_backend(location, storage_nvme_read, storage_nvme_write,
+                                ctx);
 }
 
 static int storage_disk_read_sector(int disk_index, uint32_t lba, void *buffer) {
@@ -1013,6 +1559,7 @@ static void storage_load_pci_driver(storage_kind_t kind, int controller_index,
     storage_probe_ide_controller(controller_index);
     break;
   case STORAGE_KIND_AHCI:
+  case STORAGE_KIND_SATA:
     printk(KERN_INFO "STORAGE: Loading AHCI driver for %02x:%02x.%x\n",
            dev->bus, dev->slot, dev->func);
     pci_enable_device(dev);
