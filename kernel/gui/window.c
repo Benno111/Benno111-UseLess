@@ -82,6 +82,7 @@ static int user_storage_unlink(const char *path);
 static int user_storage_rmdir(const char *path);
 static int user_storage_rename(const char *old_path, const char *new_path);
 static void runtime_sync_log_line(const char *line);
+static void runtime_sync_flush_best_effort(const char *path);
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 void compositor_mark_full_redraw(void);
@@ -2435,16 +2436,7 @@ static int write_text_file(const char *path, const char *content) {
     }
   }
 
-  {
-    extern int ext4_vfs_sync(void);
-    int sync_ret = ext4_vfs_sync();
-    if (sync_ret != 0) {
-      str_copy_safe(log_line, "sync flush failed: ", sizeof(log_line));
-      installer_append_to_buf(log_line, sizeof(log_line), path);
-      runtime_sync_log_line(log_line);
-      return sync_ret;
-    }
-  }
+  runtime_sync_flush_best_effort(path);
 
   str_copy_safe(log_line, "sync write complete: ", sizeof(log_line));
   installer_append_to_buf(log_line, sizeof(log_line), path);
@@ -2924,6 +2916,23 @@ static void runtime_sync_log_line(const char *line) {
     runtime_sync_append_log_raw(target, line);
 }
 
+static void runtime_sync_flush_best_effort(const char *path) {
+  char log_line[384];
+  extern int ext4_vfs_sync(void);
+  int sync_ret = ext4_vfs_sync();
+
+  if (sync_ret == 0) {
+    str_copy_safe(log_line, "sync flush complete: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), path);
+    runtime_sync_log_line(log_line);
+    return;
+  }
+
+  str_copy_safe(log_line, "sync flush unavailable: ", sizeof(log_line));
+  installer_append_to_buf(log_line, sizeof(log_line), path);
+  runtime_sync_log_line(log_line);
+}
+
 static int runtime_sync_raw_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
@@ -2964,17 +2973,7 @@ static int runtime_sync_raw_file(const char *src_path, const char *dst_path) {
     return -1;
   }
   media_free_file(data);
-  {
-    extern int ext4_vfs_sync(void);
-    int sync_ret = ext4_vfs_sync();
-    if (sync_ret != 0) {
-      str_copy_safe(log_line, "sync flush failed after file copy: ",
-                    sizeof(log_line));
-      installer_append_to_buf(log_line, sizeof(log_line), dst_path);
-      runtime_sync_log_line(log_line);
-      return sync_ret;
-    }
-  }
+  runtime_sync_flush_best_effort(dst_path);
   str_copy_safe(log_line, "sync copied file: ", sizeof(log_line));
   installer_append_to_buf(log_line, sizeof(log_line), src_path);
   installer_append_to_buf(log_line, sizeof(log_line), " -> ");
