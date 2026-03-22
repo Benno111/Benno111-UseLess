@@ -194,6 +194,8 @@ all: kernel image
 	@echo "Kernel: $(KERNEL_BINARY)"
 ifeq ($(ARCH),x86)
 	@echo "Image:  $(RAW_IMAGE)"
+else ifeq ($(ARCH),arm64)
+	@echo "Image:  skipped for now"
 else
 	@echo "Image:  $(ISO_IMAGE)"
 endif
@@ -206,7 +208,7 @@ help:
 	@echo "Usage: make [ARCH=<arch>] <target>"
 	@echo ""
 	@echo "Architectures:"
-	@echo "  arm64    - ARM64 (UEFI boot ISO)"
+	@echo "  arm64    - ARM64 (kernel build only, ISO skipped for now)"
 	@echo "  x86_64   - x86-64 (UEFI boot ISO)"
 	@echo "  x86      - x86 32-bit (BIOS boot)"
 	@echo ""
@@ -375,8 +377,7 @@ $(KERNEL_BINARY): $(ALL_OBJECTS)
 image: kernel
 	@echo "[IMAGE] Creating $(ARCH) boot image..."
 ifeq ($(ARCH),arm64)
-	@bash ./scripts/create-arm64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@echo "[IMAGE] Created: $(ISO_IMAGE)"
+	@echo "[IMAGE] Skipping ARM64 ISO creation for now"
 else ifeq ($(ARCH),x86_64)
 	@bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(ISO_IMAGE)"

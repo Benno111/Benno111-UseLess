@@ -52,11 +52,6 @@ jobs:
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 dos-installer-iso
 
-      - name: Build ARM64 ISO
-        run: |
-          set -euxo pipefail
-          make -f Makefile.multiarch ARCH=arm64 image
-
       - name: Verify release files
         run: |
           set -euxo pipefail
@@ -66,8 +61,6 @@ jobs:
           file image/os-x86_64-installer.iso
           ls -lh image/os-x86_64-dos-installer.iso
           file image/os-x86_64-dos-installer.iso
-          ls -lh image/os-arm64.iso
-          file image/os-arm64.iso
 
       - name: Generate release notes
         run: |
@@ -78,7 +71,7 @@ jobs:
 
           ## Build Status
 
-          - ARM64 ISO: success
+          - ARM64 ISO: skipped for now
           - x86_64 ISO: success
           - x86_64 Installer ISO: success
           - x86_64 DOS Installer ISO: success
@@ -88,7 +81,6 @@ jobs:
           - \`os8-x86_64.iso\`
           - \`os-x86_64-installer.iso\`
           - \`os-x86_64-dos-installer.iso\`
-          - \`os-arm64.iso\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -110,7 +102,5 @@ jobs:
             image/os8-x86_64.iso
             image/os-x86_64-installer.iso
             image/os-x86_64-dos-installer.iso
-            image/os-arm64.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
