@@ -64,6 +64,7 @@ static void startup_get_setup_field_rect(int content_x, int content_y,
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
 static void installer_write_target_config(void);
+static int load_install_target_disk_location(char *buf, int max);
 static void open_partition_manager_window(int x, int y);
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
@@ -2405,7 +2406,21 @@ static int build_app_shortcut_path(const char *dir, const char *shortcut_name,
 }
 
 static int write_text_file(const char *path, const char *content) {
-  return media_install_text_file(path, content);
+  char resolved_path[256];
+  const char *target;
+  int ret;
+
+  if (!path || !content)
+    return -1;
+
+  ret = media_install_text_file(path, content);
+  if (ret != 0)
+    return ret;
+
+  target = resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
+  if (str_cmp(target, path) != 0)
+    media_install_text_file(target, content);
+  return 0;
 }
 
 static int installer_get_persistent_root(char *buf, int max) {
@@ -2426,6 +2441,89 @@ static int installer_get_persistent_root(char *buf, int max) {
 
   buf[0] = '\0';
   return -1;
+}
+
+static int boot_storage_root_path(char *buf, int max) {
+  char disk_location[32];
+  char manifest[256];
+  struct file *f;
+  int bytes = -1;
+  int idx = 0;
+
+  if (!buf || max <= 0)
+    return -1;
+  buf[0] = '\0';
+
+  {
+    extern int boot_is_usb_boot(void);
+    if (boot_is_usb_boot())
+      return -1;
+  }
+
+  if (account_disk_location[0]) {
+    str_copy_safe(disk_location, account_disk_location, sizeof(disk_location));
+  } else {
+    disk_location[0] = '\0';
+    f = vfs_open("/System/install-target.cfg", O_RDONLY, 0);
+    if (f) {
+      bytes = (int)vfs_read(f, manifest, sizeof(manifest) - 1);
+      vfs_close(f);
+    }
+    if (bytes > 0) {
+      int i = 0;
+      manifest[bytes] = '\0';
+      while (manifest[i]) {
+        int j = 0;
+        const char *key = "disk_location=";
+        while (key[j] && manifest[i + j] == key[j])
+          j++;
+        if (!key[j]) {
+          int out = 0;
+          i += j;
+          while (manifest[i] && manifest[i] != '\n' && manifest[i] != '\r' &&
+                 out < (int)sizeof(disk_location) - 1) {
+            disk_location[out++] = manifest[i++];
+          }
+          disk_location[out] = '\0';
+          break;
+        }
+        while (manifest[i] && manifest[i] != '\n')
+          i++;
+        if (manifest[i] == '\n')
+          i++;
+      }
+    }
+    if (!disk_location[0]) {
+      extern int storage_get_disk_count(void);
+      extern int storage_get_disk_kind(int index);
+      extern int storage_get_disk_location(int index, char *buf, int max);
+      int disk_count = storage_get_disk_count();
+
+      for (int i = 0; i < disk_count; i++) {
+        int kind = storage_get_disk_kind(i);
+        if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
+          continue;
+        if (storage_get_disk_location(i, disk_location,
+                                      sizeof(disk_location)) == 0 &&
+            disk_location[0]) {
+          break;
+        }
+      }
+    }
+    if (!disk_location[0]) {
+      return -1;
+    }
+  }
+
+  str_copy_safe(buf, "/Installed", max);
+  while (buf[idx] && idx < max - 1)
+    idx++;
+  if (idx < max - 1)
+    buf[idx++] = '/';
+  for (int i = 0; disk_location[i] && idx < max - 1; i++)
+    buf[idx++] = disk_location[i];
+  buf[idx] = '\0';
+  return 0;
 }
 
 static int path_starts_with(const char *path, const char *prefix) {
@@ -2497,9 +2595,33 @@ static int path_is_user_storage(const char *path) {
           path[6] == '/');
 }
 
+static int path_is_runtime_mutable(const char *path) {
+  static const char *prefixes[] = {"/System", "/Applications", "/Desktop",
+                                   "/Documents", "/Pictures", "/Music",
+                                   "/Users"};
+
+  if (!path || path[0] != '/')
+    return 0;
+  if (path_starts_with(path, "/Installed") || path_starts_with(path, "/External") ||
+      path_starts_with(path, "/Media") || path_starts_with(path, "/boot") ||
+      path_starts_with(path, "/EFI"))
+    return 0;
+
+  for (int i = 0; i < (int)(sizeof(prefixes) / sizeof(prefixes[0])); i++) {
+    const char *prefix = prefixes[i];
+    int j = 0;
+    while (prefix[j] && path[j] == prefix[j])
+      j++;
+    if (!prefix[j] && (path[j] == '\0' || path[j] == '/'))
+      return 1;
+  }
+  return 0;
+}
+
 static const char *resolve_user_storage_path(const char *path, char *buf,
                                              int max) {
   char account_root[160];
+  char boot_root[96];
   char home_prefix[96];
   char persistent_root[64];
   int path_idx = 0;
@@ -2530,19 +2652,29 @@ static const char *resolve_user_storage_path(const char *path, char *buf,
     buf[idx] = '\0';
     return buf;
   }
-  if (!path_is_user_storage(path))
-    return path;
-  if (installer_get_persistent_root(persistent_root,
-                                    sizeof(persistent_root)) != 0) {
-    return path;
+  if (path_is_runtime_mutable(path) &&
+      boot_storage_root_path(boot_root, sizeof(boot_root)) == 0) {
+    idx = 0;
+    for (int i = 0; boot_root[i] && idx < max - 1; i++)
+      buf[idx++] = boot_root[i];
+    for (int i = 0; path[i] && idx < max - 1; i++)
+      buf[idx++] = path[i];
+    buf[idx] = '\0';
+    return buf;
   }
 
-  for (int i = 0; persistent_root[i] && idx < max - 1; i++)
-    buf[idx++] = persistent_root[i];
-  for (int i = 0; path[i] && idx < max - 1; i++)
-    buf[idx++] = path[i];
-  buf[idx] = '\0';
-  return buf;
+  if (path_is_user_storage(path) &&
+      installer_get_persistent_root(persistent_root, sizeof(persistent_root)) ==
+          0) {
+    idx = 0;
+    for (int i = 0; persistent_root[i] && idx < max - 1; i++)
+      buf[idx++] = persistent_root[i];
+    for (int i = 0; path[i] && idx < max - 1; i++)
+      buf[idx++] = path[i];
+    buf[idx] = '\0';
+    return buf;
+  }
+  return path;
 }
 
 static void ensure_user_storage_dirs(void) {
@@ -2578,23 +2710,33 @@ static void ensure_user_storage_dirs(void) {
 static int user_storage_mkdir(const char *path, mode_t mode) {
   char resolved[256];
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+  int ret;
 
   if (path_is_user_storage(path))
     vfs_mkdir("/Users", 0755);
-  return vfs_mkdir(target, mode);
+  ret = vfs_mkdir(path, mode);
+  if (str_cmp(target, path) != 0)
+    vfs_mkdir(target, mode);
+  return ret;
 }
 
 static int user_storage_unlink(const char *path) {
   char resolved[256];
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
-  return vfs_unlink(target);
+  int ret = vfs_unlink(path);
+  if (str_cmp(target, path) != 0)
+    vfs_unlink(target);
+  return ret;
 }
 
 static int user_storage_rmdir(const char *path) {
   char resolved[256];
   extern int vfs_rmdir(const char *path);
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
-  return vfs_rmdir(target);
+  int ret = vfs_rmdir(path);
+  if (str_cmp(target, path) != 0)
+    vfs_rmdir(target);
+  return ret;
 }
 
 static int user_storage_rename(const char *old_path, const char *new_path) {
@@ -2605,7 +2747,10 @@ static int user_storage_rename(const char *old_path, const char *new_path) {
       resolve_user_storage_path(old_path, resolved_old, sizeof(resolved_old));
   const char *new_target =
       resolve_user_storage_path(new_path, resolved_new, sizeof(resolved_new));
-  return vfs_rename(old_target, new_target);
+  int ret = vfs_rename(old_path, new_path);
+  if (str_cmp(old_target, old_path) != 0 || str_cmp(new_target, new_path) != 0)
+    vfs_rename(old_target, new_target);
+  return ret;
 }
 
 static int installer_translate_target_path(const char *path, char *buf,
@@ -2683,12 +2828,17 @@ static int installer_write_target_text_file(const char *logical_path,
 static int read_text_file(const char *path, char *buf, int max) {
   uint8_t *data;
   size_t size;
+  char resolved_path[256];
+  const char *target;
 
   if (!path || !buf || max <= 1)
     return -1;
 
-  if (media_load_file(path, &data, &size) != 0)
-    return -1;
+  target = resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
+  if (media_load_file(target, &data, &size) != 0) {
+    if (str_cmp(target, path) == 0 || media_load_file(path, &data, &size) != 0)
+      return -1;
+  }
   if ((int)size >= max)
     size = (size_t)(max - 1);
   for (size_t i = 0; i < size; i++) {
@@ -2697,6 +2847,137 @@ static int read_text_file(const char *path, char *buf, int max) {
   buf[size] = '\0';
   media_free_file(data);
   return (int)size;
+}
+
+typedef struct {
+  char src_root[256];
+  char dst_root[256];
+} runtime_sync_ctx_t;
+
+static int runtime_sync_raw_file(const char *src_path, const char *dst_path) {
+  uint8_t *data = NULL;
+  size_t size = 0;
+  struct file *dst;
+
+  if (media_load_file(src_path, &data, &size) != 0)
+    return -1;
+
+  installer_ensure_parent_dirs(dst_path);
+  if (size == 0) {
+    vfs_unlink(dst_path);
+    dst = vfs_open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst)
+      vfs_close(dst);
+    media_free_file(data);
+    return dst ? 0 : -1;
+  }
+
+  if (installer_write_raw_file(dst_path, data, size) != 0) {
+    media_free_file(data);
+    return -1;
+  }
+  media_free_file(data);
+  return 0;
+}
+
+static int runtime_sync_tree_callback(void *ctx, const char *name, int len,
+                                      loff_t offset, ino_t ino, unsigned type) {
+  runtime_sync_ctx_t *sync = (runtime_sync_ctx_t *)ctx;
+  char src_path[256];
+  char dst_path[256];
+  int src_idx = 0;
+  int dst_idx = 0;
+
+  (void)offset;
+  (void)ino;
+
+  if (!sync || !name || len <= 0)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+
+  str_copy_safe(src_path, sync->src_root, sizeof(src_path));
+  while (src_path[src_idx] && src_idx < (int)sizeof(src_path) - 1)
+    src_idx++;
+  if (src_idx < (int)sizeof(src_path) - 1)
+    src_path[src_idx++] = '/';
+  for (int i = 0; i < len && src_idx < (int)sizeof(src_path) - 1; i++)
+    src_path[src_idx++] = name[i];
+  src_path[src_idx] = '\0';
+
+  str_copy_safe(dst_path, sync->dst_root, sizeof(dst_path));
+  while (dst_path[dst_idx] && dst_idx < (int)sizeof(dst_path) - 1)
+    dst_idx++;
+  if (dst_idx < (int)sizeof(dst_path) - 1)
+    dst_path[dst_idx++] = '/';
+  for (int i = 0; i < len && dst_idx < (int)sizeof(dst_path) - 1; i++)
+    dst_path[dst_idx++] = name[i];
+  dst_path[dst_idx] = '\0';
+
+  if (type == 4) {
+    struct file *dir;
+    runtime_sync_ctx_t next;
+
+    installer_ensure_parent_dirs(dst_path);
+    vfs_mkdir(dst_path, 0755);
+    dir = vfs_open(src_path, O_RDONLY, 0);
+    if (!dir)
+      return 0;
+    str_copy_safe(next.src_root, src_path, sizeof(next.src_root));
+    str_copy_safe(next.dst_root, dst_path, sizeof(next.dst_root));
+    vfs_readdir(dir, &next, runtime_sync_tree_callback);
+    vfs_close(dir);
+    return 0;
+  }
+
+  runtime_sync_raw_file(src_path, dst_path);
+  return 0;
+}
+
+static void runtime_sync_dir_from_boot_storage(const char *relative_path) {
+  char boot_root[96];
+  char src_root[256];
+  char dst_root[256];
+  struct file *dir;
+  runtime_sync_ctx_t ctx;
+
+  if (!relative_path || !relative_path[0] ||
+      boot_storage_root_path(boot_root, sizeof(boot_root)) != 0)
+    return;
+
+  str_copy_safe(src_root, boot_root, sizeof(src_root));
+  installer_append_to_buf(src_root, sizeof(src_root), "/");
+  installer_append_to_buf(src_root, sizeof(src_root), relative_path);
+
+  dst_root[0] = '/';
+  dst_root[1] = '\0';
+  installer_append_to_buf(dst_root, sizeof(dst_root), relative_path);
+
+  dir = vfs_open(src_root, O_RDONLY, 0);
+  if (!dir)
+    return;
+
+  installer_ensure_parent_dirs(dst_root);
+  vfs_mkdir(dst_root, 0755);
+  str_copy_safe(ctx.src_root, src_root, sizeof(ctx.src_root));
+  str_copy_safe(ctx.dst_root, dst_root, sizeof(ctx.dst_root));
+  vfs_readdir(dir, &ctx, runtime_sync_tree_callback);
+  vfs_close(dir);
+}
+
+static void runtime_sync_boot_storage_to_live(void) {
+  static const char *dirs[] = {"System", "Applications", "Desktop",
+                               "Documents", "Pictures", "Music", "Users"};
+
+  {
+    extern int boot_is_usb_boot(void);
+    if (boot_is_usb_boot())
+      return;
+  }
+
+  for (int i = 0; i < (int)(sizeof(dirs) / sizeof(dirs[0])); i++)
+    runtime_sync_dir_from_boot_storage(dirs[i]);
 }
 
 static int manifest_get_value(const char *manifest, const char *key, char *out,
@@ -3037,6 +3318,11 @@ static void load_account_state(void) {
                          sizeof(account_password), account_partition_label,
                          sizeof(account_partition_label), account_disk_location,
                          sizeof(account_disk_location));
+
+  if (account_username[0] && account_password[0] && !account_disk_location[0]) {
+    load_install_target_disk_location(account_disk_location,
+                                      sizeof(account_disk_location));
+  }
 }
 
 static void load_setup_state(int *setup_complete, int *apps_seeded,
@@ -3366,6 +3652,8 @@ static void complete_startup_auth(void) {
   set_startup_status("");
   save_setup_state(1, 0);
   installer_clear_first_boot_setup_flag();
+  if (account_username[0] && account_password[0])
+    save_account_state();
   if (startup_window) {
     gui_destroy_window(startup_window);
     startup_window = NULL;
@@ -3764,13 +4052,10 @@ static void load_dock_config(void) {
     ensure_app_manifest(&app_catalog[i]);
   }
 
-  struct file *file = vfs_open(GUI_DOCK_CONFIG_PATH, O_RDONLY, 0);
-  if (file) {
-    bytes = (int)vfs_read(file, buf, sizeof(buf) - 1);
-    vfs_close(file);
-  }
+  bytes = read_text_file(GUI_DOCK_CONFIG_PATH, buf, sizeof(buf));
 
   if (bytes <= 0) {
+    dock_add_missing_preinstalled_apps();
     save_dock_config();
     return;
   }
@@ -3796,8 +4081,10 @@ static void load_dock_config(void) {
     }
   }
 
-  if (dock_item_count == 0)
+  if (dock_item_count == 0) {
+    dock_add_missing_preinstalled_apps();
     save_dock_config();
+  }
 }
 
 static int install_app(const dock_app_def_t *app, int pin_to_dock) {
@@ -10137,6 +10424,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 #endif
 
   if (!gui_is_installer_mode()) {
+    runtime_sync_boot_storage_to_live();
     ensure_startup_flow();
     if (!startup_flow_active())
       load_dock_config();
