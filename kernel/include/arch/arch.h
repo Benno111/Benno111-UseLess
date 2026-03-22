@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Architecture Abstraction Layer
+ * OS8 - Architecture Abstraction Layer
  * 
  * This header provides a unified interface for architecture-specific
  * functionality across ARM64, x86_64, and x86.

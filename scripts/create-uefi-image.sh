@@ -120,11 +120,11 @@ mkfs.fat -F 32 --offset "$PART_START_SECTORS" -n OSNEXT64 "$IMAGE_PATH" >/dev/nu
 
 cat > "$TMP_DIR/limine.conf" <<'EOF'
 # Limine Configuration File
-# OS next stage x64
+# OS8 x64
 
 timeout: 0
 
-/OS next stage
+/OS8
     protocol: limine
     kernel_path: boot():/boot/main.sys
 EOF

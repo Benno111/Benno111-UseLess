@@ -1,6 +1,6 @@
 /*
  * PS/2 Keyboard and Mouse Driver
- * For x86_64 Vib-OS Desktop Environment
+ * For x86_64 OS8 Desktop Environment
  */
 
 #include "../include/types.h"

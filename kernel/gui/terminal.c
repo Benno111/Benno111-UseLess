@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Terminal Emulator
+ * OS8 - Terminal Emulator
  *
  * VT100-compatible terminal emulator for the GUI.
  */
@@ -534,7 +534,7 @@ static void build_neofetch_kernel_string(char *buf, int buf_size) {
   if (!buf || buf_size <= 0)
     return;
   buf[0] = '\0';
-  append_str(buf, buf_size, 0, "OS next stage 8.0.0 (");
+  append_str(buf, buf_size, 0, "OS8 8.0.0 (");
   append_str(buf, buf_size, (int)strlen(buf), ARCH_NAME);
   append_char(buf, buf_size, (int)strlen(buf), ')');
 }
@@ -698,7 +698,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term->cursor_x = 0;
     term->cursor_y = 0;
   } else if (str_starts_with(cmd, "help")) {
-    term_puts(term, "\033[1;36mOS next stage Terminal v2.0\033[0m\n");
+    term_puts(term, "\033[1;36mOS8 Terminal v2.0\033[0m\n");
     term_puts(term, "\033[33mFile Commands:\033[0m\n");
     term_puts(term, "  ls        - List directory contents\n");
     term_puts(term, "  cd <dir>  - Change directory\n");
@@ -810,9 +810,9 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "\n");
   } else if (str_starts_with(cmd, "uname")) {
 #ifdef ARCH_X86_64
-    term_puts(term, "OS next stage 8.0.0 x86_64 x86_64\n");
+    term_puts(term, "OS8 8.0.0 x86_64 x86_64\n");
 #else
-    term_puts(term, "OS next stage 8.0.0 ARM64 aarch64\n");
+    term_puts(term, "OS8 8.0.0 ARM64 aarch64\n");
 #endif
   } else if (str_starts_with(cmd, "date")) {
     term_puts(term, "Thu Jan 16 21:35:00 EST 2026\n");
@@ -846,7 +846,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
       strcpy(cpu_buf, "Unknown CPU");
     build_neofetch_gpu_string(gpu_buf, sizeof(gpu_buf));
 
-    term_puts(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
+    term_puts(term, "\033[33mOS:\033[0m      OS8 8.0.0\n");
     term_puts(term, "\033[33mHost:\033[0m    ");
     term_puts(term, host_buf);
     term_puts(term, "\n");
@@ -1015,7 +1015,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
       term_puts(term, "designed for embedded systems.\n");
     } else if (str_starts_with(topic, "cpp") || str_starts_with(topic, "c++")) {
       term_puts(term, "\033[1;36mCPP(1) - C++ Cross-Compilation\033[0m\n\n");
-      term_puts(term, "Cross-compile C++ for OS next stage using:\n");
+      term_puts(term, "Cross-compile C++ for OS8 using:\n");
 #ifdef ARCH_X86_64
       term_puts(term, "  x86_64-none-elf-g++ -nostdlib -ffreestanding\n");
 #else
@@ -1388,7 +1388,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term,
               "<!DOCTYPE html>\n<html><head><title>Example</title></head>\n");
     term_puts(term,
-              "<body><h1>Hello from OS next stage Network!</h1></body></html>\n");
+              "<body><h1>Hello from OS8 Network!</h1></body></html>\n");
   } else {
     term_puts(term, "\033[31mCommand not found:\033[0m ");
     term_puts(term, cmd);
@@ -1497,7 +1497,7 @@ struct terminal *term_create(int x, int y, int cols, int rows) {
   }
 
   /* Print welcome message */
-  term_puts(term, "\033[1;36mOS next stage Terminal v1.0\033[0m\n");
+  term_puts(term, "\033[1;36mOS8 Terminal v1.0\033[0m\n");
   term_puts(term, "Type '\033[33mhelp\033[0m' for commands, "
                   "'\033[33mneofetch\033[0m' for system info.\n\n");
   term_puts(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");

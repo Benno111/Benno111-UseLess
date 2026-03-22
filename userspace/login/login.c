@@ -1,5 +1,5 @@
 /*
- * vib-OS - Login Program
+ * OS8 - Login Program
  */
 
 #include <stdio.h>
@@ -238,11 +238,11 @@ int main(int argc, char *argv[]) {
   (void)argv;
 
   printf("\033[2J\033[H");
-  printf("Welcome to vib-OS v8.0.0\n");
+  printf("Welcome to OS8 v8.0.0\n");
   printf("Kernel 8.0.0-arm64 on an aarch64\n\n");
 
   while (1) {
-    printf("vib-os login: ");
+    printf("OS8 login: ");
     fflush(stdout);
 
     if (fgets(username, sizeof(username), stdin) == NULL)

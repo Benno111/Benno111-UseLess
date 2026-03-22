@@ -1,5 +1,5 @@
 /*
- * Vib-OS Bitmap Font
+ * OS8 Bitmap Font
  *
  * 8x16 VGA-style font. Each character is 8 pixels wide, 16 pixels tall.
  * Each byte represents one row, MSB is leftmost pixel.

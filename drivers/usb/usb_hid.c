@@ -1,5 +1,5 @@
 /*
- * vib-OS - USB HID Driver
+ * OS8 - USB HID Driver
  * Implements Human Interface Device Class
  */
 

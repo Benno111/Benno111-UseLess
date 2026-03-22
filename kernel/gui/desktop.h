@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Desktop Manager Header
+ * OS8 - Desktop Manager Header
  */
 
 #ifndef _DESKTOP_H

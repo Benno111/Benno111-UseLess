@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================================
-# vib-OS - CPython 3.12 Cross-Compilation Script
+# OS8 - CPython 3.12 Cross-Compilation Script
 # ============================================================================
-# Cross-compiles Python 3.12 for ARM64 vib-OS with musl libc.
+# Cross-compiles Python 3.12 for ARM64 OS8 with musl libc.
 #
 # Prerequisites:
 # - LLVM/Clang toolchain
@@ -35,7 +35,7 @@ LDFLAGS="-target ${TARGET} --sysroot=${SYSROOT} -L${SYSROOT}/lib"
 export CFLAGS CXXFLAGS LDFLAGS
 
 echo "============================================"
-echo "vib-OS CPython 3.12 Cross-Compilation"
+echo "OS8 CPython 3.12 Cross-Compilation"
 echo "============================================"
 echo "Version: ${PYTHON_VERSION}"
 echo "Target: ${TARGET}"

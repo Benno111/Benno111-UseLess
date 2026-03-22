@@ -1,5 +1,5 @@
 /*
- * OS next stage DOS runnable rescue installer utility.
+ * OS8 DOS runnable rescue installer utility.
  *
  * Build output is a flat .COM binary intended to be copied next to OSSYS.IMG
  * on an existing DOS system. The program writes that image to a selected BIOS
@@ -590,7 +590,7 @@ exit_to_dos:
     int     $0x21
 
 title_text:
-    .asciz  "OS next stage DOS System Image Writer\r\n"
+    .asciz  "OS8 DOS System Image Writer\r\n"
 subtitle_text:
     .asciz  "Run this from an existing DOS system with OSSYS.IMG nearby.\r\nIt writes the regular OS system image to another BIOS disk.\r\n\r\n"
 menu_text:
@@ -610,7 +610,7 @@ copy_begin_text:
 bootloader_begin_text:
     .asciz  "Applying bootloader to target disk...\r\n"
 copy_success_text:
-    .asciz  "System image write complete.\r\nYou can now boot the target disk into OS next stage.\r\n\r\n"
+    .asciz  "System image write complete.\r\nYou can now boot the target disk into OS8.\r\n\r\n"
 bootloader_success_text:
     .asciz  "Bootloader applied successfully.\r\n\r\n"
 copy_failed_text:

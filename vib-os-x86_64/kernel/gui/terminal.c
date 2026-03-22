@@ -276,7 +276,7 @@ void term_execute(terminal_t *term, const char *cmd) {
   term_puts_t(term, "\n");
   
   if (strncmp(cmd, "help", 4) == 0) {
-    term_puts_t(term, "\033[1;36mOS next stage Terminal v2.0\033[0m\n");
+    term_puts_t(term, "\033[1;36mOS8 Terminal v2.0\033[0m\n");
     term_puts_t(term, "\033[33mFile Commands:\033[0m\n");
     term_puts_t(term, "  ls        - List directory contents\n");
     term_puts_t(term, "  cd <dir>  - Change directory\n");
@@ -418,7 +418,7 @@ void term_execute(terminal_t *term, const char *cmd) {
     term_puts_t(term, "  \\ V /| || |_) |  | |_| |___) |\n");
     term_puts_t(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
     term_puts_t(term, "\033[0m\n");
-    term_puts_t(term, "\033[33mOS:\033[0m      OS next stage 8.0.0\n");
+    term_puts_t(term, "\033[33mOS:\033[0m      OS8 8.0.0\n");
     term_puts_t(term, "\033[33mHost:\033[0m    Bare Metal x86_64\n");
     term_puts_t(term, "\033[33mKernel:\033[0m  8.0.0-x86_64\n");
     term_puts_t(term, "\033[33mUptime:\033[0m  0 mins\n");
@@ -427,9 +427,9 @@ void term_execute(terminal_t *term, const char *cmd) {
     term_puts_t(term, "\033[33mCPU:\033[0m     x86_64\n");
   } else if (strncmp(cmd, "uname", 5) == 0) {
     if (strstr(cmd, "-a")) {
-      term_puts_t(term, "OS next stage 1.0.0 x86_64\n");
+      term_puts_t(term, "OS8 1.0.0 x86_64\n");
     } else {
-      term_puts_t(term, "OS next stage\n");
+      term_puts_t(term, "OS8\n");
     }
   } else if (strncmp(cmd, "free", 4) == 0) {
     term_puts_t(term, "              total        used        free\n");
@@ -514,7 +514,7 @@ terminal_t *term_create(int x, int y) {
   }
   
   /* Welcome message (matching test version) */
-  term_puts_t(term, "\033[1;36mOS next stage Terminal v1.0\033[0m\n");
+  term_puts_t(term, "\033[1;36mOS8 Terminal v1.0\033[0m\n");
   term_puts_t(term, "Type '\033[33mhelp\033[0m' for commands, "
                     "'\033[33mneofetch\033[0m' for system info.\n\n");
   term_puts_t(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");

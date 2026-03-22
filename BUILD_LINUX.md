@@ -1,6 +1,6 @@
-# Building OS next stage on Ubuntu/Linux
+# Building OS8 on Ubuntu/Linux
 
-This guide helps you build OS next stage on Ubuntu or other Linux distributions.
+This guide helps you build OS8 on Ubuntu or other Linux distributions.
 
 ## Quick Start
 

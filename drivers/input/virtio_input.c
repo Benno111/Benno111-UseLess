@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Virtio MMIO Mouse/Tablet Driver
+ * OS8 - Virtio MMIO Mouse/Tablet Driver
  *
  * Based on VibeOS implementation for QEMU virt machine.
  * Uses virtio-tablet for absolute positioning (EV_ABS events).

@@ -1,5 +1,5 @@
 /*
- * vib-OS - USB Mass Storage Driver
+ * OS8 - USB Mass Storage Driver
  * Implements Bulk-Only Transport (BOT)
  */
 

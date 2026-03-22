@@ -1,5 +1,5 @@
 /*
- * Vib-OS - GUI System Header
+ * OS8 - GUI System Header
  */
 
 #ifndef _GUI_H

@@ -1,5 +1,5 @@
 /*
- * Vib-OS Dock Icons
+ * OS8 Dock Icons
  *
  * 32x32 bitmaps for dock icons
  * 0 = transparent, 1 = black

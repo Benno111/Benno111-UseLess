@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Intel Integrated Graphics Driver
+ * OS8 - Intel Integrated Graphics Driver
  */
 
 #ifndef DRIVERS_INTEL_GFX_H

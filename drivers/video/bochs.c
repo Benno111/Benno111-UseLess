@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Simple VGA/Bochs Display Driver
+ * OS8 - Simple VGA/Bochs Display Driver
  * 
  * Uses QEMU's bochs-display or std-vga device for graphics output.
  * This is a simpler approach than virtio-gpu.

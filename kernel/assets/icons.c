@@ -1,5 +1,5 @@
 /*
- * Embedded PNG icons for vib-OS GUI
+ * Embedded PNG icons for OS8 GUI
  * These icons are decoded at runtime using the tPNG decoder
  */
 

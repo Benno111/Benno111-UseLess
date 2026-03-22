@@ -1,4 +1,4 @@
-# Hello World in Python for Vib-OS
+# Hello World in Python for OS8
 # Run with: run hello.py
 
 def greet(name):
@@ -6,10 +6,10 @@ def greet(name):
 
 def main():
     print("=" * 40)
-    print("  Welcome to Vib-OS Python Demo")
+    print("  Welcome to OS8 Python Demo")
     print("=" * 40)
     
-    message = greet("Vib-OS User")
+    message = greet("OS8 User")
     print(message)
     
     # Simple calculation demo
@@ -17,7 +17,7 @@ def main():
     total = sum(numbers)
     print(f"Sum of {numbers} = {total}")
     
-    print("\nPython is working on Vib-OS!")
+    print("\nPython is working on OS8!")
 
 if __name__ == "__main__":
     main()

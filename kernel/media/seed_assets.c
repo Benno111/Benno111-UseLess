@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Embedded seed media assets (MP3/JPEG)
+ * OS8 - Embedded seed media assets (MP3/JPEG)
  */
 
 #include "types.h"

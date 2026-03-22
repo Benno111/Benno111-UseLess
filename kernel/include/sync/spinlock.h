@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Spinlock Implementation
+ * OS8 Kernel - Spinlock Implementation
  *
  * Provides mutual exclusion primitives for protecting critical sections.
  * IRQ-safe variants disable interrupts to prevent deadlocks.

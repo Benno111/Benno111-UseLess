@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel - x86_64 APIC (Advanced Programmable Interrupt Controller)
+ * OS8 Kernel - x86_64 APIC (Advanced Programmable Interrupt Controller)
  * 
  * Supports Local APIC and I/O APIC
  */

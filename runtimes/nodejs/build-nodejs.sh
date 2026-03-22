@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================================
-# vib-OS - Node.js 20 LTS Cross-Compilation Script
+# OS8 - Node.js 20 LTS Cross-Compilation Script
 # ============================================================================
-# Cross-compiles Node.js 20 for ARM64 vib-OS.
+# Cross-compiles Node.js 20 for ARM64 OS8.
 #
 # Prerequisites:
 # - LLVM/Clang toolchain
@@ -32,7 +32,7 @@ LDFLAGS="-target ${TARGET} --sysroot=${SYSROOT} -L${SYSROOT}/lib"
 export CFLAGS CXXFLAGS LDFLAGS
 
 echo "============================================"
-echo "vib-OS Node.js 20 LTS Cross-Compilation"
+echo "OS8 Node.js 20 LTS Cross-Compilation"
 echo "============================================"
 echo "Version: ${NODE_VERSION}"
 echo "Target: ${TARGET}"

@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - DNS Resolver
+ * OS8 Kernel - DNS Resolver
  * 
  * Simple DNS client for name resolution.
  */

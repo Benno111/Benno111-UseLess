@@ -1,5 +1,5 @@
 /*
- * vib-OS - USB Core Headers
+ * OS8 - USB Core Headers
  */
 
 #ifndef _DRIVERS_USB_USB_H

@@ -1,5 +1,5 @@
 /*
- * Vib-OS libc - sys/wait.h
+ * OS8 libc - sys/wait.h
  */
 
 #ifndef _SYS_WAIT_H

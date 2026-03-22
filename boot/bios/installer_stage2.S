@@ -1,5 +1,5 @@
 /*
- * OS next stage BIOS text installer - stage 2
+ * OS8 BIOS text installer - stage 2
  *
  * A standalone real-mode fallback installer shell. This variant does not boot
  * the kernel, but it can deploy a bundled regular OS system image onto another
@@ -589,13 +589,13 @@ halt_system:
     jmp     .halt
 
 title_text:
-    .asciz  "OS next stage DOS System Installer\r\n"
+    .asciz  "OS8 DOS System Installer\r\n"
 subtitle_text:
     .asciz  "16-bit real mode fallback path\r\nDeploys the bundled regular OS system image to another BIOS disk\r\n\r\n"
 menu_text:
     .asciz  "  1. Deploy regular system image\r\n  2. Change target disk\r\n  3. Apply bootloader to disk\r\n  4. Show disk info\r\n  5. Enter installer shell\r\n  6. Reboot\r\n  ESC. Halt\r\n\r\nSelect an option: "
 install_intro_text:
-    .asciz  "This fallback path writes the bundled regular OS system image\r\nonto another BIOS disk. That target can then boot OS next stage\r\neven when the GUI or EFI install flow is unavailable.\r\n\r\n"
+    .asciz  "This fallback path writes the bundled regular OS system image\r\nonto another BIOS disk. That target can then boot OS8\r\neven when the GUI or EFI install flow is unavailable.\r\n\r\n"
 bootloader_intro_text:
     .asciz  "This rewrites the bundled regular system BIOS boot area on the\r\nselected target disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:
@@ -607,7 +607,7 @@ copy_begin_text:
 bootloader_begin_text:
     .asciz  "Applying bootloader to target disk...\r\n"
 copy_success_text:
-    .asciz  "Deployment complete.\r\nBoot the target disk to start OS next stage.\r\n\r\n"
+    .asciz  "Deployment complete.\r\nBoot the target disk to start OS8.\r\n\r\n"
 bootloader_success_text:
     .asciz  "Bootloader applied successfully.\r\n\r\n"
 copy_failed_text:

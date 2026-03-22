@@ -1,11 +1,11 @@
 #!/bin/bash
-# Vib-OS Toolchain Setup Script for Linux (Ubuntu/Debian)
-# Installs all dependencies required to build Vib-OS on Linux
+# OS8 Toolchain Setup Script for Linux (Ubuntu/Debian)
+# Installs all dependencies required to build OS8 on Linux
 
 set -e
 
 echo "========================================"
-echo "Vib-OS Toolchain Setup for Linux"
+echo "OS8 Toolchain Setup for Linux"
 echo "========================================"
 echo ""
 

@@ -194,7 +194,7 @@ if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
 fi
 
 cat > "$ISO_ROOT/dos/README.TXT" <<EOF
-OS next stage DOS Rescue Tools
+OS8 DOS Rescue Tools
 
 This folder contains the DOS-side fallback installer package:
 - OSINST.COM : run this from an existing DOS system
@@ -212,10 +212,10 @@ EOF
 cp "$ISO_ROOT/dos/README.TXT" "$INSTALL_ROOT/dos/README.TXT"
 
 cat > "$ISO_ROOT/INSTALLERS.TXT" <<EOF
-OS next stage Installer Types
+OS8 Installer Types
 
 1. Graphical Installer
-   Boot menu entry: "OS next stage Graphical Installer"
+   Boot menu entry: "OS8 Graphical Installer"
    Use this for the normal desktop installer flow.
 
 2. DOS Rescue Installer
@@ -231,7 +231,7 @@ EOF
 cp "$ISO_ROOT/INSTALLERS.TXT" "$INSTALL_ROOT/INSTALLERS.TXT"
 
 cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
-OS next stage System Image
+OS8 System Image
 
 This ISO contains:
 - a graphical installer environment

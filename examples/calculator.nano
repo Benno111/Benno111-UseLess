@@ -1,4 +1,4 @@
-// Simple Calculator in NanoLang for Vib-OS
+// Simple Calculator in NanoLang for OS8
 // Run with: run calculator.nano
 
 fn add(a: int, b: int) -> int {

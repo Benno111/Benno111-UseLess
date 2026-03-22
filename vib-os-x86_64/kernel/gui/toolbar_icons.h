@@ -1,5 +1,5 @@
 /*
- * Toolbar Icons for vib-OS Image Viewer
+ * Toolbar Icons for OS8 Image Viewer
  * Generated from Feather Icons (MIT Licensed)
  */
 

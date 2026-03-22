@@ -426,15 +426,15 @@ static void print_banner(void) {
   printk("   \\_/ |_||_.__/    \\___/|____/ \n");
   printk("\n");
 #ifdef ARCH_X86_64
-  printk("OS next stage v%d.%d.%d - x86_64 bring-up\n", VIBOS_VERSION_MAJOR,
+  printk("OS8 v%d.%d.%d - x86_64 bring-up\n", VIBOS_VERSION_MAJOR,
          VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
   printk("A Unix-like operating system for x86_64\n");
 #else
-  printk("OS next stage v%d.%d.%d - ARM64 with GUI\n", VIBOS_VERSION_MAJOR,
+  printk("OS8 v%d.%d.%d - ARM64 with GUI\n", VIBOS_VERSION_MAJOR,
          VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
   printk("A Unix-like operating system for ARM64\n");
 #endif
-  printk("Copyright (c) 2026 OS next stage Project\n");
+  printk("Copyright (c) 2026 OS8 Project\n");
   printk("Build UUID: %s\n", BUILD_UUID);
   printk("\n");
 }
@@ -544,13 +544,13 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_make_dir(prefix, "/Desktop/Projects");
 
   seed_write_text(prefix, "/Desktop/notes.txt", 0644,
-                  "Welcome to OS next stage!\n\nThis is your desktop - right-click "
+                  "Welcome to OS8!\n\nThis is your desktop - right-click "
                   "for options!\n");
   seed_write_text(prefix, "/Desktop/readme.txt", 0644,
-                  "OS next stage Desktop Manager\n\n- Double-click to open files\n- "
+                  "OS8 Desktop Manager\n\n- Double-click to open files\n- "
                   "Right-click for context menu\n");
   seed_write_text(prefix, "readme.txt", 0644,
-                  "Welcome to OS next stage!\nThis is a real file in RamFS.");
+                  "Welcome to OS8!\nThis is a real file in RamFS.");
   seed_write_text(prefix, "todo.txt", 0644,
                   "- Implement Browser\n- Fix Bugs\n- Sleep");
   seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
@@ -582,13 +582,13 @@ static void populate_seed_tree_at(const char *prefix) {
 
   seed_make_dir(prefix, "examples");
   seed_write_text(prefix, "examples/hello.py", 0644,
-                  "# Hello World in Python for OS next stage\n"
+                  "# Hello World in Python for OS8\n"
                   "# Run with: run hello.py\n\n"
                   "def greet(name):\n"
                   "    return 'Hello, ' + name + '!'\n\n"
                   "def main():\n"
-                  "    print('Welcome to OS next stage Python Demo')\n"
-                  "    message = greet('OS next stage User')\n"
+                  "    print('Welcome to OS8 Python Demo')\n"
+                  "    message = greet('OS8 User')\n"
                   "    print(message)\n\n"
                   "if __name__ == '__main__':\n"
                   "    main()\n");
@@ -610,7 +610,7 @@ static void populate_seed_tree_at(const char *prefix) {
                   "}\n\n"
                   "fn main() {\n"
                   "    print('Welcome to NanoLang');\n"
-                  "    let msg = greet('OS next stage');\n"
+                  "    let msg = greet('OS8');\n"
                   "    print(msg);\n"
                   "}\n");
   seed_write_text(prefix, "examples/calculator.nano", 0644,
@@ -842,31 +842,31 @@ static void populate_installer_payload(void) {
   extern const unsigned char installer_payload_limine_uefi_cd_bin[];
   extern const unsigned char installer_payload_limine_uefi_cd_bin_end[];
   static const char *installed_limine_cfg =
-      "# Limine Configuration File\n"
-      "# OS next stage x64\n"
+      "# OS8 Boot Configuration\n"
+      "# OS8 x64\n"
       "\n"
       "timeout: 0\n"
       "\n"
-      "/OS next stage\n"
+      "/OS8\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n";
   static const char *installer_limine_cfg =
-      "# Limine Configuration File\n"
-      "# OS next stage x64 installer ISO\n"
+      "# OS8 Boot Configuration\n"
+      "# OS8 x64 installer ISO\n"
       "\n"
       "timeout: 5\n"
       "\n"
-      "/OS next stage Graphical Installer\n"
+      "/OS8 Graphical Installer\n"
       "    protocol: limine\n"
       "    kernel_path: boot():/boot/main.sys\n"
       "    cmdline: boot=usb mode=installer\n";
   static const char *image_info =
-      "OS next stage System Image\n"
+      "OS8 System Image\n"
       "\n"
       "This installer boot seeds a bundled system image at\n"
       "/install/system-image so the GUI installer can copy it to disk.\n";
   static const char *setup_info =
-      "OS next stage Installer Media\n"
+      "OS8 Installer Media\n"
       "\n"
       "This directory mirrors the bootable installer media contents while\n"
       "running in setup mode.\n";

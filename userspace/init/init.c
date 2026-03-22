@@ -1,5 +1,5 @@
 /*
- * vib-OS - Real Init Process (PID 1)
+ * OS8 - Real Init Process (PID 1)
  *
  * The first userspace process that initializes the system.
  */
@@ -22,7 +22,7 @@
 /* ===================================================================== */
 
 #define INIT_VERSION "1.0.0"
-#define HOSTNAME "vib-os"
+#define HOSTNAME "OS8"
 #define SHELL_PATH "/bin/login"
 #define CONSOLE_DEV "/dev/console"
 #define INITTAB_PATH "/etc/inittab"
@@ -294,7 +294,7 @@ int main(int argc, char *argv[]) {
 
   /* Print banner */
   printf("\n");
-  printf("  vib-OS init v%s\n", INIT_VERSION);
+  printf("  OS8 init v%s\n", INIT_VERSION);
   printf("  =================\n\n");
 
   /* Setup signals */

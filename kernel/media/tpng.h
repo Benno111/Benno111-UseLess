@@ -4,7 +4,7 @@
  * Based on tPNG by Johnathan Corkery (https://github.com/jcorks/tPNG)
  * and TINFL by Rich Geldreich.
  *
- * Adapted for Vib-OS kernel - uses kmalloc/kfree instead of libc functions.
+ * Adapted for OS8 kernel - uses kmalloc/kfree instead of libc functions.
  *
  * MIT/Apache-2.0 Licensed - see original source for full license.
  */

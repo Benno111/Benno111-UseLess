@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Raspberry Pi 4/5 Support
+ * OS8 - Raspberry Pi 4/5 Support
  * 
  * BCM2711 (Pi 4) and BCM2712 (Pi 5) hardware support.
  */

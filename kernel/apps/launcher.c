@@ -1,5 +1,5 @@
 /*
- * Vib-OS Application Launcher
+ * OS8 Application Launcher
  * 
  * Provides kernel API and launches embedded applications
  */
@@ -581,7 +581,7 @@ kapi_t *kapi_get(void) {
 static int clock_app_main(kapi_t *api, int argc, char **argv) {
     (void)argc; (void)argv;
     
-    api->puts("\n=== OS next stage Clock ===\n");
+    api->puts("\n=== OS8 Clock ===\n");
     
     if (!api->fb_base) {
         api->puts("No framebuffer available\n");
@@ -665,7 +665,7 @@ static int clock_app_main(kapi_t *api, int argc, char **argv) {
 static int snake_app_main(kapi_t *api, int argc, char **argv) {
     (void)argc; (void)argv;
     
-    api->puts("\n=== OS next stage Snake ===\n");
+    api->puts("\n=== OS8 Snake ===\n");
     api->puts("Use mouse to control direction!\n");
     
     if (!api->fb_base) {
@@ -803,12 +803,12 @@ static int snake_app_main(kapi_t *api, int argc, char **argv) {
 static int sysmon_app_main(kapi_t *api, int argc, char **argv) {
     (void)argc; (void)argv;
     
-    api->puts("\n=== OS next stage System Monitor ===\n\n");
+    api->puts("\n=== OS8 System Monitor ===\n\n");
     
     /* Display system information */
     api->puts("SYSTEM INFO\n");
     api->puts("-----------\n");
-    api->puts("OS:       OS next stage v8.0.0\n");
+    api->puts("OS:       OS8 v8.0.0\n");
 #ifdef ARCH_X86_64
     api->puts("Arch:     x86_64\n");
     api->puts("Platform: Limine / PC-compatible VM\n\n");
@@ -909,7 +909,7 @@ static int sysmon_app_main(kapi_t *api, int argc, char **argv) {
 static int mandelbrot_app_main(kapi_t *api, int argc, char **argv) {
     (void)argc; (void)argv;
     
-    api->puts("\n=== OS next stage Mandelbrot Viewer ===\n");
+    api->puts("\n=== OS8 Mandelbrot Viewer ===\n");
     api->puts("Rendering fractal...\n");
     
     if (!api->fb_base) {

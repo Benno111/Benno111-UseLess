@@ -1,5 +1,5 @@
 /*
- * OS next stage - Minimal ACPI support for x86 platforms
+ * OS8 - Minimal ACPI support for x86 platforms
  */
 
 #ifndef _ACPI_H

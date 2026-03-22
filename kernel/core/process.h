@@ -1,5 +1,5 @@
 /*
- * Vib-OS Process Management (ported from VibeOS)
+ * OS8 Process Management (ported from VibeOS)
  *
  * Preemptive multitasking - timer IRQ forces context switches.
  * Processes get 200ms time slices (100Hz timer, preempt every 20 ticks).

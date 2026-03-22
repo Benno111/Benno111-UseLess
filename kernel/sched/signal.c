@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Signal Handling
+ * OS8 Kernel - Signal Handling
  *
  * POSIX signal implementation for process control.
  */

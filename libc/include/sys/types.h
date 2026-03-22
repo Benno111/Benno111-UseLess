@@ -1,5 +1,5 @@
 /*
- * Vib-OS libc - sys/types.h
+ * OS8 libc - sys/types.h
  */
 
 #ifndef _SYS_TYPES_H

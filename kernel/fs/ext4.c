@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - ext4 Filesystem Driver
+ * OS8 Kernel - ext4 Filesystem Driver
  * 
  * Read/write support for ext4 filesystem.
  */

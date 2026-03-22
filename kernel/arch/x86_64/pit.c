@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel - x86_64 PIT (Programmable Interval Timer) Driver
+ * OS8 Kernel - x86_64 PIT (Programmable Interval Timer) Driver
  * 
  * 8253/8254 PIT for system timer
  */

@@ -1,5 +1,5 @@
 /*
- * Vib-OS - virtio-gpu Driver (Simplified)
+ * OS8 - virtio-gpu Driver (Simplified)
  *
  * Implements virtio-gpu for hardware-accelerated graphics in QEMU.
  * Compatible with the simple PCI API.

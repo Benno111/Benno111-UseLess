@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Intel Integrated Graphics Driver
+ * OS8 - Intel Integrated Graphics Driver
  *
  * Conservative first-stage Intel graphics support:
  * - Detect Intel display-class PCI devices

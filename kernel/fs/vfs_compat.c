@@ -1,5 +1,5 @@
 /*
- * Vib-OS VFS Compatibility Layer Implementation
+ * OS8 VFS Compatibility Layer Implementation
  *
  * Provides simple VibeOS-compatible VFS functions.
  */

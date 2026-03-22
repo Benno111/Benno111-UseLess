@@ -1,5 +1,5 @@
 /*
- * Embedded PNG icons header for vib-OS GUI
+ * Embedded PNG icons header for OS8 GUI
  */
 
 #ifndef KERNEL_ICONS_H

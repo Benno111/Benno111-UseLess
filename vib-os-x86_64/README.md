@@ -1,4 +1,4 @@
-# OS next stage x86_64
+# OS8 x86_64
 
 A bare-metal x86_64 OS that boots from UEFI and shows a graphical desktop. 
 

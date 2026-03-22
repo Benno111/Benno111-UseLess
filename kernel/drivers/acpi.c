@@ -1,5 +1,5 @@
 /*
- * OS next stage - Minimal ACPI and x86 power management
+ * OS8 - Minimal ACPI and x86 power management
  */
 
 #include "acpi.h"

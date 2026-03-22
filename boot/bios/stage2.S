@@ -1,5 +1,5 @@
 /*
- * Vib-OS BIOS Bootloader - Stage 2
+ * OS8 BIOS Bootloader - Stage 2
  * 
  * Loaded at 0x7E00 by stage 1
  * Switches to protected mode and loads the kernel
@@ -198,7 +198,7 @@ gdt_descriptor:
 /* ===================================================================== */
 
 msg_stage2:
-    .asciz  "OS next stage Stage 2\r\n"
+    .asciz  "OS8 Stage 2\r\n"
 
 msg_protected:
     .asciz  "Protected Mode OK"

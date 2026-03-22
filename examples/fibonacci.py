@@ -1,4 +1,4 @@
-# Fibonacci Sequence in Python for Vib-OS
+# Fibonacci Sequence in Python for OS8
 # Run with: run fibonacci.py
 
 def fibonacci(n):

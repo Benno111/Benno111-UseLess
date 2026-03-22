@@ -1,5 +1,5 @@
 /*
- * vib-OS - FAT32 Filesystem Implementation
+ * OS8 - FAT32 Filesystem Implementation
  */
 
 #include "fs/fat32.h"

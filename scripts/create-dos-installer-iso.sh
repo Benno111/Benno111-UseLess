@@ -58,7 +58,7 @@ if [ -f "$DOS_INSTALLER_COM" ]; then
 fi
 
 cat > "$ISO_ROOT/README.TXT" <<EOF
-OS next stage DOS Installer ISO
+OS8 DOS Installer ISO
 
 This ISO boots directly into the BIOS text-mode DOS rescue installer.
 

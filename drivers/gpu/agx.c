@@ -1,5 +1,5 @@
 /*
- * vib-OS - Complete Apple Silicon GPU Driver (AGX)
+ * OS8 - Complete Apple Silicon GPU Driver (AGX)
  * 
  * Full implementation based on Asahi Linux DRM driver.
  */

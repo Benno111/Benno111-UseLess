@@ -965,7 +965,7 @@ static void term_execute(const char *cmd) {
     terminal.cursor_x = 0;
     terminal.cursor_y = 0;
   } else if (strcmp(cmd, "help") == 0) {
-    term_puts("OS next stage Terminal v2.0\n", 14);
+    term_puts("OS8 Terminal v2.0\n", 14);
     term_puts("File Commands:\n", 11);
     term_puts("  ls        - List directory contents\n", 7);
     term_puts("  cd <dir>  - Change directory\n", 7);
@@ -981,7 +981,7 @@ static void term_execute(const char *cmd) {
     term_puts("  clear     - Clear screen\n", 7);
     term_puts("  help      - This help message\n", 7);
   } else if (strcmp(cmd, "uname") == 0 || strcmp(cmd, "uname -a") == 0) {
-    term_puts("OS next stage 1.0.0 x86_64\n", 11);
+    term_puts("OS8 1.0.0 x86_64\n", 11);
   } else if (strcmp(cmd, "neofetch") == 0) {
     term_puts("       _  _         ___  ____  \n", 14);
     term_puts(" __   _(_)| |__     / _ \\/ ___| \n", 14);
@@ -990,7 +990,7 @@ static void term_execute(const char *cmd) {
     term_puts("   \\_/ |_||_.__/    \\___/|____/ \n", 14);
     term_puts("\n", 7);
     term_puts("OS:      ", 11);
-    term_puts("OS next stage 1.0.0\n", 7);
+    term_puts("OS8 1.0.0\n", 7);
     term_puts("Host:    ", 11);
     term_puts("QEMU x86_64 Virtual Machine\n", 7);
     term_puts("Kernel:  ", 11);
@@ -2039,7 +2039,7 @@ static void draw_help_window(void) {
 
   /* Content */
   int ty = y + title_h + UI_SCALE_VAL(18);
-  gui_draw_string(x + UI_SCALE_VAL(20), ty, "OS next stage Desktop", THEME_BLUE);
+  gui_draw_string(x + UI_SCALE_VAL(20), ty, "OS8 Desktop", THEME_BLUE);
   ty += line_gap;
   gui_draw_string(x + UI_SCALE_VAL(20), ty, "Version 1.0", THEME_SUBTEXT);
   ty += section_gap;
@@ -2188,7 +2188,7 @@ static void draw_menu_bar(void) {
   gui_draw_string(UI_SCALE_VAL(14), text_y, "@", 0xFFFFFF);
   
   /* App name - bold */
-  gui_draw_string(UI_SCALE_VAL(36), text_y, "OS next stage", 0xFFFFFF);
+  gui_draw_string(UI_SCALE_VAL(36), text_y, "OS8", 0xFFFFFF);
 
   /* Right side - Clock */
   int clock_w = font_string_width("12:00");
@@ -2589,7 +2589,7 @@ void gui_init(void) {
 
   /* Show terminal and file manager as demo */
   terminal.visible = 1;
-  term_puts("OS next stage Terminal v1.0\n", 14); /* Cyan */
+  term_puts("OS8 Terminal v1.0\n", 14); /* Cyan */
   term_puts("Type 'help' for commands, 'neofetch' for system info.\n\n", 7);
   term_prompt();
 

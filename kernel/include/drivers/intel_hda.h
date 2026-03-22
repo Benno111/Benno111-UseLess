@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Intel HDA Audio Driver
+ * OS8 - Intel HDA Audio Driver
  */
 
 #ifndef DRIVERS_INTEL_HDA_H

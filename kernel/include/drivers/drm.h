@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Direct Rendering Manager (DRM) Core
+ * OS8 - Direct Rendering Manager (DRM) Core
  *
  * DRM-like abstraction layer for GPU drivers providing:
  * - Device management

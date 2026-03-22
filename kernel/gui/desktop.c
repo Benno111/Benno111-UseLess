@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Desktop Manager
+ * OS8 - Desktop Manager
  *
  * macOS-style desktop with file/folder icons, right-click menus,
  * sorting, stacking, and full file operations.

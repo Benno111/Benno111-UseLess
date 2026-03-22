@@ -1,5 +1,5 @@
 /*
- * Vib-OS - PCI Driver Implementation
+ * OS8 - PCI Driver Implementation
  *
  * Scans ECAM to find devices. Supports virtio-gpu and Intel HDA.
  */

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Vib-OS - Create Bootable ISO for VirtualBox/VMware
+# OS8 - Create Bootable ISO for VirtualBox/VMware
 # ============================================================================
 # Creates a bootable ISO image that can be used with:
 # - VirtualBox (ARM64 or x86_64 emulation)
@@ -17,12 +17,12 @@ set -e
 
 BUILD_DIR="$(pwd)/build"
 ISO_DIR="${BUILD_DIR}/iso"
-OUTPUT_ISO="${BUILD_DIR}/vib-os.iso"
+OUTPUT_ISO="${BUILD_DIR}/OS8.iso"
 
 KERNEL_ELF="${BUILD_DIR}/kernel/unixos.elf"
 
 echo "============================================"
-echo "Vib-OS ISO Creator"
+echo "OS8 ISO Creator"
 echo "============================================"
 
 # Check if kernel exists
@@ -40,7 +40,7 @@ mkdir -p "${ISO_DIR}/EFI/BOOT"
 
 # Copy kernel
 echo "[COPY] Copying kernel..."
-cp "${KERNEL_ELF}" "${ISO_DIR}/boot/vib-os.elf"
+cp "${KERNEL_ELF}" "${ISO_DIR}/boot/OS8.elf"
 
 # Create GRUB configuration
 echo "[CONFIG] Creating GRUB configuration..."
@@ -48,21 +48,21 @@ cat > "${ISO_DIR}/boot/grub/grub.cfg" << 'EOF'
 set timeout=5
 set default=0
 
-menuentry "Vib-OS" {
-    echo "Loading Vib-OS kernel..."
-    multiboot2 /boot/vib-os.elf
+menuentry "OS8" {
+    echo "Loading OS8 kernel..."
+    multiboot2 /boot/OS8.elf
     boot
 }
 
-menuentry "Vib-OS (Debug Mode)" {
-    echo "Loading Vib-OS kernel (debug)..."
-    multiboot2 /boot/vib-os.elf debug verbose
+menuentry "OS8 (Debug Mode)" {
+    echo "Loading OS8 kernel (debug)..."
+    multiboot2 /boot/OS8.elf debug verbose
     boot
 }
 
-menuentry "Vib-OS (Recovery)" {
-    echo "Loading Vib-OS recovery..."
-    multiboot2 /boot/vib-os.elf single recovery
+menuentry "OS8 (Recovery)" {
+    echo "Loading OS8 recovery..."
+    multiboot2 /boot/OS8.elf single recovery
     boot
 }
 EOF
@@ -71,8 +71,8 @@ EOF
 echo "[CONFIG] Creating EFI boot configuration..."
 cat > "${ISO_DIR}/EFI/BOOT/startup.nsh" << 'EOF'
 @echo off
-echo Loading Vib-OS...
-\boot\vib-os.elf
+echo Loading OS8...
+\boot\OS8.elf
 EOF
 
 # Create ISO using xorriso or mkisofs
@@ -82,13 +82,13 @@ if command -v xorriso &> /dev/null; then
     # Use xorriso (preferred)
     xorriso -as mkisofs \
         -R -J \
-        -V "VIB-OS" \
+        -V "OS8" \
         -o "${OUTPUT_ISO}" \
         "${ISO_DIR}"
 elif command -v mkisofs &> /dev/null; then
     # Use mkisofs
     mkisofs -R -J \
-        -V "VIB-OS" \
+        -V "OS8" \
         -o "${OUTPUT_ISO}" \
         "${ISO_DIR}"
 elif command -v hdiutil &> /dev/null; then
@@ -117,7 +117,7 @@ echo ""
 echo "1. Open VirtualBox"
 echo "2. Click 'New' to create a new VM"
 echo "3. Settings:"
-echo "   - Name: Vib-OS"
+echo "   - Name: OS8"
 echo "   - Type: Other"
 echo "   - Version: Other/Unknown (64-bit)"
 echo "   - Memory: 2048 MB or more"

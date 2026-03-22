@@ -1,5 +1,5 @@
 /*
- * Vib-OS - GUI Windowing System
+ * OS8 - GUI Windowing System
  *
  * Complete window manager with compositor and widget toolkit.
  */
@@ -3142,6 +3142,7 @@ static void save_account_state(void) {
 
 static int load_install_target_disk_location(char *buf, int max) {
   char manifest[256];
+  int fallback_disk = -1;
 
   if (!buf || max <= 0)
     return -1;
@@ -3149,6 +3150,23 @@ static int load_install_target_disk_location(char *buf, int max) {
 
   if (read_text_file("/System/install-target.cfg", manifest, sizeof(manifest)) <
       0) {
+    extern int storage_get_disk_count(void);
+    extern int storage_get_disk_kind(int index);
+    extern int storage_get_disk_location(int index, char *buf, int max);
+    int disk_count = storage_get_disk_count();
+
+    for (int i = 0; i < disk_count; i++) {
+      int kind = storage_get_disk_kind(i);
+      if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
+        continue;
+      fallback_disk = i;
+      break;
+    }
+
+    if (fallback_disk >= 0 &&
+        storage_get_disk_location(fallback_disk, buf, max) == 0 && buf[0]) {
+      return 0;
+    }
     return -1;
   }
 
@@ -4626,7 +4644,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
   }
 
   gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 18, "OS next stage Installer",
+  gui_draw_string(card_x + 18, card_y + 18, "OS8 Installer",
                   0xFFFFFF, 0x232337);
   gui_draw_string(card_x + 18, card_y + 42,
                   "This ISO boots directly into the installer environment.",
@@ -4702,7 +4720,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                                        ? "Create Storage"
                                        : "Create Account";
     const char *headline = startup_setup_welcome_active()
-                               ? "Set up your vib-OS account"
+                               ? "Set up your OS8 account"
                                : startup_setup_storage_active()
                                      ? "Finish the storage setup"
                                      : "Create the owner account";
@@ -4749,7 +4767,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
 
     gui_fill_rect_alpha(panel_x, panel_y, rail_w, panel_h, 0x0C1730CC);
     gui_draw_rect(panel_x + 24, panel_y + 28, 56, 56, 0x2563EB);
-    gui_draw_string(panel_x + 100, panel_y + 36, "vib-OS Setup", 0xFFFFFF,
+    gui_draw_string(panel_x + 100, panel_y + 36, "OS8 Setup", 0xFFFFFF,
                     0x0C1730);
     gui_draw_string(panel_x + 100, panel_y + 58, "Locked setup workspace",
                     0xBFDBFE, 0x0C1730);
@@ -4815,7 +4833,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
 
   if (startup_setup_welcome_active()) {
     gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
-    gui_draw_string(content_x + 20, content_y + 18, "Welcome to vib-OS",
+    gui_draw_string(content_x + 20, content_y + 18, "Welcome to OS8",
                     0xFFFFFF, 0x181827);
     gui_draw_string(content_x + 20, content_y + 78,
                     "This setup will create your account before login.",
@@ -6405,7 +6423,7 @@ static void draw_window(struct window *win) {
   /* Help */
   else if (win->title[0] == 'H' && win->title[1] == 'e') {
     int yy = content_y + 10;
-    gui_draw_string(content_x + 10, yy, "OS next stage Help", 0x89B4FA, THEME_BG);
+    gui_draw_string(content_x + 10, yy, "OS8 Help", 0x89B4FA, THEME_BG);
     yy += 24;
     gui_draw_string(content_x + 10, yy, "Mouse:", 0xF9E2AF, THEME_BG);
     yy += 18;
@@ -6450,7 +6468,7 @@ static void draw_window(struct window *win) {
     yy += 52;
 
     /* OS Name - large and centered */
-    gui_draw_string(center_x - 58, yy, "OS next stage", 0xFFFFFF, THEME_BG);
+    gui_draw_string(center_x - 58, yy, "OS8", 0xFFFFFF, THEME_BG);
     yy += 24;
 
     /* Version */
@@ -6462,7 +6480,7 @@ static void draw_window(struct window *win) {
     yy += 10;
     gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
     yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        OS next stage v8.0.0",
+    gui_draw_string(content_x + 30, yy, "Kernel:        OS8 v8.0.0",
                     0xCDD6F4, 0x252535);
     yy += 18;
     gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
@@ -10021,7 +10039,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
     /* Draw the actual OS logo and centered brand text */
     {
-      const char *logo = "OS next stage";
+      const char *logo = "OS8";
       int logo_len = 0;
       int logo_scale = 5;
       int logo_size = 14 * logo_scale;
@@ -10053,7 +10071,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
       const char *loading_msgs[] = {"Initializing hardware...",
                                     "Loading desktop environment...",
                                     "Starting services...",
-                                    "Welcome to OS next stage!"};
+                                    "Welcome to OS8!"};
 
       gui_draw_string(ver_x, ver_y, version, 0x9CA3AF, 0x00000000);
       gui_draw_rect(bar_x, bar_y, bar_w, bar_h, 0x27272A);

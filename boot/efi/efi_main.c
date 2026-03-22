@@ -217,7 +217,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         gST->ConOut->OutputString(gST->ConOut, (uint16_t *)L"\r\n");
     }
     
-    efi_print("OS next stage EFI Boot Stub\r\n");
+    efi_print("OS8 EFI Boot Stub\r\n");
     efi_print("====================\r\n\r\n");
     
     /* Print firmware info */

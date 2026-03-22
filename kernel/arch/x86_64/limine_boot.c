@@ -1,5 +1,5 @@
 /*
- * Vib-OS Limine boot entry for x86_64
+ * OS8 Limine boot entry for x86_64
  *
  * Based on working-os pattern that boots successfully on real hardware.
  * Uses the Limine Boot Protocol for clean 64-bit entry.
@@ -406,7 +406,7 @@ static void draw_test_pattern(void *fb_addr, uint64_t width, uint64_t height, ui
         }
     }
 
-    /* Draw "VIB-OS" text approximation with colored blocks */
+    /* Draw "OS8" text approximation with colored blocks */
     uint64_t text_y = height / 2 - 20;
     uint64_t text_x = width / 2 - 80;
     volatile uint32_t *text_row = (volatile uint32_t *)(fb + text_y * pitch);
@@ -465,7 +465,7 @@ extern void kernel_main(void *dtb);
 void limine_entry_main(void) {
     /* Initialize serial for debug output */
     serial_init();
-    serial_puts("\n\n=== OS next stage ===\n");
+    serial_puts("\n\n=== OS8 ===\n");
     serial_puts("Kernel entry point reached!\n");
 
     x86_64_boot_install_idt();

@@ -1,5 +1,5 @@
 /*
- * Vib-OS libc - fcntl.h
+ * OS8 libc - fcntl.h
  */
 
 #ifndef _FCNTL_H

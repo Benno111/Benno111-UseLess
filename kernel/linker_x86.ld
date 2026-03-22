@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel Linker Script
+ * OS8 Kernel Linker Script
  * x86 (32-bit) kernel linking configuration
  */
 

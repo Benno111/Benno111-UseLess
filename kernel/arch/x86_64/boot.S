@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel - x86_64 Boot Assembly
+ * OS8 Kernel - x86_64 Boot Assembly
  * Entry point for the kernel after UEFI/GRUB bootloader
  * 
  * This file handles:

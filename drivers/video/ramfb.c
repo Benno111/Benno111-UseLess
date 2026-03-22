@@ -1,5 +1,5 @@
 /*
- * Vib-OS - QEMU ramfb Display Driver
+ * OS8 - QEMU ramfb Display Driver
  *
  * Implements the ramfb (RAM framebuffer) protocol for QEMU display.
  * This uses QEMU's fw_cfg interface to configure a simple framebuffer.

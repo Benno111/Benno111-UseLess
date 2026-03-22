@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Sandbox Implementation
+ * OS8 Kernel - Sandbox Implementation
  *
  * Provides fault-tolerant execution for media decoders and other
  * potentially unsafe code. Uses simplified setjmp/longjmp-style

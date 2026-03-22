@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel API for Userspace Applications
+ * OS8 Kernel API for Userspace Applications
  * 
  * IMPORTANT: This structure MUST match user/lib/vibe.h exactly!
  * Userspace programs depend on the exact field layout.

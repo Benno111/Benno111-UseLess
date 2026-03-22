@@ -10,7 +10,7 @@ $arm64Kernel = Join-Path $repoRoot "build\kernel\unixos.elf"
 
 function Write-Header {
     Write-Host ""
-    Write-Host "OS next stage launcher" -ForegroundColor Cyan
+    Write-Host "OS8 launcher" -ForegroundColor Cyan
     Write-Host "Repository: $repoRoot" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "1. x86_64 UEFI (Recommended)"

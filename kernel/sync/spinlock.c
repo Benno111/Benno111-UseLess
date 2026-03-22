@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Spinlock Implementation
+ * OS8 Kernel - Spinlock Implementation
  *
  * Architecture-specific spinlock implementations using atomic operations.
  * Provides mutual exclusion for multiprocessor and interrupt safety.

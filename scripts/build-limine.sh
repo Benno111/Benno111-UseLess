@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build Vib-OS for Limine bootloader and create bootable USB
+# Build OS8 for Limine bootloader and create bootable USB
 set -e
 
 cd "$(dirname "$0")/.."
 
-echo "=== Building Vib-OS with Limine bootloader ==="
+echo "=== Building OS8 with Limine bootloader ==="
 
 # Build kernel with Limine linker script (x86_64 only)
 KERNEL_SOURCES=$(find kernel -name '*.c' \

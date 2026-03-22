@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Application Framework
+ * OS8 - Application Framework
  *
  * Base framework for GUI applications.
  */
@@ -134,7 +134,7 @@ static void settings_draw(struct application *app) {
   y += 20;
   gui_draw_string(260, y, "About", 0xCDD6F4, 0x1E1E2E);
   y += 30;
-  gui_draw_string(270, y, "OS next stage v0.3.0", 0x808080, 0x1E1E2E);
+  gui_draw_string(270, y, "OS8 v0.3.0", 0x808080, 0x1E1E2E);
   y += 20;
 #ifdef ARCH_X86_64
   gui_draw_string(270, y, "x86_64 Operating System", 0x808080, 0x1E1E2E);
@@ -309,7 +309,7 @@ static void help_draw(struct application *app) {
   int base_y = 132;
   int y = base_y;
 
-  gui_draw_string(base_x + 10, y, "OS next stage Help", 0x89B4FA, 0x1E1E2E);
+  gui_draw_string(base_x + 10, y, "OS8 Help", 0x89B4FA, 0x1E1E2E);
   y += 24;
   gui_draw_string(base_x + 10, y, "================", 0x89B4FA, 0x1E1E2E);
   y += 24;
@@ -341,7 +341,7 @@ static void help_draw(struct application *app) {
                   0xCDD6F4, 0x1E1E2E);
   y += 24;
 
-  gui_draw_string(base_x + 10, y, "Copyright 2026 OS next stage Project", 0x585B70,
+  gui_draw_string(base_x + 10, y, "Copyright 2026 OS8 Project", 0x585B70,
                   0x1E1E2E);
 }
 

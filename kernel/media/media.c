@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Media helpers (JPEG/MP3 decoding)
+ * OS8 - Media helpers (JPEG/MP3 decoding)
  */
 
 #include "media/media.h"

@@ -1,5 +1,5 @@
 /*
- * Vib-OS - PCI Driver
+ * OS8 - PCI Driver
  *
  * Basic PCI Express ECAM support for QEMU 'virt' machine
  */

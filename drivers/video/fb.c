@@ -1,5 +1,5 @@
 /*
- * Vib-OS - virtio-gpu Framebuffer Driver
+ * OS8 - virtio-gpu Framebuffer Driver
  * 
  * Simple framebuffer using virtio-gpu for QEMU/UTM display.
  */
@@ -163,9 +163,9 @@ void fb_show_splash(void)
     int cx = framebuffer.width / 2;
     int cy = framebuffer.height / 2 - 50;
     
-    /* Simple "Vib-OS" text */
+    /* Simple "OS8" text */
     fb_fill_rect(cx - 60, cy - 30, 120, 60, 0x89B4FA);  /* Blue box */
-    fb_draw_string(cx - 28, cy - 4, "Vib-OS", 0xFFFFFF, 0x89B4FA);
+    fb_draw_string(cx - 28, cy - 4, "OS8", 0xFFFFFF, 0x89B4FA);
     
     /* Boot message */
     fb_draw_string(cx - 60, cy + 50, "ARM64 Operating System", 0xCDD6F4, 0x1E1E2E);
@@ -178,7 +178,7 @@ void fb_show_x86_64_bringup_screen(void)
 
     fb_clear(0x101820);
 
-    fb_draw_string(40, 40, "OS next stage", 0xFFFFFF, 0x101820);
+    fb_draw_string(40, 40, "OS8", 0xFFFFFF, 0x101820);
     fb_draw_string(40, 64, "x86_64 bring-up mode", 0x89B4FA, 0x101820);
     fb_draw_string(40, 104, "Kernel started successfully.", 0xA6E3A1, 0x101820);
     fb_draw_string(40, 128, "Framebuffer is active.", 0xCDD6F4, 0x101820);

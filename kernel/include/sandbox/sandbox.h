@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Sandbox Execution Framework
+ * OS8 Kernel - Sandbox Execution Framework
  *
  * Provides fault-tolerant execution environment for untrusted code
  * such as media decoders. If the sandboxed code crashes, the kernel

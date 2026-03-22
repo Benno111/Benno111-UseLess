@@ -1,6 +1,6 @@
-# OS next stage
+# OS8
 
-OS next stage is a hobby Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
+OS8 is a hobby Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
 
 ## License
 
@@ -282,6 +282,5 @@ If you are changing boot or installer behavior, always check:
 - the staged `/setup/` tree in installer mode
 
 Those paths are often the fastest way to see whether a change landed in the runtime you actually booted.
-
 
 

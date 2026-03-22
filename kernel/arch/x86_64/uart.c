@@ -1,5 +1,5 @@
 /*
- * Vib-OS Kernel - x86_64 Serial Port (16550 UART) Driver
+ * OS8 Kernel - x86_64 Serial Port (16550 UART) Driver
  * 
  * Supports standard PC serial ports (COM1-COM4)
  */

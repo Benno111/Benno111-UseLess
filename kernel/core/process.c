@@ -1,5 +1,5 @@
 /*
- * Vib-OS Process Management (ported from VibeOS)
+ * OS8 Process Management (ported from VibeOS)
  *
  * Preemptive multitasking - timer IRQ forces context switches.
  * Programs run in kernel space and call kernel functions directly.

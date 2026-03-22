@@ -1,5 +1,5 @@
 /*
- * vib-OS Kernel - Full TCP/IP Network Stack
+ * OS8 Kernel - Full TCP/IP Network Stack
  * 
  * Complete implementation of Ethernet, ARP, IP, ICMP, UDP, TCP
  */

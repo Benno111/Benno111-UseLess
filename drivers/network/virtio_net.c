@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Virtio MMIO Network Driver
+ * OS8 - Virtio MMIO Network Driver
  */
 
 #include "types.h"

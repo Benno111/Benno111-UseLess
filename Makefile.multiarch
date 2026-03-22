@@ -1,4 +1,4 @@
-# Vib-OS Multi-Architecture Makefile
+# OS8 Multi-Architecture Makefile
 # Supports: ARM64, x86_64, x86 (BIOS)
 
 # ============================================================================
@@ -15,6 +15,7 @@ GENERATED_DIR := $(BUILD_DIR)/generated
 ASSETS_DIR := $(ROOT_DIR)/assets
 BUILD_ASSETS_DIR := $(BUILD_DIR)/assets
 BOOT_DIR := $(ROOT_DIR)/boot
+BOOTMANAGER_DIR := $(ROOT_DIR)/bootmanager
 KERNEL_DIR := $(ROOT_DIR)/kernel
 DRIVERS_DIR := $(ROOT_DIR)/drivers
 LIBC_DIR := $(ROOT_DIR)/libc
@@ -105,6 +106,7 @@ DEPFLAGS := -MMD -MP
 
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) $(ARCH_CFLAGS) \
                  -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(GENERATED_DIR) \
+                 -I$(ROOT_DIR) \
                  -fno-builtin -nostdlib -nostdinc \
                  -DARCH_$(shell echo $(ARCH) | tr a-z A-Z | tr - _)
 
@@ -148,6 +150,7 @@ KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/apps -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/drivers -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sync -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C += $(shell find $(KERNEL_DIR)/sandbox -name '*.c' 2>/dev/null)
+BOOTMANAGER_SOURCES_C := $(shell find $(BOOTMANAGER_DIR) -name '*.c' 2>/dev/null)
 KERNEL_SOURCES_C := $(filter-out \
 	$(KERNEL_DIR)/media/hd_wallpaper_landscape.c \
 	$(KERNEL_DIR)/media/hd_wallpaper_nature.c \
@@ -175,10 +178,11 @@ endif
 # Object files
 KERNEL_OBJECTS := $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(KERNEL_SOURCES_C))
 KERNEL_OBJECTS += $(patsubst $(KERNEL_DIR)/%.S,$(BUILD_DIR)/kernel/%.o,$(KERNEL_SOURCES_ASM))
+BOOTMANAGER_OBJECTS := $(patsubst $(BOOTMANAGER_DIR)/%.c,$(BUILD_DIR)/bootmanager/%.o,$(BOOTMANAGER_SOURCES_C))
 DRIVER_OBJECTS := $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/drivers/%.o,$(DRIVER_SOURCES))
-CODE_HASH_INPUTS := $(sort $(KERNEL_SOURCES_C) $(KERNEL_SOURCES_ASM) $(DRIVER_SOURCES) $(ROOT_DIR)/Makefile.multiarch)
+CODE_HASH_INPUTS := $(sort $(KERNEL_SOURCES_C) $(BOOTMANAGER_SOURCES_C) $(KERNEL_SOURCES_ASM) $(DRIVER_SOURCES) $(ROOT_DIR)/Makefile.multiarch)
 BUILD_METADATA_HEADER := $(GENERATED_DIR)/build_uuid.h
-ALL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
+ALL_OBJECTS := $(KERNEL_OBJECTS) $(BOOTMANAGER_OBJECTS) $(DRIVER_OBJECTS)
 ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 
 # ============================================================================
@@ -189,7 +193,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 
 all: kernel image
 	@echo "=========================================="
-	@echo "OS next stage $(ARCH) build complete!"
+	@echo "OS8 $(ARCH) build complete!"
 	@echo "=========================================="
 	@echo "Kernel: $(KERNEL_BINARY)"
 ifeq ($(ARCH),x86)
@@ -202,7 +206,7 @@ endif
 	@echo "Run 'make qemu' to test in emulator"
 
 help:
-	@echo "OS next stage Multi-Architecture Build System"
+	@echo "OS8 Multi-Architecture Build System"
 	@echo "======================================="
 	@echo ""
 	@echo "Usage: make [ARCH=<arch>] <target>"
@@ -251,6 +255,7 @@ $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)/kernel/drivers
 	@mkdir -p $(BUILD_DIR)/kernel/sync
 	@mkdir -p $(BUILD_DIR)/kernel/sandbox
+	@mkdir -p $(BUILD_DIR)/bootmanager
 	@mkdir -p $(BUILD_DIR)/drivers
 	@mkdir -p $(BUILD_ASSETS_DIR)
 	@mkdir -p $(IMAGE_DIR)
@@ -319,6 +324,11 @@ $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
 	@$(AS) $(ASFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/bootmanager/%.o: $(BOOTMANAGER_DIR)/%.c
+	@mkdir -p $(dir $@)
+	@echo "[CC] $<"
+	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
@@ -440,7 +450,7 @@ endif
 # ============================================================================
 
 qemu: image
-	@echo "[QEMU] Starting OS next stage $(ARCH) in emulator..."
+	@echo "[QEMU] Starting OS8 $(ARCH) in emulator..."
 ifeq ($(ARCH),arm64)
 	@$(MAKE) ARCH=$(ARCH) qemu-uefi
 else ifeq ($(ARCH),x86_64)
@@ -450,7 +460,7 @@ else ifeq ($(ARCH),x86)
 endif
 
 qemu-bios: image
-	@echo "[QEMU] Starting OS next stage $(ARCH) with BIOS boot..."
+	@echo "[QEMU] Starting OS8 $(ARCH) with BIOS boot..."
 ifeq ($(ARCH),x86_64)
 	@$(QEMU) $(QEMU_FLAGS) -cdrom $(ISO_IMAGE)
 else ifeq ($(ARCH),x86)
@@ -461,7 +471,7 @@ else
 endif
 
 qemu-uefi: image
-	@echo "[QEMU] Starting OS next stage $(ARCH) with UEFI boot..."
+	@echo "[QEMU] Starting OS8 $(ARCH) with UEFI boot..."
 ifeq ($(ARCH),arm64)
 	@if [ ! -f /usr/share/qemu-efi-aarch64/QEMU_EFI.fd ]; then \
 		echo "[ERROR] UEFI firmware not found. Install qemu-efi-aarch64."; \
@@ -486,7 +496,7 @@ else
 endif
 
 qemu-debug: image
-	@echo "[QEMU] Starting OS next stage $(ARCH) with GDB server on port 1234..."
+	@echo "[QEMU] Starting OS8 $(ARCH) with GDB server on port 1234..."
 ifeq ($(ARCH),arm64)
 	@$(MAKE) ARCH=$(ARCH) qemu-uefi QEMU_FLAGS="$(QEMU_FLAGS) -s -S"
 else ifeq ($(ARCH),x86_64)

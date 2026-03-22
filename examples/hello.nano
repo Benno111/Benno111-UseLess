@@ -1,4 +1,4 @@
-// Hello World in NanoLang for Vib-OS
+// Hello World in NanoLang for OS8
 // Run with: run hello.nano
 // Compile with: nanoc hello.nano -o hello
 
@@ -18,10 +18,10 @@ fn factorial(n: int) -> int {
 
 fn main() {
     print("========================================");
-    print("  Welcome to Vib-OS NanoLang Demo");
+    print("  Welcome to OS8 NanoLang Demo");
     print("========================================");
     
-    let message = greet("Vib-OS User");
+    let message = greet("OS8 User");
     print(message);
     
     // Factorial demo
@@ -30,5 +30,5 @@ fn main() {
     print("Factorial of 5 = " + result);
     
     print("");
-    print("NanoLang is working on Vib-OS!");
+    print("NanoLang is working on OS8!");
 }

@@ -1,5 +1,5 @@
 /*
- * Vib-OS - Kernel String/Memory Functions
+ * OS8 - Kernel String/Memory Functions
  */
 
 #include "types.h"

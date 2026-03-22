@@ -1,4 +1,4 @@
-# Vib-OS Master Makefile
+# OS8 Master Makefile
 # ARM64 OS for Apple Silicon and Raspberry Pi
 
 # ============================================================================
@@ -13,6 +13,7 @@ TARGET := aarch64-elf
 ROOT_DIR := $(shell pwd)
 BUILD_DIR := $(ROOT_DIR)/build
 BOOT_DIR := $(ROOT_DIR)/boot
+BOOTMANAGER_DIR := $(ROOT_DIR)/bootmanager
 KERNEL_DIR := $(ROOT_DIR)/kernel
 DRIVERS_DIR := $(ROOT_DIR)/drivers
 LIBC_DIR := $(ROOT_DIR)/libc
@@ -71,7 +72,7 @@ CFLAGS_COMMON := -Wall -Wextra -Wno-unused-function -ffreestanding -fstack-prote
                  -fno-pic -mcpu=cortex-a72 -O2 -g
 
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) \
-                 -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) \
+                 -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(ROOT_DIR) \
                  -mgeneral-regs-only \
                  -fno-builtin -nostdlib -nostdinc \
                  -DARCH_ARM64
@@ -104,13 +105,13 @@ X86_64_ARCH := x86_64
 
 all: kernel drivers libc userspace runtimes image
 	@echo "=========================================="
-	@echo "OS next stage build complete!"
+	@echo "OS8 build complete!"
 	@echo "=========================================="
 	@echo "Boot image: $(IMAGE_DIR)/unixos.img"
 	@echo "Run 'make qemu' to test in emulator"
 
 help:
-	@echo "OS next stage Build System"
+	@echo "OS8 Build System"
 	@echo "==================="
 	@echo ""
 	@echo "Build targets:"
@@ -147,6 +148,7 @@ help:
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(BUILD_DIR)/kernel
+	@mkdir -p $(BUILD_DIR)/bootmanager
 	@mkdir -p $(BUILD_DIR)/drivers
 	@mkdir -p $(BUILD_DIR)/libc
 	@mkdir -p $(BUILD_DIR)/userspace
@@ -164,16 +166,18 @@ $(IMAGE_DIR):
 # ============================================================================
 
 KERNEL_SOURCES := $(shell find $(KERNEL_DIR) -name '*.c' -o -name '*.S' 2>/dev/null | grep -v '/x86_64/' | grep -v '/x86/')
+BOOTMANAGER_SOURCES := $(shell find $(BOOTMANAGER_DIR) -name '*.c' 2>/dev/null)
 # Also include ARM64-specific assembly
 KERNEL_SOURCES += $(shell find $(KERNEL_DIR)/arch/arm64 -name '*.S' 2>/dev/null)
 KERNEL_OBJECTS := $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(filter %.c,$(KERNEL_SOURCES)))
 KERNEL_OBJECTS += $(patsubst $(KERNEL_DIR)/%.S,$(BUILD_DIR)/kernel/%.o,$(filter %.S,$(KERNEL_SOURCES)))
+BOOTMANAGER_OBJECTS := $(patsubst $(BOOTMANAGER_DIR)/%.c,$(BUILD_DIR)/bootmanager/%.o,$(BOOTMANAGER_SOURCES))
 
 # Include drivers in the kernel
 DRIVER_SOURCES := $(shell find $(DRIVERS_DIR) -name '*.c' 2>/dev/null)
 DRIVER_OBJECTS := $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/drivers/%.o,$(DRIVER_SOURCES))
 
-ALL_KERNEL_OBJECTS := $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
+ALL_KERNEL_OBJECTS := $(KERNEL_OBJECTS) $(BOOTMANAGER_OBJECTS) $(DRIVER_OBJECTS)
 KERNEL_BINARY := $(BUILD_DIR)/kernel/unixos.elf
 
 kernel: $(BUILD_DIR) $(ALL_KERNEL_OBJECTS) $(KERNEL_BINARY)
@@ -193,6 +197,11 @@ $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
 	@$(AS) $(CFLAGS_KERNEL) -c $< -o $@
+
+$(BUILD_DIR)/bootmanager/%.o: $(BOOTMANAGER_DIR)/%.c
+	@mkdir -p $(dir $@)
+	@echo "[CC] $<"
+	@$(CC) $(CFLAGS_KERNEL) -c $< -o $@
 
 $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
@@ -268,13 +277,13 @@ image: $(IMAGE_DIR) kernel drivers
 # ============================================================================
 
 qemu: kernel
-	@echo "[QEMU] Starting OS next stage in emulator (direct kernel boot)..."
+	@echo "[QEMU] Starting OS8 in emulator (direct kernel boot)..."
 	@$(QEMU) -M virt,gic-version=3 -cpu max -m 4G \
 		-nographic \
 		-kernel $(BUILD_DIR)/kernel/unixos.elf
 
 qemu-uefi: image
-	@echo "[QEMU] Starting OS next stage with UEFI boot..."
+	@echo "[QEMU] Starting OS8 with UEFI boot..."
 	@echo "[QEMU] Note: Requires UEFI firmware (AAVMF)"
 	@if [ ! -f /usr/share/qemu-efi-aarch64/QEMU_EFI.fd ]; then \
 		echo "[ERROR] UEFI firmware not found. Install qemu-efi-aarch64 package."; \
@@ -288,7 +297,7 @@ qemu-uefi: image
 		-device virtio-blk-device,drive=hd0
 
 qemu-debug: kernel
-	@echo "[QEMU] Starting OS next stage with GDB server on port 1234..."
+	@echo "[QEMU] Starting OS8 with GDB server on port 1234..."
 	@$(QEMU) -M virt,gic-version=3 -cpu max -m 4G \
 		-nographic \
 		-kernel $(BUILD_DIR)/kernel/unixos.elf \
@@ -307,11 +316,11 @@ test: kernel
 # ============================================================================
 
 run: kernel
-	@echo "[RUN] Starting OS next stage in QEMU..."
+	@echo "[RUN] Starting OS8 in QEMU..."
 	@qemu-system-aarch64 -M virt,gic-version=3 -cpu max -m 4G -nographic -kernel $(KERNEL_BINARY)
 
 run-gui: kernel
-	@echo "[RUN] Starting OS next stage with GUI display..."
+	@echo "[RUN] Starting OS8 with GUI display..."
 	@qemu-system-aarch64 -M virt,gic-version=3 \
 		-cpu max -m 512M \
 		-global virtio-mmio.force-legacy=false \
@@ -326,7 +335,7 @@ run-gui: kernel
 		-kernel $(KERNEL_BINARY)
 
 run-gpu: kernel
-	@echo "[RUN] Starting OS next stage with virtio-GPU acceleration..."
+	@echo "[RUN] Starting OS8 with virtio-GPU acceleration..."
 	@qemu-system-aarch64 -M virt,gic-version=3 \
 		-cpu max -m 512M \
 		-global virtio-mmio.force-legacy=false \

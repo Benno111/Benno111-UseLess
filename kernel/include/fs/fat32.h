@@ -1,5 +1,5 @@
 /*
- * vib-OS - FAT32 Filesystem Header
+ * OS8 - FAT32 Filesystem Header
  */
 
 #ifndef _FS_FAT32_H

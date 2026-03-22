@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert toolbar PNG icons to C arrays for vib-OS kernel.
+Convert toolbar PNG icons to C arrays for OS8 kernel.
 Icons should be 24x24 RGBA PNGs in the same directory.
 """
 
@@ -157,7 +157,7 @@ def main():
     # Generate C header
     output = []
     output.append("/*")
-    output.append(" * Toolbar Icons for vib-OS Image Viewer")
+    output.append(" * Toolbar Icons for OS8 Image Viewer")
     output.append(" * Auto-generated 24x24 RGBA icons")
     output.append(" */")
     output.append("")

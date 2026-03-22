@@ -148,7 +148,7 @@ void vfs_seed_content(void) {
   
   f = vfs_open("/Desktop/readme.txt", O_CREAT | O_WRONLY);
   if (f) {
-    const char *txt = "Welcome to OS next stage!\n\nThis is a demo operating system.\n";
+    const char *txt = "Welcome to OS8!\n\nThis is a demo operating system.\n";
     vfs_write(f, txt, strlen(txt));
     vfs_close(f);
   }

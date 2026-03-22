@@ -1,5 +1,5 @@
 /*
- * Vib-OS - USB Host Controller Driver (XHCI)
+ * OS8 - USB Host Controller Driver (XHCI)
  *
  * USB 3.0/3.1/3.2 Host Controller Interface.
  */

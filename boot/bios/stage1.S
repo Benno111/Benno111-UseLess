@@ -1,5 +1,5 @@
 /*
- * OS next stage BIOS text installer - stage 1
+ * OS8 BIOS text installer - stage 1
  *
  * This is a BIOS volume boot sector for the DOS-style installer path.
  * It carries a minimal FAT-style BPB so chainloaders recognise it as a
@@ -166,7 +166,7 @@ load_stage2:
 /* ===================================================================== */
 
 msg_boot:
-    .asciz  "OS next stage Stage 1\r\n"
+    .asciz  "OS8 Stage 1\r\n"
 
 msg_stage2:
     .asciz  "Loading Stage 2...\r\n"
