@@ -16,6 +16,7 @@
 #include "media/media.h"
 #include "mm/kmalloc.h"
 #include "printk.h"
+#include "../../shared/password_hash.h"
 #include "toolbar_icons.h" /* Toolbar icons for image viewer */
 #include "types.h"
 
@@ -2165,7 +2166,7 @@ typedef enum {
 static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
 static int session_authenticated = 1;
 static char account_username[32] = "";
-static char account_password[32] = "";
+static char account_password[33] = "";
 static char startup_input_username[32] = "";
 static char startup_input_password[32] = "";
 static int startup_active_field = 0;
@@ -2607,6 +2608,7 @@ static void append_input_char(char *buf, int max, int key) {
 
 static void load_account_state(void) {
   char manifest[160];
+  char legacy_password[32];
 
   account_username[0] = '\0';
   account_password[0] = '\0';
@@ -2615,8 +2617,19 @@ static void load_account_state(void) {
 
   manifest_get_value(manifest, "username", account_username,
                      sizeof(account_username));
-  manifest_get_value(manifest, "password", account_password,
-                     sizeof(account_password));
+  if (manifest_get_value(manifest, "password_hash", account_password,
+                         sizeof(account_password)) == 0 &&
+      account_password[0]) {
+    return;
+  }
+
+  legacy_password[0] = '\0';
+  if (manifest_get_value(manifest, "password", legacy_password,
+                         sizeof(legacy_password)) == 0 &&
+      account_username[0] && legacy_password[0]) {
+    vib_password_hash_hex(account_username, legacy_password, account_password,
+                          sizeof(account_password));
+  }
 }
 
 static void load_setup_state(int *setup_complete, int *apps_seeded,
@@ -2671,7 +2684,7 @@ static void save_setup_state(int setup_complete, int apps_seeded) {
 }
 
 static void save_account_state(void) {
-  char manifest[160];
+  char manifest[192];
   int idx = 0;
 
   for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
@@ -2679,7 +2692,8 @@ static void save_account_state(void) {
   for (int i = 0; account_username[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = account_username[i];
   manifest[idx++] = '\n';
-  for (const char *p = "password="; *p && idx < (int)sizeof(manifest) - 1; p++)
+  for (const char *p = "password_hash=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
   for (int i = 0; account_password[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = account_password[i];
@@ -2787,6 +2801,7 @@ static void complete_startup_auth(void) {
 static void submit_startup_flow(void) {
   if (startup_flow == STARTUP_FLOW_SETUP_ACCOUNT) {
     char user_home[96];
+    char password_hash[33];
     int idx = 0;
 
     if (!startup_input_username[0] || !startup_input_password[0]) {
@@ -2795,8 +2810,9 @@ static void submit_startup_flow(void) {
     }
     str_copy_safe(account_username, startup_input_username,
                   sizeof(account_username));
-    str_copy_safe(account_password, startup_input_password,
-                  sizeof(account_password));
+    vib_password_hash_hex(account_username, startup_input_password,
+                          password_hash, sizeof(password_hash));
+    str_copy_safe(account_password, password_hash, sizeof(account_password));
     vfs_mkdir("/Users", 0755);
     str_copy_safe(user_home, "/Users/", sizeof(user_home));
     idx = 7;
@@ -2812,12 +2828,18 @@ static void submit_startup_flow(void) {
     return;
   }
 
-  if (str_cmp(startup_input_username, account_username) == 0 &&
-      str_cmp(startup_input_password, account_password) == 0) {
-    complete_startup_auth();
-  } else {
-    set_startup_status("Login failed. Check your username and password.");
+  if (str_cmp(startup_input_username, account_username) == 0) {
+    char password_hash[33];
+
+    vib_password_hash_hex(startup_input_username, startup_input_password,
+                          password_hash, sizeof(password_hash));
+    if (vib_secure_string_eq(password_hash, account_password)) {
+      complete_startup_auth();
+      return;
+    }
   }
+
+  set_startup_status("Login failed. Check your username and password.");
 }
 
 static void startup_handle_key(int key) {

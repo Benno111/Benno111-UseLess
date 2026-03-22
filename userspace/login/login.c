@@ -8,77 +8,182 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "../../shared/password_hash.h"
+
+#define ACCOUNT_CONFIG_PATH "/System/account.cfg"
 #define MAX_USER_LEN 32
 #define MAX_PASS_LEN 32
+#define MAX_HOME_LEN 96
+#define MAX_SHELL_LEN 32
 
-/* Simple hardcoded credentials for now */
 struct user_cred {
-  const char *username;
-  const char *password;
+  char username[MAX_USER_LEN];
+  char password_hash[33];
   uid_t uid;
   gid_t gid;
-  const char *home;
-  const char *shell;
+  char home[MAX_HOME_LEN];
+  char shell[MAX_SHELL_LEN];
+  int configured;
 };
 
-static struct user_cred users[] = {
-    {"root", "secret", 0, 0, "/root", "/bin/sh"},
-    {"guest", "", 1000, 1000, "/home/guest", "/bin/sh"},
-    {NULL, NULL, 0, 0, NULL, NULL}};
+static void trim_newline(char *buf) {
+  size_t len;
 
-static void get_password(char *buf, size_t len) {
-  /* For now, just read with echo enabled since we lack termios */
-  printf("(visible) ");
-  fgets(buf, len, stdin);
+  if (!buf)
+    return;
 
-  /* Remove newline */
-  size_t slen = strlen(buf);
-  if (slen > 0 && buf[slen - 1] == '\n') {
-    buf[slen - 1] = '\0';
+  len = strlen(buf);
+  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+    buf[len - 1] = '\0';
+    len--;
   }
 }
 
-static struct user_cred *authenticate(const char *user, const char *pass) {
-  for (int i = 0; users[i].username; i++) {
-    if (strcmp(user, users[i].username) == 0) {
-      /* Empty password for guest */
-      if (strlen(users[i].password) == 0)
-        return &users[i];
+static void build_default_home(const char *username, char *out, size_t len) {
+  if (!out || len == 0)
+    return;
 
-      if (strcmp(pass, users[i].password) == 0) {
-        return &users[i];
-      }
-    }
+  if (username && strcmp(username, "root") == 0) {
+    snprintf(out, len, "/root");
+    return;
   }
-  return NULL;
+
+  snprintf(out, len, "/Users/%s", username ? username : "user");
+}
+
+static int manifest_get_value(const char *manifest, const char *key, char *out,
+                              size_t max) {
+  size_t key_len = 0;
+  size_t i = 0;
+
+  if (!manifest || !key || !out || max == 0)
+    return -1;
+
+  while (key[key_len])
+    key_len++;
+
+  while (manifest[i]) {
+    size_t j = 0;
+
+    while (j < key_len && manifest[i + j] == key[j])
+      j++;
+    if (j == key_len && manifest[i + j] == '=') {
+      size_t out_idx = 0;
+      i += key_len + 1;
+      while (manifest[i] && manifest[i] != '\n' && manifest[i] != '\r' &&
+             out_idx < max - 1) {
+        out[out_idx++] = manifest[i++];
+      }
+      out[out_idx] = '\0';
+      return 0;
+    }
+
+    while (manifest[i] && manifest[i] != '\n')
+      i++;
+    if (manifest[i] == '\n')
+      i++;
+  }
+
+  out[0] = '\0';
+  return -1;
+}
+
+static int load_system_account(struct user_cred *cred) {
+  FILE *fp;
+  char manifest[192];
+  size_t bytes;
+  char legacy_password[MAX_PASS_LEN];
+
+  if (!cred)
+    return -1;
+
+  memset(cred, 0, sizeof(*cred));
+  strcpy(cred->shell, "/bin/sh");
+
+  fp = fopen(ACCOUNT_CONFIG_PATH, "r");
+  if (!fp)
+    return -1;
+
+  bytes = fread(manifest, 1, sizeof(manifest) - 1, fp);
+  fclose(fp);
+  if (bytes == 0)
+    return -1;
+  manifest[bytes] = '\0';
+
+  if (manifest_get_value(manifest, "username", cred->username,
+                         sizeof(cred->username)) != 0 ||
+      !cred->username[0]) {
+    return -1;
+  }
+
+  if (manifest_get_value(manifest, "password_hash", cred->password_hash,
+                         sizeof(cred->password_hash)) != 0 ||
+      !cred->password_hash[0]) {
+    legacy_password[0] = '\0';
+    if (manifest_get_value(manifest, "password", legacy_password,
+                           sizeof(legacy_password)) != 0 ||
+        !legacy_password[0]) {
+      return -1;
+    }
+    vib_password_hash_hex(cred->username, legacy_password, cred->password_hash,
+                          sizeof(cred->password_hash));
+  }
+
+  build_default_home(cred->username, cred->home, sizeof(cred->home));
+  cred->uid = strcmp(cred->username, "root") == 0 ? 0 : 1000;
+  cred->gid = cred->uid;
+  cred->configured = 1;
+  return 0;
+}
+
+static void get_password(char *buf, size_t len) {
+  printf("(visible) ");
+  if (!fgets(buf, (int)len, stdin)) {
+    if (len > 0)
+      buf[0] = '\0';
+    return;
+  }
+  trim_newline(buf);
+}
+
+static int authenticate(const struct user_cred *cred, const char *user,
+                        const char *pass) {
+  char password_hash[33];
+
+  if (!cred || !cred->configured || !user || !pass)
+    return 0;
+  if (strcmp(user, cred->username) != 0)
+    return 0;
+
+  vib_password_hash_hex(user, pass, password_hash, sizeof(password_hash));
+  return vib_secure_string_eq(password_hash, cred->password_hash);
 }
 
 int main(int argc, char *argv[]) {
   char username[MAX_USER_LEN];
   char password[MAX_PASS_LEN];
-  struct user_cred *cred = NULL;
+  struct user_cred cred;
 
   (void)argc;
   (void)argv;
 
-  /* Clear screen */
   printf("\033[2J\033[H");
-
   printf("Welcome to vib-OS v8.0.0\n");
   printf("Kernel 8.0.0-arm64 on an aarch64\n\n");
 
   while (1) {
-    printf("vib-os login: ");
-    fflush(stdout);
-
-    if (fgets(username, sizeof(username), stdin) == NULL) {
+    if (load_system_account(&cred) != 0) {
+      printf("No configured account found. Run setup first.\n");
+      sleep(2);
       continue;
     }
 
-    size_t len = strlen(username);
-    if (len > 0 && username[len - 1] == '\n') {
-      username[len - 1] = '\0';
-    }
+    printf("vib-os login: ");
+    fflush(stdout);
+
+    if (fgets(username, sizeof(username), stdin) == NULL)
+      continue;
+    trim_newline(username);
 
     if (strlen(username) == 0)
       continue;
@@ -87,36 +192,26 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
     get_password(password, sizeof(password));
 
-    cred = authenticate(username, password);
+    if (authenticate(&cred, username, password)) {
+      char home_env[MAX_HOME_LEN + 5];
+      char shell_env[MAX_SHELL_LEN + 7];
+      char *shell_argv[] = {cred.shell, "-l", NULL};
+      char *envp[] = {home_env, "PATH=/bin:/sbin:/usr/bin:/usr/sbin",
+                      shell_env, "TERM=linux", NULL};
 
-    if (cred) {
-      printf("\nLogin successful.\n");
-      printf("Last login: Mon Jan 20 2026 on tty1\n\n");
+      snprintf(home_env, sizeof(home_env), "HOME=%s", cred.home);
+      snprintf(shell_env, sizeof(shell_env), "SHELL=%s", cred.shell);
 
-      /* Set UID/GID (Stub - need syscalls) */
-      // setgid(cred->gid);
-      // setuid(cred->uid);
+      printf("\nLogin successful.\n\n");
+      chdir(cred.home);
+      execve(cred.shell, shell_argv, envp);
 
-      /* Set env */
-      // setenv not in minimal libc, use putenv if available or skip
-      // setenv("HOME", cred->home, 1);
-
-      chdir(cred->home);
-
-      /* Execute shell */
-      char *shell_argv[] = {(char *)cred->shell, "-l", NULL};
-
-      // execv(cred->shell, shell_argv); --> use execve
-      char *envp[] = {"HOME=/root", "PATH=/bin:/sbin:/usr/bin:/usr/sbin",
-                      "SHELL=/bin/sh", "TERM=linux", NULL};
-      execve(cred->shell, shell_argv, envp);
-
-      printf("Failed to execute shell: %s\n", cred->shell);
+      printf("Failed to execute shell: %s\n", cred.shell);
       exit(1);
-    } else {
-      printf("\nLogin incorrect\n\n");
-      sleep(2);
     }
+
+    printf("\nLogin incorrect\n\n");
+    sleep(2);
   }
 
   return 0;
