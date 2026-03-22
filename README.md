@@ -2,6 +2,16 @@
 
 OS next stage is a hobby Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
 
+## License
+
+This repository is released under a very restrictive proprietary license.
+
+- All rights are reserved for the original project material.
+- No copying, modification, redistribution, derivative works, or reuse is permitted without prior written permission.
+- Third-party components bundled in the repository keep their own separate license terms where noted.
+
+See [LICENSE](LICENSE) for the full terms.
+
 The repository currently targets:
 
 - `arm64` for the main UEFI-based build flow
@@ -272,7 +282,6 @@ If you are changing boot or installer behavior, always check:
 - the staged `/setup/` tree in installer mode
 
 Those paths are often the fastest way to see whether a change landed in the runtime you actually booted.
-
 
 
 
