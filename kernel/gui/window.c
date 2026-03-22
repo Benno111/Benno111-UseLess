@@ -55,6 +55,13 @@ static void installer_ensure_parent_dirs(const char *path);
 static int write_text_file(const char *path, const char *content);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
+static const char *resolve_user_storage_path(const char *path, char *buf,
+                                             int max);
+static void ensure_user_storage_dirs(void);
+static int user_storage_mkdir(const char *path, mode_t mode);
+static int user_storage_unlink(const char *path);
+static int user_storage_rmdir(const char *path);
+static int user_storage_rename(const char *old_path, const char *new_path);
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 void compositor_mark_full_redraw(void);
