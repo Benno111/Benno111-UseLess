@@ -156,8 +156,7 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 static int session_authenticated = 1;
 
 static int dock_is_visible(void) {
-  extern int boot_is_usb_boot(void);
-  return !boot_is_usb_boot() && session_authenticated && !startup_flow_active();
+  return session_authenticated && !startup_flow_active();
 }
 
 static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT : 0; }
