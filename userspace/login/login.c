@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -40,12 +41,30 @@ static void trim_newline(char *buf) {
 }
 
 static void build_default_home(const char *username, char *out, size_t len) {
+  static const char *persistent_roots[] = {"/Persist", "/persist", "/disk",
+                                           "/mnt/disk"};
+  char candidate[MAX_HOME_LEN];
+
   if (!out || len == 0)
     return;
 
   if (username && strcmp(username, "root") == 0) {
     snprintf(out, len, "/root");
     return;
+  }
+
+  for (size_t i = 0; i < sizeof(persistent_roots) / sizeof(persistent_roots[0]);
+       i++) {
+    int fd;
+
+    snprintf(candidate, sizeof(candidate), "%s/Users/%s", persistent_roots[i],
+             username ? username : "user");
+    fd = open(candidate, O_RDONLY);
+    if (fd >= 0) {
+      close(fd);
+      snprintf(out, len, "%s", candidate);
+      return;
+    }
   }
 
   snprintf(out, len, "/Users/%s", username ? username : "user");

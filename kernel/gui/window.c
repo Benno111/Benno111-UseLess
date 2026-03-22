@@ -488,6 +488,8 @@ static void notepad_reset_document(void) {
 
 static int notepad_load_file(const char *path) {
   struct file *f;
+  char resolved_path[256];
+  const char *open_path;
   int bytes;
 
   if (!path || !path[0]) {
@@ -495,7 +497,9 @@ static int notepad_load_file(const char *path) {
     return -1;
   }
 
-  f = vfs_open(path, O_RDONLY, 0);
+  open_path = resolve_user_storage_path(path, resolved_path,
+                                        sizeof(resolved_path));
+  f = vfs_open(open_path, O_RDONLY, 0);
   if (!f) {
     notepad_set_status("Open failed");
     return -1;
@@ -2163,7 +2167,13 @@ typedef enum {
   STARTUP_FLOW_LOGIN
 } startup_flow_t;
 
+typedef enum {
+  STARTUP_SETUP_PAGE_WELCOME = 0,
+  STARTUP_SETUP_PAGE_ACCOUNT
+} startup_setup_page_t;
+
 static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
+static startup_setup_page_t startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
 static int session_authenticated = 1;
 static char account_username[32] = "";
 static char account_password[33] = "";
@@ -2379,6 +2389,95 @@ static int installer_get_persistent_root(char *buf, int max) {
   return -1;
 }
 
+static int path_is_user_storage(const char *path) {
+  if (!path)
+    return 0;
+  return str_cmp(path, "/Users") == 0 ||
+         (path[0] == '/' && path[1] == 'U' && path[2] == 's' &&
+          path[3] == 'e' && path[4] == 'r' && path[5] == 's' &&
+          path[6] == '/');
+}
+
+static const char *resolve_user_storage_path(const char *path, char *buf,
+                                             int max) {
+  char persistent_root[64];
+  int idx = 0;
+
+  if (!path || !buf || max <= 0)
+    return path;
+  if (!path_is_user_storage(path))
+    return path;
+  if (installer_get_persistent_root(persistent_root,
+                                    sizeof(persistent_root)) != 0) {
+    return path;
+  }
+
+  for (int i = 0; persistent_root[i] && idx < max - 1; i++)
+    buf[idx++] = persistent_root[i];
+  for (int i = 0; path[i] && idx < max - 1; i++)
+    buf[idx++] = path[i];
+  buf[idx] = '\0';
+  return buf;
+}
+
+static void ensure_user_storage_dirs(void) {
+  char user_home[96];
+  char persistent_path[160];
+  int idx = 0;
+
+  vfs_mkdir("/Users", 0755);
+  resolve_user_storage_path("/Users", persistent_path, sizeof(persistent_path));
+  if (str_cmp(persistent_path, "/Users") != 0)
+    vfs_mkdir(persistent_path, 0755);
+
+  if (!account_username[0])
+    return;
+
+  str_copy_safe(user_home, "/Users/", sizeof(user_home));
+  idx = 7;
+  for (int i = 0; account_username[i] && idx < (int)sizeof(user_home) - 1; i++)
+    user_home[idx++] = account_username[i];
+  user_home[idx] = '\0';
+
+  vfs_mkdir(user_home, 0755);
+  resolve_user_storage_path(user_home, persistent_path, sizeof(persistent_path));
+  if (str_cmp(persistent_path, user_home) != 0)
+    vfs_mkdir(persistent_path, 0755);
+}
+
+static int user_storage_mkdir(const char *path, mode_t mode) {
+  char resolved[256];
+  const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+
+  if (path_is_user_storage(path))
+    vfs_mkdir("/Users", 0755);
+  return vfs_mkdir(target, mode);
+}
+
+static int user_storage_unlink(const char *path) {
+  char resolved[256];
+  const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+  return vfs_unlink(target);
+}
+
+static int user_storage_rmdir(const char *path) {
+  char resolved[256];
+  extern int vfs_rmdir(const char *path);
+  const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+  return vfs_rmdir(target);
+}
+
+static int user_storage_rename(const char *old_path, const char *new_path) {
+  char resolved_old[256];
+  char resolved_new[256];
+  extern int vfs_rename(const char *old, const char *new);
+  const char *old_target =
+      resolve_user_storage_path(old_path, resolved_old, sizeof(resolved_old));
+  const char *new_target =
+      resolve_user_storage_path(new_path, resolved_new, sizeof(resolved_new));
+  return vfs_rename(old_target, new_target);
+}
+
 static int installer_translate_target_path(const char *path, char *buf,
                                            int max) {
   char persistent_root[64];
@@ -2559,6 +2658,16 @@ static int startup_setup_account_active(void) {
   return startup_flow == STARTUP_FLOW_SETUP_ACCOUNT;
 }
 
+static int startup_setup_welcome_active(void) {
+  return startup_setup_account_active() &&
+         startup_setup_page == STARTUP_SETUP_PAGE_WELCOME;
+}
+
+static int startup_setup_account_form_active(void) {
+  return startup_setup_account_active() &&
+         startup_setup_page == STARTUP_SETUP_PAGE_ACCOUNT;
+}
+
 static int installer_first_boot_setup_required(void) {
   char manifest[192];
   char value[16];
@@ -2731,8 +2840,10 @@ static void startup_open_modal_window(void) {
   int win_h = 280;
   int win_x = ((int)primary_display.width - win_w) / 2;
   int win_y = ((int)primary_display.height - win_h) / 2;
-  const char *title = startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
-                          ? "Setup Account"
+  const char *title = startup_setup_welcome_active()
+                          ? "Welcome"
+                          : startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
+                                ? "Setup Account"
                           : "Login";
 
   startup_window = gui_create_window(title, win_x, win_y, win_w, win_h);
@@ -2741,6 +2852,19 @@ static void startup_open_modal_window(void) {
     startup_window->resizable = false;
     gui_focus_window(startup_window);
   }
+}
+
+static void startup_begin_login_flow(const char *message, int preserve_username) {
+  session_authenticated = 0;
+  startup_flow = STARTUP_FLOW_LOGIN;
+  startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
+  startup_input_password[0] = '\0';
+  startup_active_field = preserve_username ? 1 : 0;
+  if (!preserve_username)
+    startup_input_username[0] = '\0';
+  set_startup_status(message ? message : "");
+  startup_window = NULL;
+  startup_open_modal_window();
 }
 
 static void ensure_startup_flow(void) {
@@ -2758,8 +2882,10 @@ static void ensure_startup_flow(void) {
   force_first_boot_setup = installer_first_boot_setup_required();
   startup_input_username[0] = '\0';
   startup_input_password[0] = '\0';
+  startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
   startup_active_field = 0;
   set_startup_status("");
+  ensure_user_storage_dirs();
 
   if (!setup_state_found) {
     setup_complete = account_username[0] && account_password[0];
@@ -2769,16 +2895,15 @@ static void ensure_startup_flow(void) {
       force_first_boot_setup || !account_username[0] || !account_password[0] ||
       !setup_complete;
   if (!needs_account_setup) {
-    session_authenticated = 1;
-    startup_flow = STARTUP_FLOW_NONE;
-    startup_window = NULL;
     if (!apps_seeded)
       seed_all_system_apps_once();
+    startup_begin_login_flow("", 0);
     return;
   }
 
   session_authenticated = 0;
   startup_flow = STARTUP_FLOW_SETUP_ACCOUNT;
+  startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
   startup_window = NULL;
   save_setup_state(0, 0);
   startup_open_modal_window();
@@ -2800,9 +2925,19 @@ static void complete_startup_auth(void) {
 
 static void submit_startup_flow(void) {
   if (startup_flow == STARTUP_FLOW_SETUP_ACCOUNT) {
-    char user_home[96];
+    if (startup_setup_welcome_active()) {
+      startup_setup_page = STARTUP_SETUP_PAGE_ACCOUNT;
+      startup_active_field = 0;
+      set_startup_status("Create your account to continue.");
+      return;
+    }
+
+    if (!startup_setup_account_form_active()) {
+      set_startup_status("Setup is waiting for the next screen.");
+      return;
+    }
+
     char password_hash[33];
-    int idx = 0;
 
     if (!startup_input_username[0] || !startup_input_password[0]) {
       set_startup_status("Enter both a username and password.");
@@ -2813,18 +2948,9 @@ static void submit_startup_flow(void) {
     vib_password_hash_hex(account_username, startup_input_password,
                           password_hash, sizeof(password_hash));
     str_copy_safe(account_password, password_hash, sizeof(account_password));
-    vfs_mkdir("/Users", 0755);
-    str_copy_safe(user_home, "/Users/", sizeof(user_home));
-    idx = 7;
-    for (int i = 0; account_username[i] && idx < (int)sizeof(user_home) - 1;
-         i++) {
-      user_home[idx++] = account_username[i];
-    }
-    user_home[idx] = '\0';
-    vfs_mkdir(user_home, 0755);
+    ensure_user_storage_dirs();
     save_account_state();
-    startup_input_password[0] = '\0';
-    complete_startup_auth();
+    startup_begin_login_flow("Setup complete. Sign in to finish booting.", 1);
     return;
   }
 
@@ -2843,8 +2969,16 @@ static void submit_startup_flow(void) {
 }
 
 static void startup_handle_key(int key) {
-  char *target = startup_active_field == 0 ? startup_input_username
-                                           : startup_input_password;
+  char *target;
+
+  if (startup_setup_welcome_active()) {
+    if (key == '\r' || key == '\n' || key == ' ')
+      submit_startup_flow();
+    return;
+  }
+
+  target = startup_active_field == 0 ? startup_input_username
+                                     : startup_input_password;
 
   if (key == '\t') {
     startup_active_field = 1 - startup_active_field;
@@ -4113,6 +4247,27 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   (void)win;
   (void)content_h;
 
+  if (startup_setup_welcome_active()) {
+    gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
+    gui_draw_string(content_x + 20, content_y + 18, "Welcome to vib-OS",
+                    0xFFFFFF, 0x181827);
+    gui_draw_string(content_x + 20, content_y + 78,
+                    "This setup will create your account before login.",
+                    0xCDD6F4, THEME_BG);
+    gui_draw_string(content_x + 20, content_y + 104,
+                    "No other apps will open until setup is done.", 0xA6ADC8,
+                    THEME_BG);
+    gui_draw_string(content_x + 20, content_y + 130,
+                    "Press Enter or click Continue to start.", 0xA6ADC8,
+                    THEME_BG);
+    gui_draw_rect(content_x + 20, content_y + 198, 170, 34, 0x2563EB);
+    gui_draw_string(content_x + 56, content_y + 210, "Continue", 0xFFFFFF,
+                    0x2563EB);
+    gui_draw_string(content_x + 210, content_y + 209, startup_status, 0xCDD6F4,
+                    THEME_BG);
+    return;
+  }
+
   mask_secret(startup_input_password, masked_password, sizeof(masked_password));
 
   gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
@@ -4229,7 +4384,10 @@ static void fm_join_path(const char *base, const char *name, char *out,
 }
 
 static int fm_path_exists(const char *path) {
-  struct file *f = vfs_open(path, O_RDONLY, 0);
+  char resolved_path[256];
+  const char *open_path =
+      resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
+  struct file *f = vfs_open(open_path, O_RDONLY, 0);
   if (!f)
     return 0;
   vfs_close(f);
@@ -4355,7 +4513,10 @@ static int fm_collect_callback(void *ctx, const char *name, int len, loff_t off,
 
 static int fm_collect_items(const char *path, struct fm_item *items,
                             int max_items) {
-  struct file *dir = vfs_open(path, O_RDONLY, 0);
+  char resolved_path[256];
+  const char *open_path =
+      resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
+  struct file *dir = vfs_open(open_path, O_RDONLY, 0);
   if (!dir)
     return -1;
 
@@ -4438,11 +4599,9 @@ static void fm_delete_context_target(struct fm_state *st) {
 
   fm_join_path(st->path, st->context_menu_target, full_path, sizeof(full_path));
   if (st->context_menu_target_type == 4) {
-    extern int vfs_rmdir(const char *path);
-    ret = vfs_rmdir(full_path);
+    ret = user_storage_rmdir(full_path);
   } else {
-    extern int vfs_unlink(const char *path);
-    ret = vfs_unlink(full_path);
+    ret = user_storage_unlink(full_path);
   }
 
   if (ret == 0 && str_cmp(st->selected, st->context_menu_target) == 0)
@@ -4806,16 +4965,14 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
       } else {
         if (item_idx == 0) {
           char new_path[512];
-          extern int vfs_mkdir(const char *path, mode_t mode);
           fm_build_unique_child_path(st->path, "New Folder", "", new_path,
                                      sizeof(new_path));
-          vfs_mkdir(new_path, 0755);
+          user_storage_mkdir(new_path, 0755);
         } else if (item_idx == 1) {
           char new_path[512];
-          extern int vfs_create(const char *path, mode_t mode);
           fm_build_unique_child_path(st->path, "New File", ".txt", new_path,
                                      sizeof(new_path));
-          vfs_create(new_path, 0644);
+          write_text_file(new_path, "");
         }
       }
       fm_hide_context_menu(st);
@@ -4837,18 +4994,16 @@ static void fm_on_mouse(struct window *win, int x, int y, int buttons) {
     }
     if (x >= content_x + 82 && x < content_x + 166) {
       char new_path[512];
-      extern int vfs_mkdir(const char *path, mode_t mode);
       fm_build_unique_child_path(st->path, "New Folder", "", new_path,
                                  sizeof(new_path));
-      vfs_mkdir(new_path, 0755);
+      user_storage_mkdir(new_path, 0755);
       return;
     }
     if (x >= content_x + 174 && x < content_x + 248) {
       char new_path[512];
-      extern int vfs_create(const char *path, mode_t mode);
       fm_build_unique_child_path(st->path, "New File", ".txt", new_path,
                                  sizeof(new_path));
-      vfs_create(new_path, 0644);
+      write_text_file(new_path, "");
       return;
     }
     if (x >= content_x + 256 && x < content_x + 328) {
@@ -8307,6 +8462,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       int content_w = startup_window->width - BORDER_WIDTH * 2;
 
       gui_focus_window(startup_window);
+      if (startup_setup_welcome_active()) {
+        if (x >= content_x + 20 && x < content_x + 190 &&
+            y >= content_y + 198 && y < content_y + 232) {
+          submit_startup_flow();
+          return;
+        }
+        return;
+      }
       if (x >= content_x + 20 && x < content_x + content_w - 20 &&
           y >= content_y + 94 && y < content_y + 128) {
         startup_active_field = 0;
@@ -9549,9 +9712,7 @@ static void rename_on_mouse(struct window *win, int x, int y, int buttons) {
         }
         new_full_path[idx] = '\0';
 
-        /* Call vfs_rename */
-        extern int vfs_rename(const char *old, const char *new);
-        int ret = vfs_rename(rename_path, new_full_path);
+        int ret = user_storage_rename(rename_path, new_full_path);
 
         if (ret == 0) {
           printk("Rename successful: %s -> %s\n", rename_path, new_full_path);
