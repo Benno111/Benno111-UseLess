@@ -21,27 +21,20 @@ You may only view this repository and its contents to the limited extent
 strictly necessary to access it from an authorized location. No other rights
 are granted.
 
-3. No redistribution
-
-You may not redistribute this repository, any modified version of it, any
-portion of it, or any binaries, images, screenshots, installers, build
-artifacts, or derived works created from it, without prior express written
-permission from the copyright holder.
-
-4. No modification or derivative works
+3. No modification or derivative works
 
 You may not modify, adapt, translate, port, emulate, decompile, disassemble,
 or create derivative works based on this repository or any original material in
 it, without prior express written permission from the copyright holder.
 
-5. No training, mining, or automated reuse
+4. No training, mining, or automated reuse
 
 You may not use this repository or any original material in it for machine
 learning, dataset creation, model training, retrieval systems, code generation
 systems, automated analysis pipelines, or similar reuse, without prior express
 written permission from the copyright holder.
 
-6. Third-party components
+5. Third-party components
 
 Some files or directories in this repository may be subject to separate
 third-party license terms. Those third-party terms apply only to the relevant
@@ -54,24 +47,18 @@ Known examples include, but may not be limited to:
 - vendored or embedded media/codec/parser libraries carrying their own notices
 - generated assets that explicitly reference upstream third-party licenses
 
-7. Ownership
+6. Ownership
 
 All rights, title, and interest in and to the original material in this
 repository remain exclusively with the copyright holder.
 
-8. Termination
+7. Termination
 
 Any unauthorized access or use is prohibited. Any permission granted in writing
 by the copyright holder terminates immediately if its conditions are breached.
 
-9. No warranty
+8. No warranty
 
 THIS REPOSITORY AND ALL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
 KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
 MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
-
-10. Contact
-
-For licensing requests, commercial use, redistribution, collaboration, or any
-other permission request, obtain prior written permission from the copyright
-holder.

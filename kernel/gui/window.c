@@ -64,6 +64,7 @@ static void startup_get_setup_field_rect(int content_x, int content_y,
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
 static void installer_write_target_config(void);
+static void installer_append_to_buf(char *buf, int max, const char *text);
 static int load_install_target_disk_location(char *buf, int max);
 static void open_partition_manager_window(int x, int y);
 static void draw_partition_manager_window(int content_x, int content_y,
