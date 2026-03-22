@@ -2140,6 +2140,7 @@ typedef struct {
 #define GUI_DOCK_CONFIG_PATH "/System/dock.cfg"
 #define GUI_SETUP_STATE_PATH "/System/setup-state.cfg"
 #define GUI_ACCOUNT_PATH "/System/account.cfg"
+#define GUI_ACCOUNTS_DIR "/System/Accounts"
 #define GUI_VERSION_PATH "/System/version.cfg"
 #define MAX_SYSTEM_APPS 24
 #define MAX_DOCK_ITEMS 16
@@ -2176,7 +2177,8 @@ typedef enum {
 
 typedef enum {
   STARTUP_SETUP_PAGE_WELCOME = 0,
-  STARTUP_SETUP_PAGE_ACCOUNT
+  STARTUP_SETUP_PAGE_ACCOUNT,
+  STARTUP_SETUP_PAGE_STORAGE
 } startup_setup_page_t;
 
 static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
@@ -2184,6 +2186,8 @@ static startup_setup_page_t startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
 static int session_authenticated = 1;
 static char account_username[32] = "";
 static char account_password[33] = "";
+static char account_partition_label[32] = "";
+static char account_disk_location[32] = "";
 static char startup_input_username[32] = "";
 static char startup_input_password[32] = "";
 static int startup_active_field = 0;
@@ -2396,6 +2400,66 @@ static int installer_get_persistent_root(char *buf, int max) {
   return -1;
 }
 
+static int path_starts_with(const char *path, const char *prefix) {
+  int i = 0;
+
+  if (!path || !prefix)
+    return 0;
+
+  while (prefix[i]) {
+    if (path[i] != prefix[i])
+      return 0;
+    i++;
+  }
+
+  return 1;
+}
+
+static int account_storage_root_path(char *buf, int max) {
+  int idx = 0;
+
+  if (!buf || max <= 0)
+    return -1;
+  buf[0] = '\0';
+
+  if (!account_disk_location[0] || !account_partition_label[0])
+    return -1;
+
+  str_copy_safe(buf, "/Installed", max);
+  while (buf[idx] && idx < max - 1)
+    idx++;
+  if (idx < max - 1)
+    buf[idx++] = '/';
+  for (int i = 0; account_disk_location[i] && idx < max - 1; i++)
+    buf[idx++] = account_disk_location[i];
+  if (idx < max - 1)
+    buf[idx++] = '/';
+  for (int i = 0; account_partition_label[i] && idx < max - 1; i++)
+    buf[idx++] = account_partition_label[i];
+  buf[idx] = '\0';
+  return 0;
+}
+
+static int path_is_active_account_home(const char *path) {
+  char home_prefix[96];
+  int idx = 0;
+
+  if (!path || !account_username[0])
+    return 0;
+
+  str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
+  idx = 7;
+  for (int i = 0; account_username[i] && idx < (int)sizeof(home_prefix) - 1;
+       i++)
+    home_prefix[idx++] = account_username[i];
+  home_prefix[idx] = '\0';
+
+  if (!path_starts_with(path, home_prefix))
+    return 0;
+
+  return path[idx] == '\0' || path[idx] == '/';
+}
+
 static int path_is_user_storage(const char *path) {
   if (!path)
     return 0;
@@ -2407,11 +2471,37 @@ static int path_is_user_storage(const char *path) {
 
 static const char *resolve_user_storage_path(const char *path, char *buf,
                                              int max) {
+  char account_root[160];
+  char home_prefix[96];
   char persistent_root[64];
+  int path_idx = 0;
   int idx = 0;
 
   if (!path || !buf || max <= 0)
     return path;
+  if (path_is_active_account_home(path) &&
+      account_storage_root_path(account_root, sizeof(account_root)) == 0) {
+    str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
+    path_idx = 7;
+    while (home_prefix[path_idx] && path_idx < (int)sizeof(home_prefix) - 1)
+      path_idx++;
+    for (int i = 0; account_username[i] &&
+                    path_idx < (int)sizeof(home_prefix) - 1;
+         i++) {
+      home_prefix[path_idx++] = account_username[i];
+    }
+    home_prefix[path_idx] = '\0';
+    path_idx = 0;
+    while (home_prefix[path_idx] && path[path_idx] == home_prefix[path_idx])
+      path_idx++;
+
+    for (int i = 0; account_root[i] && idx < max - 1; i++)
+      buf[idx++] = account_root[i];
+    while (path[path_idx] && idx < max - 1)
+      buf[idx++] = path[path_idx++];
+    buf[idx] = '\0';
+    return buf;
+  }
   if (!path_is_user_storage(path))
     return path;
   if (installer_get_persistent_root(persistent_root,
@@ -2428,6 +2518,7 @@ static const char *resolve_user_storage_path(const char *path, char *buf,
 }
 
 static void ensure_user_storage_dirs(void) {
+  char account_root[160];
   char user_home[96];
   char persistent_path[160];
   int idx = 0;
@@ -2450,6 +2541,10 @@ static void ensure_user_storage_dirs(void) {
   resolve_user_storage_path(user_home, persistent_path, sizeof(persistent_path));
   if (str_cmp(persistent_path, user_home) != 0)
     vfs_mkdir(persistent_path, 0755);
+  if (account_storage_root_path(account_root, sizeof(account_root)) == 0) {
+    installer_ensure_parent_dirs(account_root);
+    vfs_mkdir(account_root, 0755);
+  }
 }
 
 static int user_storage_mkdir(const char *path, mode_t mode) {
@@ -2653,6 +2748,95 @@ static int load_app_id_from_manifest_file(const char *path, const char *fallback
   return app_id[0] ? 0 : -1;
 }
 
+static int account_manifest_path(const char *username, char *path, int max) {
+  int idx = 0;
+
+  if (!username || !username[0] || !path || max < 32)
+    return -1;
+
+  str_copy_safe(path, GUI_ACCOUNTS_DIR, max);
+  while (path[idx])
+    idx++;
+  if (idx >= max - 1)
+    return -1;
+  path[idx++] = '/';
+  for (int i = 0; username[i] && idx < max - 5; i++)
+    path[idx++] = username[i];
+  path[idx++] = '.';
+  path[idx++] = 'c';
+  path[idx++] = 'f';
+  path[idx++] = 'g';
+  path[idx] = '\0';
+  return 0;
+}
+
+static int read_account_manifest(const char *username, char *manifest, int max) {
+  char path[160];
+
+  if (!manifest || max <= 0)
+    return -1;
+
+  if (username && username[0] &&
+      account_manifest_path(username, path, sizeof(path)) == 0 &&
+      read_text_file(path, manifest, max) >= 0) {
+    return 0;
+  }
+
+  if (read_text_file(GUI_ACCOUNT_PATH, manifest, max) >= 0)
+    return 0;
+  return -1;
+}
+
+static int parse_account_manifest(const char *manifest, const char *fallback_name,
+                                  char *username, int username_max,
+                                  char *password_hash, int password_hash_max,
+                                  char *partition_label, int partition_label_max,
+                                  char *disk_location, int disk_location_max) {
+  char legacy_password[32];
+
+  if (!manifest)
+    return -1;
+
+  if (username && username_max > 0)
+    username[0] = '\0';
+  if (password_hash && password_hash_max > 0)
+    password_hash[0] = '\0';
+  if (partition_label && partition_label_max > 0)
+    partition_label[0] = '\0';
+  if (disk_location && disk_location_max > 0)
+    disk_location[0] = '\0';
+
+  if (username && username_max > 0) {
+    manifest_get_value(manifest, "username", username, username_max);
+    if (!username[0] && fallback_name)
+      str_copy_safe(username, fallback_name, username_max);
+  }
+  if (partition_label && partition_label_max > 0)
+    manifest_get_value(manifest, "partition_label", partition_label,
+                       partition_label_max);
+  if (disk_location && disk_location_max > 0)
+    manifest_get_value(manifest, "disk_location", disk_location,
+                       disk_location_max);
+  if (password_hash && password_hash_max > 0 &&
+      manifest_get_value(manifest, "password_hash", password_hash,
+                         password_hash_max) == 0 &&
+      password_hash[0]) {
+    return 0;
+  }
+
+  legacy_password[0] = '\0';
+  if (password_hash && password_hash_max > 0 && username && username[0] &&
+      manifest_get_value(manifest, "password", legacy_password,
+                         sizeof(legacy_password)) == 0 &&
+      legacy_password[0]) {
+    vib_password_hash_hex(username, legacy_password, password_hash,
+                          password_hash_max);
+    return 0;
+  }
+
+  return -1;
+}
+
 static void set_startup_status(const char *message) {
   str_copy_safe(startup_status, message, sizeof(startup_status));
 }
@@ -2673,6 +2857,11 @@ static int startup_setup_welcome_active(void) {
 static int startup_setup_account_form_active(void) {
   return startup_setup_account_active() &&
          startup_setup_page == STARTUP_SETUP_PAGE_ACCOUNT;
+}
+
+static int startup_setup_storage_active(void) {
+  return startup_setup_account_active() &&
+         startup_setup_page == STARTUP_SETUP_PAGE_STORAGE;
 }
 
 static int installer_first_boot_setup_required(void) {
@@ -2723,29 +2912,19 @@ static void append_input_char(char *buf, int max, int key) {
 }
 
 static void load_account_state(void) {
-  char manifest[160];
-  char legacy_password[32];
+  char manifest[256];
 
   account_username[0] = '\0';
   account_password[0] = '\0';
-  if (read_text_file(GUI_ACCOUNT_PATH, manifest, sizeof(manifest)) < 0)
+  account_partition_label[0] = '\0';
+  account_disk_location[0] = '\0';
+  if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0)
     return;
-
-  manifest_get_value(manifest, "username", account_username,
-                     sizeof(account_username));
-  if (manifest_get_value(manifest, "password_hash", account_password,
-                         sizeof(account_password)) == 0 &&
-      account_password[0]) {
-    return;
-  }
-
-  legacy_password[0] = '\0';
-  if (manifest_get_value(manifest, "password", legacy_password,
-                         sizeof(legacy_password)) == 0 &&
-      account_username[0] && legacy_password[0]) {
-    vib_password_hash_hex(account_username, legacy_password, account_password,
-                          sizeof(account_password));
-  }
+  parse_account_manifest(manifest, NULL, account_username,
+                         sizeof(account_username), account_password,
+                         sizeof(account_password), account_partition_label,
+                         sizeof(account_partition_label), account_disk_location,
+                         sizeof(account_disk_location));
 }
 
 static void load_setup_state(int *setup_complete, int *apps_seeded,
@@ -2800,7 +2979,8 @@ static void save_setup_state(int setup_complete, int apps_seeded) {
 }
 
 static void save_account_state(void) {
-  char manifest[192];
+  char manifest[256];
+  char per_user_path[160];
   int idx = 0;
 
   for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
@@ -2814,18 +2994,120 @@ static void save_account_state(void) {
   for (int i = 0; account_password[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = account_password[i];
   manifest[idx++] = '\n';
+  for (const char *p = "partition_label=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_partition_label[i] &&
+                  idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = account_partition_label[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "disk_location=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_disk_location[i] &&
+                  idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = account_disk_location[i];
+  manifest[idx++] = '\n';
   manifest[idx] = '\0';
 
+  ensure_gui_app_dirs();
   write_text_file(GUI_ACCOUNT_PATH, manifest);
+  if (account_manifest_path(account_username, per_user_path,
+                            sizeof(per_user_path)) == 0) {
+    write_text_file(per_user_path, manifest);
+  }
+}
+
+static int load_install_target_disk_location(char *buf, int max) {
+  char manifest[256];
+
+  if (!buf || max <= 0)
+    return -1;
+  buf[0] = '\0';
+
+  if (read_text_file("/System/install-target.cfg", manifest, sizeof(manifest)) <
+      0) {
+    return -1;
+  }
+
+  if (manifest_get_value(manifest, "disk_location", buf, max) != 0 || !buf[0])
+    return -1;
+  return 0;
+}
+
+static void startup_default_data_label(int ordinal, char *buf, int max) {
+  if (!buf || max <= 0)
+    return;
+  buf[0] = '\0';
+  str_copy_safe(buf, "Data", max);
+  if (ordinal > 0) {
+    int idx = 0;
+    while (buf[idx] && idx < max - 1)
+      idx++;
+    if (idx < max - 1)
+      buf[idx++] = ' ';
+    append_decimal(buf, &idx, ordinal + 1);
+  }
+}
+
+static int startup_assign_account_partition(void) {
+  char disk_location[32];
+  char partition_label[32];
+  int disk_index;
+  int data_partitions;
+
+  extern int storage_get_disk_index_by_location(const char *location);
+  extern int storage_disk_supports_partition_writes(int disk_index);
+  extern int storage_count_partitions_of_kind(int disk_index,
+                                              storage_partition_kind_t kind);
+  extern int storage_create_partition(int disk_index,
+                                      storage_partition_kind_t kind,
+                                      uint32_t size_mib);
+  extern int storage_get_disk_location(int index, char *buf, int max);
+
+  if (account_partition_label[0] && account_disk_location[0])
+    return 0;
+
+  if (load_install_target_disk_location(disk_location, sizeof(disk_location)) !=
+      0) {
+    set_startup_status("Setup warning: install disk not recorded.");
+    return -1;
+  }
+
+  disk_index = storage_get_disk_index_by_location(disk_location);
+  if (disk_index < 0) {
+    set_startup_status("Setup warning: target disk is unavailable.");
+    return -1;
+  }
+
+  data_partitions =
+      storage_count_partitions_of_kind(disk_index, STORAGE_PARTITION_DATA);
+  if (data_partitions == 0) {
+    if (!storage_disk_supports_partition_writes(disk_index) ||
+        storage_create_partition(disk_index, STORAGE_PARTITION_DATA, 4096) !=
+            0) {
+      set_startup_status("Setup warning: user partition could not be created.");
+      return -1;
+    }
+    startup_default_data_label(0, partition_label, sizeof(partition_label));
+  } else {
+    startup_default_data_label(data_partitions - 1, partition_label,
+                               sizeof(partition_label));
+  }
+
+  str_copy_safe(account_partition_label, partition_label,
+                sizeof(account_partition_label));
+  storage_get_disk_location(disk_index, account_disk_location,
+                            sizeof(account_disk_location));
+  return 0;
 }
 
 static void seed_all_system_apps_once(void) {
   int apps_seeded = 0;
   int setup_complete = 0;
   int state_found = 0;
-
-  load_system_app_catalog();
-  ensure_gui_app_dirs();
 
   load_setup_state(&setup_complete, &apps_seeded, &state_found);
   if (state_found && apps_seeded) {
@@ -2834,10 +3116,6 @@ static void seed_all_system_apps_once(void) {
 
   dock_item_count = 0;
   dock_loaded = 1;
-  for (int i = 0; i < app_catalog_count; i++) {
-    ensure_app_manifest(&app_catalog[i]);
-  }
-  dock_add_all_system_apps();
   save_dock_config();
   save_setup_state(1, 1);
 }
@@ -2849,6 +3127,8 @@ static void startup_open_modal_window(void) {
   int win_y = ((int)primary_display.height - win_h) / 2;
   const char *title = startup_setup_welcome_active()
                           ? "Welcome"
+                          : startup_setup_storage_active()
+                                ? "Prepare Storage"
                           : startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
                                 ? "Setup Account"
                           : "Login";
@@ -2939,6 +3219,16 @@ static void submit_startup_flow(void) {
       return;
     }
 
+    if (startup_setup_storage_active()) {
+      if (startup_assign_account_partition() == 0) {
+        ensure_user_storage_dirs();
+        save_account_state();
+        startup_begin_login_flow("Setup complete. Sign in to finish booting.",
+                                 1);
+      }
+      return;
+    }
+
     if (!startup_setup_account_form_active()) {
       set_startup_status("Setup is waiting for the next screen.");
       return;
@@ -2955,20 +3245,43 @@ static void submit_startup_flow(void) {
     vib_password_hash_hex(account_username, startup_input_password,
                           password_hash, sizeof(password_hash));
     str_copy_safe(account_password, password_hash, sizeof(account_password));
-    ensure_user_storage_dirs();
-    save_account_state();
-    startup_begin_login_flow("Setup complete. Sign in to finish booting.", 1);
+    startup_setup_page = STARTUP_SETUP_PAGE_STORAGE;
+    startup_active_field = 0;
+    set_startup_status("Prepare a personal data partition for this account.");
     return;
   }
 
-  if (str_cmp(startup_input_username, account_username) == 0) {
+  {
+    char manifest[256];
+    char login_username[32];
+    char login_password_hash[33];
+    char login_partition_label[32];
+    char login_disk_location[32];
     char password_hash[33];
 
-    vib_password_hash_hex(startup_input_username, startup_input_password,
-                          password_hash, sizeof(password_hash));
-    if (vib_secure_string_eq(password_hash, account_password)) {
-      complete_startup_auth();
-      return;
+    if (read_account_manifest(startup_input_username, manifest,
+                              sizeof(manifest)) == 0 &&
+        parse_account_manifest(manifest, startup_input_username, login_username,
+                               sizeof(login_username), login_password_hash,
+                               sizeof(login_password_hash),
+                               login_partition_label,
+                               sizeof(login_partition_label),
+                               login_disk_location,
+                               sizeof(login_disk_location)) == 0) {
+      vib_password_hash_hex(startup_input_username, startup_input_password,
+                            password_hash, sizeof(password_hash));
+      if (vib_secure_string_eq(password_hash, login_password_hash)) {
+        str_copy_safe(account_username, login_username, sizeof(account_username));
+        str_copy_safe(account_password, login_password_hash,
+                      sizeof(account_password));
+        str_copy_safe(account_partition_label, login_partition_label,
+                      sizeof(account_partition_label));
+        str_copy_safe(account_disk_location, login_disk_location,
+                      sizeof(account_disk_location));
+        ensure_user_storage_dirs();
+        complete_startup_auth();
+        return;
+      }
     }
   }
 
@@ -2979,6 +3292,12 @@ static void startup_handle_key(int key) {
   char *target;
 
   if (startup_setup_welcome_active()) {
+    if (key == '\r' || key == '\n' || key == ' ')
+      submit_startup_flow();
+    return;
+  }
+
+  if (startup_setup_storage_active()) {
     if (key == '\r' || key == '\n' || key == ' ')
       submit_startup_flow();
     return;
@@ -3002,6 +3321,7 @@ int gui_requires_login(void) { return startup_flow_active() || !session_authenti
 
 static void ensure_gui_app_dirs(void) {
   vfs_mkdir(GUI_SYSTEM_DIR, 0755);
+  vfs_mkdir(GUI_ACCOUNTS_DIR, 0755);
   vfs_mkdir(GUI_SYSTEM_APPS_DIR, 0755);
   vfs_mkdir(GUI_APPS_DIR, 0755);
   vfs_mkdir("/Desktop", 0755);
@@ -3287,7 +3607,6 @@ static void load_dock_config(void) {
   }
 
   if (bytes <= 0) {
-    dock_add_all_system_apps();
     save_dock_config();
     return;
   }
@@ -3313,18 +3632,8 @@ static void load_dock_config(void) {
     }
   }
 
-  if (dock_item_count == 0) {
-    dock_add_all_system_apps();
+  if (dock_item_count == 0)
     save_dock_config();
-    return;
-  }
-
-  {
-    int before = dock_item_count;
-    dock_add_missing_preinstalled_apps();
-    if (dock_item_count != before)
-      save_dock_config();
-  }
 }
 
 static int install_app(const dock_app_def_t *app, int pin_to_dock) {
@@ -4275,6 +4584,29 @@ static void draw_startup_auth_window(struct window *win, int content_x,
     return;
   }
 
+  if (startup_setup_storage_active()) {
+    gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
+    gui_draw_string(content_x + 20, content_y + 18, "Prepare Account Storage",
+                    0xFFFFFF, 0x181827);
+    gui_draw_string(content_x + 20, content_y + 78,
+                    "First boot will create a personal data partition for",
+                    0xCDD6F4, THEME_BG);
+    gui_draw_string(content_x + 20, content_y + 102, account_username,
+                    0xFFFFFF, THEME_BG);
+    gui_draw_string(content_x + 20, content_y + 128,
+                    "This keeps each account separated on the HDD.", 0xA6ADC8,
+                    THEME_BG);
+    gui_draw_string(content_x + 20, content_y + 154,
+                    "Press Enter or click Continue to provision storage.",
+                    0xA6ADC8, THEME_BG);
+    gui_draw_rect(content_x + 20, content_y + 204, 170, 34, 0x2563EB);
+    gui_draw_string(content_x + 56, content_y + 216, "Continue", 0xFFFFFF,
+                    0x2563EB);
+    gui_draw_string(content_x + 210, content_y + 215, startup_status, 0xCDD6F4,
+                    THEME_BG);
+    return;
+  }
+
   mask_secret(startup_input_password, masked_password, sizeof(masked_password));
 
   gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
@@ -4728,15 +5060,29 @@ static void installer_write_target_config(void) {
   char manifest[256];
   char target_root[96];
   char target_cfg[128];
+  char disk_location[32];
   int idx = 0;
   const char *disk = installer_selected_disk_label();
   int partition_count = 0;
+
+  extern int storage_get_disk_location(int index, char *buf, int max);
 
   for (const char *p = "disk="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
   for (int i = 0; disk[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = disk[i];
   manifest[idx++] = '\n';
+  disk_location[0] = '\0';
+  if (storage_get_disk_location(installer_selected_disk, disk_location,
+                                sizeof(disk_location)) == 0 &&
+      disk_location[0]) {
+    for (const char *p = "disk_location=";
+         *p && idx < (int)sizeof(manifest) - 1; p++)
+      manifest[idx++] = *p;
+    for (int i = 0; disk_location[i] && idx < (int)sizeof(manifest) - 2; i++)
+      manifest[idx++] = disk_location[i];
+    manifest[idx++] = '\n';
+  }
   {
     extern int storage_get_partition_count(int disk_index);
     extern int storage_has_efi_partition(int disk_index);
@@ -8472,6 +8818,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       if (startup_setup_welcome_active()) {
         if (x >= content_x + 20 && x < content_x + 190 &&
             y >= content_y + 198 && y < content_y + 232) {
+          submit_startup_flow();
+          return;
+        }
+        return;
+      }
+      if (startup_setup_storage_active()) {
+        if (x >= content_x + 20 && x < content_x + 190 &&
+            y >= content_y + 204 && y < content_y + 238) {
           submit_startup_flow();
           return;
         }

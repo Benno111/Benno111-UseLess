@@ -1345,6 +1345,23 @@ int storage_get_partition_count(int disk_index) {
   return count;
 }
 
+int storage_count_partitions_of_kind(int disk_index,
+                                     storage_partition_kind_t kind) {
+  int count = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return 0;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (storage_partitions[disk_index][i].present &&
+        storage_partitions[disk_index][i].kind == kind) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
 int storage_describe_partition(int disk_index, int partition_index, char *buf,
                                int max) {
   int seen = 0;

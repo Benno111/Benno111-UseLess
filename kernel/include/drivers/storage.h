@@ -58,6 +58,8 @@ int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size);
 int storage_describe_disk(int index, char *buf, int max);
 void storage_build_disk_overview(char *buf, int max);
 int storage_get_partition_count(int disk_index);
+int storage_count_partitions_of_kind(int disk_index,
+                                     storage_partition_kind_t kind);
 int storage_describe_partition(int disk_index, int partition_index, char *buf,
                                int max);
 int storage_create_partition(int disk_index, storage_partition_kind_t kind,

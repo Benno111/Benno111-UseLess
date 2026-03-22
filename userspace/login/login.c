@@ -12,6 +12,7 @@
 #include "../../shared/password_hash.h"
 
 #define ACCOUNT_CONFIG_PATH "/System/account.cfg"
+#define ACCOUNTS_DIR "/System/Accounts"
 #define MAX_USER_LEN 32
 #define MAX_PASS_LEN 32
 #define MAX_HOME_LEN 96
@@ -20,6 +21,8 @@
 struct user_cred {
   char username[MAX_USER_LEN];
   char password_hash[33];
+  char partition_label[32];
+  char disk_location[32];
   uid_t uid;
   gid_t gid;
   char home[MAX_HOME_LEN];
@@ -70,6 +73,19 @@ static void build_default_home(const char *username, char *out, size_t len) {
   snprintf(out, len, "/Users/%s", username ? username : "user");
 }
 
+static void build_partition_home(const char *disk_location,
+                                 const char *partition_label, char *out,
+                                 size_t len) {
+  if (!out || len == 0)
+    return;
+  if (!disk_location || !disk_location[0] || !partition_label ||
+      !partition_label[0]) {
+    out[0] = '\0';
+    return;
+  }
+  snprintf(out, len, "/Installed/%s/%s", disk_location, partition_label);
+}
+
 static int manifest_get_value(const char *manifest, const char *key, char *out,
                               size_t max) {
   size_t key_len = 0;
@@ -107,10 +123,36 @@ static int manifest_get_value(const char *manifest, const char *key, char *out,
   return -1;
 }
 
-static int load_system_account(struct user_cred *cred) {
+static int account_manifest_path(const char *username, char *path, size_t len) {
+  if (!username || !username[0] || !path || len < 32)
+    return -1;
+  snprintf(path, len, "%s/%s.cfg", ACCOUNTS_DIR, username);
+  return 0;
+}
+
+static int read_account_manifest_file(const char *path, char *manifest,
+                                      size_t manifest_len) {
   FILE *fp;
-  char manifest[192];
   size_t bytes;
+
+  if (!path || !manifest || manifest_len == 0)
+    return -1;
+
+  fp = fopen(path, "r");
+  if (!fp)
+    return -1;
+  bytes = fread(manifest, 1, manifest_len - 1, fp);
+  fclose(fp);
+  if (bytes == 0)
+    return -1;
+  manifest[bytes] = '\0';
+  return 0;
+}
+
+static int load_system_account_by_name(const char *requested_user,
+                                       struct user_cred *cred) {
+  char manifest[192];
+  char account_path[128];
   char legacy_password[MAX_PASS_LEN];
 
   if (!cred)
@@ -119,15 +161,15 @@ static int load_system_account(struct user_cred *cred) {
   memset(cred, 0, sizeof(*cred));
   strcpy(cred->shell, "/bin/sh");
 
-  fp = fopen(ACCOUNT_CONFIG_PATH, "r");
-  if (!fp)
+  if (requested_user && requested_user[0] &&
+      account_manifest_path(requested_user, account_path,
+                            sizeof(account_path)) == 0 &&
+      read_account_manifest_file(account_path, manifest, sizeof(manifest)) == 0) {
+    /* Loaded from per-user account manifest. */
+  } else if (read_account_manifest_file(ACCOUNT_CONFIG_PATH, manifest,
+                                        sizeof(manifest)) != 0) {
     return -1;
-
-  bytes = fread(manifest, 1, sizeof(manifest) - 1, fp);
-  fclose(fp);
-  if (bytes == 0)
-    return -1;
-  manifest[bytes] = '\0';
+  }
 
   if (manifest_get_value(manifest, "username", cred->username,
                          sizeof(cred->username)) != 0 ||
@@ -148,7 +190,16 @@ static int load_system_account(struct user_cred *cred) {
                           sizeof(cred->password_hash));
   }
 
-  build_default_home(cred->username, cred->home, sizeof(cred->home));
+  cred->partition_label[0] = '\0';
+  cred->disk_location[0] = '\0';
+  manifest_get_value(manifest, "partition_label", cred->partition_label,
+                     sizeof(cred->partition_label));
+  manifest_get_value(manifest, "disk_location", cred->disk_location,
+                     sizeof(cred->disk_location));
+  build_partition_home(cred->disk_location, cred->partition_label, cred->home,
+                       sizeof(cred->home));
+  if (!cred->home[0])
+    build_default_home(cred->username, cred->home, sizeof(cred->home));
   cred->uid = strcmp(cred->username, "root") == 0 ? 0 : 1000;
   cred->gid = cred->uid;
   cred->configured = 1;
@@ -191,12 +242,6 @@ int main(int argc, char *argv[]) {
   printf("Kernel 8.0.0-arm64 on an aarch64\n\n");
 
   while (1) {
-    if (load_system_account(&cred) != 0) {
-      printf("No configured account found. Run setup first.\n");
-      sleep(2);
-      continue;
-    }
-
     printf("vib-os login: ");
     fflush(stdout);
 
@@ -210,6 +255,12 @@ int main(int argc, char *argv[]) {
     printf("Password: ");
     fflush(stdout);
     get_password(password, sizeof(password));
+
+    if (load_system_account_by_name(username, &cred) != 0) {
+      printf("\nLogin incorrect\n\n");
+      sleep(2);
+      continue;
+    }
 
     if (authenticate(&cred, username, password)) {
       char home_env[MAX_HOME_LEN + 5];
