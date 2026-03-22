@@ -81,6 +81,7 @@ static int user_storage_mkdir(const char *path, mode_t mode);
 static int user_storage_unlink(const char *path);
 static int user_storage_rmdir(const char *path);
 static int user_storage_rename(const char *old_path, const char *new_path);
+static void runtime_sync_log_line(const char *line);
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 void compositor_mark_full_redraw(void);
@@ -2408,6 +2409,7 @@ static int build_app_shortcut_path(const char *dir, const char *shortcut_name,
 
 static int write_text_file(const char *path, const char *content) {
   char resolved_path[256];
+  char log_line[384];
   const char *target;
   int ret;
 
@@ -2415,12 +2417,42 @@ static int write_text_file(const char *path, const char *content) {
     return -1;
 
   ret = media_install_text_file(path, content);
-  if (ret != 0)
+  if (ret != 0) {
+    str_copy_safe(log_line, "sync write failed: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), path);
+    runtime_sync_log_line(log_line);
     return ret;
+  }
 
   target = resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
-  if (str_cmp(target, path) != 0)
-    media_install_text_file(target, content);
+  if (str_cmp(target, path) != 0) {
+    ret = media_install_text_file(target, content);
+    if (ret != 0) {
+      str_copy_safe(log_line, "sync mirror write failed: ", sizeof(log_line));
+      installer_append_to_buf(log_line, sizeof(log_line), target);
+      runtime_sync_log_line(log_line);
+      return ret;
+    }
+  }
+
+  {
+    extern int ext4_vfs_sync(void);
+    int sync_ret = ext4_vfs_sync();
+    if (sync_ret != 0) {
+      str_copy_safe(log_line, "sync flush failed: ", sizeof(log_line));
+      installer_append_to_buf(log_line, sizeof(log_line), path);
+      runtime_sync_log_line(log_line);
+      return sync_ret;
+    }
+  }
+
+  str_copy_safe(log_line, "sync write complete: ", sizeof(log_line));
+  installer_append_to_buf(log_line, sizeof(log_line), path);
+  if (str_cmp(target, path) != 0) {
+    installer_append_to_buf(log_line, sizeof(log_line), " -> ");
+    installer_append_to_buf(log_line, sizeof(log_line), target);
+  }
+  runtime_sync_log_line(log_line);
   return 0;
 }
 
@@ -2855,13 +2887,55 @@ typedef struct {
   char dst_root[256];
 } runtime_sync_ctx_t;
 
+static void runtime_sync_append_log_raw(const char *path, const char *line) {
+  struct file *f;
+  int len = 0;
+
+  if (!path || !line)
+    return;
+
+  while (line[len])
+    len++;
+
+  installer_ensure_parent_dirs(path);
+  f = vfs_open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+  if (!f)
+    return;
+
+  if (len > 0)
+    vfs_write(f, line, (size_t)len);
+  vfs_write(f, "\n", 1);
+  vfs_close(f);
+}
+
+static void runtime_sync_log_line(const char *line) {
+  char resolved_path[256];
+  const char *target;
+
+  if (!line || !line[0])
+    return;
+
+  printk(KERN_INFO "SYNC: %s\n", line);
+  runtime_sync_append_log_raw("/System/sync.log", line);
+
+  target =
+      resolve_user_storage_path("/System/sync.log", resolved_path, sizeof(resolved_path));
+  if (str_cmp(target, "/System/sync.log") != 0)
+    runtime_sync_append_log_raw(target, line);
+}
+
 static int runtime_sync_raw_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
+  char log_line[384];
   struct file *dst;
 
-  if (media_load_file(src_path, &data, &size) != 0)
+  if (media_load_file(src_path, &data, &size) != 0) {
+    str_copy_safe(log_line, "sync source read failed: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), src_path);
+    runtime_sync_log_line(log_line);
     return -1;
+  }
 
   installer_ensure_parent_dirs(dst_path);
   if (size == 0) {
@@ -2870,14 +2944,42 @@ static int runtime_sync_raw_file(const char *src_path, const char *dst_path) {
     if (dst)
       vfs_close(dst);
     media_free_file(data);
-    return dst ? 0 : -1;
+    if (dst) {
+      str_copy_safe(log_line, "sync created empty file: ", sizeof(log_line));
+      installer_append_to_buf(log_line, sizeof(log_line), dst_path);
+      runtime_sync_log_line(log_line);
+      return 0;
+    }
+    str_copy_safe(log_line, "sync empty file create failed: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), dst_path);
+    runtime_sync_log_line(log_line);
+    return -1;
   }
 
   if (installer_write_raw_file(dst_path, data, size) != 0) {
     media_free_file(data);
+    str_copy_safe(log_line, "sync file write failed: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), dst_path);
+    runtime_sync_log_line(log_line);
     return -1;
   }
   media_free_file(data);
+  {
+    extern int ext4_vfs_sync(void);
+    int sync_ret = ext4_vfs_sync();
+    if (sync_ret != 0) {
+      str_copy_safe(log_line, "sync flush failed after file copy: ",
+                    sizeof(log_line));
+      installer_append_to_buf(log_line, sizeof(log_line), dst_path);
+      runtime_sync_log_line(log_line);
+      return sync_ret;
+    }
+  }
+  str_copy_safe(log_line, "sync copied file: ", sizeof(log_line));
+  installer_append_to_buf(log_line, sizeof(log_line), src_path);
+  installer_append_to_buf(log_line, sizeof(log_line), " -> ");
+  installer_append_to_buf(log_line, sizeof(log_line), dst_path);
+  runtime_sync_log_line(log_line);
   return 0;
 }
 
@@ -2938,6 +3040,7 @@ static int runtime_sync_tree_callback(void *ctx, const char *name, int len,
 
 static void runtime_sync_dir_from_boot_storage(const char *relative_path) {
   char boot_root[96];
+  char log_line[384];
   char src_root[256];
   char dst_root[256];
   struct file *dir;
@@ -2956,15 +3059,27 @@ static void runtime_sync_dir_from_boot_storage(const char *relative_path) {
   installer_append_to_buf(dst_root, sizeof(dst_root), relative_path);
 
   dir = vfs_open(src_root, O_RDONLY, 0);
-  if (!dir)
+  if (!dir) {
+    str_copy_safe(log_line, "sync source directory missing: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), src_root);
+    runtime_sync_log_line(log_line);
     return;
+  }
 
   installer_ensure_parent_dirs(dst_root);
   vfs_mkdir(dst_root, 0755);
   str_copy_safe(ctx.src_root, src_root, sizeof(ctx.src_root));
   str_copy_safe(ctx.dst_root, dst_root, sizeof(ctx.dst_root));
+  str_copy_safe(log_line, "sync directory start: ", sizeof(log_line));
+  installer_append_to_buf(log_line, sizeof(log_line), src_root);
+  installer_append_to_buf(log_line, sizeof(log_line), " -> ");
+  installer_append_to_buf(log_line, sizeof(log_line), dst_root);
+  runtime_sync_log_line(log_line);
   vfs_readdir(dir, &ctx, runtime_sync_tree_callback);
   vfs_close(dir);
+  str_copy_safe(log_line, "sync directory complete: ", sizeof(log_line));
+  installer_append_to_buf(log_line, sizeof(log_line), src_root);
+  runtime_sync_log_line(log_line);
 }
 
 static void runtime_sync_boot_storage_to_live(void) {
