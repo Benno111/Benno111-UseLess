@@ -128,7 +128,7 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 
 static int dock_is_visible(void) {
   extern int boot_is_usb_boot(void);
-  return !boot_is_usb_boot();
+  return !boot_is_usb_boot() && !startup_flow_active();
 }
 
 static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT : 0; }
@@ -2158,7 +2158,7 @@ static int dock_loaded = 0;
 
 typedef enum {
   STARTUP_FLOW_NONE = 0,
-  STARTUP_FLOW_CREATE_ACCOUNT,
+  STARTUP_FLOW_SETUP_ACCOUNT,
   STARTUP_FLOW_LOGIN
 } startup_flow_t;
 
@@ -2554,6 +2554,10 @@ static int startup_flow_active(void) {
   return startup_flow != STARTUP_FLOW_NONE;
 }
 
+static int startup_setup_account_active(void) {
+  return startup_flow == STARTUP_FLOW_SETUP_ACCOUNT;
+}
+
 static int installer_first_boot_setup_required(void) {
   char manifest[192];
   char value[16];
@@ -2615,6 +2619,57 @@ static void load_account_state(void) {
                      sizeof(account_password));
 }
 
+static void load_setup_state(int *setup_complete, int *apps_seeded,
+                             int *state_found) {
+  char manifest[192];
+  char value[16];
+
+  if (setup_complete)
+    *setup_complete = 0;
+  if (apps_seeded)
+    *apps_seeded = 0;
+  if (state_found)
+    *state_found = 0;
+
+  if (read_text_file(GUI_SETUP_STATE_PATH, manifest, sizeof(manifest)) < 0)
+    return;
+
+  if (state_found)
+    *state_found = 1;
+
+  if (setup_complete &&
+      manifest_get_value(manifest, "setup_complete", value, sizeof(value)) ==
+          0) {
+    *setup_complete = value[0] == '1';
+  }
+  if (apps_seeded &&
+      manifest_get_value(manifest, "apps_seeded", value, sizeof(value)) == 0) {
+    *apps_seeded = value[0] == '1';
+  }
+}
+
+static void save_setup_state(int setup_complete, int apps_seeded) {
+  char manifest[96];
+  int idx = 0;
+  const char *setup_value = setup_complete ? "1" : "0";
+  const char *apps_value = apps_seeded ? "1" : "0";
+
+  for (const char *p = "setup_complete=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = setup_value[0];
+  manifest[idx++] = '\n';
+
+  for (const char *p = "apps_seeded="; *p && idx < (int)sizeof(manifest) - 1;
+       p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = apps_value[0];
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file(GUI_SETUP_STATE_PATH, manifest);
+}
+
 static void save_account_state(void) {
   char manifest[160];
   int idx = 0;
@@ -2635,16 +2690,15 @@ static void save_account_state(void) {
 }
 
 static void seed_all_system_apps_once(void) {
-  char state[192];
-  char apps_seeded[8];
+  int apps_seeded = 0;
+  int setup_complete = 0;
+  int state_found = 0;
 
   load_system_app_catalog();
   ensure_gui_app_dirs();
 
-  if (read_text_file(GUI_SETUP_STATE_PATH, state, sizeof(state)) >= 0 &&
-      manifest_get_value(state, "apps_seeded", apps_seeded,
-                         sizeof(apps_seeded)) == 0 &&
-      apps_seeded[0] == '1') {
+  load_setup_state(&setup_complete, &apps_seeded, &state_found);
+  if (state_found && apps_seeded) {
     return;
   }
 
@@ -2655,7 +2709,7 @@ static void seed_all_system_apps_once(void) {
   }
   dock_add_all_system_apps();
   save_dock_config();
-  write_text_file(GUI_SETUP_STATE_PATH, "apps_seeded=1\n");
+  save_setup_state(1, 1);
 }
 
 static void startup_open_modal_window(void) {
@@ -2663,8 +2717,8 @@ static void startup_open_modal_window(void) {
   int win_h = 280;
   int win_x = ((int)primary_display.width - win_w) / 2;
   int win_y = ((int)primary_display.height - win_h) / 2;
-  const char *title = startup_flow == STARTUP_FLOW_CREATE_ACCOUNT
-                          ? "Account Setup"
+  const char *title = startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
+                          ? "Setup Account"
                           : "Login";
 
   startup_window = gui_create_window(title, win_x, win_y, win_w, win_h);
@@ -2678,30 +2732,41 @@ static void startup_open_modal_window(void) {
 static void ensure_startup_flow(void) {
   int needs_account_setup = 0;
   int force_first_boot_setup = 0;
+  int setup_complete = 0;
+  int apps_seeded = 0;
+  int setup_state_found = 0;
 
   if (gui_is_installer_mode())
     return;
 
-  seed_all_system_apps_once();
   load_account_state();
+  load_setup_state(&setup_complete, &apps_seeded, &setup_state_found);
   force_first_boot_setup = installer_first_boot_setup_required();
   startup_input_username[0] = '\0';
   startup_input_password[0] = '\0';
   startup_active_field = 0;
   set_startup_status("");
 
+  if (!setup_state_found) {
+    setup_complete = account_username[0] && account_password[0];
+  }
+
   needs_account_setup =
-      force_first_boot_setup || !account_username[0] || !account_password[0];
+      force_first_boot_setup || !account_username[0] || !account_password[0] ||
+      !setup_complete;
   if (!needs_account_setup) {
     session_authenticated = 1;
     startup_flow = STARTUP_FLOW_NONE;
     startup_window = NULL;
+    if (!apps_seeded)
+      seed_all_system_apps_once();
     return;
   }
 
   session_authenticated = 0;
-  startup_flow = STARTUP_FLOW_CREATE_ACCOUNT;
+  startup_flow = STARTUP_FLOW_SETUP_ACCOUNT;
   startup_window = NULL;
+  save_setup_state(0, 0);
   startup_open_modal_window();
 }
 
@@ -2709,15 +2774,18 @@ static void complete_startup_auth(void) {
   session_authenticated = 1;
   startup_flow = STARTUP_FLOW_NONE;
   set_startup_status("");
+  save_setup_state(1, 0);
   installer_clear_first_boot_setup_flag();
   if (startup_window) {
     gui_destroy_window(startup_window);
     startup_window = NULL;
   }
+  seed_all_system_apps_once();
+  desktop_refresh();
 }
 
 static void submit_startup_flow(void) {
-  if (startup_flow == STARTUP_FLOW_CREATE_ACCOUNT) {
+  if (startup_flow == STARTUP_FLOW_SETUP_ACCOUNT) {
     char user_home[96];
     int idx = 0;
 
@@ -4015,10 +4083,10 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
   uint32_t button_bg = 0x2563EB;
   const char *title =
-      startup_flow == STARTUP_FLOW_CREATE_ACCOUNT ? "Create Your Account"
+      startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Setup Account"
                                                   : "Sign In";
   const char *button_label =
-      startup_flow == STARTUP_FLOW_CREATE_ACCOUNT ? "Create Account" : "Login";
+      startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Finish Setup" : "Login";
 
   (void)win;
   (void)content_h;
@@ -4028,25 +4096,33 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
   gui_draw_string(content_x + 20, content_y + 18, title, 0xFFFFFF, 0x181827);
 
-  gui_draw_string(content_x + 20, content_y + 74, "Username", 0xA6ADC8,
+  gui_draw_string(content_x + 20, content_y + 60,
+                  startup_setup_account_active()
+                      ? "Setup account username"
+                      : "Username",
+                  0xA6ADC8,
                   THEME_BG);
-  gui_draw_rect(content_x + 20, content_y + 94, content_w - 40, 34, user_bg);
-  gui_draw_string(content_x + 30, content_y + 106,
+  gui_draw_rect(content_x + 20, content_y + 80, content_w - 40, 34, user_bg);
+  gui_draw_string(content_x + 30, content_y + 92,
                   startup_input_username[0] ? startup_input_username
                                             : "enter username",
                   startup_input_username[0] ? 0xFFFFFF : 0x6C7086, user_bg);
 
-  gui_draw_string(content_x + 20, content_y + 142, "Password", 0xA6ADC8,
+  gui_draw_string(content_x + 20, content_y + 128,
+                  startup_setup_account_active()
+                      ? "Setup account password"
+                      : "Password",
+                  0xA6ADC8,
                   THEME_BG);
-  gui_draw_rect(content_x + 20, content_y + 162, content_w - 40, 34, pass_bg);
-  gui_draw_string(content_x + 30, content_y + 174,
+  gui_draw_rect(content_x + 20, content_y + 148, content_w - 40, 34, pass_bg);
+  gui_draw_string(content_x + 30, content_y + 160,
                   masked_password[0] ? masked_password : "enter password",
                   masked_password[0] ? 0xFFFFFF : 0x6C7086, pass_bg);
 
-  gui_draw_rect(content_x + 20, content_y + 214, 170, 34, button_bg);
-  gui_draw_string(content_x + 34, content_y + 226, button_label, 0xFFFFFF,
+  gui_draw_rect(content_x + 20, content_y + 204, 170, 34, button_bg);
+  gui_draw_string(content_x + 34, content_y + 216, button_label, 0xFFFFFF,
                   button_bg);
-  gui_draw_string(content_x + 210, content_y + 225, startup_status, 0xCDD6F4,
+  gui_draw_string(content_x + 210, content_y + 215, startup_status, 0xCDD6F4,
                   THEME_BG);
 }
 
@@ -7765,7 +7841,8 @@ void gui_draw_cursor(void);
 
 void gui_compose(void) {
   g_frame_count++;
-  installer_process_background_install();
+  if (!startup_setup_account_active())
+    installer_process_background_install();
 
   /* Draw desktop and taskbar */
   draw_desktop();
@@ -9203,8 +9280,9 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 #endif
 
   if (!gui_is_installer_mode()) {
-    load_dock_config();
     ensure_startup_flow();
+    if (!startup_flow_active())
+      load_dock_config();
   }
 
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
