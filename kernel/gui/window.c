@@ -3594,8 +3594,9 @@ static void ensure_startup_flow(void) {
     return;
 
   {
+    extern int boot_is_live_media(void);
     extern int boot_is_usb_boot(void);
-    live_disk_boot = boot_is_usb_boot();
+    live_disk_boot = boot_is_live_media() || boot_is_usb_boot();
   }
 
   load_account_state();

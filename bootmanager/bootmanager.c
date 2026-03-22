@@ -36,6 +36,7 @@ static struct boot_config boot_cfg = {
     .progress_color = 0x16213E,
 };
 static bool boot_from_usb = false;
+static bool boot_live_media = false;
 static bool boot_installer_mode = false;
 static struct boot_entry boot_entries[MAX_BOOT_ENTRIES];
 static int num_boot_entries = 0;
@@ -187,12 +188,21 @@ void boot_parse_cmdline(const char *cmdline) {
     boot_cfg.kernel_cmdline[0] = '\0';
 
   boot_from_usb = false;
+  boot_live_media = false;
   boot_installer_mode = false;
   if (str_contains_token(cmdline, "boot=usb") ||
       str_contains_token(cmdline, "usbboot") ||
       str_contains_token(cmdline, "root=/dev/sd") ||
       str_contains_token(cmdline, "root=/dev/usb")) {
     boot_from_usb = true;
+  }
+  if (str_contains_token(cmdline, "boot=cd") ||
+      str_contains_token(cmdline, "boot=live") ||
+      str_contains_token(cmdline, "livecd") ||
+      str_contains_token(cmdline, "livemedia") ||
+      str_contains_token(cmdline, "cdrom") ||
+      str_contains_token(cmdline, "root=/dev/cd")) {
+    boot_live_media = true;
   }
   if (str_contains_token(cmdline, "installer") ||
       str_contains_token(cmdline, "install") ||
@@ -218,6 +228,8 @@ void boot_parse_cmdline(const char *cmdline) {
 }
 
 int boot_is_usb_boot(void) { return boot_from_usb ? 1 : 0; }
+
+int boot_is_live_media(void) { return boot_live_media ? 1 : 0; }
 
 int boot_is_installer_mode(void) { return boot_installer_mode ? 1 : 0; }
 
