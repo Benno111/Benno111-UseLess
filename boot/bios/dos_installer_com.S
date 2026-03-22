@@ -341,6 +341,32 @@ dos_select_target_done:
     pop     %bx
     ret
 
+bios_reset_drive:
+    push    %ax
+    mov     $0x0000, %ax
+    int     $0x13
+    pop     %ax
+    ret
+
+bios_write_dap_with_retry:
+    push    %ax
+    push    %cx
+    mov     $3, %cx
+dos_bios_write_retry:
+    mov     $0x4300, %ax
+    int     $0x13
+    jnc     dos_bios_write_success
+    call    bios_reset_drive
+    loop    dos_bios_write_retry
+    stc
+    jmp     dos_bios_write_done
+dos_bios_write_success:
+    clc
+dos_bios_write_done:
+    pop     %cx
+    pop     %ax
+    ret
+
 install_image_to_target:
     push    %ax
     push    %bx
@@ -405,8 +431,7 @@ dos_install_write_sector:
 
     movb    selected_drive, %dl
     mov     $dap, %si
-    mov     $0x4300, %ax
-    int     $0x13
+    call    bios_write_dap_with_retry
     jc      dos_install_write_failed
 
     incw    current_lba
@@ -528,8 +553,7 @@ dos_install_bootloader_copy_loop:
 
     movb    selected_drive, %dl
     mov     $dap, %si
-    mov     $0x4300, %ax
-    int     $0x13
+    call    bios_write_dap_with_retry
     jc      dos_install_bootloader_write_failed
 
     incw    current_lba
