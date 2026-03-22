@@ -151,12 +151,18 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define KEY_LEFT 0x102
 #define KEY_RIGHT 0x103
 
+static int session_authenticated = 1;
+
 static int dock_is_visible(void) {
   extern int boot_is_usb_boot(void);
-  return !boot_is_usb_boot() && !startup_flow_active();
+  return !boot_is_usb_boot() && session_authenticated && !startup_flow_active();
 }
 
 static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT : 0; }
+
+static int desktop_session_active(void) {
+  return session_authenticated && !startup_flow_active();
+}
 
 static int gui_is_installer_mode(void) {
   extern int boot_is_installer_mode(void);
@@ -2206,7 +2212,6 @@ typedef enum {
 
 static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
 static startup_setup_page_t startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
-static int session_authenticated = 1;
 static char account_username[32] = "";
 static char account_password[33] = "";
 static char account_partition_label[32] = "";
@@ -2984,19 +2989,6 @@ static void startup_get_setup_field_rect(int content_x, int content_y,
     *h = 42;
 }
 
-static int installer_first_boot_setup_required(void) {
-  char manifest[192];
-  char value[16];
-
-  if (read_text_file("/System/installer-state.txt", manifest,
-                     sizeof(manifest)) < 0)
-    return 0;
-  if (manifest_get_value(manifest, "first_boot_setup", value,
-                         sizeof(value)) != 0)
-    return 0;
-  return value[0] == '1';
-}
-
 static void installer_clear_first_boot_setup_flag(void) {
   write_text_file("/System/installer-state.txt",
                   "installed=1\nprofile=system-image\nsource=installer-iso\n"
@@ -3297,23 +3289,31 @@ static void startup_begin_login_flow(const char *message, int preserve_username)
   if (!preserve_username)
     startup_input_username[0] = '\0';
   set_startup_status(message ? message : "");
-  startup_window = NULL;
+  desktop_hide_context_menu();
+  secure_attention_open = 0;
+  startup_close_other_windows();
   startup_open_modal_window();
 }
 
 static void ensure_startup_flow(void) {
   int needs_account_setup = 0;
-  int force_first_boot_setup = 0;
   int setup_complete = 0;
   int apps_seeded = 0;
   int setup_state_found = 0;
+  int live_disk_boot = 0;
+  int account_configured = 0;
 
   if (gui_is_installer_mode())
     return;
 
+  {
+    extern int boot_is_usb_boot(void);
+    live_disk_boot = boot_is_usb_boot();
+  }
+
   load_account_state();
   load_setup_state(&setup_complete, &apps_seeded, &setup_state_found);
-  force_first_boot_setup = installer_first_boot_setup_required();
+  account_configured = account_username[0] && account_password[0];
   startup_input_username[0] = '\0';
   startup_input_password[0] = '\0';
   startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
@@ -3322,12 +3322,29 @@ static void ensure_startup_flow(void) {
   ensure_user_storage_dirs();
 
   if (!setup_state_found) {
-    setup_complete = account_username[0] && account_password[0];
+    setup_complete = account_configured;
   }
 
-  needs_account_setup =
-      force_first_boot_setup || !account_username[0] || !account_password[0] ||
-      !setup_complete;
+  if (live_disk_boot) {
+    session_authenticated = 1;
+    startup_flow = STARTUP_FLOW_NONE;
+    installer_clear_first_boot_setup_flag();
+    if (!apps_seeded)
+      seed_all_system_apps_once();
+    if (startup_window) {
+      gui_destroy_window(startup_window);
+      startup_window = NULL;
+    }
+    desktop_refresh();
+    return;
+  }
+
+  if (account_configured) {
+    setup_complete = 1;
+    installer_clear_first_boot_setup_flag();
+  }
+
+  needs_account_setup = !account_configured || !setup_complete;
   if (!needs_account_setup) {
     if (!apps_seeded)
       seed_all_system_apps_once();
@@ -8358,7 +8375,8 @@ static void draw_desktop(void) {
   draw_wallpaper();
 
   /* Draw desktop icons */
-  desktop_draw_icons();
+  if (desktop_session_active())
+    desktop_draw_icons();
 
   /* Draw build info in the bottom-right corner above the dock. */
   {
@@ -9255,7 +9273,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   /* Handle desktop right-click (context menu) - check BEFORE left_click gate */
-  if (right_click) {
+  if (desktop_session_active() && right_click) {
     printk(KERN_INFO "RIGHT-CLICK at %d,%d buttons=%d\n", x, y, buttons);
     /* Check if right-click is on desktop area (not on window, menu bar, or
      * dock) */
@@ -9282,7 +9300,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
   /* Handle desktop left-click for icon selection - check BEFORE window checks
    */
-  if (left_click) {
+  if (desktop_session_active() && left_click) {
     /* Check context menu first */
     if (desktop_is_context_menu_visible()) {
       if (desktop_context_menu_click(x, y)) {
