@@ -2151,6 +2151,7 @@ typedef struct {
 static void ensure_gui_app_dirs(void);
 static void ensure_app_manifest(const dock_app_def_t *app);
 static void dock_add_item(const dock_app_def_t *app);
+static void dock_add_missing_preinstalled_apps(void);
 static void save_dock_config(void);
 static void dock_add_all_system_apps(void);
 
