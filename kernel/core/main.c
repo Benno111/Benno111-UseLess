@@ -1152,8 +1152,10 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "  Initializing PCI bus...\n");
   extern void pci_init(void);
   extern void storage_init(void);
+  extern void gui_notify_storage_ready(void);
   storage_init();
   pci_init();
+  gui_notify_storage_ready();
 
   /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */
   printk(KERN_INFO "  Initializing GPU driver...\n");

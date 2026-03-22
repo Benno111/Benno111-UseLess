@@ -10553,6 +10553,19 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   return 0;
 }
 
+void gui_notify_storage_ready(void) {
+  int startup_active_before;
+
+  if (gui_is_installer_mode())
+    return;
+
+  startup_active_before = startup_flow_active();
+  runtime_sync_boot_storage_to_live();
+  ensure_startup_flow();
+  if ((startup_active_before || !startup_flow_active()) && !startup_flow_active())
+    load_dock_config();
+}
+
 struct display *gui_get_display(void) { return &primary_display; }
 
 uint32_t gui_get_screen_width(void) { return primary_display.width; }
