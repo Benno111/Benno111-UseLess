@@ -44,6 +44,23 @@ static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color);
 static void draw_filled_circle(int cx, int cy, int r, uint32_t color);
 static int startup_flow_active(void);
+static int startup_setup_account_active(void);
+static int startup_setup_welcome_active(void);
+static int startup_setup_account_form_active(void);
+static int startup_setup_storage_active(void);
+static void startup_close_other_windows(void);
+static void startup_get_setup_layout(int content_x, int content_y, int content_w,
+                                     int content_h, int *panel_x,
+                                     int *panel_y, int *panel_w, int *panel_h,
+                                     int *rail_w, int *card_x, int *card_y,
+                                     int *card_w, int *card_h);
+static void startup_get_setup_button_rect(int content_x, int content_y,
+                                          int content_w, int content_h, int *x,
+                                          int *y, int *w, int *h);
+static void startup_get_setup_field_rect(int content_x, int content_y,
+                                         int content_w, int content_h,
+                                         int field_index, int *x, int *y,
+                                         int *w, int *h);
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
 static void installer_write_target_config(void);
@@ -1681,6 +1698,11 @@ static void build_windows_string(char *buf) {
 /* Create a new window */
 struct window *gui_create_window(const char *title, int x, int y, int w,
                                  int h) {
+  if (startup_setup_account_active() && !startup_window_opening) {
+    printk(KERN_INFO "GUI: Blocked window '%s' during account setup\n", title);
+    return NULL;
+  }
+
   /* Find free slot */
   struct window *win = NULL;
   for (int i = 0; i < MAX_WINDOWS; i++) {
@@ -2193,6 +2215,7 @@ static char startup_input_password[32] = "";
 static int startup_active_field = 0;
 static char startup_status[96] = "";
 static struct window *startup_window = NULL;
+static int startup_window_opening = 0;
 
 static uint64_t parse_u64(const char *text) {
   uint64_t value = 0;
@@ -2864,6 +2887,103 @@ static int startup_setup_storage_active(void) {
          startup_setup_page == STARTUP_SETUP_PAGE_STORAGE;
 }
 
+static void startup_close_other_windows(void) {
+  for (int i = 0; i < MAX_WINDOWS; i++) {
+    if (windows[i].id != 0) {
+      gui_destroy_window(&windows[i]);
+    }
+  }
+  focused_window = NULL;
+  startup_window = NULL;
+}
+
+static void startup_get_setup_layout(int content_x, int content_y, int content_w,
+                                     int content_h, int *panel_x,
+                                     int *panel_y, int *panel_w, int *panel_h,
+                                     int *rail_w, int *card_x, int *card_y,
+                                     int *card_w, int *card_h) {
+  int margin_x = content_w > 900 ? 64 : 24;
+  int margin_y = content_h > 640 ? 48 : 24;
+  int local_panel_x = content_x + margin_x;
+  int local_panel_y = content_y + margin_y;
+  int local_panel_w = content_w - margin_x * 2;
+  int local_panel_h = content_h - margin_y * 2;
+  int local_rail_w = local_panel_w > 760 ? 260 : 210;
+  int local_card_x;
+  int local_card_y;
+  int local_card_w;
+  int local_card_h;
+
+  if (local_panel_w < 320)
+    local_panel_w = 320;
+  if (local_panel_h < 220)
+    local_panel_h = 220;
+
+  local_card_x = local_panel_x + local_rail_w + 24;
+  local_card_y = local_panel_y + 24;
+  local_card_w = local_panel_w - local_rail_w - 48;
+  local_card_h = local_panel_h - 48;
+
+  if (local_card_w < 220)
+    local_card_w = 220;
+  if (local_card_h < 160)
+    local_card_h = 160;
+
+  if (panel_x)
+    *panel_x = local_panel_x;
+  if (panel_y)
+    *panel_y = local_panel_y;
+  if (panel_w)
+    *panel_w = local_panel_w;
+  if (panel_h)
+    *panel_h = local_panel_h;
+  if (rail_w)
+    *rail_w = local_rail_w;
+  if (card_x)
+    *card_x = local_card_x;
+  if (card_y)
+    *card_y = local_card_y;
+  if (card_w)
+    *card_w = local_card_w;
+  if (card_h)
+    *card_h = local_card_h;
+}
+
+static void startup_get_setup_button_rect(int content_x, int content_y,
+                                          int content_w, int content_h, int *x,
+                                          int *y, int *w, int *h) {
+  int card_x = 0, card_y = 0, card_w = 0, card_h = 0;
+  startup_get_setup_layout(content_x, content_y, content_w, content_h, NULL,
+                           NULL, NULL, NULL, NULL, &card_x, &card_y, &card_w,
+                           &card_h);
+  if (x)
+    *x = card_x + 36;
+  if (y)
+    *y = card_y + card_h - 78;
+  if (w)
+    *w = 220;
+  if (h)
+    *h = 42;
+}
+
+static void startup_get_setup_field_rect(int content_x, int content_y,
+                                         int content_w, int content_h,
+                                         int field_index, int *x, int *y,
+                                         int *w, int *h) {
+  int card_x = 0, card_y = 0, card_w = 0;
+  startup_get_setup_layout(content_x, content_y, content_w, content_h, NULL,
+                           NULL, NULL, NULL, NULL, &card_x, &card_y, &card_w,
+                           NULL);
+  if (x)
+    *x = card_x + 36;
+  if (y)
+    *y = card_y + (field_index == 0 ? 132 : 216);
+  if (w)
+    *w = card_w - 72;
+  if (h)
+    *h = 42;
+}
+
 static int installer_first_boot_setup_required(void) {
   char manifest[192];
   char value[16];
@@ -3121,10 +3241,11 @@ static void seed_all_system_apps_once(void) {
 }
 
 static void startup_open_modal_window(void) {
-  int win_w = 520;
-  int win_h = 280;
-  int win_x = ((int)primary_display.width - win_w) / 2;
-  int win_y = ((int)primary_display.height - win_h) / 2;
+  int setup_active = startup_setup_account_active();
+  int win_w = setup_active ? (int)primary_display.width : 520;
+  int win_h = setup_active ? (int)primary_display.height : 280;
+  int win_x = setup_active ? 0 : ((int)primary_display.width - win_w) / 2;
+  int win_y = setup_active ? 0 : ((int)primary_display.height - win_h) / 2;
   const char *title = startup_setup_welcome_active()
                           ? "Welcome"
                           : startup_setup_storage_active()
@@ -3133,7 +3254,15 @@ static void startup_open_modal_window(void) {
                                 ? "Setup Account"
                           : "Login";
 
+  if (setup_active) {
+    desktop_hide_context_menu();
+    secure_attention_open = 0;
+    startup_close_other_windows();
+  }
+
+  startup_window_opening = 1;
   startup_window = gui_create_window(title, win_x, win_y, win_w, win_h);
+  startup_window_opening = 0;
   if (startup_window) {
     startup_window->has_titlebar = false;
     startup_window->resizable = false;
@@ -4561,7 +4690,128 @@ static void draw_startup_auth_window(struct window *win, int content_x,
       startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Finish Setup" : "Login";
 
   (void)win;
-  (void)content_h;
+  if (startup_setup_account_active()) {
+    int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
+    int rail_w = 0, card_x = 0, card_y = 0, card_w = 0, card_h = 0;
+    int button_x = 0, button_y = 0, button_w = 0, button_h = 0;
+    int user_x = 0, user_y = 0, user_w = 0, user_h = 0;
+    int pass_x = 0, pass_y = 0, pass_w = 0, pass_h = 0;
+    const char *step_title = startup_setup_welcome_active()
+                                 ? "Welcome"
+                                 : startup_setup_storage_active()
+                                       ? "Create Storage"
+                                       : "Create Account";
+    const char *headline = startup_setup_welcome_active()
+                               ? "Set up your vib-OS account"
+                               : startup_setup_storage_active()
+                                     ? "Finish the storage setup"
+                                     : "Create the owner account";
+    const char *body_1 = startup_setup_welcome_active()
+                             ? "This machine is not ready for sign-in yet."
+                             : startup_setup_storage_active()
+                                   ? "A private data area will be prepared for"
+                                   : "Choose the username and password that";
+    const char *body_2 = startup_setup_welcome_active()
+                             ? "Setup runs in a locked screen with no extra"
+                             : startup_setup_storage_active()
+                                   ? account_username
+                                   : "will be used every time this system boots.";
+    const char *body_3 = startup_setup_welcome_active()
+                             ? "windows, apps, or desktop menus available."
+                             : startup_setup_storage_active()
+                                   ? "The account partition keeps user data"
+                                   : "The dock and background apps stay off";
+    const char *body_4 = startup_setup_welcome_active()
+                             ? "Continue to begin account creation."
+                             : startup_setup_storage_active()
+                                   ? "isolated on the HDD for later boots."
+                                   : "until setup is finished.";
+    const char *button_text = startup_setup_welcome_active()
+                                  ? "Start Setup"
+                                  : startup_setup_storage_active()
+                                        ? "Create Storage"
+                                        : "Continue";
+
+    startup_get_setup_layout(content_x, content_y, content_w, content_h,
+                             &panel_x, &panel_y, &panel_w, &panel_h, &rail_w,
+                             &card_x, &card_y, &card_w, &card_h);
+    startup_get_setup_button_rect(content_x, content_y, content_w, content_h,
+                                  &button_x, &button_y, &button_w, &button_h);
+    startup_get_setup_field_rect(content_x, content_y, content_w, content_h, 0,
+                                 &user_x, &user_y, &user_w, &user_h);
+    startup_get_setup_field_rect(content_x, content_y, content_w, content_h, 1,
+                                 &pass_x, &pass_y, &pass_w, &pass_h);
+    mask_secret(startup_input_password, masked_password, sizeof(masked_password));
+
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0x0B1020);
+    gui_fill_rect_alpha(panel_x, panel_y, panel_w, panel_h, 0x10203CC8);
+    gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x3B82F6, 1);
+
+    gui_fill_rect_alpha(panel_x, panel_y, rail_w, panel_h, 0x0C1730CC);
+    gui_draw_rect(panel_x + 24, panel_y + 28, 56, 56, 0x2563EB);
+    gui_draw_string(panel_x + 100, panel_y + 36, "vib-OS Setup", 0xFFFFFF,
+                    0x0C1730);
+    gui_draw_string(panel_x + 100, panel_y + 58, "Locked setup workspace",
+                    0xBFDBFE, 0x0C1730);
+
+    gui_draw_string(panel_x + 24, panel_y + 118, "Progress", 0x93C5FD,
+                    0x0C1730);
+    gui_draw_rect(panel_x + 24, panel_y + 146, rail_w - 48, 44,
+                  startup_setup_welcome_active() ? 0x1D4ED8 : 0x15233D);
+    gui_draw_string(panel_x + 40, panel_y + 160, "1  Welcome", 0xFFFFFF,
+                    startup_setup_welcome_active() ? 0x1D4ED8 : 0x15233D);
+    gui_draw_rect(panel_x + 24, panel_y + 198, rail_w - 48, 44,
+                  startup_setup_account_form_active() ? 0x1D4ED8 : 0x15233D);
+    gui_draw_string(panel_x + 40, panel_y + 212, "2  Account", 0xFFFFFF,
+                    startup_setup_account_form_active() ? 0x1D4ED8 : 0x15233D);
+    gui_draw_rect(panel_x + 24, panel_y + 250, rail_w - 48, 44,
+                  startup_setup_storage_active() ? 0x1D4ED8 : 0x15233D);
+    gui_draw_string(panel_x + 40, panel_y + 264, "3  Storage", 0xFFFFFF,
+                    startup_setup_storage_active() ? 0x1D4ED8 : 0x15233D);
+
+    gui_draw_string(panel_x + 24, panel_y + panel_h - 118, "Restrictions",
+                    0x93C5FD, 0x0C1730);
+    gui_draw_string(panel_x + 24, panel_y + panel_h - 90,
+                    "Only this setup window is available.", 0xE2E8F0,
+                    0x0C1730);
+    gui_draw_string(panel_x + 24, panel_y + panel_h - 64,
+                    "Right-click desktop menus stay disabled.", 0xE2E8F0,
+                    0x0C1730);
+    gui_draw_string(panel_x + 24, panel_y + panel_h - 38,
+                    "Changes are saved to disk for later boots.", 0xE2E8F0,
+                    0x0C1730);
+
+    gui_fill_rect_alpha(card_x, card_y, card_w, card_h, 0x111827E4);
+    gui_draw_rect_outline(card_x, card_y, card_w, card_h, 0x334155, 1);
+    gui_draw_string(card_x + 36, card_y + 34, step_title, 0x93C5FD, 0x111827);
+    gui_draw_string(card_x + 36, card_y + 64, headline, 0xFFFFFF, 0x111827);
+    gui_draw_string(card_x + 36, card_y + 98, body_1, 0xCBD5E1, 0x111827);
+    gui_draw_string(card_x + 36, card_y + 122, body_2, 0xFFFFFF, 0x111827);
+    gui_draw_string(card_x + 36, card_y + 146, body_3, 0xCBD5E1, 0x111827);
+    gui_draw_string(card_x + 36, card_y + 170, body_4, 0xCBD5E1, 0x111827);
+
+    if (startup_setup_account_form_active()) {
+      gui_draw_string(user_x, user_y - 22, "Username", 0x93C5FD, 0x111827);
+      gui_draw_rect(user_x, user_y, user_w, user_h, user_bg);
+      gui_draw_string(user_x + 12, user_y + 14,
+                      startup_input_username[0] ? startup_input_username
+                                                : "enter username",
+                      startup_input_username[0] ? 0xFFFFFF : 0x64748B, user_bg);
+
+      gui_draw_string(pass_x, pass_y - 22, "Password", 0x93C5FD, 0x111827);
+      gui_draw_rect(pass_x, pass_y, pass_w, pass_h, pass_bg);
+      gui_draw_string(pass_x + 12, pass_y + 14,
+                      masked_password[0] ? masked_password : "enter password",
+                      masked_password[0] ? 0xFFFFFF : 0x64748B, pass_bg);
+    }
+
+    gui_draw_rect(button_x, button_y, button_w, button_h, 0x2563EB);
+    gui_draw_string(button_x + 22, button_y + 14, button_text, 0xFFFFFF,
+                    0x2563EB);
+    gui_draw_string(button_x + button_w + 18, button_y + 14, startup_status,
+                    0xCBD5E1, 0x111827);
+    return;
+  }
 
   if (startup_setup_welcome_active()) {
     gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
@@ -8794,38 +9044,44 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   int left_release = !(buttons & 1) && (old_buttons & 1);
   int right_click = (buttons & 2) && !(old_buttons & 2); /* Right button */
 
-  /* Handle context menu hover - ALWAYS call when menu visible */
-  int menu_vis = desktop_is_context_menu_visible();
-  if (menu_vis) {
-    printk(KERN_INFO "MOUSE: Menu visible, calling hover at %d,%d\n", x, y);
-    desktop_context_menu_hover(x, y);
-    /* Force compositor to update */
-    extern void compositor_mark_full_redraw(void);
-    compositor_mark_full_redraw();
-  }
-
-  /* Track for double-click detection */
-  static int last_click_x = 0, last_click_y = 0;
-  static int click_count = 0;
-
   if (startup_flow_active()) {
+    if (desktop_is_context_menu_visible())
+      desktop_hide_context_menu();
+
     if (left_click && startup_window) {
       int content_x = startup_window->x + BORDER_WIDTH;
       int content_y = startup_window->y + BORDER_WIDTH;
       int content_w = startup_window->width - BORDER_WIDTH * 2;
+      int content_h = startup_window->height - BORDER_WIDTH * 2;
 
       gui_focus_window(startup_window);
-      if (startup_setup_welcome_active()) {
-        if (x >= content_x + 20 && x < content_x + 190 &&
-            y >= content_y + 198 && y < content_y + 232) {
-          submit_startup_flow();
-          return;
+      if (startup_setup_account_active()) {
+        int button_x = 0, button_y = 0, button_w = 0, button_h = 0;
+        int field_x = 0, field_y = 0, field_w = 0, field_h = 0;
+
+        startup_get_setup_button_rect(content_x, content_y, content_w, content_h,
+                                      &button_x, &button_y, &button_w,
+                                      &button_h);
+        if (startup_setup_account_form_active()) {
+          startup_get_setup_field_rect(content_x, content_y, content_w,
+                                       content_h, 0, &field_x, &field_y,
+                                       &field_w, &field_h);
+          if (x >= field_x && x < field_x + field_w && y >= field_y &&
+              y < field_y + field_h) {
+            startup_active_field = 0;
+            return;
+          }
+          startup_get_setup_field_rect(content_x, content_y, content_w,
+                                       content_h, 1, &field_x, &field_y,
+                                       &field_w, &field_h);
+          if (x >= field_x && x < field_x + field_w && y >= field_y &&
+              y < field_y + field_h) {
+            startup_active_field = 1;
+            return;
+          }
         }
-        return;
-      }
-      if (startup_setup_storage_active()) {
-        if (x >= content_x + 20 && x < content_x + 190 &&
-            y >= content_y + 204 && y < content_y + 238) {
+        if (x >= button_x && x < button_x + button_w && y >= button_y &&
+            y < button_y + button_h) {
           submit_startup_flow();
           return;
         }
@@ -8849,6 +9105,20 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
     return;
   }
+
+  /* Handle context menu hover - ALWAYS call when menu visible */
+  int menu_vis = desktop_is_context_menu_visible();
+  if (menu_vis) {
+    printk(KERN_INFO "MOUSE: Menu visible, calling hover at %d,%d\n", x, y);
+    desktop_context_menu_hover(x, y);
+    /* Force compositor to update */
+    extern void compositor_mark_full_redraw(void);
+    compositor_mark_full_redraw();
+  }
+
+  /* Track for double-click detection */
+  static int last_click_x = 0, last_click_y = 0;
+  static int click_count = 0;
 
   if (secure_attention_open) {
     if (left_click) {
