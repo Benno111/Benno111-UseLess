@@ -6749,17 +6749,17 @@ static void draw_window(struct window *win) {
             btn_char == '+' || btn_char == '=') {
           /* Orange operator buttons */
           bg = 0xFF9F0A;
-          mg = (bg & 0xFEFEFE) + 0x202020; /* Slightly lighter for top edge */
+          mg = 0xFFAE31; /* Slightly lighter for top edge */
           fg = 0xFFFFFF;
         } else if (btn_char == 'C' || btn_char == '+' || btn_char == '%') {
           /* Light gray function buttons */
           bg = 0xA5A5A5;
-          mg = (bg & 0xFEFEFE) + 0x202020; /* Slightly lighter for top edge */
+          mg = 0xB5B5B5; /* Slightly lighter for top edge */
           fg = 0x000000;
         } else {
           /* Dark gray number buttons */
           bg = 0x333333;
-          mg = (bg & 0xFEFEFE) + 0x202020; /* Slightly lighter for top edge */
+          mg = 0x444444; /* Slightly lighter for top edge */
           fg = 0xFFFFFF;
         }
 
