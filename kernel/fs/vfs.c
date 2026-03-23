@@ -647,19 +647,16 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
 
   /* Reject conflicting reuse of the same mountpoint, but treat an identical
    * remount request as already satisfied. */
-  char norm_target[256];
-  strncpy(norm_target, target, sizeof(norm_target));
-  normalize_path(norm_target);
-  struct vfsmount *existing = find_mount_by_target(norm_target);
+  struct vfsmount *existing = find_mount_by_target(target);
   if (existing) {
     if (path_compare(existing->mnt_devname, source) == 0 &&
         path_compare(existing->mnt_fstype, fstype) == 0) {
       printk(KERN_INFO "VFS: '%s' already mounted on '%s', skipping duplicate\n",
-             source, norm_target);
+             source, target);
       return 0;
     }
     printk(KERN_WARNING "VFS: Mountpoint '%s' already in use by '%s' (%s)\n",
-           norm_target, existing->mnt_devname, existing->mnt_fstype);
+           target, existing->mnt_devname, existing->mnt_fstype);
     return -EBUSY;
   }
 
@@ -694,7 +691,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
     mnt->mnt_devname[i] = source[i];
   }
   mnt->mnt_devname[i] = '\0';
-  path_copy(mnt->mnt_target, norm_target, sizeof(mnt->mnt_target));
+  path_copy(mnt->mnt_target, target, sizeof(mnt->mnt_target));
   path_copy(mnt->mnt_fstype, fstype, sizeof(mnt->mnt_fstype));
 
   mounts[mount_count++] = mnt;
