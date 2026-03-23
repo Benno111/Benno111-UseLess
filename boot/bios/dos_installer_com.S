@@ -11,8 +11,32 @@
 .global _start
 .org 0x100
 
+
 #define IMAGE_FILENAME "OSSYS.IMG"
 #define BOOT_AREA_SECTORS 2048
+
+msc_buffer: .space 64
+msc_drive_letter: .byte 0
+
+; --- MSCDEX/CD-ROM detection ---
+detect_cdrom:
+    mov $0x1500, %ax        ; MSCDEX installation check
+    mov $msc_buffer, %bx
+    int $0x2F
+    cmp $0xAD, %al
+    jne .no_cdrom
+    movb $'D', msc_drive_letter ; Default to D: (MSCDEX usually starts at D:)
+    clc
+    ret
+.no_cdrom:
+    movb $0, msc_drive_letter
+    stc
+    ret
+
+read_cdrom_file:
+    ; This is a stub. Real implementation would use INT 21h with drive letter set to msc_drive_letter
+    ; and handle file open/read/close as with normal DOS files, but ensure the drive is a CD-ROM.
+    ret
 
 _start:
     cli
@@ -25,12 +49,14 @@ _start:
 
     movb    $0, selected_drive
 
+
 main_menu:
     call    clear_screen
     mov     $title_text, %si
     call    print_string
     mov     $subtitle_text, %si
     call    print_string
+    call    detect_cdrom
     call    print_target_summary
     mov     $menu_text, %si
     call    print_string
@@ -243,6 +269,7 @@ print_drive_id:
     call    print_hex_byte
     ret
 
+
 print_target_summary:
     push    %ax
     mov     $image_file_text, %si
@@ -259,6 +286,17 @@ print_target_summary:
     call    print_drive_id
     mov     $crlf_text, %si
     call    print_string
+    ; Show CD-ROM if detected
+    movb    msc_drive_letter, %al
+    test    %al, %al
+    jz      .no_cd
+    mov     $"CD-ROM: ", %si
+    call    print_string
+    mov     msc_drive_letter, %al
+    call    print_char
+    mov     $crlf_text, %si
+    call    print_string
+.no_cd:
     pop     %ax
     ret
 print_target_summary_none:
