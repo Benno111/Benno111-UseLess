@@ -2222,6 +2222,7 @@ static char account_username[32] = "";
 static char account_password[33] = "";
 static char account_partition_label[32] = "";
 static char account_disk_location[32] = "";
+static int account_partition_storage_ready = 0;
 static char startup_input_username[32] = "";
 static char startup_input_password[32] = "";
 static int startup_active_field = 0;
@@ -3651,6 +3652,8 @@ static void load_account_state(void) {
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
   if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0) {
+    if (!account_partition_storage_ready)
+      return;
     if (load_account_manifest_from_partition(manifest, sizeof(manifest)) != 0)
       return;
   }
@@ -3757,7 +3760,8 @@ static void save_account_state(void) {
                             sizeof(per_user_path)) == 0) {
     write_text_file(per_user_path, manifest);
   }
-  save_account_manifest_to_partition(manifest);
+  if (account_partition_storage_ready)
+    save_account_manifest_to_partition(manifest);
 }
 
 static int load_install_target_disk_location(char *buf, int max) {
@@ -10782,6 +10786,7 @@ void gui_notify_storage_ready(void) {
   if (gui_is_installer_mode())
     return;
 
+  account_partition_storage_ready = 1;
   startup_active_before = startup_flow_active();
   runtime_sync_boot_storage_to_live();
   ensure_startup_flow();
