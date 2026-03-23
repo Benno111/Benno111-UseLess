@@ -8482,7 +8482,6 @@ static void draw_icon(int x, int y, int size, const unsigned char *bitmap,
           draw_pixel(dx, dy, color);
         }
       }
-      return;
     }
   }
 }

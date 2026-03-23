@@ -1156,7 +1156,8 @@ static void init_subsystems(void *dtb) {
   extern void pit_sleep(uint32_t ms);
   storage_init();
   pci_init();
-  printk(KERN_INFO "  Waiting 1 second for initial disk mounts...\n");
+  printk(KERN_INFO
+         "  Waiting 1 second after disk initialization before continuing boot...\n");
   pit_sleep(1000);
   gui_notify_storage_ready();
 
