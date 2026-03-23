@@ -6742,7 +6742,7 @@ static void draw_window(struct window *win) {
         }
 
         /* Button colors */
-        uint32_t bg, fg;
+        uint32_t bg, mg, fg;
         char btn_char = btns[row][col][0];
 
         if (btn_char == '/' || btn_char == '*' || btn_char == '-' ||
