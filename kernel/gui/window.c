@@ -2175,6 +2175,8 @@ typedef struct {
 #define GUI_ACCOUNT_PATH "/System/account.cfg"
 #define GUI_ACCOUNTS_DIR "/System/Accounts"
 #define GUI_VERSION_PATH "/System/version.cfg"
+#define ACCOUNT_RAW_SECTORS 16
+#define ACCOUNT_RAW_BYTES (ACCOUNT_RAW_SECTORS * 512)
 #define MAX_SYSTEM_APPS 24
 #define MAX_DOCK_ITEMS 16
 #define APP_STORE_CARD_HEIGHT 54
@@ -3256,6 +3258,183 @@ static int read_account_manifest(const char *username, char *manifest, int max) 
   return -1;
 }
 
+static int account_partition_manifest_info(const char *preferred_label,
+                                           int *disk_index_out,
+                                           uint32_t *start_lba_out,
+                                           uint32_t *sector_count_out) {
+  char disk_location[32];
+  int disk_index;
+  int partition_count;
+  int first_data_index = -1;
+  char label[32];
+  storage_partition_kind_t kind;
+  uint32_t start_lba = 0;
+  uint32_t sector_count = 0;
+
+  extern int storage_get_disk_index_by_location(const char *location);
+  extern int storage_get_partition_count(int disk_index);
+  extern int storage_get_partition_info(int disk_index, int partition_index,
+                                        storage_partition_kind_t *kind,
+                                        char *label, int label_max,
+                                        uint32_t *start_lba,
+                                        uint32_t *sector_count);
+
+  disk_location[0] = '\0';
+  if (account_disk_location[0]) {
+    str_copy_safe(disk_location, account_disk_location, sizeof(disk_location));
+  } else if (load_install_target_disk_location(disk_location,
+                                               sizeof(disk_location)) != 0) {
+    return -1;
+  }
+
+  disk_index = storage_get_disk_index_by_location(disk_location);
+  if (disk_index < 0)
+    return -1;
+
+  partition_count = storage_get_partition_count(disk_index);
+  for (int i = 0; i < partition_count; i++) {
+    label[0] = '\0';
+    if (storage_get_partition_info(disk_index, i, &kind, label, sizeof(label),
+                                   &start_lba, &sector_count) != 0)
+      continue;
+    if (kind != STORAGE_PARTITION_DATA)
+      continue;
+    if (first_data_index < 0)
+      first_data_index = i;
+    if (!preferred_label || !preferred_label[0] ||
+        str_cmp(label, preferred_label) == 0) {
+      if (disk_index_out)
+        *disk_index_out = disk_index;
+      if (start_lba_out)
+        *start_lba_out = start_lba;
+      if (sector_count_out)
+        *sector_count_out = sector_count;
+      return 0;
+    }
+  }
+
+  if (first_data_index >= 0 &&
+      storage_get_partition_info(disk_index, first_data_index, &kind, label,
+                                 sizeof(label), &start_lba,
+                                 &sector_count) == 0 &&
+      kind == STORAGE_PARTITION_DATA) {
+    if (disk_index_out)
+      *disk_index_out = disk_index;
+    if (start_lba_out)
+      *start_lba_out = start_lba;
+    if (sector_count_out)
+      *sector_count_out = sector_count;
+    return 0;
+  }
+
+  return -1;
+}
+
+static int load_account_manifest_from_partition(char *manifest, int max) {
+  uint8_t *buf;
+  uint32_t start_lba = 0;
+  uint32_t sector_count = 0;
+  uint32_t manifest_len;
+  int disk_index = -1;
+  int ret = -1;
+
+  extern int storage_read_block(int disk_index, uint32_t lba, void *buffer,
+                                uint32_t block_size);
+
+  if (!manifest || max <= 1)
+    return -1;
+  if (account_partition_manifest_info(account_partition_label, &disk_index,
+                                      &start_lba, &sector_count) != 0)
+    return -1;
+  if (sector_count < ACCOUNT_RAW_SECTORS)
+    return -1;
+
+  buf = (uint8_t *)kmalloc(ACCOUNT_RAW_BYTES, GFP_KERNEL);
+  if (!buf)
+    return -1;
+
+  for (int sector = 0; sector < ACCOUNT_RAW_SECTORS; sector++) {
+    if (storage_read_block(disk_index, start_lba + (uint32_t)sector,
+                           buf + sector * 512, 512) != 0)
+      goto done;
+  }
+
+  if (buf[0] != 'O' || buf[1] != 'S' || buf[2] != '8' || buf[3] != 'A' ||
+      buf[4] != 'C' || buf[5] != 'C' || buf[6] != 'T' || buf[7] != '1')
+    goto done;
+
+  manifest_len = (uint32_t)buf[8] | ((uint32_t)buf[9] << 8) |
+                 ((uint32_t)buf[10] << 16) | ((uint32_t)buf[11] << 24);
+  if (manifest_len == 0 || manifest_len >= (uint32_t)max ||
+      manifest_len > (uint32_t)(ACCOUNT_RAW_BYTES - 16))
+    goto done;
+
+  for (uint32_t i = 0; i < manifest_len; i++)
+    manifest[i] = (char)buf[16 + i];
+  manifest[manifest_len] = '\0';
+  ret = 0;
+
+done:
+  kfree(buf);
+  return ret;
+}
+
+static int save_account_manifest_to_partition(const char *manifest) {
+  uint8_t *buf;
+  uint32_t start_lba = 0;
+  uint32_t sector_count = 0;
+  uint32_t manifest_len = 0;
+  int disk_index = -1;
+  int ret = -1;
+
+  extern int storage_write_block(int disk_index, uint32_t lba,
+                                 const void *buffer, uint32_t block_size);
+
+  if (!manifest)
+    return -1;
+  while (manifest[manifest_len])
+    manifest_len++;
+  if (manifest_len == 0 || manifest_len > (uint32_t)(ACCOUNT_RAW_BYTES - 16))
+    return -1;
+  if (account_partition_manifest_info(account_partition_label, &disk_index,
+                                      &start_lba, &sector_count) != 0)
+    return -1;
+  if (sector_count < ACCOUNT_RAW_SECTORS)
+    return -1;
+
+  buf = (uint8_t *)kmalloc(ACCOUNT_RAW_BYTES, GFP_KERNEL);
+  if (!buf)
+    return -1;
+  for (int i = 0; i < ACCOUNT_RAW_BYTES; i++)
+    buf[i] = 0;
+
+  buf[0] = 'O';
+  buf[1] = 'S';
+  buf[2] = '8';
+  buf[3] = 'A';
+  buf[4] = 'C';
+  buf[5] = 'C';
+  buf[6] = 'T';
+  buf[7] = '1';
+  buf[8] = (uint8_t)(manifest_len & 0xFF);
+  buf[9] = (uint8_t)((manifest_len >> 8) & 0xFF);
+  buf[10] = (uint8_t)((manifest_len >> 16) & 0xFF);
+  buf[11] = (uint8_t)((manifest_len >> 24) & 0xFF);
+  for (uint32_t i = 0; i < manifest_len; i++)
+    buf[16 + i] = (uint8_t)manifest[i];
+
+  for (int sector = 0; sector < ACCOUNT_RAW_SECTORS; sector++) {
+    if (storage_write_block(disk_index, start_lba + (uint32_t)sector,
+                            buf + sector * 512, 512) != 0)
+      goto done;
+  }
+
+  ret = 0;
+done:
+  kfree(buf);
+  return ret;
+}
+
 static int parse_account_manifest(const char *manifest, const char *fallback_name,
                                   char *username, int username_max,
                                   char *password_hash, int password_hash_max,
@@ -3471,8 +3650,10 @@ static void load_account_state(void) {
   account_password[0] = '\0';
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
-  if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0)
-    return;
+  if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0) {
+    if (load_account_manifest_from_partition(manifest, sizeof(manifest)) != 0)
+      return;
+  }
   parse_account_manifest(manifest, NULL, account_username,
                          sizeof(account_username), account_password,
                          sizeof(account_password), account_partition_label,
@@ -3576,6 +3757,7 @@ static void save_account_state(void) {
                             sizeof(per_user_path)) == 0) {
     write_text_file(per_user_path, manifest);
   }
+  save_account_manifest_to_partition(manifest);
 }
 
 static int load_install_target_disk_location(char *buf, int max) {
@@ -8181,14 +8363,7 @@ static void draw_main_menu_panel(void) {
                       panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
                       panel_w - BORDER_WIDTH * 2, 1, 0x48DCE8F5);
 
-  {
-    int btn_cy = panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT / 2;
-    draw_filled_circle(panel_x + BORDER_WIDTH + 14, btn_cy, 5, COLOR_BTN_CLOSE);
-    draw_filled_circle(panel_x + BORDER_WIDTH + 30, btn_cy, 5, COLOR_BTN_MINIMIZE);
-    draw_filled_circle(panel_x + BORDER_WIDTH + 46, btn_cy, 5, COLOR_BTN_ZOOM);
-  }
-
-  gui_draw_string(panel_x + 76, panel_y + 8, "OS 8", 0xFFF7FBFF,
+  gui_draw_string(panel_x + 21, panel_y + 8, "OS 8", 0xFFF7FBFF,
                   0x00000000);
   gui_fill_rect_alpha(panel_x + BORDER_WIDTH, panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT,
                       MAIN_MENU_LEFT_W - BORDER_WIDTH, panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,

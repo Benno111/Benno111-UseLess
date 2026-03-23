@@ -1153,8 +1153,11 @@ static void init_subsystems(void *dtb) {
   extern void pci_init(void);
   extern void storage_init(void);
   extern void gui_notify_storage_ready(void);
+  extern void pit_sleep(uint32_t ms);
   storage_init();
   pci_init();
+  printk(KERN_INFO "  Waiting 1 second for initial disk mounts...\n");
+  pit_sleep(1000);
   gui_notify_storage_ready();
 
   /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */

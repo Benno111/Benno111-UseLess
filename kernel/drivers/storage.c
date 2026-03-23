@@ -1738,6 +1738,17 @@ int storage_read_block(int disk_index, uint32_t lba, void *buffer,
   return -1;
 }
 
+int storage_write_block(int disk_index, uint32_t lba, const void *buffer,
+                        uint32_t block_size) {
+  if (disk_index < 0 || disk_index >= storage_disk_count || !buffer)
+    return -1;
+
+  if (block_size == 512)
+    return storage_disk_write_sector(disk_index, lba, (void *)buffer);
+
+  return -1;
+}
+
 int storage_get_kind_count(storage_kind_t kind) {
   if (kind <= STORAGE_KIND_UNKNOWN || kind > STORAGE_KIND_APPLE_ANS)
     return 0;
@@ -1946,6 +1957,40 @@ int storage_describe_partition(int disk_index, int partition_index, char *buf,
   storage_append_string(buf, max, ", ");
   storage_append_decimal(buf, max, (int)part->size_mib);
   storage_append_string(buf, max, " MiB)");
+  return 0;
+}
+
+int storage_get_partition_info(int disk_index, int partition_index,
+                               storage_partition_kind_t *kind, char *label,
+                               int label_max, uint32_t *start_lba,
+                               uint32_t *sector_count) {
+  storage_partition_t *part = NULL;
+  int visible_index = 0;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count)
+    return -1;
+
+  for (int i = 0; i < STORAGE_MAX_PARTITIONS; i++) {
+    if (!storage_partitions[disk_index][i].present)
+      continue;
+    if (visible_index == partition_index) {
+      part = &storage_partitions[disk_index][i];
+      break;
+    }
+    visible_index++;
+  }
+
+  if (!part)
+    return -1;
+
+  if (kind)
+    *kind = part->kind;
+  if (label && label_max > 0)
+    storage_copy_string(label, part->label, label_max);
+  if (start_lba)
+    *start_lba = part->start_lba;
+  if (sector_count)
+    *sector_count = part->sector_count;
   return 0;
 }
 
