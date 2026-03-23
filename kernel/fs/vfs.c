@@ -1,11 +1,3 @@
-// Normalize path (remove trailing slash except root)
-static void normalize_path(char *path) {
-  size_t len = strlen(path);
-  while (len > 1 && path[len - 1] == '/') {
-    path[len - 1] = '\0';
-    len--;
-  }
-}
 /*
  * UnixOS Kernel - Virtual Filesystem Implementation
  */
