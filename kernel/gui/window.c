@@ -6873,10 +6873,26 @@ static void draw_window(struct window *win) {
       gui_draw_string(list_x + 16, list_y + 10, "This folder is empty.",
                       0xCBD5E1, 0x0F172A);
     } else {
-      for (int i = 0; i < item_count && i < 10; i++) {
-        int row_y = list_y + i * row_h;
+      // Dedup tracking
+      char seen[256][256];
+      int seen_count = 0;
+      int displayed = 0;
+      for (int i = 0; i < item_count && displayed < 10; i++) {
+        // Skip . and ..
+        if (!strcmp(items[i].name, ".") || !strcmp(items[i].name, ".."))
+          continue;
+        int duplicate = 0;
+        for (int j = 0; j < seen_count; j++) {
+          if (!strcmp(seen[j], items[i].name)) {
+            duplicate = 1;
+            break;
+          }
+        }
+        if (duplicate) continue;
+        strncpy(seen[seen_count++], items[i].name, 256);
+        int row_y = list_y + displayed * row_h;
         int is_selected = (selected_index == i);
-        uint32_t row_bg = is_selected ? 0x1D4ED8 : (i % 2 ? 0x111827 : 0x0F172A);
+        uint32_t row_bg = is_selected ? 0x1D4ED8 : (displayed % 2 ? 0x111827 : 0x0F172A);
         uint32_t icon_color = 0xFFFFFF;
         const unsigned char *icon =
             fm_icon_for_item(items[i].name, items[i].type, &icon_color);
@@ -6889,6 +6905,7 @@ static void draw_window(struct window *win) {
         gui_draw_string(list_x + 48, row_y + 14, short_name, 0xFFFFFF, row_bg);
         gui_draw_string(list_x + list_w - 78, row_y + 14, type_label,
                         is_selected ? 0xDBEAFE : 0x94A3B8, row_bg);
+        displayed++;
       }
     }
 
@@ -8405,11 +8422,6 @@ static void draw_main_menu_panel(void) {
   draw_main_menu_row(MAIN_MENU_ITEM_POWER, "Power", main_menu_power_open ? "v" : ">",
                      0xDC2626, 1);
   draw_main_menu_power_dropdown();
-
-  gui_fill_rect_alpha(connector_x, panel_y + panel_h - 2, 20, 12, 0xDCE3EEF9);
-  gui_fill_rect_alpha(connector_x + 2, panel_y + panel_h, 16, 10, 0x8A495C75);
-  gui_draw_rect_outline(connector_x, panel_y + panel_h - 2, 20, 12,
-                        0x805A7CA7, 1);
 }
 
 static int main_menu_activate(int item_index) {
