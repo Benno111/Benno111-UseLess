@@ -1199,9 +1199,9 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "[INIT] Enabling interrupts...\n");
   /* Enable interrupts */
   arch_irq_enable();
-  printk(KERN_INFO
-         "[INIT] Waiting 1 second after disk initialization before continuing boot...\n");
-  pit_sleep(1000);
+  //printk(KERN_INFO
+   //      "[INIT] Waiting 1 second after disk initialization before continuing boot...\n");
+  //pit_sleep(1000);
 
   printk(KERN_INFO "[INIT] Kernel initialization complete!\n\n");
 }
