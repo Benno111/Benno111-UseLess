@@ -6879,17 +6879,17 @@ static void draw_window(struct window *win) {
       int displayed = 0;
       for (int i = 0; i < item_count && displayed < 10; i++) {
         // Skip . and ..
-        if (!strcmp(items[i].name, ".") || !strcmp(items[i].name, ".."))
+        if (!str_cmp(items[i].name, ".") || !str_cmp(items[i].name, ".."))
           continue;
         int duplicate = 0;
         for (int j = 0; j < seen_count; j++) {
-          if (!strcmp(seen[j], items[i].name)) {
+          if (!str_cmp(seen[j], items[i].name)) {
             duplicate = 1;
             break;
           }
         }
         if (duplicate) continue;
-        strncpy(seen[seen_count++], items[i].name, 256);
+        str_copy_safe(seen[seen_count++], items[i].name, 256);
         int row_y = list_y + displayed * row_h;
         int is_selected = (selected_index == i);
         uint32_t row_bg = is_selected ? 0x1D4ED8 : (displayed % 2 ? 0x111827 : 0x0F172A);
