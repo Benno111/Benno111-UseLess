@@ -3172,6 +3172,38 @@ static int load_app_id_from_manifest_file(const char *path, const char *fallback
   return app_id[0] ? 0 : -1;
 }
 
+typedef struct {
+  char path[160];
+  int found;
+} account_scan_ctx_t;
+
+static int find_first_account_manifest_callback(void *raw_ctx, const char *name,
+                                                int len, loff_t offset,
+                                                ino_t ino, unsigned type) {
+  account_scan_ctx_t *scan = (account_scan_ctx_t *)raw_ctx;
+  int idx = 0;
+
+  (void)offset;
+  (void)ino;
+
+  if (!scan || scan->found || !name || len < 5 || type == 4)
+    return 0;
+  if (name[len - 4] != '.' || name[len - 3] != 'c' || name[len - 2] != 'f' ||
+      name[len - 1] != 'g')
+    return 0;
+
+  str_copy_safe(scan->path, GUI_ACCOUNTS_DIR, sizeof(scan->path));
+  while (scan->path[idx] && idx < (int)sizeof(scan->path) - 1)
+    idx++;
+  if (idx < (int)sizeof(scan->path) - 1)
+    scan->path[idx++] = '/';
+  for (int i = 0; i < len && idx < (int)sizeof(scan->path) - 1; i++)
+    scan->path[idx++] = name[i];
+  scan->path[idx] = '\0';
+  scan->found = 1;
+  return 0;
+}
+
 static int account_manifest_path(const char *username, char *path, int max) {
   int idx = 0;
 
@@ -3208,6 +3240,19 @@ static int read_account_manifest(const char *username, char *manifest, int max) 
 
   if (read_text_file(GUI_ACCOUNT_PATH, manifest, max) >= 0)
     return 0;
+
+  {
+    struct file *dir = vfs_open(GUI_ACCOUNTS_DIR, O_RDONLY, 0);
+    if (dir) {
+      account_scan_ctx_t ctx;
+      ctx.path[0] = '\0';
+      ctx.found = 0;
+      vfs_readdir(dir, &ctx, find_first_account_manifest_callback);
+      vfs_close(dir);
+      if (ctx.found && read_text_file(ctx.path, manifest, max) >= 0)
+        return 0;
+    }
+  }
   return -1;
 }
 
@@ -3705,6 +3750,7 @@ static void ensure_startup_flow(void) {
   int setup_state_found = 0;
   int live_disk_boot = 0;
   int account_configured = 0;
+  int storage_ready = 0;
 
   if (gui_is_installer_mode())
     return;
@@ -3712,7 +3758,9 @@ static void ensure_startup_flow(void) {
   {
     extern int boot_is_live_media(void);
     extern int boot_is_usb_boot(void);
+    extern int storage_get_disk_count(void);
     live_disk_boot = boot_is_live_media() || boot_is_usb_boot();
+    storage_ready = live_disk_boot || storage_get_disk_count() > 0;
   }
 
   load_account_state();
@@ -3760,7 +3808,8 @@ static void ensure_startup_flow(void) {
   startup_flow = STARTUP_FLOW_SETUP_ACCOUNT;
   startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
   startup_window = NULL;
-  save_setup_state(0, 0);
+  if (storage_ready)
+    save_setup_state(0, 0);
   startup_open_modal_window();
 }
 
