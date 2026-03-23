@@ -115,6 +115,32 @@ print_string:
     pop     %ax
     ret
 
+bios_reset_drive:
+    push    %ax
+    mov     $0x0000, %ax
+    int     $0x13
+    pop     %ax
+    ret
+
+bios_read_dap_with_retry:
+    push    %ax
+    push    %cx
+    mov     $3, %cx
+.dap_retry:
+    mov     $0x4200, %ax
+    int     $0x13
+    jnc     .dap_success
+    call    bios_reset_drive
+    loop    .dap_retry
+    stc
+    jmp     .dap_done
+.dap_success:
+    clc
+.dap_done:
+    pop     %cx
+    pop     %ax
+    ret
+
 /* ===================================================================== */
 /* Stage 2 loader */
 /* ===================================================================== */
@@ -132,13 +158,14 @@ load_stage2:
     movl    $0, dap_lba + 4
     movb    boot_drive, %dl
     mov     $dap, %si
-    mov     $0x4200, %ax
-    int     $0x13
+    call    bios_read_dap_with_retry
     jnc     .done
 
     cmpl    $0, hidden_sectors
     jne     .fail
 
+    mov     $3, %si
+.chs_retry:
     movb    boot_drive, %dl
     mov     $0x0200, %ax        # BIOS read sectors function
     mov     $16, %al            # Number of sectors to read
@@ -149,6 +176,9 @@ load_stage2:
     mov     $0x7E00, %bx        # Load to 0x7E00
     int     $0x13
     jnc     .done
+    call    bios_reset_drive
+    dec     %si
+    jnz     .chs_retry
 
 .fail:
     stc
