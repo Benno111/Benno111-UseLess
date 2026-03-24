@@ -342,7 +342,7 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@echo "[CC] $<"
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 
-INSTALLER_BOOT_STAGE1_OBJ := $(BUILD_DIR)/boot/installer_stage1.o
+
 INSTALLER_BOOT_STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
 INSTALLER_BOOT_STAGE1_BIN := $(BUILD_DIR)/boot/installer_stage1.bin
 INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
@@ -353,10 +353,11 @@ DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
 # Use nasm for NASM-style assembly
 NASM ?= nasm
 
-$(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
+
+$(INSTALLER_BOOT_STAGE1_BIN): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@echo "[NASM] $<"
-	@$(NASM) -f elf32 $< -o $@
+	@$(NASM) -f bin $< -o $@
 
 $(INSTALLER_BOOT_STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
@@ -368,9 +369,7 @@ $(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DI
 	@echo "[AS] $<"
 	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
 
-$(INSTALLER_BOOT_STAGE1_BIN): $(INSTALLER_BOOT_STAGE1_OBJ)
-	@echo "[OBJCOPY] $@"
-	@$(OBJCOPY) -O binary $< $@
+
 
 $(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_OBJ)
 	@echo "[OBJCOPY] $@"
