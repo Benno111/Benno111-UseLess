@@ -3,13 +3,13 @@ org 0x7C00
 bits 16
 
 start:
+
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
-
     sti
 
     ; Save boot drive
@@ -47,17 +47,21 @@ load_stage2:
 ; -------------------------
 load_lba:
 
-    mov si, 3              ; retry count
+    mov cx, 3              ; retry count
 
 .read_retry:
     mov ah, 0x42           ; extended read
     mov dl, [boot_drive]
-    mov si, dap
+    push ds                ; save ds
+    xor ax, ax             ; set ds = 0 (org 0x7C00)
+    mov ds, ax
+    mov si, dap            ; DS:SI -> DAP
     int 0x13
+    pop ds                 ; restore ds
     jnc .read_ok
 
     ; failure → retry
-    dec si
+    dec cx
     jz load_fail
 
     ; reset disk
@@ -66,9 +70,10 @@ load_lba:
     int 0x13
 
     ; small delay (helps on some BIOS)
-    mov cx, 0xFFFF
+    mov bx, 0xFFFF
 .delay:
-    loop .delay
+    dec bx
+    jnz .delay
 
     jmp .read_retry
 
