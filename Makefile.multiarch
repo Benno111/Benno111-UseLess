@@ -320,10 +320,16 @@ else
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 endif
 
+
+$(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@echo "[NASM] $<"
+	@$(NASM) -f elf32 $< -o $@
+
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
-	@$(AS) $(ASFLAGS) -c $< -o $@
+	@$(AS) $(ASFLAGS) -c $< -o $@ 
 
 $(BUILD_DIR)/bootmanager/%.o: $(BOOTMANAGER_DIR)/%.c
 	@mkdir -p $(dir $@)
