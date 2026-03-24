@@ -342,10 +342,14 @@ INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
 DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
 DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
 
+
+# Use nasm for NASM-style assembly
+NASM ?= nasm
+
 $(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
-	@echo "[AS] $<"
-	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
+	@echo "[NASM] $<"
+	@$(NASM) -f elf32 $< -o $@
 
 $(INSTALLER_BOOT_STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
