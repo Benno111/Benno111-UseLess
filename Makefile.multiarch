@@ -342,7 +342,7 @@ INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
 DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
 DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
 
-$(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.S | $(BUILD_DIR)
+$(INSTALLER_BOOT_STAGE1_OBJ): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
 	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
