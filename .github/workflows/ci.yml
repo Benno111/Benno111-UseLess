@@ -35,7 +35,8 @@ jobs:
             xorriso \
             make \
             lld \
-            llvm
+            llvm \
+            nasm
 
       - name: Build x86_64 ISO
         run: |
