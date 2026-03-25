@@ -346,6 +346,7 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 
 INSTALLER_BOOT_STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
 INSTALLER_BOOT_STAGE1_BIN := $(BUILD_DIR)/boot/installer_stage1.bin
+INSTALLER_BOOT_STAGE2_ELF := $(BUILD_DIR)/boot/installer_stage2.elf
 INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
 DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
 DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
@@ -372,7 +373,11 @@ $(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DI
 
 
 
-$(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_OBJ)
+$(INSTALLER_BOOT_STAGE2_ELF): $(INSTALLER_BOOT_STAGE2_OBJ)
+	@echo "[LD] $@"
+	@$(LD) -m elf_i386 -nostdlib -e _start -Ttext 0x0000 -o $@ $<
+
+$(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_ELF)
 	@echo "[OBJCOPY] $@"
 	@$(OBJCOPY) -O binary $< $@
 
