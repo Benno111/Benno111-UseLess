@@ -4196,6 +4196,17 @@ static void submit_startup_flow(void) {
     char login_disk_location[32];
     char password_hash[33];
 
+    if (account_username[0] && account_password[0] &&
+        str_cmp(startup_input_username, account_username) == 0) {
+      vib_password_hash_hex(account_username, startup_input_password, password_hash,
+                            sizeof(password_hash));
+      if (vib_secure_string_eq(password_hash, account_password)) {
+        ensure_user_storage_dirs();
+        complete_startup_auth();
+        return;
+      }
+    }
+
     if (read_account_manifest(startup_input_username, manifest,
                               sizeof(manifest)) == 0 &&
         parse_account_manifest(manifest, startup_input_username, login_username,
