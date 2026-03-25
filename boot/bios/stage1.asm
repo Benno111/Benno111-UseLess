@@ -38,6 +38,9 @@ boot_main:
 
     mov [boot_drive], dl
     mov [drive_number], dl
+    mov ax, [hidden_sectors]
+    inc ax
+    mov word [dap + 8], ax
 
     call load_stage2_lba
     jnc boot_stage2
@@ -90,7 +93,9 @@ load_stage2_chs:
     call reset_disk_with_delay
     call detect_chs_geometry
     jc .fail
-    mov word [current_lba], 1
+    mov ax, [hidden_sectors]
+    inc ax
+    mov [current_lba], ax
     mov word [stage2_load_offset], 0x7E00
     mov ax, [stage2_sector_count]
     mov [stage2_remaining_sectors], ax
