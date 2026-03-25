@@ -10752,6 +10752,8 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   /* ============================================= */
 
   if (boot_should_show_splash()) {
+    uint64_t splash_deadline_ms = arch_timer_get_ms() + 5000;
+
     /* Fill with a darker cinematic gradient for the new boot assets. */
     for (int y = 0; y < (int)height; y++) {
       int progress = (y * 256) / height;
@@ -10829,6 +10831,10 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
         gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7,
                         0x000000);
       }
+    }
+
+    /* Keep the boot screen visible long enough to be seen consistently. */
+    while (arch_timer_get_ms() < splash_deadline_ms) {
     }
   }
 
