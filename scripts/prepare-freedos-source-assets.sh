@@ -105,6 +105,22 @@ extract_iso_member() {
     xorriso -indev "$iso_path" -osirrox on -extract "$iso_member" "$dst" >/dev/null 2>&1
 }
 
+bootstrap_package_member() {
+    local archive_url="$1"
+    local archive_name="$2"
+    local member_name="$3"
+    local dst="$4"
+    local archive_path="${FREEDOS_CACHE_DIR}/${archive_name}"
+
+    download_file "$archive_url" "$archive_path"
+    if [ ! -f "$dst" ]; then
+        extract_zip_member "$archive_path" "$member_name" "$dst" || {
+            echo "[ERROR] Could not extract ${member_name} from ${archive_path}" >&2
+            exit 1
+        }
+    fi
+}
+
 resolve_assets_once() {
     if [ -n "${FREEDOS_MEDIA_IMAGE:-}" ] && [ -f "${FREEDOS_MEDIA_IMAGE}" ]; then
         :
@@ -165,17 +181,19 @@ bootstrap_official_assets() {
             if [ "$FREEDOS_REQUIRE_CD_DRIVERS" = "1" ]; then
                 if [ -z "${FREEDOS_SHSUCDX_COM:-}" ] || [ ! -f "${FREEDOS_SHSUCDX_COM:-}" ]; then
                     FREEDOS_SHSUCDX_COM="${FREEDOS_CACHE_DIR}/SHSUCDX.COM"
-                    extract_iso_member "$legacy_iso" "SHSUCDX.COM" "$FREEDOS_SHSUCDX_COM" || {
-                        echo "[ERROR] Could not extract SHSUCDX.COM from $legacy_iso" >&2
-                        exit 1
-                    }
+                    bootstrap_package_member \
+                        "https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/dos/shsucdx/shcdx308.zip" \
+                        "shcdx308.zip" \
+                        "shsucdx.com" \
+                        "$FREEDOS_SHSUCDX_COM"
                 fi
                 if [ -z "${FREEDOS_UDVD2_SYS:-}" ] || [ ! -f "${FREEDOS_UDVD2_SYS:-}" ]; then
                     FREEDOS_UDVD2_SYS="${FREEDOS_CACHE_DIR}/UDVD2.SYS"
-                    extract_iso_member "$legacy_iso" "UDVD2.SYS" "$FREEDOS_UDVD2_SYS" || {
-                        echo "[ERROR] Could not extract UDVD2.SYS from $legacy_iso" >&2
-                        exit 1
-                    }
+                    bootstrap_package_member \
+                        "https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.2/drivers/udvd2/20220217.0/udvd2.zip" \
+                        "udvd2.zip" \
+                        "UDVD2.SYS" \
+                        "$FREEDOS_UDVD2_SYS"
                 fi
             fi
             ;;

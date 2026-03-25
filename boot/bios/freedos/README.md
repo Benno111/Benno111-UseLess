@@ -12,8 +12,9 @@ Build behavior:
   optionally invoke a source-tree build command via `FREEDOS_BUILD_COMMAND`.
 - If source-built assets are absent, the helper falls back to official FreeDOS
   1.4 media:
-  `FD14-LiteUSB.zip` for the disk-image path and `FD14-LegacyCD.zip` for the
-  standalone ISO path.
+  `FD14-LiteUSB.zip` for the disk-image path, `FD14-LegacyCD.zip` for the
+  standalone ISO boot image, and the official `shcdx308.zip` / `udvd2.zip`
+  packages for the CD-ROM drivers.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
   OS8-specific `FDAUTO.BAT` and `FDCONFIG.SYS`.
 - The ISO boot flow loads FreeDOS CD support through `UDVD2.SYS` and
