@@ -1140,12 +1140,6 @@ static void init_subsystems(void *dtb) {
     }
 
     gui_create_file_manager(200, 100);
-
-    /* Compose and display desktop */
-    gui_compose();
-    gui_draw_cursor();
-
-    printk(KERN_INFO "  GUI desktop ready!\n");
   }
 
   /* Initialize PCI bus and detect devices (including Audio) */
@@ -1191,6 +1185,13 @@ static void init_subsystems(void *dtb) {
   extern int virtio_net_init(void);
   tcpip_init();
   virtio_net_init();
+
+  if (fb_buffer) {
+    /* Keep the splash visible while drivers load, then render the desktop/login UI. */
+    gui_compose();
+    gui_draw_cursor();
+    printk(KERN_INFO "  GUI desktop ready!\n");
+  }
 
   /* ================================================================= */
   /* Phase 6: Enable Interrupts */
