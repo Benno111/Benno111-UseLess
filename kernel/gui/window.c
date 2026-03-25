@@ -3142,9 +3142,6 @@ static void runtime_sync_dir_from_boot_storage(const char *relative_path) {
 
   dir = vfs_open(src_root, O_RDONLY, 0);
   if (!dir) {
-    str_copy_safe(log_line, "sync source directory missing: ", sizeof(log_line));
-    installer_append_to_buf(log_line, sizeof(log_line), src_root);
-    runtime_sync_log_line(log_line);
     return;
   }
 
