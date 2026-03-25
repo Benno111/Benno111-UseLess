@@ -1,17 +1,26 @@
-The standalone DOS installer ISO now boots through a rebranded FreeDOS path
-instead of the legacy custom stage1/stage2 loader.
+The DOS setup path now consumes source-built FreeDOS assets instead of
+downloading prebuilt FreeDOS media from mirrors.
 
 Build behavior:
-- `scripts/create-dos-installer-iso.sh` downloads the official FreeDOS 1.4
-  Floppy Edition archive and extracts `fd-x86.img`.
-- The script patches that image with OS8-specific `FDAUTO.BAT` and
-  `FDCONFIG.SYS`.
-- The boot flow loads FreeDOS CD support through `UDVD2.SYS` and
+- Place source-built FreeDOS outputs in `boot/bios/freedos/out/` or point the
+  build at them with environment variables.
+- Required assets are:
+  `fd-lite.img` or `fd-x86.img`, `SHSUCDX.COM`, and `UDVD2.SYS`.
+- `scripts/prepare-freedos-source-assets.sh` resolves those assets and can
+  optionally invoke a source-tree build command via `FREEDOS_BUILD_COMMAND`.
+- The DOS image and ISO scripts patch the chosen FreeDOS image with
+  OS8-specific `FDAUTO.BAT` and `FDCONFIG.SYS`.
+- The ISO boot flow loads FreeDOS CD support through `UDVD2.SYS` and
   `SHSUCDX.COM`, then auto-runs `OSINST.COM` from the ISO's `/DOS` folder.
 
 The installer utility and OS image stay on the ISO:
 - `/DOS/OSINST.COM`
 - `/DOS/OSSYS.IMG`
 
-Official FreeDOS sources used by the build are recorded in the ISO at
-`/FREEDOS.TXT`.
+Relevant environment variables:
+- `FREEDOS_OUTPUT_DIR`
+- `FREEDOS_MEDIA_IMAGE`
+- `FREEDOS_SHSUCDX_COM`
+- `FREEDOS_UDVD2_SYS`
+- `FREEDOS_SOURCE_ROOT`
+- `FREEDOS_BUILD_COMMAND`

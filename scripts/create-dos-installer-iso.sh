@@ -10,16 +10,7 @@ ISO_ROOT="${BUILD_DIR}/dos_installer_iso_root"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
-FREEDOS_ARCHIVE_URL="${FREEDOS_ARCHIVE_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/fd-lite.img}"
-FREEDOS_ARCHIVE_PATH="${FREEDOS_CACHE_DIR}/fd-lite.img"
-FREEDOS_SOURCE_IMAGE="${FREEDOS_CACHE_DIR}/fd-lite.img"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-boot.img"
-FREEDOS_SHSUCDX_URL="${FREEDOS_SHSUCDX_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/base/shsucdx.zip}"
-FREEDOS_SHSUCDX_ZIP="${FREEDOS_CACHE_DIR}/shsucdx.zip"
-FREEDOS_SHSUCDX_COM="${FREEDOS_CACHE_DIR}/SHSUCDX.COM"
-FREEDOS_UDVD2_URL="${FREEDOS_UDVD2_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/drivers/udvd2.zip}"
-FREEDOS_UDVD2_ZIP="${FREEDOS_CACHE_DIR}/udvd2.zip"
-FREEDOS_UDVD2_SYS="${FREEDOS_CACHE_DIR}/UDVD2.SYS"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -51,77 +42,19 @@ require_cmd() {
     fi
 }
 
-download_if_missing() {
-    local url="$1"
-    local path="$2"
-
-    if [ -f "$path" ]; then
-        return 0
-    fi
-
-    log "Downloading $(basename "$path") from official FreeDOS sources"
-    curl -L --fail --retry 3 "$url" -o "$path"
-}
-
-extract_zip_member() {
-    local zip_path="$1"
-    local pattern="$2"
-    local output_path="$3"
-
-    if [ -f "$output_path" ]; then
-        return 0
-    fi
-
-    mkdir -p "$(dirname "$output_path")"
-
-    local tmp_dir
-    tmp_dir="$(mktemp -d)"
-    unzip -qq "$zip_path" -d "$tmp_dir"
-    local member
-    member="$(find "$tmp_dir" -type f \( -iname "$pattern" -o -ipath "*/$pattern" \) | head -n 1)"
-    if [ -z "$member" ]; then
-        rm -rf "$tmp_dir"
-        echo "[ERROR] Could not extract $pattern from $zip_path" >&2
-        exit 1
-    fi
-    mv "$member" "$output_path"
-    rm -rf "$tmp_dir"
-}
-
-fetch_media_image() {
-    local source_url="$1"
-    local source_path="$2"
-    local image_name="$3"
-    local output_path="$4"
-
-    download_if_missing "$source_url" "$source_path"
-
-    if [[ "$source_path" == *.zip ]]; then
-        extract_zip_member "$source_path" "$image_name" "$output_path"
-    else
-        cp "$source_path" "$output_path"
-    fi
-}
-
 ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
-    require_cmd curl
-    require_cmd unzip
     require_cmd mcopy
     require_cmd mdel
     require_cmd xorriso
-
-    fetch_media_image "$FREEDOS_ARCHIVE_URL" "$FREEDOS_ARCHIVE_PATH" 'fd-lite.img' "$FREEDOS_SOURCE_IMAGE"
-
-    download_if_missing "$FREEDOS_SHSUCDX_URL" "$FREEDOS_SHSUCDX_ZIP"
-    extract_zip_member "$FREEDOS_SHSUCDX_ZIP" '*SHSUCDX.COM' "$FREEDOS_SHSUCDX_COM"
-
-    download_if_missing "$FREEDOS_UDVD2_URL" "$FREEDOS_UDVD2_ZIP"
-    extract_zip_member "$FREEDOS_UDVD2_ZIP" '*UDVD2.SYS' "$FREEDOS_UDVD2_SYS"
+    ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
+    BUILD_DIR="$BUILD_DIR" \
+    FREEDOS_MEDIA_NAME="${FREEDOS_MEDIA_NAME:-fd-lite.img}" \
+    . "$(cd "$(dirname "$0")" && pwd)/prepare-freedos-source-assets.sh"
 }
 
 prepare_freedos_boot_image() {
-    cp "$FREEDOS_SOURCE_IMAGE" "$FREEDOS_BOOT_IMAGE"
+    cp "$FREEDOS_MEDIA_IMAGE" "$FREEDOS_BOOT_IMAGE"
 
     cat > "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" <<'EOF'
 @ECHO OFF
@@ -271,24 +204,24 @@ Included files:
 - /dos/OSINST.COM                : OS8 DOS installer utility
 - /dos/OSSYS.IMG                 : raw OS8 system image written by the installer
 
-FreeDOS components pulled from official mirrors during build:
-- fd-lite.img
-- shsucdx.zip (SHSUCDX.COM)
-- udvd2.zip (UDVD2.SYS)
+FreeDOS components supplied from source-built assets:
+- $(basename "$FREEDOS_MEDIA_IMAGE")
+- $(basename "$FREEDOS_SHSUCDX_COM")
+- $(basename "$FREEDOS_UDVD2_SYS")
 EOF
 
 cat > "$ISO_ROOT/FREEDOS.TXT" <<EOF
 FreeDOS Integration Notes
 
-This installer ISO boots through FreeDOS 1.4 media from official FreeDOS
-mirrors and uses the FreeDOS CD-ROM stack:
+This installer ISO boots through source-built FreeDOS media and uses the
+source-built FreeDOS CD-ROM stack:
 - UDVD2.SYS
 - SHSUCDX.COM
 
-Source URLs:
-- $FREEDOS_ARCHIVE_URL
-- $FREEDOS_SHSUCDX_URL
-- $FREEDOS_UDVD2_URL
+Resolved local assets:
+- $FREEDOS_MEDIA_IMAGE
+- $FREEDOS_SHSUCDX_COM
+- $FREEDOS_UDVD2_SYS
 EOF
 
 ISO_PATH="${IMAGE_DIR}/${ISO_NAME}"
