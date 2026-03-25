@@ -1371,6 +1371,28 @@ static void gui_draw_image_scaled(int x, int y, int w, int h,
   }
 }
 
+static void gui_wait_for_boot_splash(uint64_t duration_ms) {
+  uint64_t start_ms = arch_timer_get_ms();
+  uint64_t last_ms = start_ms;
+  uint32_t stalled_loops = 0;
+  const uint32_t max_stalled_loops = 20000000;
+
+  while ((arch_timer_get_ms() - start_ms) < duration_ms) {
+    uint64_t now_ms = arch_timer_get_ms();
+    if (now_ms != last_ms) {
+      last_ms = now_ms;
+      stalled_loops = 0;
+      continue;
+    }
+
+    stalled_loops++;
+    if (stalled_loops >= max_stalled_loops) {
+      /* Timer is not advancing yet on this boot path, so don't deadlock. */
+      break;
+    }
+  }
+}
+
 static void gui_draw_boot_progress_asset(int x, int y, int w, int h,
                                          int filled_w) {
   int radius = h / 2;
@@ -10772,8 +10794,6 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   /* ============================================= */
 
   if (boot_should_show_splash()) {
-    uint64_t splash_deadline_ms = arch_timer_get_ms() + 5000;
-
     /* Fill with a darker cinematic gradient for the new boot assets. */
     for (int y = 0; y < (int)height; y++) {
       int progress = (y * 256) / height;
@@ -10854,8 +10874,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
     }
 
     /* Keep the boot screen visible long enough to be seen consistently. */
-    while (arch_timer_get_ms() < splash_deadline_ms) {
-    }
+    gui_wait_for_boot_splash(5000);
   }
 
   /* ============================================= */
