@@ -33,9 +33,8 @@ boot_main:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7C00
+    mov sp, 0x7000
     cld
-    sti
 
     mov [boot_drive], dl
     mov [drive_number], dl
