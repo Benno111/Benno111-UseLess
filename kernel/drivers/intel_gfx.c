@@ -123,6 +123,7 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   uint32_t height = 0;
   uint32_t pitch = 0;
   int safe_framebuffer = 0;
+  int use_framebuffer_only_probe = 0;
 
   if (!intel_gfx_is_display_device(pci_dev))
     return -1;
@@ -141,10 +142,21 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   intel_gfx_state.device_id = pci_dev->device_id;
   intel_gfx_state.irq = pci_dev->irq;
 
-  pci_enable_device(pci_dev);
+  /*
+   * On x86 bring-up, touching Intel display PCI command/BAR state too early can
+   * disrupt the firmware framebuffer and crash startup. Keep the probe read-only
+   * there and reuse only the bootloader framebuffer until a real modesetting
+   * path exists.
+   */
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  use_framebuffer_only_probe = 1;
+#endif
 
-  intel_gfx_state.mmio_base = intel_gfx_read_bar(pci_dev, PCI_BAR0);
-  intel_gfx_state.aperture_base = intel_gfx_read_bar(pci_dev, PCI_BAR2);
+  if (!use_framebuffer_only_probe) {
+    pci_enable_device(pci_dev);
+    intel_gfx_state.mmio_base = intel_gfx_read_bar(pci_dev, PCI_BAR0);
+    intel_gfx_state.aperture_base = intel_gfx_read_bar(pci_dev, PCI_BAR2);
+  }
 
   if (!intel_gfx_mmio_bar_is_sane(intel_gfx_state.mmio_base)) {
     if (intel_gfx_state.mmio_base) {
@@ -211,6 +223,9 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   printk(KERN_INFO "IGFX: %s detected (%04x:%04x) at %02x:%02x.%x\n",
          intel_gfx_detect_name(pci_dev->device_id), pci_dev->vendor_id,
          pci_dev->device_id, pci_dev->bus, pci_dev->slot, pci_dev->func);
+  if (use_framebuffer_only_probe) {
+    printk(KERN_INFO "IGFX: Using framebuffer-only probe on x86 startup path\n");
+  }
   printk(KERN_INFO "IGFX: MMIO BAR0=0x%llx aperture BAR2=0x%llx IRQ=%u\n",
          (unsigned long long)intel_gfx_state.mmio_base,
          (unsigned long long)intel_gfx_state.aperture_base,
