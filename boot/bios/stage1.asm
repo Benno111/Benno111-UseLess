@@ -64,7 +64,7 @@ load_stage2_lba:
     test cx, 0x0001
     jz .unsupported
 
-    mov cx, 3
+    mov byte [retry_count], 3
 .retry:
     mov ah, 0x42
     mov dl, [boot_drive]
@@ -73,7 +73,8 @@ load_stage2_lba:
     jnc .done
 
     call reset_disk_with_delay
-    loop .retry
+    dec byte [retry_count]
+    jnz .retry
 
 .unsupported:
     stc
@@ -92,7 +93,7 @@ load_stage2_chs:
     test si, si
     jz .done
 
-    mov bp, 3
+    mov byte [retry_count], 3
 .retry:
     call lba_to_chs
     jc .fail
@@ -104,7 +105,7 @@ load_stage2_chs:
     jnc .sector_ok
 
     call reset_disk_with_delay
-    dec bp
+    dec byte [retry_count]
     jnz .retry
     jmp .fail
 
@@ -196,6 +197,7 @@ print_string:
 
 boot_drive db 0
 current_lba dw 0
+retry_count db 0
 
 disk_error_msg db "Stage2 load failed", 0
 
