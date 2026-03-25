@@ -1150,7 +1150,6 @@ static void init_subsystems(void *dtb) {
   extern void pit_sleep(uint32_t ms);
   storage_init();
   pci_init();
-  gui_notify_storage_ready();
 
   /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */
   printk(KERN_INFO "  Initializing GPU driver...\n");
@@ -1185,6 +1184,7 @@ static void init_subsystems(void *dtb) {
   extern int virtio_net_init(void);
   tcpip_init();
   virtio_net_init();
+  gui_notify_storage_ready();
 
   if (fb_buffer) {
     /* Keep the splash visible while drivers load, then render the desktop/login UI. */
