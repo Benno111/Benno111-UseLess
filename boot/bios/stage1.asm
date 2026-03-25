@@ -3,6 +3,15 @@ org 0x7C00
 bits 16
 
 start:
+    jmp short boot_main
+    nop
+
+    ; FAT16 BPB / EBPB area. The image builder patches these bytes in-place,
+    ; so stage1 code must not occupy offsets 0x0B..0x3D.
+    db 'OSKSETUP'
+    times 51 db 0
+
+boot_main:
 
     cli
     xor ax, ax
