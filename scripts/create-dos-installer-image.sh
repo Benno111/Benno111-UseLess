@@ -66,9 +66,9 @@ extract_zip_member() {
     mkdir -p "$(dirname "$output_path")"
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    unzip -qq "$zip_path" "$pattern" -d "$tmp_dir"
+    unzip -qq "$zip_path" -d "$tmp_dir"
     local member
-    member="$(find "$tmp_dir" -type f | head -n 1)"
+    member="$(find "$tmp_dir" -type f \( -iname "$pattern" -o -ipath "*/$pattern" \) | head -n 1)"
     if [ -z "$member" ]; then
         rm -rf "$tmp_dir"
         echo "[ERROR] Could not extract $pattern from $zip_path" >&2
