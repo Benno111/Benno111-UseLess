@@ -85,6 +85,8 @@ load_stage2_lba:
     ret
 
 load_stage2_chs:
+    call detect_chs_geometry
+    jc .fail
     mov word [current_lba], 1
     mov di, 0x7E00
     mov si, [stage2_sector_count]
@@ -123,8 +125,57 @@ load_stage2_chs:
     stc
     ret
 
-lba_to_chs:
+detect_chs_geometry:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov ah, 0x08
+    mov dl, [boot_drive]
+    int 0x13
+    jc .fallback_bpb
+
+    mov al, cl
+    and al, 0x3F
+    xor ah, ah
+    test ax, ax
+    jz .fallback_bpb
+    mov [chs_sectors_per_track], ax
+
+    xor ax, ax
+    mov al, dh
+    inc ax
+    test ax, ax
+    jz .fallback_bpb
+    mov [chs_head_count], ax
+    clc
+    jmp .done
+
+.fallback_bpb:
     mov ax, [sectors_per_track]
+    or ax, ax
+    jz .fail
+    mov [chs_sectors_per_track], ax
+    mov ax, [head_count]
+    or ax, ax
+    jz .fail
+    mov [chs_head_count], ax
+    clc
+    jmp .done
+
+.fail:
+    stc
+
+.done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+lba_to_chs:
+    mov ax, [chs_sectors_per_track]
     or ax, ax
     jz .fail
     mov bx, ax
@@ -135,7 +186,7 @@ lba_to_chs:
     mov cl, dl
     inc cl
 
-    mov ax, [head_count]
+    mov ax, [chs_head_count]
     or ax, ax
     jz .fail
     mov bx, ax
@@ -198,6 +249,8 @@ print_string:
 boot_drive db 0
 current_lba dw 0
 retry_count db 0
+chs_sectors_per_track dw 0
+chs_head_count dw 0
 
 disk_error_msg db "Stage2 load failed", 0
 
