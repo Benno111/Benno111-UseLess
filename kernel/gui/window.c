@@ -4111,7 +4111,9 @@ static void ensure_startup_flow(void) {
   if (!needs_account_setup) {
     if (!apps_seeded)
       seed_all_system_apps_once();
-    startup_begin_login_flow("", 0);
+    str_copy_safe(startup_input_username, account_username,
+                  sizeof(startup_input_username));
+    startup_begin_login_flow("", 1);
     return;
   }
 
