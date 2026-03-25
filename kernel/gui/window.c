@@ -4205,8 +4205,8 @@ static void submit_startup_flow(void) {
                                sizeof(login_partition_label),
                                login_disk_location,
                                sizeof(login_disk_location)) == 0) {
-      vib_password_hash_hex(startup_input_username, startup_input_password,
-                            password_hash, sizeof(password_hash));
+      vib_password_hash_hex(login_username, startup_input_password, password_hash,
+                            sizeof(password_hash));
       if (vib_secure_string_eq(password_hash, login_password_hash)) {
         str_copy_safe(account_username, login_username, sizeof(account_username));
         str_copy_safe(account_password, login_password_hash,
