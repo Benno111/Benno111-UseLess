@@ -4127,10 +4127,15 @@ static void ensure_startup_flow(void) {
 }
 
 static void complete_startup_auth(void) {
+  int setup_complete = 0;
+  int apps_seeded = 0;
+  int state_found = 0;
+
   session_authenticated = 1;
   startup_flow = STARTUP_FLOW_NONE;
   set_startup_status("");
-  save_setup_state(1, 0);
+  load_setup_state(&setup_complete, &apps_seeded, &state_found);
+  save_setup_state(1, apps_seeded);
   installer_clear_first_boot_setup_flag();
   if (account_username[0] && account_password[0])
     save_account_state();
