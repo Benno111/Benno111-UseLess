@@ -222,7 +222,7 @@ help:
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
-	@echo "  dos-installer-image - Create BIOS real-mode text installer image"
+	@echo "  dos-installer-image - Create FreeDOS-based BIOS installer image"
 	@echo "  dos-installer-iso - Create standalone BIOS DOS installer ISO"
 	@echo "  dos-installer-binary - Create DOS runnable installer utility"
 	@echo "  qemu     - Run in QEMU emulator"
@@ -321,13 +321,6 @@ else
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
 endif
 
-
-
-$(INSTALLER_BOOT_STAGE1_BIN): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@echo "[NASM] $<"
-	@$(NASM) -f bin $< -o $@
-
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
@@ -342,44 +335,13 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
-
-
-INSTALLER_BOOT_STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
-INSTALLER_BOOT_STAGE1_BIN := $(BUILD_DIR)/boot/installer_stage1.bin
-INSTALLER_BOOT_STAGE2_ELF := $(BUILD_DIR)/boot/installer_stage2.elf
-INSTALLER_BOOT_STAGE2_BIN := $(BUILD_DIR)/boot/installer_stage2.bin
 DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
 DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
-
-
-# Use nasm for NASM-style assembly
-NASM ?= nasm
-
-
-$(INSTALLER_BOOT_STAGE1_BIN): $(ROOT_DIR)/boot/bios/stage1.asm | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@echo "[NASM] $<"
-	@$(NASM) -f bin $< -o $@
-
-$(INSTALLER_BOOT_STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@echo "[AS] $<"
-	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
 
 $(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@echo "[AS] $<"
 	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
-
-
-
-$(INSTALLER_BOOT_STAGE2_ELF): $(INSTALLER_BOOT_STAGE2_OBJ)
-	@echo "[LD] $@"
-	@$(LD) -m elf_i386 -nostdlib -e _start -Ttext 0x0000 -o $@ $<
-
-$(INSTALLER_BOOT_STAGE2_BIN): $(INSTALLER_BOOT_STAGE2_ELF)
-	@echo "[OBJCOPY] $@"
-	@$(OBJCOPY) -O binary $< $@
 
 $(DOS_INSTALLER_COM_BIN): $(DOS_INSTALLER_COM_OBJ)
 	@echo "[OBJCOPY] $@"
@@ -420,7 +382,7 @@ else ifeq ($(ARCH),x86)
 	@echo "[IMAGE] Created: $(RAW_IMAGE)"
 endif
 
-installer-image: kernel $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN) $(DOS_INSTALLER_COM_BIN)
+installer-image: kernel $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
@@ -432,9 +394,9 @@ else
 	@exit 1
 endif
 
-dos-installer-image: $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN)
+dos-installer-image: $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
-	@echo "[IMAGE] Creating BIOS DOS-style text installer image..."
+	@echo "[IMAGE] Creating FreeDOS-based BIOS installer image..."
 	@IMAGE_NAME=os-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os-x86_64-system.img" bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
@@ -454,7 +416,7 @@ else
 	@exit 1
 endif
 
-dos-installer-binary: $(INSTALLER_BOOT_STAGE1_BIN) $(INSTALLER_BOOT_STAGE2_BIN) $(DOS_INSTALLER_COM_BIN)
+dos-installer-binary: $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating DOS runnable installer utility package..."
 	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
