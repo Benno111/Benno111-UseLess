@@ -51,6 +51,7 @@ boot_main:
     jmp hang
 
 boot_stage2:
+    mov dl, [boot_drive]
     jmp 0x0000:0x7E00
 
 load_stage2_lba:
@@ -58,6 +59,7 @@ load_stage2_lba:
     mov bx, 0x55AA
     mov dl, [boot_drive]
     int 0x13
+    call normalize_segments
     jc .unsupported
     cmp bx, 0xAA55
     jne .unsupported
@@ -70,6 +72,7 @@ load_stage2_lba:
     mov dl, [boot_drive]
     mov si, dap
     int 0x13
+    call normalize_segments
     jnc .done
 
     call reset_disk_with_delay
@@ -107,6 +110,7 @@ load_stage2_chs:
     mov ax, 0x0201
     mov dl, [boot_drive]
     int 0x13
+    call normalize_segments
     jnc .sector_ok
 
     call reset_disk_with_delay
@@ -137,6 +141,7 @@ detect_chs_geometry:
     mov ah, 0x08
     mov dl, [boot_drive]
     int 0x13
+    call normalize_segments
     jc .fallback_bpb
 
     mov al, cl
@@ -217,12 +222,19 @@ reset_disk_with_delay:
     mov ah, 0x00
     mov dl, [boot_drive]
     int 0x13
+    call normalize_segments
     mov bx, 0xFFFF
 .delay:
     dec bx
     jnz .delay
     pop bx
     pop ax
+    ret
+
+normalize_segments:
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
     ret
 
 show_error:
