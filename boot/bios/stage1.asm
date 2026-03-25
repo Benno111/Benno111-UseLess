@@ -9,21 +9,21 @@ start:
     ; so executable code must stay out of offsets 0x0B..0x3D.
 oem_id              db 'OSKSETUP'
 bytes_per_sector    dw 512
-sectors_per_cluster db 0
-reserved_sectors    dw 0
-fat_count           db 0
-root_entries        dw 0
-total_sectors_16    dw 0
-media_descriptor    db 0
-fat_sectors         dw 0
-sectors_per_track   dw 0
-head_count          dw 0
+sectors_per_cluster db 4
+reserved_sectors    dw 1
+fat_count           db 1
+root_entries        dw 32
+total_sectors_16    dw 32768
+media_descriptor    db 0xF8
+fat_sectors         dw 1
+sectors_per_track   dw 63
+head_count          dw 255
 hidden_sectors      dd 0
 total_sectors_32    dd 0
-drive_number        db 0
+drive_number        db 0x80
 reserved1           db 0
-boot_signature      db 0
-volume_id           dd 0
+boot_signature      db 0x29
+volume_id           dd 0x4F534E58
 volume_label        db 'OSKSETUP   '
 fs_type             db 'FAT16   '
 
