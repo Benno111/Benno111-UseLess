@@ -3646,13 +3646,21 @@ static void append_input_char(char *buf, int max, int key) {
 
 static void load_account_state(void) {
   char manifest[256];
+  int storage_ready = account_partition_storage_ready;
 
   account_username[0] = '\0';
   account_password[0] = '\0';
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
   if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0) {
-    if (!account_partition_storage_ready)
+    if (!storage_ready) {
+      extern int storage_get_disk_count(void);
+      extern int boot_is_live_media(void);
+      extern int boot_is_usb_boot(void);
+      storage_ready = boot_is_live_media() || boot_is_usb_boot() ||
+                      storage_get_disk_count() > 0;
+    }
+    if (!storage_ready)
       return;
     if (load_account_manifest_from_partition(manifest, sizeof(manifest)) != 0)
       return;
