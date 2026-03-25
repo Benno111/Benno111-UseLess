@@ -27,6 +27,7 @@ real_mode_entry:
     xor     %ax, %ax
     mov     %ax, %ss
     mov     $0x9000, %sp
+    cld                     /* BIOS entry can leave DF set; normalize before lodsb/stosb use. */
     sti
 
     mov     %dl, boot_drive

@@ -21,6 +21,7 @@ _start:
     mov     %ax, %es
     mov     %ax, %ss
     mov     $stack_top, %sp
+    cld                     /* DOS does not guarantee DF, but string ops below do. */
     sti
 
     movb    $0, selected_drive

@@ -10,6 +10,7 @@ start:
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
+    cld                     ; BIOS does not guarantee DF, but later string ops expect forward mode.
     sti
 
     ; Save boot drive
