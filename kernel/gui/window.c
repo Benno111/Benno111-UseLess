@@ -1354,6 +1354,80 @@ static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
   }
 }
 
+static void gui_draw_boot_logo_asset(int x, int y, int scale) {
+  int s = scale < 1 ? 1 : scale;
+  int half_w = 18 * s;
+  int half_h = 15 * s;
+  int arm = 2 * s;
+  int inset = 2 * s;
+  int border = s > 1 ? s : 1;
+
+  /* Outer quadrants from boot-assets/logo.svg. */
+  gui_draw_rect(x - half_w, y - half_h, half_w - inset, half_h - inset, 0xFFF500);
+  gui_draw_rect(x + inset, y - half_h, half_w - inset, half_h - inset, 0xFF0000);
+  gui_draw_rect(x - half_w, y + inset, half_w - inset, half_h - inset, 0x00FF37);
+  gui_draw_rect(x + inset, y + inset, half_w - inset, half_h - inset, 0x003CFF);
+
+  /* Inner darker quadrants to mimic the layered asset treatment. */
+  gui_draw_rect(x - half_w + 3 * s, y - half_h + 3 * s, half_w - 5 * s,
+                half_h - 5 * s, 0xA59F00);
+  gui_draw_rect(x + 2 * s, y - half_h + 3 * s, half_w - 5 * s, half_h - 5 * s,
+                0xA00000);
+  gui_draw_rect(x - half_w + 3 * s, y + 2 * s, half_w - 5 * s, half_h - 5 * s,
+                0x00BB29);
+  gui_draw_rect(x + 2 * s, y + 2 * s, half_w - 5 * s, half_h - 5 * s, 0x001761);
+
+  /* Bold black cross. */
+  gui_draw_rect(x - arm / 2, y - half_h - border, arm, half_h * 2 + border * 2,
+                0x000000);
+  gui_draw_rect(x - half_w - border, y - arm / 2, half_w * 2 + border * 2, arm,
+                0x000000);
+
+  /* "OS" with green outline and white face inspired by the asset. */
+  gui_draw_string(x + 8 * s, y - 3 * s, "OS", 0x22FF00, 0x00000000);
+  gui_draw_string(x + 10 * s, y - 3 * s, "OS", 0x22FF00, 0x00000000);
+  gui_draw_string(x + 9 * s, y - 4 * s, "OS", 0x22FF00, 0x00000000);
+  gui_draw_string(x + 9 * s, y - 2 * s, "OS", 0x22FF00, 0x00000000);
+  gui_draw_string(x + 9 * s, y - 3 * s, "OS", 0xFFFFFF, 0x00000000);
+}
+
+static void gui_draw_boot_progress_asset(int x, int y, int w, int h,
+                                         int filled_w) {
+  int radius = h / 2;
+  int inner_x = x + 3;
+  int inner_y = y + 3;
+  int inner_h = h - 6;
+  int max_fill = w - 6;
+
+  if (filled_w < 0)
+    filled_w = 0;
+  if (filled_w > max_fill)
+    filled_w = max_fill;
+
+  /* Rounded white outline from boot-assets/bar.svg. */
+  gui_draw_rect(x + radius, y, w - radius * 2, 2, 0xFFFFFF);
+  gui_draw_rect(x + radius, y + h - 2, w - radius * 2, 2, 0xFFFFFF);
+  gui_draw_rect(x, y + radius, 2, h - radius * 2, 0xFFFFFF);
+  gui_draw_rect(x + w - 2, y + radius, 2, h - radius * 2, 0xFFFFFF);
+  gui_draw_circle(x + radius, y + radius, radius, 0xFFFFFF, false);
+  gui_draw_circle(x + w - radius - 1, y + radius, radius, 0xFFFFFF, false);
+
+  if (filled_w > 0) {
+    uint32_t fill = 0x22FF00;
+    if (filled_w <= inner_h) {
+      gui_draw_circle(inner_x + inner_h / 2, inner_y + inner_h / 2,
+                      filled_w / 2, fill, true);
+    } else {
+      gui_draw_rect(inner_x + inner_h / 2, inner_y, filled_w - inner_h, inner_h,
+                    fill);
+      gui_draw_circle(inner_x + inner_h / 2, inner_y + inner_h / 2,
+                      inner_h / 2, fill, true);
+      gui_draw_circle(inner_x + filled_w - inner_h / 2 - 1,
+                      inner_y + inner_h / 2, inner_h / 2, fill, true);
+    }
+  }
+}
+
 /* ===================================================================== */
 /* 8x16 Font - use external complete font */
 /* ===================================================================== */
@@ -10698,65 +10772,72 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   /* ============================================= */
 
   if (boot_should_show_splash()) {
-    /* Fill with dark gradient background */
+    /* Fill with a darker cinematic gradient for the new boot assets. */
     for (int y = 0; y < (int)height; y++) {
       int progress = (y * 256) / height;
-      uint8_t r = 15 + (progress * 10) / 256;
-      uint8_t g = 15 + (progress * 5) / 256;
-      uint8_t b = 30 + (progress * 25) / 256;
+      uint8_t r = 6 + (progress * 10) / 256;
+      uint8_t g = 12 + (progress * 14) / 256;
+      uint8_t b = 22 + (progress * 38) / 256;
       uint32_t color = (r << 16) | (g << 8) | b;
       for (int x = 0; x < (int)width; x++) {
         framebuffer[y * (pitch / 4) + x] = color;
       }
     }
 
-    /* Draw the actual OS logo and centered brand text */
+    /* Add a soft focal glow behind the logo. */
     {
-      const char *logo = "OS8";
-      int logo_len = 0;
-      int logo_scale = 5;
-      int logo_size = 14 * logo_scale;
-      int logo_x = ((int)width - logo_size) / 2;
-      int logo_y = (int)height / 2 - 110;
-      int text_y;
-      int text_x;
-
-      while (logo[logo_len])
-        logo_len++;
-
-      gui_draw_os_logo(logo_x, logo_y, logo_scale, 0xFFFFFF, 0x89B4FA,
-                       0x00000000);
-
-      text_y = logo_y + logo_size + 20;
-      text_x = ((int)width - logo_len * 8) / 2;
-      gui_draw_string(text_x, text_y, logo, 0xFFFFFF, 0x00000000);
+      int cx = (int)width / 2;
+      int cy = (int)height / 2 - 56;
+      int radius = (width < 900 ? 92 : 128);
+      for (int py = cy - radius; py <= cy + radius; py++) {
+        for (int px = cx - radius; px <= cx + radius; px++) {
+          int dx = px - cx;
+          int dy = py - cy;
+          int dist2 = dx * dx + dy * dy;
+          if (dist2 < radius * radius) {
+            int alpha = 46 - (dist2 * 46) / (radius * radius);
+            if (alpha > 0)
+              draw_pixel_alpha(px, py, ((uint32_t)alpha << 24) | 0x183B66);
+          }
+        }
+      }
     }
 
-    /* Draw version text */
+    /* Draw the new boot logo asset look. */
     {
-      const char *version = "v1.0 - Modern Desktop Experience";
-      int ver_x = (width - 33 * 8) / 2;
-      int ver_y = height / 2 + 4;
-      int bar_w = 300;
-      int bar_h = 8;
+      int logo_scale = width < 900 ? 3 : 4;
+      int logo_center_x = (int)width / 2 - 52;
+      int logo_center_y = (int)height / 2 - 62;
+      gui_draw_boot_logo_asset(logo_center_x, logo_center_y, logo_scale);
+      gui_draw_string(logo_center_x - 2, logo_center_y + 82, "OS8", 0x22FF00,
+                      0x00000000);
+      gui_draw_string(logo_center_x, logo_center_y + 82, "OS8", 0xFFFFFF,
+                      0x00000000);
+    }
+
+    /* Draw supporting copy and the new rounded progress bar treatment. */
+    {
+      const char *version = "v1.0 - New Boot Experience";
+      int ver_x = ((int)width - 28 * 8) / 2;
+      int ver_y = height / 2 + 26;
+      int bar_w = width < 900 ? 240 : 320;
+      int bar_h = 18;
       int bar_x = (width - bar_w) / 2;
-      int bar_y = height / 2 + 40;
+      int bar_y = height / 2 + 58;
       const char *loading_msgs[] = {"Initializing hardware...",
-                                    "Loading desktop environment...",
+                                    "Loading new boot assets...",
                                     "Starting services...",
                                     "Welcome to OS8!"};
 
-      gui_draw_string(ver_x, ver_y, version, 0x9CA3AF, 0x00000000);
-      gui_draw_rect(bar_x, bar_y, bar_w, bar_h, 0x27272A);
-      gui_draw_rect(bar_x, bar_y, bar_w, 1, 0x3F3F46);
+      gui_draw_string(ver_x, ver_y, version, 0xD1D5DB, 0x00000000);
 
       for (int stage = 0; stage < 4; stage++) {
-        int fill = (bar_w * (stage + 1)) / 4;
-        int msg_x = (width - 30 * 8) / 2;
-        int msg_y = bar_y + 20;
+        int fill = ((bar_w - 6) * (stage + 1)) / 4;
+        int msg_x = ((int)width - 31 * 8) / 2;
+        int msg_y = bar_y + 32;
 
-        gui_draw_rect(bar_x + 1, bar_y + 1, fill - 2, bar_h - 2, 0x6366F1);
-        gui_draw_rect(msg_x - 10, msg_y - 2, 260, 20, 0x000000);
+        gui_draw_boot_progress_asset(bar_x, bar_y, bar_w, bar_h, fill);
+        gui_draw_rect(msg_x - 12, msg_y - 2, 280, 20, 0x000000);
         gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7,
                         0x000000);
       }
