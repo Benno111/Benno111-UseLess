@@ -3734,13 +3734,25 @@ static void append_input_char(char *buf, int max, int key) {
 static void load_account_state(void) {
   char manifest[256];
   int storage_ready = account_partition_storage_ready;
+  char username[32];
+  char password[33];
+  char partition_label[32];
+  char disk_location[32];
+  int parsed = -1;
 
   account_username[0] = '\0';
   account_password[0] = '\0';
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
   account_state_persist_pending = 0;
-  if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0) {
+  if (read_account_manifest(NULL, manifest, sizeof(manifest)) == 0) {
+    parsed = parse_account_manifest(manifest, NULL, username, sizeof(username),
+                                    password, sizeof(password), partition_label,
+                                    sizeof(partition_label), disk_location,
+                                    sizeof(disk_location));
+  }
+
+  if (parsed != 0) {
     if (!storage_ready) {
       extern int storage_get_disk_count(void);
       extern int boot_is_live_media(void);
@@ -3752,12 +3764,20 @@ static void load_account_state(void) {
       return;
     if (load_account_manifest_from_partition(manifest, sizeof(manifest)) != 0)
       return;
+    parsed = parse_account_manifest(manifest, NULL, username, sizeof(username),
+                                    password, sizeof(password), partition_label,
+                                    sizeof(partition_label), disk_location,
+                                    sizeof(disk_location));
+    if (parsed != 0)
+      return;
   }
-  parse_account_manifest(manifest, NULL, account_username,
-                         sizeof(account_username), account_password,
-                         sizeof(account_password), account_partition_label,
-                         sizeof(account_partition_label), account_disk_location,
-                         sizeof(account_disk_location));
+
+  str_copy_safe(account_username, username, sizeof(account_username));
+  str_copy_safe(account_password, password, sizeof(account_password));
+  str_copy_safe(account_partition_label, partition_label,
+                sizeof(account_partition_label));
+  str_copy_safe(account_disk_location, disk_location,
+                sizeof(account_disk_location));
 
   if (account_username[0] && account_password[0] && !account_disk_location[0]) {
     load_install_target_disk_location(account_disk_location,
