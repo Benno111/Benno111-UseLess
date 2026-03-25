@@ -8,6 +8,9 @@ IMAGE_DIR="${2:-image}"
 IMAGE_NAME="${IMAGE_NAME:-os-x86_64-dos-installer.img}"
 IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-16}"
 DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
+DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+FREEDOS_BOOT_IMAGE="${FREEDOS_BOOT_IMAGE:-${ROOT_DIR}/boot/bios/freedos/fdboot.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -19,6 +22,13 @@ log() {
 require_file() {
     if [ ! -f "$1" ]; then
         echo "[ERROR] Required file not found: $1" >&2
+        exit 1
+    fi
+}
+
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "[ERROR] Required command not found: $1" >&2
         exit 1
     fi
 }
@@ -44,6 +54,71 @@ else
     SYSTEM_IMAGE_ENABLED=0
     SYSTEM_IMAGE_SIZE=0
     SYSTEM_IMAGE_SECTORS=0
+fi
+
+FREEDOS_ENABLED=0
+if [ -f "$FREEDOS_BOOT_IMAGE" ]; then
+    FREEDOS_ENABLED=1
+fi
+
+build_freedos_installer_image() {
+    require_file "$FREEDOS_BOOT_IMAGE"
+    require_file "$DOS_INSTALLER_COM"
+    require_file "$DOS_SYSTEM_IMAGE"
+    require_cmd mcopy
+    require_cmd mdir
+
+    local template_size
+    template_size=$(stat -c%s "$FREEDOS_BOOT_IMAGE")
+    local required_size=$((IMAGE_SIZE_MB * 1024 * 1024))
+
+    if [ "$template_size" -lt "$required_size" ]; then
+        echo "[ERROR] FreeDOS boot image template is too small: $FREEDOS_BOOT_IMAGE" >&2
+        echo "        Template size: ${template_size} bytes" >&2
+        echo "        Required size: ${required_size} bytes" >&2
+        echo "        Provide a larger FreeDOS HDD image or lower IMAGE_SIZE_MB." >&2
+        exit 1
+    fi
+
+    log "Creating FreeDOS-based installer image at $IMAGE_PATH"
+    cp "$FREEDOS_BOOT_IMAGE" "$IMAGE_PATH"
+
+    cat > "$BUILD_DIR/boot/AUTOEXEC.BAT" <<'EOF'
+@ECHO OFF
+CLS
+ECHO OS8 DOS Installer
+ECHO.
+OSINST.COM
+ECHO.
+ECHO Installer exited. Press CTRL+ALT+DEL to reboot.
+COMMAND.COM
+EOF
+
+    cat > "$BUILD_DIR/boot/CONFIG.SYS" <<'EOF'
+SHELL=COMMAND.COM /P
+FILES=20
+BUFFERS=20
+DOS=HIGH
+EOF
+
+    log "Seeding FreeDOS boot image with installer files"
+    mcopy -o -i "$IMAGE_PATH" "$DOS_INSTALLER_COM" ::/OSINST.COM
+    mcopy -o -i "$IMAGE_PATH" "$DOS_SYSTEM_IMAGE" ::/OSSYS.IMG
+    mcopy -o -i "$IMAGE_PATH" "$BUILD_DIR/boot/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
+    mcopy -o -i "$IMAGE_PATH" "$BUILD_DIR/boot/CONFIG.SYS" ::/CONFIG.SYS
+
+    log "FreeDOS image contents:"
+    mdir -i "$IMAGE_PATH" ::/
+    log "Image created successfully: $IMAGE_PATH"
+    ls -lh "$IMAGE_PATH"
+    echo ""
+    log "QEMU test: qemu-system-i386 -drive format=raw,file=$IMAGE_PATH"
+    log "QEMU x86_64 BIOS test: qemu-system-x86_64 -drive format=raw,file=$IMAGE_PATH"
+}
+
+if [ "$FREEDOS_ENABLED" -eq 1 ]; then
+    build_freedos_installer_image
+    exit 0
 fi
 
 STAGE2_SIZE=$(stat -c%s "$STAGE2")

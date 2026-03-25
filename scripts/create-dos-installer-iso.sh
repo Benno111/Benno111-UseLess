@@ -9,6 +9,8 @@ ISO_NAME="${ISO_NAME:-os-x86_64-dos-installer.iso}"
 ISO_ROOT="${BUILD_DIR}/dos_installer_iso_root"
 DOS_INSTALLER_IMAGE="${DOS_INSTALLER_IMAGE:-${IMAGE_DIR}/os-x86_64-dos-installer.img}"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+FREEDOS_BOOT_IMAGE="${FREEDOS_BOOT_IMAGE:-${ROOT_DIR}/boot/bios/freedos/fdboot.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -124,6 +126,14 @@ require_cmd() {
 require_file "$DOS_INSTALLER_IMAGE"
 require_cmd xorriso
 
+if [ -f "$FREEDOS_BOOT_IMAGE" ]; then
+    BOOT_MODE_LABEL="FreeDOS boot"
+    BOOT_MODE_DESC="This ISO boots a FreeDOS-based installer image and AUTOEXEC.BAT launches OSINST.COM."
+else
+    BOOT_MODE_LABEL="Custom real-mode boot"
+    BOOT_MODE_DESC="This ISO boots the legacy custom real-mode stage1/stage2 installer shell."
+fi
+
 mkdir -p "$IMAGE_DIR"
 rm -rf "$ISO_ROOT"
 
@@ -142,7 +152,8 @@ fi
 cat > "$ISO_ROOT/README.TXT" <<EOF
 OS8 DOS Installer ISO
 
-This ISO boots directly into the BIOS text-mode DOS rescue installer.
+Boot mode: $BOOT_MODE_LABEL
+$BOOT_MODE_DESC
 
 Included files:
 - /boot/dos-installer-eltorito.img : El Torito HDD wrapper used for BIOS boot
