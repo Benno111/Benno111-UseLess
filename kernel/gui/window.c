@@ -14,6 +14,7 @@
 #include "icons.h"           /* Icon bitmaps */
 #include "drivers/storage.h"
 #include "media/media.h"
+#include "media/seed_assets.h"
 #include "mm/kmalloc.h"
 #include "printk.h"
 #include "../../shared/password_hash.h"
@@ -1354,41 +1355,20 @@ static void gui_draw_os_logo(int x, int y, int scale, uint32_t fg,
   }
 }
 
-static void gui_draw_boot_logo_asset(int x, int y, int scale) {
-  int s = scale < 1 ? 1 : scale;
-  int half_w = 18 * s;
-  int half_h = 15 * s;
-  int arm = 2 * s;
-  int inset = 2 * s;
-  int border = s > 1 ? s : 1;
+static void gui_draw_image_scaled(int x, int y, int w, int h,
+                                  const media_image_t *image) {
+  if (!image || !image->pixels || image->width == 0 || image->height == 0 ||
+      w <= 0 || h <= 0)
+    return;
 
-  /* Outer quadrants from boot-assets/logo.svg. */
-  gui_draw_rect(x - half_w, y - half_h, half_w - inset, half_h - inset, 0xFFF500);
-  gui_draw_rect(x + inset, y - half_h, half_w - inset, half_h - inset, 0xFF0000);
-  gui_draw_rect(x - half_w, y + inset, half_w - inset, half_h - inset, 0x00FF37);
-  gui_draw_rect(x + inset, y + inset, half_w - inset, half_h - inset, 0x003CFF);
-
-  /* Inner darker quadrants to mimic the layered asset treatment. */
-  gui_draw_rect(x - half_w + 3 * s, y - half_h + 3 * s, half_w - 5 * s,
-                half_h - 5 * s, 0xA59F00);
-  gui_draw_rect(x + 2 * s, y - half_h + 3 * s, half_w - 5 * s, half_h - 5 * s,
-                0xA00000);
-  gui_draw_rect(x - half_w + 3 * s, y + 2 * s, half_w - 5 * s, half_h - 5 * s,
-                0x00BB29);
-  gui_draw_rect(x + 2 * s, y + 2 * s, half_w - 5 * s, half_h - 5 * s, 0x001761);
-
-  /* Bold black cross. */
-  gui_draw_rect(x - arm / 2, y - half_h - border, arm, half_h * 2 + border * 2,
-                0x000000);
-  gui_draw_rect(x - half_w - border, y - arm / 2, half_w * 2 + border * 2, arm,
-                0x000000);
-
-  /* "OS" with green outline and white face inspired by the asset. */
-  gui_draw_string(x + 8 * s, y - 3 * s, "OS", 0x22FF00, 0x00000000);
-  gui_draw_string(x + 10 * s, y - 3 * s, "OS", 0x22FF00, 0x00000000);
-  gui_draw_string(x + 9 * s, y - 4 * s, "OS", 0x22FF00, 0x00000000);
-  gui_draw_string(x + 9 * s, y - 2 * s, "OS", 0x22FF00, 0x00000000);
-  gui_draw_string(x + 9 * s, y - 3 * s, "OS", 0xFFFFFF, 0x00000000);
+  for (int dy = 0; dy < h; dy++) {
+    uint32_t src_y = ((uint32_t)dy * image->height) / (uint32_t)h;
+    for (int dx = 0; dx < w; dx++) {
+      uint32_t src_x = ((uint32_t)dx * image->width) / (uint32_t)w;
+      uint32_t color = image->pixels[src_y * image->width + src_x];
+      draw_image_pixel(x + dx, y + dy, color);
+    }
+  }
 }
 
 static void gui_draw_boot_progress_asset(int x, int y, int w, int h,
@@ -10805,14 +10785,22 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
     /* Draw the new boot logo asset look. */
     {
-      int logo_scale = width < 900 ? 3 : 4;
-      int logo_center_x = (int)width / 2 - 52;
-      int logo_center_y = (int)height / 2 - 62;
-      gui_draw_boot_logo_asset(logo_center_x, logo_center_y, logo_scale);
-      gui_draw_string(logo_center_x - 2, logo_center_y + 82, "OS8", 0x22FF00,
-                      0x00000000);
-      gui_draw_string(logo_center_x, logo_center_y + 82, "OS8", 0xFFFFFF,
-                      0x00000000);
+      media_image_t boot_logo = {0};
+      int decode_ret =
+          media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len, &boot_logo);
+      if (decode_ret == 0 && boot_logo.width && boot_logo.height) {
+        int logo_w = width < 900 ? 180 : 240;
+        int logo_h = (int)((logo_w * boot_logo.height) / boot_logo.width);
+        int logo_x = ((int)width - logo_w) / 2;
+        int logo_y = (int)height / 2 - logo_h - 8;
+        gui_draw_image_scaled(logo_x, logo_y, logo_w, logo_h, &boot_logo);
+        media_free_image(&boot_logo);
+      } else {
+        int fallback_x = (int)width / 2 - 28;
+        int fallback_y = (int)height / 2 - 62;
+        gui_draw_os_logo(fallback_x, fallback_y, width < 900 ? 4 : 5, 0xFFFFFF,
+                         0x89B4FA, 0x00000000);
+      }
     }
 
     /* Draw supporting copy and the new rounded progress bar treatment. */
