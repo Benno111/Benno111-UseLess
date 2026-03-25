@@ -16,7 +16,10 @@ Build behavior:
   standalone ISO boot image, and the official `shcdx308.zip` / `udvd2.zip`
   packages for the CD-ROM drivers.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
-  OS8-specific `FDAUTO.BAT` and `FDCONFIG.SYS`.
+  OS8-specific startup files. For compatibility with different FreeDOS boot
+  layouts they now write both `FDAUTO.BAT` / `FDCONFIG.SYS` and plain
+  `AUTOEXEC.BAT` / `CONFIG.SYS` variants, without assuming a fixed
+  `C:\FREEDOS\BIN\COMMAND.COM` shell path.
 - The ISO boot flow loads FreeDOS CD support through `UDVD2.SYS` and
   `SHSUCDX.COM`, then auto-runs `OSINST.COM` from the ISO's `/DOS` folder.
 
