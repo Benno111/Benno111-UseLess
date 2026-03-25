@@ -2299,6 +2299,7 @@ static char account_password[33] = "";
 static char account_partition_label[32] = "";
 static char account_disk_location[32] = "";
 static int account_partition_storage_ready = 0;
+static int account_state_persist_pending = 0;
 static char startup_input_username[32] = "";
 static char startup_input_password[32] = "";
 static int startup_active_field = 0;
@@ -3738,6 +3739,7 @@ static void load_account_state(void) {
   account_password[0] = '\0';
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
+  account_state_persist_pending = 0;
   if (read_account_manifest(NULL, manifest, sizeof(manifest)) != 0) {
     if (!storage_ready) {
       extern int storage_get_disk_count(void);
@@ -3818,6 +3820,7 @@ static void save_account_state(void) {
   char manifest[256];
   char per_user_path[160];
   int idx = 0;
+  int partition_save_ok = 0;
 
   for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
@@ -3848,6 +3851,7 @@ static void save_account_state(void) {
   manifest[idx++] = '\n';
   manifest[idx] = '\0';
 
+  account_state_persist_pending = 1;
   ensure_gui_app_dirs();
   write_text_file(GUI_ACCOUNT_PATH, manifest);
   if (account_manifest_path(account_username, per_user_path,
@@ -3855,7 +3859,9 @@ static void save_account_state(void) {
     write_text_file(per_user_path, manifest);
   }
   if (account_partition_storage_ready)
-    save_account_manifest_to_partition(manifest);
+    partition_save_ok = save_account_manifest_to_partition(manifest) == 0;
+  if (partition_save_ok)
+    account_state_persist_pending = 0;
 }
 
 static int load_install_target_disk_location(char *buf, int max) {
@@ -10924,6 +10930,8 @@ void gui_notify_storage_ready(void) {
     return;
 
   account_partition_storage_ready = 1;
+  if (account_state_persist_pending && account_username[0] && account_password[0])
+    save_account_state();
   startup_active_before = startup_flow_active();
   runtime_sync_boot_storage_to_live();
   ensure_startup_flow();
