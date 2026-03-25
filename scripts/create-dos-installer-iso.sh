@@ -81,7 +81,7 @@ xorriso -as mkisofs \
     -V "OSK-DOS-INSTALL" \
     -c boot/boot.cat \
     -b boot/dos-installer.img \
-    -hard-disk-boot \
+    -no-emul-boot \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
