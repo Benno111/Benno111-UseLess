@@ -10923,13 +10923,6 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   desktop_manager_init();
 #endif
 
-  if (!gui_is_installer_mode()) {
-    runtime_sync_boot_storage_to_live();
-    ensure_startup_flow();
-    if (!startup_flow_active())
-      load_dock_config();
-  }
-
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
 
   return 0;
