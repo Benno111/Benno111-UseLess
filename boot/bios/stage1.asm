@@ -1,4 +1,3 @@
-
 org 0x7C00
 bits 16
 
@@ -6,142 +5,207 @@ start:
     jmp short boot_main
     nop
 
-    ; FAT16 BPB / EBPB area. The image builder patches these bytes in-place,
-    ; so stage1 code must not occupy offsets 0x0B..0x3D.
-    db 'OSKSETUP'
-    times 51 db 0
+    ; FAT16 BPB / EBPB area. The image builder patches these fields in-place,
+    ; so executable code must stay out of offsets 0x0B..0x3D.
+oem_id              db 'OSKSETUP'
+bytes_per_sector    dw 512
+sectors_per_cluster db 0
+reserved_sectors    dw 0
+fat_count           db 0
+root_entries        dw 0
+total_sectors_16    dw 0
+media_descriptor    db 0
+fat_sectors         dw 0
+sectors_per_track   dw 0
+head_count          dw 0
+hidden_sectors      dd 0
+total_sectors_32    dd 0
+drive_number        db 0
+reserved1           db 0
+boot_signature      db 0
+volume_id           dd 0
+volume_label        db 'OSKSETUP   '
+fs_type             db 'FAT16   '
 
 boot_main:
-
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
-    cld                     ; BIOS does not guarantee DF, but later string ops expect forward mode.
+    cld
     sti
 
-    ; Save boot drive
     mov [boot_drive], dl
+    mov [drive_number], dl
 
-    ; -------------------------
-    ; Check INT13 extensions
-    ; -------------------------
+    call load_stage2_lba
+    jnc boot_stage2
+
+    call load_stage2_chs
+    jnc boot_stage2
+
+    mov si, disk_error_msg
+    call show_error
+    jmp hang
+
+boot_stage2:
+    jmp 0x0000:0x7E00
+
+load_stage2_lba:
     mov ah, 0x41
     mov bx, 0x55AA
     mov dl, [boot_drive]
     int 0x13
-    jc no_lba
+    jc .unsupported
     cmp bx, 0xAA55
-    jne no_lba
+    jne .unsupported
+    test cx, 0x0001
+    jz .unsupported
 
-    mov byte [use_lba], 1
-    jmp load_stage2
-
-no_lba:
-    mov byte [use_lba], 0
-
-; -------------------------
-; Load stage2
-; -------------------------
-load_stage2:
-
-    cmp byte [use_lba], 1
-    je load_lba
-
-    jmp load_fail   ; CHS fallback not implemented yet
-
-; -------------------------
-; LBA read with retry
-; -------------------------
-load_lba:
-
-    mov cx, 3              ; retry count
-
-.read_retry:
-    mov ah, 0x42           ; extended read
+    mov cx, 3
+.retry:
+    mov ah, 0x42
     mov dl, [boot_drive]
-    push ds                ; save ds
-    xor ax, ax             ; set ds = 0 (org 0x7C00)
-    mov ds, ax
-    mov si, dap            ; DS:SI -> DAP
+    mov si, dap
     int 0x13
-    pop ds                 ; restore ds
-    jnc .read_ok
+    jnc .done
 
-    ; failure → retry
-    dec cx
-    jz load_fail
+    call reset_disk_with_delay
+    loop .retry
 
-    ; reset disk
+.unsupported:
+    stc
+    ret
+
+.done:
+    clc
+    ret
+
+load_stage2_chs:
+    mov word [current_lba], 1
+    mov di, 0x7E00
+    mov si, [stage2_sector_count]
+
+.next_sector:
+    test si, si
+    jz .done
+
+    mov bp, 3
+.retry:
+    call lba_to_chs
+    jc .fail
+
+    mov bx, di
+    mov ax, 0x0201
+    mov dl, [boot_drive]
+    int 0x13
+    jnc .sector_ok
+
+    call reset_disk_with_delay
+    dec bp
+    jnz .retry
+    jmp .fail
+
+.sector_ok:
+    add di, 512
+    inc word [current_lba]
+    dec si
+    jmp .next_sector
+
+.done:
+    clc
+    ret
+
+.fail:
+    stc
+    ret
+
+lba_to_chs:
+    mov ax, [sectors_per_track]
+    or ax, ax
+    jz .fail
+    mov bx, ax
+    mov ax, [current_lba]
+    xor dx, dx
+    div bx
+
+    mov cl, dl
+    inc cl
+
+    mov ax, [head_count]
+    or ax, ax
+    jz .fail
+    mov bx, ax
+    xor dx, dx
+    div bx
+
+    cmp ax, 1024
+    jae .fail
+
+    mov dh, dl
+    mov ch, al
+    shl ah, 6
+    and ah, 0xC0
+    or cl, ah
+    clc
+    ret
+
+.fail:
+    stc
+    ret
+
+reset_disk_with_delay:
+    push ax
+    push bx
     mov ah, 0x00
     mov dl, [boot_drive]
     int 0x13
-
-    ; small delay (helps on some BIOS)
     mov bx, 0xFFFF
 .delay:
     dec bx
     jnz .delay
+    pop bx
+    pop ax
+    ret
 
-    jmp .read_retry
-
-.read_ok:
-    jmp 0x0000:0x7E00      ; jump to stage2
-
-; -------------------------
-; Failure handler
-; -------------------------
-load_fail:
+show_error:
     mov ax, 0x0003
     int 0x10
-    mov si, disk_error_msg
     call print_string
+    ret
 
-.hang:
+hang:
     cli
     hlt
-    jmp .hang
+    jmp hang
 
-; -------------------------
-; Print string (BIOS)
-; -------------------------
 print_string:
     mov ah, 0x0E
     xor bx, bx
     mov bl, 0x07
 .next:
     lodsb
-    cmp al, 0
-    je .done
+    test al, al
+    jz .done
     int 0x10
     jmp .next
 .done:
     ret
 
-; -------------------------
-; Data
-; -------------------------
 boot_drive db 0
-use_lba db 0
+current_lba dw 0
 
-disk_error_msg db "Disk read error", 0
+disk_error_msg db "Stage2 load failed", 0
 
-; -------------------------
-; Disk Address Packet (DAP)
-; -------------------------
 dap:
-    db 0x10            ; size
+    db 0x10
     db 0
-stage2_sector_count:
-    dw 16              ; will be patched by build script
-    dw 0x7E00          ; offset
-    dw 0x0000          ; segment
-    dq 1               ; LBA start (sector 1)
+stage2_sector_count dw 16
+    dw 0x7E00
+    dw 0x0000
+    dq 1
 
-; -------------------------
-; Boot signature
-; -------------------------
 times 510-($-$$) db 0
 dw 0xAA55
