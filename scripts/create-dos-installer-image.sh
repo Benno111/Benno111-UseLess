@@ -40,7 +40,10 @@ ensure_freedos_assets() {
     require_cmd mdir
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
     BUILD_DIR="$BUILD_DIR" \
+    FREEDOS_CACHE_DIR="$FREEDOS_CACHE_DIR" \
     FREEDOS_MEDIA_NAME="${FREEDOS_MEDIA_NAME:-fd-x86.img}" \
+    FREEDOS_BOOT_MODE="${FREEDOS_BOOT_MODE:-liteusb}" \
+    FREEDOS_REQUIRE_CD_DRIVERS=0 \
     . "$(cd "$(dirname "$0")" && pwd)/prepare-freedos-source-assets.sh"
 }
 
@@ -83,15 +86,10 @@ EOF
     mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDCONFIG.SYS >/dev/null 2>&1 || true
     mdel -i "$FREEDOS_BOOT_IMAGE" ::/OSINST.COM >/dev/null 2>&1 || true
     mdel -i "$FREEDOS_BOOT_IMAGE" ::/OSSYS.IMG >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/SHSUCDX.COM >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/UDVD2.SYS >/dev/null 2>&1 || true
-
     mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" ::/FDAUTO.BAT
     mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" ::/FDCONFIG.SYS
     mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$DOS_INSTALLER_COM" ::/OSINST.COM
     mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$DOS_SYSTEM_IMAGE" ::/OSSYS.IMG
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$FREEDOS_SHSUCDX_COM" ::/SHSUCDX.COM
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$FREEDOS_UDVD2_SYS" ::/UDVD2.SYS
 
     if command -v mlabel >/dev/null 2>&1; then
         mlabel -i "$FREEDOS_BOOT_IMAGE" ::OS8FD14 >/dev/null 2>&1 || true

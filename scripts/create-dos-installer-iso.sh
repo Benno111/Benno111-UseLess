@@ -49,7 +49,10 @@ ensure_freedos_assets() {
     require_cmd xorriso
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
     BUILD_DIR="$BUILD_DIR" \
+    FREEDOS_CACHE_DIR="$FREEDOS_CACHE_DIR" \
     FREEDOS_MEDIA_NAME="${FREEDOS_MEDIA_NAME:-fd-lite.img}" \
+    FREEDOS_BOOT_MODE="${FREEDOS_BOOT_MODE:-legacycd}" \
+    FREEDOS_REQUIRE_CD_DRIVERS=1 \
     . "$(cd "$(dirname "$0")" && pwd)/prepare-freedos-source-assets.sh"
 }
 
