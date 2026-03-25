@@ -73,6 +73,7 @@ static void draw_partition_manager_window(int content_x, int content_y,
 static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
 static int write_text_file(const char *path, const char *content);
+static void gui_flush_account_state_before_power_transition(void);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
 static const char *resolve_user_storage_path(const char *path, char *buf,
@@ -1967,12 +1968,14 @@ static void execute_secure_attention_action(int action) {
 
   if (action == SECURE_ACTION_RESTART) {
     extern void arch_reboot(void);
+    gui_flush_account_state_before_power_transition();
     arch_reboot();
     return;
   }
 
   if (action == SECURE_ACTION_SHUTDOWN) {
     extern void arch_poweroff(void);
+    gui_flush_account_state_before_power_transition();
     arch_poweroff();
     return;
   }
@@ -3864,6 +3867,11 @@ static void save_account_state(void) {
     account_state_persist_pending = 0;
 }
 
+static void gui_flush_account_state_before_power_transition(void) {
+  if (account_username[0] && account_password[0])
+    save_account_state();
+}
+
 static int load_install_target_disk_location(char *buf, int max) {
   char manifest[256];
   int fallback_disk = -1;
@@ -5259,6 +5267,7 @@ static void installer_process_background_install(void) {
     installer_reboot_deadline_ms = 0;
     {
       extern void arch_reboot(void);
+      gui_flush_account_state_before_power_transition();
       arch_reboot();
     }
     return;
@@ -8566,12 +8575,14 @@ static int main_menu_activate(int item_index) {
   case MAIN_MENU_ITEM_POWER_SHUTDOWN: {
     extern void arch_poweroff(void);
     main_menu_power_open = 0;
+    gui_flush_account_state_before_power_transition();
     arch_poweroff();
     break;
   }
   case MAIN_MENU_ITEM_POWER_RESTART: {
     extern void arch_reboot(void);
     main_menu_power_open = 0;
+    gui_flush_account_state_before_power_transition();
     arch_reboot();
     break;
   }
@@ -10577,6 +10588,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             installer_reboot_deadline_ms = 0;
             {
               extern void arch_reboot(void);
+              gui_flush_account_state_before_power_transition();
               arch_reboot();
             }
             return;
