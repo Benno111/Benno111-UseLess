@@ -386,8 +386,7 @@ installer-image: kernel $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os-x86_64-system.img" bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@ISO_NAME=os-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" DOS_INSTALLER_IMAGE="$(IMAGE_DIR)/os-x86_64-dos-installer.img" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=os-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os-x86_64-installer.iso"
 else
 	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
