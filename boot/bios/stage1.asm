@@ -94,6 +94,8 @@ load_lba:
 ; Failure handler
 ; -------------------------
 load_fail:
+    mov ax, 0x0003
+    int 0x10
     mov si, disk_error_msg
     call print_string
 
@@ -107,6 +109,8 @@ load_fail:
 ; -------------------------
 print_string:
     mov ah, 0x0E
+    xor bx, bx
+    mov bl, 0x07
 .next:
     lodsb
     cmp al, 0
