@@ -10,8 +10,8 @@ ISO_ROOT="${BUILD_DIR}/dos_installer_iso_root"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
-FREEDOS_ARCHIVE_URL="${FREEDOS_ARCHIVE_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/FD14-LiteUSB.zip}"
-FREEDOS_ARCHIVE_PATH="${FREEDOS_CACHE_DIR}/FD14-LiteUSB.zip"
+FREEDOS_ARCHIVE_URL="${FREEDOS_ARCHIVE_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/fd-lite.img}"
+FREEDOS_ARCHIVE_PATH="${FREEDOS_CACHE_DIR}/fd-lite.img"
 FREEDOS_SOURCE_IMAGE="${FREEDOS_CACHE_DIR}/fd-lite.img"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-boot.img"
 FREEDOS_SHSUCDX_URL="${FREEDOS_SHSUCDX_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/base/shsucdx.zip}"
@@ -88,6 +88,21 @@ extract_zip_member() {
     rm -rf "$tmp_dir"
 }
 
+fetch_media_image() {
+    local source_url="$1"
+    local source_path="$2"
+    local image_name="$3"
+    local output_path="$4"
+
+    download_if_missing "$source_url" "$source_path"
+
+    if [[ "$source_path" == *.zip ]]; then
+        extract_zip_member "$source_path" "$image_name" "$output_path"
+    else
+        cp "$source_path" "$output_path"
+    fi
+}
+
 ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
     require_cmd curl
@@ -96,8 +111,7 @@ ensure_freedos_assets() {
     require_cmd mdel
     require_cmd xorriso
 
-    download_if_missing "$FREEDOS_ARCHIVE_URL" "$FREEDOS_ARCHIVE_PATH"
-    extract_zip_member "$FREEDOS_ARCHIVE_PATH" 'fd-lite.img' "$FREEDOS_SOURCE_IMAGE"
+    fetch_media_image "$FREEDOS_ARCHIVE_URL" "$FREEDOS_ARCHIVE_PATH" 'fd-lite.img' "$FREEDOS_SOURCE_IMAGE"
 
     download_if_missing "$FREEDOS_SHSUCDX_URL" "$FREEDOS_SHSUCDX_ZIP"
     extract_zip_member "$FREEDOS_SHSUCDX_ZIP" '*SHSUCDX.COM' "$FREEDOS_SHSUCDX_COM"
@@ -258,7 +272,7 @@ Included files:
 - /dos/OSSYS.IMG                 : raw OS8 system image written by the installer
 
 FreeDOS components pulled from official mirrors during build:
-- FD14-LiteUSB.zip (fd-lite.img)
+- fd-lite.img
 - shsucdx.zip (SHSUCDX.COM)
 - udvd2.zip (UDVD2.SYS)
 EOF
