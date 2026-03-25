@@ -1,12 +1,17 @@
-Place a bootable FreeDOS HDD image here as `fdboot.img` to make the DOS
-installer boot through FreeDOS instead of the legacy custom stage1/stage2 path.
+The standalone DOS installer ISO now boots through a rebranded FreeDOS path
+instead of the legacy custom stage1/stage2 loader.
 
-Requirements:
-- The image must already boot into FreeDOS on its own.
-- The image must be large enough to hold `OSINST.COM`, `OSSYS.IMG`,
-  `AUTOEXEC.BAT`, and `CONFIG.SYS`.
-- The build scripts will copy those files into the image root and let
-  `AUTOEXEC.BAT` launch `OSINST.COM` automatically.
+Build behavior:
+- `scripts/create-dos-installer-iso.sh` downloads the official FreeDOS 1.4
+  Floppy Edition archive and extracts `fd-x86.img`.
+- The script patches that image with OS8-specific `FDAUTO.BAT` and
+  `FDCONFIG.SYS`.
+- The boot flow loads FreeDOS CD support through `UDVD2.SYS` and
+  `SHSUCDX.COM`, then auto-runs `OSINST.COM` from the ISO's `/DOS` folder.
 
-If `fdboot.img` is absent, the build falls back to the existing custom
-real-mode DOS installer boot flow.
+The installer utility and OS image stay on the ISO:
+- `/DOS/OSINST.COM`
+- `/DOS/OSSYS.IMG`
+
+Official FreeDOS sources used by the build are recorded in the ISO at
+`/FREEDOS.TXT`.
