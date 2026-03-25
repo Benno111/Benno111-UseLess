@@ -8,6 +8,7 @@ BUILD_DIR="${1:-build/x86}"
 IMAGE_DIR="${2:-image}"
 IMAGE_NAME="vibos-x86.img"
 IMAGE_SIZE="100M"
+KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86.bin"
 
 # Colors
 GREEN='\033[0;32m'
@@ -46,9 +47,10 @@ else
 fi
 
 # Write kernel
-if [ -f "$BUILD_DIR/kernel/vibos-x86.elf" ]; then
-    # Write kernel starting at sector 32 (16KB offset)
-    dd if="$BUILD_DIR/kernel/vibos-x86.elf" of="$IMAGE_PATH" bs=512 seek=32 conv=notrunc 2>/dev/null
+if [ -f "$KERNEL_PATH" ]; then
+    # Write the flat binary kernel starting at sector 32 (16KB offset).
+    # The BIOS loader reads raw sectors; it cannot execute an ELF container.
+    dd if="$KERNEL_PATH" of="$IMAGE_PATH" bs=512 seek=32 conv=notrunc 2>/dev/null
     log "Kernel installed"
 else
     log "WARNING: Kernel not found"

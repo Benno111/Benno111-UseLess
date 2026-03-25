@@ -119,6 +119,7 @@ LDFLAGS_KERNEL := -nostdlib -static -T $(LINKER_SCRIPT) -e $(KERNEL_ENTRY)
 # ============================================================================
 
 KERNEL_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).elf
+KERNEL_FLAT_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).bin
 ISO_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).iso
 RAW_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).img
 
@@ -285,7 +286,7 @@ assets: $(BUILD_DIR)
 # Kernel Build
 # ============================================================================
 
-kernel: $(BUILD_DIR) $(BUILD_METADATA_HEADER) assets $(KERNEL_BINARY)
+kernel: $(BUILD_DIR) $(BUILD_METADATA_HEADER) assets $(KERNEL_BINARY) $(if $(filter x86,$(ARCH)),$(KERNEL_FLAT_BINARY),)
 	@echo "[KERNEL] $(ARCH) build complete: $(KERNEL_BINARY)"
 
 $(BUILD_METADATA_HEADER): $(CODE_HASH_INPUTS)
@@ -389,6 +390,14 @@ $(KERNEL_BINARY): $(ALL_OBJECTS)
 		echo "[INFO] objdump not found, skipping sections dump"; \
 	fi
 	@echo "[KERNEL] $(ARCH) build complete: $@"
+
+$(KERNEL_FLAT_BINARY): $(KERNEL_BINARY)
+ifeq ($(ARCH),x86)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O binary $< $@
+else
+	@true
+endif
 
 # ============================================================================
 # Boot Image Creation
