@@ -85,14 +85,17 @@ load_stage2_lba:
     ret
 
 load_stage2_chs:
+    call reset_disk_with_delay
     call detect_chs_geometry
     jc .fail
     mov word [current_lba], 1
-    mov di, 0x7E00
-    mov si, [stage2_sector_count]
+    mov word [stage2_load_offset], 0x7E00
+    mov ax, [stage2_sector_count]
+    mov [stage2_remaining_sectors], ax
 
 .next_sector:
-    test si, si
+    mov ax, [stage2_remaining_sectors]
+    test ax, ax
     jz .done
 
     mov byte [retry_count], 3
@@ -100,7 +103,7 @@ load_stage2_chs:
     call lba_to_chs
     jc .fail
 
-    mov bx, di
+    mov bx, [stage2_load_offset]
     mov ax, 0x0201
     mov dl, [boot_drive]
     int 0x13
@@ -112,9 +115,9 @@ load_stage2_chs:
     jmp .fail
 
 .sector_ok:
-    add di, 512
+    add word [stage2_load_offset], 512
     inc word [current_lba]
-    dec si
+    dec word [stage2_remaining_sectors]
     jmp .next_sector
 
 .done:
@@ -251,6 +254,8 @@ current_lba dw 0
 retry_count db 0
 chs_sectors_per_track dw 0
 chs_head_count dw 0
+stage2_load_offset dw 0
+stage2_remaining_sectors dw 0
 
 disk_error_msg db "Stage2 load failed", 0
 
