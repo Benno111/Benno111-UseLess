@@ -232,9 +232,13 @@ reset_disk_with_delay:
     ret
 
 normalize_segments:
+    pushf
+    push ax
     xor ax, ax
     mov ds, ax
     mov es, ax
+    pop ax
+    popf
     ret
 
 show_error:
