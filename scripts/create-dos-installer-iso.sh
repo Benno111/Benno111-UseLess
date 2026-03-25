@@ -10,9 +10,9 @@ ISO_ROOT="${BUILD_DIR}/dos_installer_iso_root"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
-FREEDOS_ARCHIVE_URL="${FREEDOS_ARCHIVE_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/FD14-FloppyEdition.zip}"
-FREEDOS_ARCHIVE_PATH="${FREEDOS_CACHE_DIR}/FD14-FloppyEdition.zip"
-FREEDOS_SOURCE_IMAGE="${FREEDOS_CACHE_DIR}/fd-x86.img"
+FREEDOS_ARCHIVE_URL="${FREEDOS_ARCHIVE_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/FD14-LegacyCD.zip}"
+FREEDOS_ARCHIVE_PATH="${FREEDOS_CACHE_DIR}/FD14-LegacyCD.zip"
+FREEDOS_SOURCE_IMAGE="${FREEDOS_CACHE_DIR}/boot-standard.img"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-boot.img"
 FREEDOS_SHSUCDX_URL="${FREEDOS_SHSUCDX_URL:-https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/base/shsucdx.zip}"
 FREEDOS_SHSUCDX_ZIP="${FREEDOS_CACHE_DIR}/shsucdx.zip"
@@ -97,7 +97,7 @@ ensure_freedos_assets() {
     require_cmd xorriso
 
     download_if_missing "$FREEDOS_ARCHIVE_URL" "$FREEDOS_ARCHIVE_PATH"
-    extract_zip_member "$FREEDOS_ARCHIVE_PATH" 'fd-x86.img' "$FREEDOS_SOURCE_IMAGE"
+    extract_zip_member "$FREEDOS_ARCHIVE_PATH" 'boot-standard.img' "$FREEDOS_SOURCE_IMAGE"
 
     download_if_missing "$FREEDOS_SHSUCDX_URL" "$FREEDOS_SHSUCDX_ZIP"
     extract_zip_member "$FREEDOS_SHSUCDX_ZIP" '*SHSUCDX.COM' "$FREEDOS_SHSUCDX_COM"
@@ -258,7 +258,7 @@ Included files:
 - /dos/OSSYS.IMG                 : raw OS8 system image written by the installer
 
 FreeDOS components pulled from official mirrors during build:
-- FD14-FloppyEdition.zip (fd-x86.img)
+- FD14-LegacyCD.zip (boot-standard.img)
 - shsucdx.zip (SHSUCDX.COM)
 - udvd2.zip (UDVD2.SYS)
 EOF
