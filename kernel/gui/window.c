@@ -3544,6 +3544,16 @@ static void set_startup_status(const char *message) {
   str_copy_safe(startup_status, message, sizeof(startup_status));
 }
 
+static int startup_account_system_ready(void) {
+  extern int boot_is_live_media(void);
+  extern int boot_is_usb_boot(void);
+
+  if (account_partition_storage_ready)
+    return 1;
+
+  return boot_is_live_media() || boot_is_usb_boot();
+}
+
 static int startup_flow_active(void) {
   return startup_flow != STARTUP_FLOW_NONE;
 }
@@ -4115,6 +4125,11 @@ static void submit_startup_flow(void) {
     startup_setup_page = STARTUP_SETUP_PAGE_STORAGE;
     startup_active_field = 0;
     set_startup_status("Prepare a personal data partition for this account.");
+    return;
+  }
+
+  if (!startup_account_system_ready()) {
+    set_startup_status("Account system is still starting up. Please wait.");
     return;
   }
 
@@ -5419,12 +5434,17 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   char masked_password[32];
   uint32_t user_bg = startup_active_field == 0 ? 0x31314A : 0x232337;
   uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
-  uint32_t button_bg = 0x2563EB;
+  uint32_t button_bg =
+      (!startup_setup_account_active() && !startup_account_system_ready())
+          ? 0x4B5563
+          : 0x2563EB;
   const char *title =
       startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Setup Account"
                                                   : "Sign In";
   const char *button_label =
-      startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Finish Setup" : "Login";
+      startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
+          ? "Finish Setup"
+          : (startup_account_system_ready() ? "Login" : "Starting...");
 
   (void)win;
   if (startup_setup_account_active()) {
