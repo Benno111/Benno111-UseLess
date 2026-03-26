@@ -17,12 +17,26 @@ jobs:
           fetch-depth: 0
 
       - name: Create branch
+        run: git checkout -B auto/apply-patch
+
+      - name: Verify patch exists
         run: |
-          git checkout -B auto/apply-patch
+          test -f fixes/core-system-fixes.patch
+          echo "Patch found:"
+          ls -l fixes/core-system-fixes.patch
+
+      - name: Check patch before applying
+        run: |
+          git apply --check --reject --whitespace=fix fixes/core-system-fixes.patch
 
       - name: Apply patch
         run: |
           git apply --reject --whitespace=fix fixes/core-system-fixes.patch
+
+      - name: Show result
+        run: |
+          git status --short
+          find . -name "*.rej" -o -name "*.orig" || true
 
       - name: Commit
         run: |
@@ -32,5 +46,4 @@ jobs:
           git commit -m "Apply patch" || echo "No changes to commit"
 
       - name: Push
-        run: |
-          git push origin auto/apply-patch --force
+        run: git push origin auto/apply-patch --force
