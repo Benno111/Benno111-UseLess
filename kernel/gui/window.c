@@ -456,7 +456,7 @@ static const settings_resolution_option_t settings_resolution_options[] = {
   ((int)(sizeof(settings_resolution_options) / \
          sizeof(settings_resolution_options[0])))
 
-#define SETTINGS_MAX_ACCOUNTS 8
+#define SETTINGS_ACCOUNT_LIST_INITIAL_CAPACITY 8
 
 static const char *settings_user_role_options[] = {"admin", "user", "child"};
 
@@ -3580,9 +3580,86 @@ typedef struct {
 } account_scan_ctx_t;
 
 typedef struct {
-  char names[SETTINGS_MAX_ACCOUNTS][32];
+  char(*names)[32];
   int count;
+  int capacity;
 } settings_account_list_t;
+
+static void settings_account_list_init(settings_account_list_t *list) {
+  if (!list)
+    return;
+  list->names = NULL;
+  list->count = 0;
+  list->capacity = 0;
+}
+
+static void settings_account_list_free(settings_account_list_t *list) {
+  if (!list)
+    return;
+  if (list->names)
+    kfree(list->names);
+  list->names = NULL;
+  list->count = 0;
+  list->capacity = 0;
+}
+
+static int settings_account_list_append(settings_account_list_t *list,
+                                        const char *name) {
+  char(*new_names)[32];
+  int new_capacity;
+
+  if (!list || !name || !name[0])
+    return -1;
+
+  if (list->count >= list->capacity) {
+    new_capacity = list->capacity > 0 ? list->capacity * 2
+                                      : SETTINGS_ACCOUNT_LIST_INITIAL_CAPACITY;
+    new_names = kmalloc(sizeof(*new_names) * new_capacity);
+    if (!new_names)
+      return -1;
+    for (int i = 0; i < list->count; i++)
+      str_copy_safe(new_names[i], list->names[i], sizeof(new_names[i]));
+    if (list->names)
+      kfree(list->names);
+    list->names = new_names;
+    list->capacity = new_capacity;
+  }
+
+  str_copy_safe(list->names[list->count], name, sizeof(list->names[list->count]));
+  list->count++;
+  return 0;
+}
+
+static int settings_account_list_index_of(const settings_account_list_t *list,
+                                          const char *name) {
+  if (!list || !name || !name[0])
+    return -1;
+  for (int i = 0; i < list->count; i++) {
+    if (str_cmp(list->names[i], name) == 0)
+      return i;
+  }
+  return -1;
+}
+
+static int settings_account_list_visible_start(
+    const settings_account_list_t *list, const char *selected, int max_visible) {
+  int selected_idx;
+  int start;
+
+  if (!list || list->count <= 0 || max_visible <= 0 || list->count <= max_visible)
+    return 0;
+
+  selected_idx = settings_account_list_index_of(list, selected);
+  if (selected_idx < 0)
+    return 0;
+
+  start = selected_idx - max_visible / 2;
+  if (start < 0)
+    start = 0;
+  if (start > list->count - max_visible)
+    start = list->count - max_visible;
+  return start;
+}
 
 static int find_first_account_manifest_callback(void *raw_ctx, const char *name,
                                                 int len, loff_t offset,
@@ -3615,13 +3692,13 @@ static int settings_collect_accounts_callback(void *raw_ctx, const char *name,
                                               int len, loff_t offset,
                                               ino_t ino, unsigned type) {
   settings_account_list_t *list = (settings_account_list_t *)raw_ctx;
+  char account_name[32];
   int copy_len = 0;
 
   (void)offset;
   (void)ino;
 
-  if (!list || !name || type == 4 || len < 5 ||
-      list->count >= SETTINGS_MAX_ACCOUNTS)
+  if (!list || !name || type == 4 || len < 5)
     return 0;
   if (name[len - 4] != '.' || name[len - 3] != 'c' || name[len - 2] != 'f' ||
       name[len - 1] != 'g')
@@ -3631,9 +3708,9 @@ static int settings_collect_accounts_callback(void *raw_ctx, const char *name,
   if (copy_len > 31)
     copy_len = 31;
   for (int i = 0; i < copy_len; i++)
-    list->names[list->count][i] = name[i];
-  list->names[list->count][copy_len] = '\0';
-  list->count++;
+    account_name[i] = name[i];
+  account_name[copy_len] = '\0';
+  settings_account_list_append(list, account_name);
   return 0;
 }
 
@@ -3642,9 +3719,8 @@ static void settings_collect_accounts(settings_account_list_t *list) {
 
   if (!list)
     return;
-  list->count = 0;
-  for (int i = 0; i < SETTINGS_MAX_ACCOUNTS; i++)
-    list->names[i][0] = '\0';
+  settings_account_list_free(list);
+  settings_account_list_init(list);
 
   dir = vfs_open(GUI_ACCOUNTS_DIR, O_RDONLY, 0);
   if (dir) {
@@ -3660,11 +3736,8 @@ static void settings_collect_accounts(settings_account_list_t *list) {
         break;
       }
     }
-    if (!found && list->count < SETTINGS_MAX_ACCOUNTS) {
-      str_copy_safe(list->names[list->count], account_username,
-                    sizeof(list->names[list->count]));
-      list->count++;
-    }
+    if (!found)
+      settings_account_list_append(list, account_username);
   }
 }
 
@@ -3672,11 +3745,13 @@ static void settings_sync_selected_user(void) {
   settings_account_list_t list;
   int found = 0;
 
+  settings_account_list_init(&list);
   settings_collect_accounts(&list);
   if (!settings_user_selected[0]) {
     if (list.count > 0)
       str_copy_safe(settings_user_selected, list.names[0],
                     sizeof(settings_user_selected));
+    settings_account_list_free(&list);
     return;
   }
   for (int i = 0; i < list.count; i++) {
@@ -3692,6 +3767,7 @@ static void settings_sync_selected_user(void) {
     else
       settings_user_selected[0] = '\0';
   }
+  settings_account_list_free(&list);
 }
 
 static const char *settings_user_role_for_name(const char *username,
@@ -4915,11 +4991,14 @@ static void startup_handle_key(int key) {
 
   if (startup_flow == STARTUP_FLOW_LOGIN && startup_active_field == 0) {
     settings_account_list_t accounts;
+    settings_account_list_init(&accounts);
     settings_collect_accounts(&accounts);
     if (key == KEY_DOWN || key == KEY_UP) {
       int current_idx = -1;
-      if (accounts.count <= 0)
+      if (accounts.count <= 0) {
+        settings_account_list_free(&accounts);
         return;
+      }
       for (int i = 0; i < accounts.count; i++) {
         if (str_cmp(startup_input_username, accounts.names[i]) == 0) {
           current_idx = i;
@@ -4935,8 +5014,10 @@ static void startup_handle_key(int key) {
       str_copy_safe(startup_input_username, accounts.names[current_idx],
                     sizeof(startup_input_username));
       startup_login_user_dropdown_open = 0;
+      settings_account_list_free(&accounts);
       return;
     }
+    settings_account_list_free(&accounts);
   }
 
   target = startup_active_field == 0 ? startup_input_username
@@ -6189,6 +6270,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   char masked_password[32];
   settings_account_list_t startup_accounts;
   int startup_dropdown_rows = 0;
+  int startup_dropdown_start = 0;
   int startup_login_extra_y = 0;
   uint32_t user_bg = startup_active_field == 0 ? 0x31314A : 0x232337;
   uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
@@ -6205,6 +6287,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
           : (startup_account_system_ready() ? "Login" : "Starting...");
 
   (void)win;
+  settings_account_list_init(&startup_accounts);
   if (startup_setup_account_active()) {
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
     int rail_w = 0, card_x = 0, card_y = 0, card_w = 0, card_h = 0;
@@ -6325,6 +6408,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                     0x2563EB);
     gui_draw_string(button_x + button_w + 18, button_y + 14, startup_status,
                     0xCBD5E1, 0x111827);
+    settings_account_list_free(&startup_accounts);
     return;
   }
 
@@ -6346,6 +6430,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                     0x2563EB);
     gui_draw_string(content_x + 210, content_y + 209, startup_status, 0xCDD6F4,
                     THEME_BG);
+    settings_account_list_free(&startup_accounts);
     return;
   }
 
@@ -6369,6 +6454,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                     0x2563EB);
     gui_draw_string(content_x + 210, content_y + 215, startup_status, 0xCDD6F4,
                     THEME_BG);
+    settings_account_list_free(&startup_accounts);
     return;
   }
 
@@ -6382,6 +6468,8 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open &&
       startup_accounts.count > 0) {
     startup_dropdown_rows = startup_accounts.count < 4 ? startup_accounts.count : 4;
+    startup_dropdown_start = settings_account_list_visible_start(
+        &startup_accounts, startup_input_username, startup_dropdown_rows);
     startup_login_extra_y = 8 + startup_dropdown_rows * 22;
   }
 
@@ -6407,14 +6495,15 @@ static void draw_startup_auth_window(struct window *win, int content_x,
       gui_draw_rect(content_x + 20, content_y + 118, content_w - 40, dropdown_h,
                     0x1E293B);
       for (int i = 0; i < startup_dropdown_rows; i++) {
+        int account_idx = startup_dropdown_start + i;
         int row_y = content_y + 122 + i * 22;
         uint32_t row_bg =
-            str_cmp(startup_input_username, startup_accounts.names[i]) == 0
+            str_cmp(startup_input_username, startup_accounts.names[account_idx]) == 0
                 ? 0x2563EB
                 : 0x1E293B;
         gui_draw_rect(content_x + 24, row_y, content_w - 48, 18, row_bg);
-        gui_draw_string(content_x + 34, row_y + 5, startup_accounts.names[i],
-                        0xFFFFFF, row_bg);
+        gui_draw_string(content_x + 34, row_y + 5,
+                        startup_accounts.names[account_idx], 0xFFFFFF, row_bg);
       }
     }
   }
@@ -6450,6 +6539,7 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   }
   gui_draw_string(content_x + 210, content_y + 215 + startup_login_extra_y,
                   startup_status, 0xCDD6F4, THEME_BG);
+  settings_account_list_free(&startup_accounts);
 }
 
 static void draw_icon(int x, int y, int size, const unsigned char *icon,
@@ -8384,27 +8474,36 @@ static void draw_window(struct window *win) {
         uint32_t pass_field_bg =
             settings_user_active_field == 1 ? 0x31314A : 0x232337;
         int list_y = block_y + 44;
+        int list_start = 0;
+        int visible_rows = 0;
         int editor_x = panel_x + 224;
         int editor_w = panel_w - 224;
         int footer_y;
 
+        settings_account_list_init(&accounts);
         settings_collect_accounts(&accounts);
         settings_sync_selected_user();
         mask_secret(settings_user_new_password, masked_password,
                     sizeof(masked_password));
         settings_user_role_for_name(settings_user_selected, selected_role,
                                     sizeof(selected_role));
+        visible_rows = accounts.count < 4 ? accounts.count : 4;
+        list_start = settings_account_list_visible_start(&accounts,
+                                                         settings_user_selected,
+                                                         visible_rows);
 
         gui_draw_rect(panel_x, list_y, 210, 132, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 12, "Accounts", 0x89B4FA, 0x252535);
-        for (int i = 0; i < accounts.count && i < 4; i++) {
+        for (int i = 0; i < visible_rows; i++) {
+          int account_idx = list_start + i;
           int row_y = list_y + 34 + i * 22;
           uint32_t row_bg =
-              str_cmp(settings_user_selected, accounts.names[i]) == 0 ? 0x2563EB
-                                                                      : 0x1E293B;
+              str_cmp(settings_user_selected, accounts.names[account_idx]) == 0
+                  ? 0x2563EB
+                  : 0x1E293B;
           gui_draw_rect(panel_x + 12, row_y, 186, 18, row_bg);
-          gui_draw_string(panel_x + 20, row_y + 5, accounts.names[i], 0xFFFFFF,
-                          row_bg);
+          gui_draw_string(panel_x + 20, row_y + 5, accounts.names[account_idx],
+                          0xFFFFFF, row_bg);
         }
 
         gui_draw_rect(editor_x, list_y, editor_w, 132, 0x252535);
@@ -8456,6 +8555,7 @@ static void draw_window(struct window *win) {
                           "Admin mode is required to add or remove users.",
                           0xF9A8D4, 0x1E293B);
         }
+        settings_account_list_free(&accounts);
       }
     }
   }
@@ -10924,22 +11024,30 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       }
       if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open) {
         settings_account_list_t accounts;
+        int dropdown_rows = 0;
+        int dropdown_start = 0;
+        settings_account_list_init(&accounts);
         settings_collect_accounts(&accounts);
         if (accounts.count > 0 && x >= content_x + 20 &&
             x < content_x + content_w - 20 && y >= content_y + 118) {
-          int dropdown_rows = accounts.count < 4 ? accounts.count : 4;
+          dropdown_rows = accounts.count < 4 ? accounts.count : 4;
+          dropdown_start = settings_account_list_visible_start(
+              &accounts, startup_input_username, dropdown_rows);
           for (int i = 0; i < dropdown_rows; i++) {
+            int account_idx = dropdown_start + i;
             int row_y = content_y + 122 + i * 22;
             if (x >= content_x + 24 && x < content_x + content_w - 24 &&
                 y >= row_y && y < row_y + 18) {
-              str_copy_safe(startup_input_username, accounts.names[i],
+              str_copy_safe(startup_input_username, accounts.names[account_idx],
                             sizeof(startup_input_username));
               startup_login_user_dropdown_open = 0;
               startup_active_field = 1;
+              settings_account_list_free(&accounts);
               return;
             }
           }
         }
+        settings_account_list_free(&accounts);
       }
       if (x >= content_x + 20 && x < content_x + content_w - 20 &&
           y >= content_y + 94 && y < content_y + 128) {
@@ -10953,6 +11061,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         settings_account_list_t accounts;
         int startup_dropdown_rows = 0;
         int startup_login_extra_y = 0;
+        settings_account_list_init(&accounts);
         if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open) {
           settings_collect_accounts(&accounts);
           startup_dropdown_rows = accounts.count < 4 ? accounts.count : 4;
@@ -10964,11 +11073,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             y < content_y + 196 + startup_login_extra_y) {
           startup_active_field = 1;
           startup_login_user_dropdown_open = 0;
+          settings_account_list_free(&accounts);
           return;
         }
         if (x >= content_x + 20 && x < content_x + 190 &&
             y >= content_y + 214 + startup_login_extra_y &&
             y < content_y + 248 + startup_login_extra_y) {
+          settings_account_list_free(&accounts);
           submit_startup_flow();
           return;
         }
@@ -10977,6 +11088,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               y >= content_y + 204 + startup_login_extra_y &&
               y < content_y + 238 + startup_login_extra_y) {
             startup_login_user_dropdown_open = 0;
+            settings_account_list_free(&accounts);
             execute_secure_attention_action(SECURE_ACTION_RESTART);
             return;
           }
@@ -10984,10 +11096,12 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               y >= content_y + 204 + startup_login_extra_y &&
               y < content_y + 238 + startup_login_extra_y) {
             startup_login_user_dropdown_open = 0;
+            settings_account_list_free(&accounts);
             execute_secure_attention_action(SECURE_ACTION_SHUTDOWN);
             return;
           }
         }
+        settings_account_list_free(&accounts);
       }
       if (x >= content_x + 20 && x < content_x + content_w - 20 &&
           y >= content_y + 162 && y < content_y + 196) {
@@ -11643,13 +11757,20 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           settings_account_list_t accounts;
           int signout_y = panel_y + 72 + 88 + 102;
           int list_y = signout_y + 44;
+          int list_start = 0;
+          int visible_rows = 0;
           int editor_x = panel_x + 224;
           int editor_w = panel_w - 224;
           int admin_mode = account_role_is_admin();
           int handled_selection = 0;
 
+          settings_account_list_init(&accounts);
           settings_collect_accounts(&accounts);
           settings_sync_selected_user();
+          visible_rows = accounts.count < 4 ? accounts.count : 4;
+          list_start = settings_account_list_visible_start(&accounts,
+                                                           settings_user_selected,
+                                                           visible_rows);
           if (session_can_logout() && x >= panel_x && x < panel_x + 112 &&
               y >= signout_y && y < signout_y + 30) {
             str_copy_safe(startup_input_username, account_username,
@@ -11657,13 +11778,15 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             startup_begin_login_flow("Signed out.", 1);
             str_copy_safe(settings_status, "Returned to the login screen.",
                           sizeof(settings_status));
+            settings_account_list_free(&accounts);
             break;
           }
-          for (int i = 0; i < accounts.count && i < 4; i++) {
+          for (int i = 0; i < visible_rows; i++) {
+            int account_idx = list_start + i;
             int row_y = list_y + 34 + i * 22;
             if (x >= panel_x + 12 && x < panel_x + 198 && y >= row_y &&
                 y < row_y + 18) {
-              str_copy_safe(settings_user_selected, accounts.names[i],
+              str_copy_safe(settings_user_selected, accounts.names[account_idx],
                             sizeof(settings_user_selected));
               str_copy_safe(settings_status, "Selected user account.",
                             sizeof(settings_status));
@@ -11671,8 +11794,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               break;
             }
           }
-          if (handled_selection)
+          if (handled_selection) {
+            settings_account_list_free(&accounts);
             break;
+          }
           if (x >= editor_x + 16 && x < editor_x + editor_w - 16 &&
               y >= list_y + 34 && y < list_y + 58) {
             if (admin_mode)
@@ -11681,6 +11806,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               str_copy_safe(settings_status,
                             "Admin mode is required to edit account details.",
                             sizeof(settings_status));
+            settings_account_list_free(&accounts);
             break;
           }
           if (x >= editor_x + 16 && x < editor_x + editor_w - 16 &&
@@ -11691,6 +11817,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               str_copy_safe(settings_status,
                             "Admin mode is required to edit account details.",
                             sizeof(settings_status));
+            settings_account_list_free(&accounts);
             break;
           }
           if (x >= editor_x + 16 && x < editor_x + 126 &&
@@ -11705,6 +11832,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                             "Admin mode is required to change user modes.",
                             sizeof(settings_status));
             }
+            settings_account_list_free(&accounts);
             break;
           }
           if (x >= editor_x + 136 && x < editor_x + 228 && y >= list_y + 100 &&
@@ -11715,6 +11843,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               str_copy_safe(settings_status,
                             "Admin mode is required to add users.",
                             sizeof(settings_status));
+            settings_account_list_free(&accounts);
             break;
           }
           if (x >= editor_x + 236 && x < editor_x + 344 &&
@@ -11725,8 +11854,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               str_copy_safe(settings_status,
                             "Admin mode is required to remove users.",
                             sizeof(settings_status));
+            settings_account_list_free(&accounts);
             break;
           }
+          settings_account_list_free(&accounts);
         }
       }
 
