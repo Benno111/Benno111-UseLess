@@ -220,8 +220,6 @@ xorriso -as mkisofs \
     -b boot/os8-freedos.img \
     -no-emul-boot \
     -hard-disk-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
