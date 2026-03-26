@@ -11,6 +11,7 @@ DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-disk.img"
+FREEDOS_MTOOLS_IMAGE=""
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -31,6 +32,34 @@ require_cmd() {
         echo "[ERROR] Required command not found: $1" >&2
         exit 1
     fi
+}
+
+read_u32_le() {
+    local file="$1"
+    local offset="$2"
+    od -An -t u4 -j "$offset" -N 4 "$file" | tr -d '[:space:]'
+}
+
+resolve_mtools_image() {
+    local image="$1"
+    local fat_hint
+    fat_hint="$(dd if="$image" bs=1 skip=54 count=8 2>/dev/null | tr -d '\000' || true)"
+    if [ -z "$fat_hint" ]; then
+        fat_hint="$(dd if="$image" bs=1 skip=82 count=8 2>/dev/null | tr -d '\000' || true)"
+    fi
+    if printf '%s' "$fat_hint" | grep -qi 'FAT'; then
+        printf '%s\n' "$image"
+        return 0
+    fi
+
+    local part_lba
+    part_lba="$(read_u32_le "$image" 454)"
+    if [ -n "$part_lba" ] && [ "$part_lba" -gt 0 ] 2>/dev/null; then
+        printf '%s@@%s\n' "$image" "$((part_lba * 512))"
+        return 0
+    fi
+
+    printf '%s\n' "$image"
 }
 
 ensure_freedos_assets() {
@@ -59,13 +88,14 @@ prepare_freedos_disk_image() {
     fi
 
     cp "$FREEDOS_MEDIA_IMAGE" "$FREEDOS_BOOT_IMAGE"
+    FREEDOS_MTOOLS_IMAGE="$(resolve_mtools_image "$FREEDOS_BOOT_IMAGE")"
 
     cat > "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" <<'EOF'
 @ECHO OFF
 CLS
 ECHO.
 ECHO   OS8 Setup
-ECHO   Powered by FreeDOS
+ECHO          
 ECHO.
 IF EXIST OSINST.COM GOTO RUN
 ECHO OSINST.COM is missing from this installer disk.
@@ -101,23 +131,23 @@ BUFFERS=20
 DOS=HIGH
 EOF
 
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/OS8AUTO.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDAUTO.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/AUTOEXEC.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDCONFIG.SYS >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/CONFIG.SYS >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/OSINST.COM >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/OSSYS.IMG >/dev/null 2>&1 || true
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" ::/OS8AUTO.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" ::/FDAUTO.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" ::/FDCONFIG.SYS
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/CONFIG.SYS" ::/CONFIG.SYS
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$DOS_INSTALLER_COM" ::/OSINST.COM
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$DOS_SYSTEM_IMAGE" ::/OSSYS.IMG
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/OS8AUTO.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/FDAUTO.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/AUTOEXEC.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/FDCONFIG.SYS >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/CONFIG.SYS >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/OSINST.COM >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/OSSYS.IMG >/dev/null 2>&1 || true
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" ::/OS8AUTO.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" ::/FDAUTO.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" ::/FDCONFIG.SYS
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/CONFIG.SYS" ::/CONFIG.SYS
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "$DOS_INSTALLER_COM" ::/OSINST.COM
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "$DOS_SYSTEM_IMAGE" ::/OSSYS.IMG
 
     if command -v mlabel >/dev/null 2>&1; then
-        mlabel -i "$FREEDOS_BOOT_IMAGE" ::OS8FD14 >/dev/null 2>&1 || true
+        mlabel -i "$FREEDOS_MTOOLS_IMAGE" ::OS8FD14 >/dev/null 2>&1 || true
     fi
 }
 
@@ -132,7 +162,7 @@ IMAGE_PATH="$IMAGE_DIR/$IMAGE_NAME"
 cp "$FREEDOS_BOOT_IMAGE" "$IMAGE_PATH"
 
 log "FreeDOS installer image contents:"
-mdir -i "$IMAGE_PATH" ::/
+mdir -i "$(resolve_mtools_image "$IMAGE_PATH")" ::/
 log "Image created successfully: $IMAGE_PATH"
 ls -lh "$IMAGE_PATH"
 echo ""

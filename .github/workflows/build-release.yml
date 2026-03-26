@@ -138,8 +138,10 @@ jobs:
       - name: Verify x86_64 DOS Installer ISO boot contents
         run: |
           ISO=image/os8-x86_64-dos-installer.iso
-          xorriso -indev "$ISO" -find /boot/dos-installer.img -quit >/dev/null 2>&1
-          xorriso -indev "$ISO" -find /dos/OSINST.IMG -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /boot/os8-freedos.img -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /dos/OSINST.COM -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /dos/OSSYS.IMG -quit >/dev/null 2>&1
+          xorriso -indev "$ISO" -find /FREEDOS.TXT -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /README.TXT -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find / -type f -exec lsdl >/tmp/x86_64-dos-installer-iso-files.txt
           cat /tmp/x86_64-dos-installer-iso-files.txt

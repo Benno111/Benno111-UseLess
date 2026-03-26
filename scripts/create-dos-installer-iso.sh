@@ -11,6 +11,7 @@ DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-boot.img"
+FREEDOS_MTOOLS_IMAGE=""
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -42,6 +43,34 @@ require_cmd() {
     fi
 }
 
+read_u32_le() {
+    local file="$1"
+    local offset="$2"
+    od -An -t u4 -j "$offset" -N 4 "$file" | tr -d '[:space:]'
+}
+
+resolve_mtools_image() {
+    local image="$1"
+    local fat_hint
+    fat_hint="$(dd if="$image" bs=1 skip=54 count=8 2>/dev/null | tr -d '\000' || true)"
+    if [ -z "$fat_hint" ]; then
+        fat_hint="$(dd if="$image" bs=1 skip=82 count=8 2>/dev/null | tr -d '\000' || true)"
+    fi
+    if printf '%s' "$fat_hint" | grep -qi 'FAT'; then
+        printf '%s\n' "$image"
+        return 0
+    fi
+
+    local part_lba
+    part_lba="$(read_u32_le "$image" 454)"
+    if [ -n "$part_lba" ] && [ "$part_lba" -gt 0 ] 2>/dev/null; then
+        printf '%s@@%s\n' "$image" "$((part_lba * 512))"
+        return 0
+    fi
+
+    printf '%s\n' "$image"
+}
+
 ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
     require_cmd mcopy
@@ -50,30 +79,36 @@ ensure_freedos_assets() {
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
     BUILD_DIR="$BUILD_DIR" \
     FREEDOS_CACHE_DIR="$FREEDOS_CACHE_DIR" \
-    FREEDOS_MEDIA_NAME="${FREEDOS_MEDIA_NAME:-fd-lite.img}" \
-    FREEDOS_BOOT_MODE="${FREEDOS_BOOT_MODE:-legacycd}" \
+    FREEDOS_MEDIA_NAME="${FREEDOS_MEDIA_NAME:-fd-x86.img}" \
+    FREEDOS_BOOT_MODE="${FREEDOS_BOOT_MODE:-liteusb}" \
     FREEDOS_REQUIRE_CD_DRIVERS=1 \
     . "$(cd "$(dirname "$0")" && pwd)/prepare-freedos-source-assets.sh"
 }
 
 prepare_freedos_boot_image() {
     cp "$FREEDOS_MEDIA_IMAGE" "$FREEDOS_BOOT_IMAGE"
+    FREEDOS_MTOOLS_IMAGE="$(resolve_mtools_image "$FREEDOS_BOOT_IMAGE")"
 
     cat > "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" <<'EOF'
 @ECHO OFF
 CLS
 ECHO.
 ECHO   OS8 Setup
-ECHO   Powered by FreeDOS
+ECHO          
 ECHO.
 SHSUCDX /Q /D:OS8CD001 /L:R
-IF EXIST R:\DOS\OSINST.COM GOTO RUN
-ECHO The OS8 setup CD was not detected.
-ECHO Attach the installer ISO and reboot.
+IF EXIST R:\DOS\OSINST.COM GOTO RUNCD
+IF EXIST C:\OSINST.COM GOTO RUNLOCAL
+ECHO The setup media is not accessible from DOS.
 GOTO DONE
-:RUN
+:RUNCD
 R:
 CD \DOS
+OSINST.COM
+GOTO DONE
+:RUNLOCAL
+C:
+CD \
 OSINST.COM
 :DONE
 ECHO.
@@ -106,24 +141,24 @@ DOS=HIGH
 DEVICE=UDVD2.SYS /D:OS8CD001
 EOF
 
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/OS8AUTO.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDAUTO.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/AUTOEXEC.BAT >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDCONFIG.SYS >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/CONFIG.SYS >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/SHSUCDX.COM >/dev/null 2>&1 || true
-    mdel -i "$FREEDOS_BOOT_IMAGE" ::/UDVD2.SYS >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/OS8AUTO.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/FDAUTO.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/AUTOEXEC.BAT >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/FDCONFIG.SYS >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/CONFIG.SYS >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/SHSUCDX.COM >/dev/null 2>&1 || true
+    mdel -i "$FREEDOS_MTOOLS_IMAGE" ::/UDVD2.SYS >/dev/null 2>&1 || true
 
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" ::/OS8AUTO.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" ::/FDAUTO.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" ::/FDCONFIG.SYS
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "${FREEDOS_CACHE_DIR}/CONFIG.SYS" ::/CONFIG.SYS
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$FREEDOS_SHSUCDX_COM" ::/SHSUCDX.COM
-    mcopy -o -i "$FREEDOS_BOOT_IMAGE" "$FREEDOS_UDVD2_SYS" ::/UDVD2.SYS
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/OS8AUTO.BAT" ::/OS8AUTO.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" ::/FDAUTO.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" ::/FDCONFIG.SYS
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "${FREEDOS_CACHE_DIR}/CONFIG.SYS" ::/CONFIG.SYS
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "$FREEDOS_SHSUCDX_COM" ::/SHSUCDX.COM
+    mcopy -o -i "$FREEDOS_MTOOLS_IMAGE" "$FREEDOS_UDVD2_SYS" ::/UDVD2.SYS
 
     if command -v mlabel >/dev/null 2>&1; then
-        mlabel -i "$FREEDOS_BOOT_IMAGE" ::OS8FD14 >/dev/null 2>&1 || true
+        mlabel -i "$FREEDOS_MTOOLS_IMAGE" ::OS8FD14 >/dev/null 2>&1 || true
     fi
 }
 
@@ -147,11 +182,11 @@ link_or_copy "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
 cat > "$ISO_ROOT/README.TXT" <<EOF
 OS8 DOS Installer ISO
 
-This ISO boots a rebranded FreeDOS environment and launches the OS8 setup
-utility from the CD after loading FreeDOS CD-ROM support.
+This ISO boots a rebranded FreeDOS environment from a hard-disk-style image
+and launches the OS8 setup utility after loading DOS CD-ROM support.
 
 Included files:
-- /boot/os8-freedos.img          : patched FreeDOS floppy boot image used for BIOS boot
+- /boot/os8-freedos.img          : patched FreeDOS hard-disk boot image used for BIOS boot
 - /dos/OSINST.COM                : OS8 DOS installer utility
 - /dos/OSSYS.IMG                 : raw OS8 system image written by the installer
 
@@ -183,6 +218,10 @@ xorriso -as mkisofs \
     -V "OS8-FD-SETUP" \
     -c boot/boot.cat \
     -b boot/os8-freedos.img \
+    -no-emul-boot \
+    -hard-disk-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
