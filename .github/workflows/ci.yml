@@ -58,10 +58,10 @@ jobs:
           set -euxo pipefail
           ls -lh image/os8-x86_64.iso
           file image/os8-x86_64.iso
-          ls -lh image/os-x86_64-installer.iso
-          file image/os-x86_64-installer.iso
-          ls -lh image/os-x86_64-dos-installer.iso
-          file image/os-x86_64-dos-installer.iso
+          ls -lh image/os8-x86_64-installer.iso
+          file image/os8-x86_64-installer.iso
+          ls -lh image/os8-x86_64-dos-installer.iso
+          file image/os8-x86_64-dos-installer.iso
 
       - name: Generate release notes
         run: |
@@ -80,8 +80,8 @@ jobs:
           ## Bootable Media
 
           - \`os8-x86_64.iso\`
-          - \`os-x86_64-installer.iso\`
-          - \`os-x86_64-dos-installer.iso\`
+          - \`os8-x86_64-installer.iso\`
+          - \`os8-x86_64-dos-installer.iso\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -101,7 +101,7 @@ jobs:
           prerelease: true
           files: |
             image/os8-x86_64.iso
-            image/os-x86_64-installer.iso
-            image/os-x86_64-dos-installer.iso
+            image/os8-x86_64-installer.iso
+            image/os8-x86_64-dos-installer.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

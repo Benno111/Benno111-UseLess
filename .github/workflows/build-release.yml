@@ -123,7 +123,7 @@ jobs:
 
       - name: Verify x86_64 Installer ISO boot contents
         run: |
-          ISO=image/os-x86_64-installer.iso
+          ISO=image/os8-x86_64-installer.iso
           xorriso -indev "$ISO" -find /boot/main.sys -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-bios-cd.bin -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /boot/limine-uefi-cd.bin -quit >/dev/null 2>&1
@@ -137,7 +137,7 @@ jobs:
 
       - name: Verify x86_64 DOS Installer ISO boot contents
         run: |
-          ISO=image/os-x86_64-dos-installer.iso
+          ISO=image/os8-x86_64-dos-installer.iso
           xorriso -indev "$ISO" -find /boot/dos-installer.img -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /dos/OSINST.IMG -quit >/dev/null 2>&1
           xorriso -indev "$ISO" -find /README.TXT -quit >/dev/null 2>&1
@@ -149,8 +149,8 @@ jobs:
           mkdir -p release/x86_64/boot-support
           cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
           cp image/os8-x86_64.iso release/x86_64/os8-x86_64.iso
-          cp image/os-x86_64-installer.iso release/x86_64/os-x86_64-installer.iso
-          cp image/os-x86_64-dos-installer.iso release/x86_64/os-x86_64-dos-installer.iso
+          cp image/os8-x86_64-installer.iso release/x86_64/os8-x86_64-installer.iso
+          cp image/os8-x86_64-dos-installer.iso release/x86_64/os8-x86_64-dos-installer.iso
           cp /tmp/x86_64-iso-files.txt release/x86_64/ISO_CONTENTS.txt
           cp /tmp/x86_64-installer-iso-files.txt release/x86_64/INSTALLER_ISO_CONTENTS.txt
           cp /tmp/x86_64-dos-installer-iso-files.txt release/x86_64/DOS_INSTALLER_ISO_CONTENTS.txt
@@ -162,8 +162,8 @@ jobs:
           cat > release/x86_64/BOOTING.md << 'EOF'
           x86_64 boot files included in this bundle:
           - os8-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
-          - os-x86_64-installer.iso: installer ISO with graphical and DOS rescue installer paths
-          - os-x86_64-dos-installer.iso: standalone BIOS-only ISO that boots directly into the DOS text installer
+          - os8-x86_64-installer.iso: installer ISO with graphical and DOS rescue installer paths
+          - os8-x86_64-dos-installer.iso: standalone BIOS-only ISO that boots directly into the DOS text installer
           - vibos-x86_64.elf: kernel binary
           - ISO_CONTENTS.txt: manifest of files verified inside the ISO
           - INSTALLER_ISO_CONTENTS.txt: manifest of files verified inside the installer ISO
@@ -173,8 +173,8 @@ jobs:
 
           Recommended boot path:
           1. Use os8-x86_64.iso directly in a VM.
-          2. Use os-x86_64-installer.iso when you need the installer environment or DOS rescue installer.
-          3. Use os-x86_64-dos-installer.iso when you want the BIOS text installer as its own bootable image.
+          2. Use os8-x86_64-installer.iso when you need the installer environment or DOS rescue installer.
+          3. Use os8-x86_64-dos-installer.iso when you want the BIOS text installer as its own bootable image.
           4. Use Rufus in ISO mode to write any of the ISO images to USB.
           5. Use the boot-support files only if you are rebuilding or debugging the boot media layout.
           EOF
