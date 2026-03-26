@@ -129,16 +129,29 @@ build_vendored_tools_from_source() {
 
 resolve_assets_once() {
     mkdir -p "$FREEDOS_CACHE_DIR"
+    local media_patterns
 
     extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/shcdx308.zip" "shsucdx.com" "${FREEDOS_CACHE_DIR}/SHSUCDX.COM"
     extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/udvd2.zip" "UDVD2.SYS" "${FREEDOS_CACHE_DIR}/UDVD2.SYS"
 
+    case "$FREEDOS_BOOT_MODE" in
+        legacycd)
+            media_patterns=("FD14BOOT.img" "fd-lite.img" "fd-x86.img" "fd-full.img" "boot-standard.img" "FD14LITE.img")
+            ;;
+        liteusb)
+            media_patterns=("FD14LITE.img" "fd-lite.img" "fd-x86.img" "fd-full.img" "boot-standard.img" "FD14BOOT.img")
+            ;;
+        *)
+            media_patterns=("$FREEDOS_MEDIA_NAME" "fd-lite.img" "fd-x86.img" "fd-full.img" "boot-standard.img" "FD14LITE.img" "FD14BOOT.img")
+            ;;
+    esac
+
     if [ -n "${FREEDOS_MEDIA_IMAGE:-}" ] && [ -f "${FREEDOS_MEDIA_IMAGE}" ]; then
         :
     elif [ -d "$FREEDOS_OUTPUT_DIR" ]; then
-        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_OUTPUT_DIR" "$FREEDOS_MEDIA_NAME" 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
+        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_OUTPUT_DIR" "${media_patterns[@]}" || true)"
     elif [ -d "$FREEDOS_VENDOR_MEDIA_DIR" ]; then
-        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_VENDOR_MEDIA_DIR" "$FREEDOS_MEDIA_NAME" 'FD14LITE.img' 'FD14BOOT.img' 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
+        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_VENDOR_MEDIA_DIR" "${media_patterns[@]}" || true)"
     fi
 
     if [ -n "${FREEDOS_SHSUCDX_COM:-}" ] && [ -f "${FREEDOS_SHSUCDX_COM}" ]; then
