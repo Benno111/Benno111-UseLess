@@ -2,7 +2,7 @@
 # Create a hybrid x86_64 ISO that boots via both BIOS and UEFI.
 # The resulting ISO can be attached to VMs directly or written to USB media.
 
-set -e
+set -euo pipefail
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
@@ -280,7 +280,10 @@ xorriso -as mkisofs \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
-"$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+if ! "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1; then
+    echo "[ERROR] Limine BIOS installation failed for $ISO_PATH" >&2
+    exit 1
+fi
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"

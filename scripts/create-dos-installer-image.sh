@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create a FreeDOS-based DOS installer disk image from source-built assets.
 
-set -e
+set -euo pipefail
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"

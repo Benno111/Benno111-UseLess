@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create a standalone BIOS-bootable ISO for the DOS-based setup using FreeDOS.
 
-set -e
+set -euo pipefail
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
@@ -76,6 +76,7 @@ ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
     require_cmd mcopy
     require_cmd mdel
+    require_cmd python3
     require_cmd xorriso
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
     BUILD_DIR="$BUILD_DIR" \

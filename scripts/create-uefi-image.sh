@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create a BIOS+UEFI bootable MBR disk image for x86_64 without loop devices.
 
-set -e
+set -euo pipefail
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
