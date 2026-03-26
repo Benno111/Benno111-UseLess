@@ -127,82 +127,6 @@ EOF
     fi
 }
 
-build_eltorito_hdd_image() {
-    local partition_image="$1"
-    local hdd_image="$2"
-
-    python3 - "$partition_image" "$hdd_image" <<'PY'
-import sys
-
-partition_path, hdd_path = sys.argv[1], sys.argv[2]
-partition = bytearray(open(partition_path, "rb").read())
-if len(partition) < 512:
-    raise SystemExit("partition boot image is too small")
-if len(partition) % 512 != 0:
-    raise SystemExit("partition image must be 512-byte aligned")
-
-partition_sectors = len(partition) // 512
-partition[28:32] = (1).to_bytes(4, "little")
-
-mbr = bytearray(512)
-code = bytes([
-    0xFA,
-    0x31, 0xC0,
-    0x8E, 0xD8,
-    0x8E, 0xC0,
-    0x8E, 0xD0,
-    0xBC, 0x00, 0x70,
-    0x88, 0x16, 0x3F, 0x7C,
-    0xBB, 0x00, 0x7C,
-    0xB4, 0x02,
-    0xB0, 0x01,
-    0xB5, 0x00,
-    0xB1, 0x02,
-    0xB6, 0x00,
-    0x8A, 0x16, 0x3F, 0x7C,
-    0xCD, 0x13,
-    0x72, 0x02,
-    0xEA, 0x00, 0x7C, 0x00, 0x00,
-    0xBE, 0x40, 0x7C,
-    0xB4, 0x0E,
-    0x31, 0xDB,
-    0xB3, 0x07,
-    0xAC,
-    0x84, 0xC0,
-    0x74, 0x04,
-    0xCD, 0x10,
-    0xEB, 0xF7,
-    0xF4,
-    0xEB, 0xFD,
-])
-msg = b"Boot sector load failed\x00"
-boot_drive_offset = 0x3F
-msg_offset = 0x40
-if len(code) != boot_drive_offset:
-    raise SystemExit(f"unexpected MBR code size: {len(code)}")
-if msg_offset + len(msg) > 446:
-    raise SystemExit("MBR message overruns partition table")
-
-mbr[:len(code)] = code
-mbr[boot_drive_offset] = 0
-mbr[msg_offset:msg_offset + len(msg)] = msg
-
-entry = bytearray(16)
-entry[0] = 0x80
-entry[1:4] = bytes([0x00, 0x02, 0x00])
-entry[4] = 0x06
-entry[5:8] = bytes([0xFE, 0xFF, 0xFF])
-entry[8:12] = (1).to_bytes(4, "little")
-entry[12:16] = partition_sectors.to_bytes(4, "little")
-mbr[446:462] = entry
-mbr[510:512] = b"\x55\xAA"
-
-with open(hdd_path, "wb") as f:
-    f.write(mbr)
-    f.write(partition)
-PY
-}
-
 require_file "$DOS_INSTALLER_COM"
 require_file "$DOS_SYSTEM_IMAGE"
 
@@ -217,7 +141,6 @@ mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/dos"
 
 link_or_copy "$FREEDOS_BOOT_IMAGE" "$ISO_ROOT/boot/os8-freedos.img"
-build_eltorito_hdd_image "$ISO_ROOT/boot/os8-freedos.img" "$ISO_ROOT/boot/os8-freedos-eltorito.img"
 link_or_copy "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
 link_or_copy "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
 
@@ -228,8 +151,7 @@ This ISO boots a rebranded FreeDOS environment and launches the OS8 setup
 utility from the CD after loading FreeDOS CD-ROM support.
 
 Included files:
-- /boot/os8-freedos-eltorito.img : El Torito HDD wrapper used for BIOS boot
-- /boot/os8-freedos.img          : patched FreeDOS boot image
+- /boot/os8-freedos.img          : patched FreeDOS floppy boot image used for BIOS boot
 - /dos/OSINST.COM                : OS8 DOS installer utility
 - /dos/OSSYS.IMG                 : raw OS8 system image written by the installer
 
@@ -260,10 +182,7 @@ log "Creating standalone BIOS FreeDOS installer ISO: $ISO_PATH"
 xorriso -as mkisofs \
     -V "OS8-FD-SETUP" \
     -c boot/boot.cat \
-    -b boot/os8-freedos-eltorito.img \
-    -hard-disk-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
+    -b boot/os8-freedos.img \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
@@ -278,7 +197,6 @@ require_iso_path() {
     fi
 }
 
-require_iso_path "/boot/os8-freedos-eltorito.img"
 require_iso_path "/boot/os8-freedos.img"
 require_iso_path "/dos/OSINST.COM"
 require_iso_path "/dos/OSSYS.IMG"
