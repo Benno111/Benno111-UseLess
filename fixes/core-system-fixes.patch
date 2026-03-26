@@ -1,21 +1,27 @@
 diff --git a/boot/bios/installer_stage2.S b/boot/bios/installer_stage2.S
-index 1111111..2222222 100644
+index 1c2d3e4..5f6a7b8 100644
 --- a/boot/bios/installer_stage2.S
 +++ b/boot/bios/installer_stage2.S
-@@ -1,6 +1,6 @@
- /*
-  * OS8 BIOS text installer - stage 2
-- *
-+ *
-  * A standalone real-mode fallback installer shell. This variant does not boot
-  * the kernel, but it can deploy a bundled regular OS system image onto another
-  * BIOS disk so the system remains recoverable when the GUI installer path is
-@@ -19,6 +19,8 @@ real_mode_entry:
- 
+@@ -1,20 +1,22 @@
+ real_mode_entry:
+     cli
+     mov %cs, %ax
+     mov %ax, %ds
+     mov %ax, %es
+     xor %ax, %ax
+     mov %ax, %ss
+     mov $0x9000, %sp
+     cld
+     sti
+
      mov %dl, boot_drive
      movb $0, selected_drive
 +    call find_default_target
-+
+
      mov $0x0003, %ax
      int $0x10
- 
+
+ main_menu:
+     call clear_screen
+     mov $title_text, %si
+     call print_string
