@@ -1,178 +1,21 @@
-diff --git a/kernel/fs/vfs.c b/kernel/fs/vfs.c
---- a/kernel/fs/vfs.c
-+++ b/kernel/fs/vfs.c
-@@ -44,11 +44,32 @@
- }
+diff --git a/boot/bios/installer_stage2.S b/boot/bios/installer_stage2.S
+index 1111111..2222222 100644
+--- a/boot/bios/installer_stage2.S
++++ b/boot/bios/installer_stage2.S
+@@ -1,6 +1,6 @@
+ /*
+  * OS8 BIOS text installer - stage 2
+- *
++ *
+  * A standalone real-mode fallback installer shell. This variant does not boot
+  * the kernel, but it can deploy a bundled regular OS system image onto another
+  * BIOS disk so the system remains recoverable when the GUI installer path is
+@@ -19,6 +19,8 @@ real_mode_entry:
  
- static int path_compare(const char *a, const char *b) {
--  while (*a && *b && *a == *b) {
--    a++;
--    b++;
--  }
--  return *a - *b;
-+  int a_len = 0;
-+  int b_len = 0;
+     mov %dl, boot_drive
+     movb $0, selected_drive
++    call find_default_target
 +
-+  if (!a)
-+    a = "";
-+  if (!b)
-+    b = "";
-+
-+  while (a[a_len])
-+    a_len++;
-+  while (b[b_len])
-+    b_len++;
-+
-+  while (a_len > 1 && a[a_len - 1] == '/')
-+    a_len--;
-+  while (b_len > 1 && b[b_len - 1] == '/')
-+    b_len--;
-+
-+  for (int i = 0;; i++) {
-+    char ac = (i < a_len) ? a[i] : '\0';
-+    char bc = (i < b_len) ? b[i] : '\0';
-+    if (ac != bc)
-+      return (int)((unsigned char)ac) - (int)((unsigned char)bc);
-+    if (ac == '\0')
-+      return 0;
-+  }
- }
+     mov $0x0003, %ax
+     int $0x10
  
- static void path_copy(char *dst, const char *src, int max) {
-diff --git a/kernel/gui/window.c b/kernel/gui/window.c
---- a/kernel/gui/window.c
-+++ b/kernel/gui/window.c
-@@ -2754,6 +2754,7 @@
-   uint8_t *data = NULL;
-   size_t size = 0;
-   char msg[320];
-+  int ret;
- 
-   if (media_load_file(src_path, &data, &size) != 0) {
-     str_copy_safe(msg, "read failed: ", sizeof(msg));
-@@ -2763,7 +2764,15 @@
-   }
- 
-   installer_ensure_parent_dirs(dst_path);
--  if (installer_write_target_file(dst_path, data, size) != 0) {
-+  ret = installer_write_target_file(dst_path, data, size);
-+  if (ret != 0 && size == 0) {
-+    struct file *dst = vfs_open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-+    if (dst) {
-+      vfs_close(dst);
-+      ret = 0;
-+    }
-+  }
-+  if (ret != 0) {
-     str_copy_safe(msg, "write failed: ", sizeof(msg));
-     installer_append_to_buf(msg, sizeof(msg), dst_path);
-     installer_log(msg);
-@@ -3624,6 +3633,8 @@
-   int cur_x, cur_y;
-   int max_x, max_y; /* Bounds for clipping */
-   struct fm_state *state;
-+  char seen[128][64];
-+  int seen_count;
- };
- 
- static int fm_render_callback(void *ctx, const char *name, int len,
-@@ -3632,9 +3643,24 @@
-   (void)ino;
-   struct fm_ctx *c = (struct fm_ctx *)ctx;
- 
--  /* Skip . and .. */
--  if (name[0] == '.')
-+  /* Skip . and .., but allow normal dotfiles. */
-+  if ((len == 1 && name[0] == '.') ||
-+      (len == 2 && name[0] == '.' && name[1] == '.'))
-     return 0;
-+
-+  for (int i = 0; i < c->seen_count; i++) {
-+    if (str_cmp(c->seen[i], name) == 0)
-+      return 0;
-+  }
-+  if (c->seen_count < (int)(sizeof(c->seen) / sizeof(c->seen[0]))) {
-+    int copy_len = len;
-+    if (copy_len >= (int)sizeof(c->seen[0]))
-+      copy_len = (int)sizeof(c->seen[0]) - 1;
-+    for (int i = 0; i < copy_len; i++)
-+      c->seen[c->seen_count][i] = name[i];
-+    c->seen[c->seen_count][copy_len] = '\0';
-+    c->seen_count++;
-+  }
- 
-   int icon_size = 32;
-   int slot_w = 80;
-diff --git a/boot/bios/stage1.S b/boot/bios/stage1.S
---- a/boot/bios/stage1.S
-+++ b/boot/bios/stage1.S
-@@ -14,7 +14,7 @@
-     jmp     real_mode_entry
-     nop
- 
--    .ascii  "OSNEXT  "
-+    .ascii  "OSKERNEL"
-     .word   512                 /* bytes per sector */
-     .byte   1                   /* sectors per cluster */
-     .word   1                   /* reserved sectors */
-@@ -32,7 +32,7 @@
-     .byte   0
-     .byte   0x29                /* extended boot signature */
-     .long   0x4F534E58          /* volume serial */
--    .ascii  "OSNEXTSETUP"       /* volume label */
-+    .ascii  "OSKSETUP   "       /* volume label */
-     .ascii  "FAT16   "
- 
-     ljmp    $0x0000, $real_mode_entry
-@@ -175,6 +175,7 @@
- dap:
-     .byte   0x10
-     .byte   0
-+stage2_sector_count:
-     .word   16
-     .word   0x7E00
-     .word   0x0000
-diff --git a/scripts/create-dos-installer-image.sh b/scripts/create-dos-installer-image.sh
---- a/scripts/create-dos-installer-image.sh
-+++ b/scripts/create-dos-installer-image.sh
-@@ -31,14 +31,37 @@
- require_file "$STAGE1"
- require_file "$STAGE2"
- 
-+STAGE2_SIZE=$(stat -c%s "$STAGE2")
-+STAGE2_SECTORS=$(((STAGE2_SIZE + 511) / 512))
-+STAGE2_PADDED="$BUILD_DIR/boot/installer_stage2.padded.bin"
-+STAGE1_PATCHED="$BUILD_DIR/boot/installer_stage1.patched.bin"
-+
- log "Creating DOS-style installer volume image at $IMAGE_PATH"
- dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" 2>/dev/null
- 
-+cp "$STAGE1" "$STAGE1_PATCHED"
-+python3 - "$STAGE1_PATCHED" "$STAGE2_SECTORS" <<'PATCHPY'
-+import sys
-+path = sys.argv[1]
-+sectors = int(sys.argv[2])
-+with open(path, "r+b") as f:
-+    data = bytearray(f.read())
-+    marker = b"\x10\x00\x00\x7E\x00\x00"
-+    off = data.find(marker)
-+    if off == -1:
-+        raise SystemExit("stage2 sector-count marker not found in stage1 image")
-+    data[off:off+2] = sectors.to_bytes(2, "little")
-+    f.seek(0)
-+    f.write(data)
-+PATCHPY
-+cp "$STAGE2" "$STAGE2_PADDED"
-+truncate -s $((STAGE2_SECTORS * 512)) "$STAGE2_PADDED"
-+
- log "Writing stage 1 volume boot sector"
--dd if="$STAGE1" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
-+dd if="$STAGE1_PATCHED" of="$IMAGE_PATH" bs=512 count=1 conv=notrunc 2>/dev/null
- 
--log "Writing stage 2 text installer"
--dd if="$STAGE2" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
-+log "Writing stage 2 text installer ($STAGE2_SECTORS sectors)"
-+dd if="$STAGE2_PADDED" of="$IMAGE_PATH" bs=512 seek=1 conv=notrunc 2>/dev/null
- 
- log "Image created successfully: $IMAGE_PATH"
- ls -lh "$IMAGE_PATH"
