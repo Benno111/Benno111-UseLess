@@ -282,3 +282,13 @@ uint32_t fb_get_pitch(void)
 {
     return framebuffer.pitch;
 }
+
+void fb_set_info(uint32_t *buffer, uint32_t width, uint32_t height,
+                 uint32_t pitch)
+{
+    framebuffer.buffer = buffer;
+    framebuffer.width = width;
+    framebuffer.height = height;
+    framebuffer.pitch = pitch ? pitch : (width * 4);
+    framebuffer.initialized = (buffer != NULL && width != 0 && height != 0);
+}

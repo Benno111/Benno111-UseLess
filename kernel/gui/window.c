@@ -470,6 +470,7 @@ static int settings_resolution_saved_idx = -1;
 static uint32_t *g_saved_backbuffer;
 static int wallpaper_cached;
 static int wallpaper_cached_idx;
+static int settings_find_resolution_index(uint32_t width, uint32_t height);
 static void gui_clamp_windows_to_display(void);
 static int gui_apply_resolution(uint32_t width, uint32_t height);
 static int gui_load_saved_resolution(uint32_t *width, uint32_t *height);
@@ -1572,35 +1573,38 @@ static void build_resolution_string(char *buf, uint32_t width, uint32_t height) 
   buf[idx] = '\0';
 }
 
+static int settings_find_resolution_index(uint32_t width, uint32_t height) {
+  for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+    if (settings_resolution_options[i].width == width &&
+        settings_resolution_options[i].height == height) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 static void settings_sync_resolution_picker(void) {
   uint32_t saved_width = 0;
   uint32_t saved_height = 0;
 
-  settings_resolution_current_idx = -1;
-  settings_resolution_saved_idx = -1;
-  for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
-    if (settings_resolution_options[i].width == primary_display.width &&
-        settings_resolution_options[i].height == primary_display.height) {
-      settings_resolution_current_idx = i;
-      break;
-    }
-  }
+  settings_resolution_current_idx =
+      settings_find_resolution_index(primary_display.width, primary_display.height);
 
   if (gui_load_saved_resolution(&saved_width, &saved_height) == 0) {
-    for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
-      if (settings_resolution_options[i].width == saved_width &&
-          settings_resolution_options[i].height == saved_height) {
-        settings_resolution_saved_idx = i;
-        break;
-      }
-    }
+    settings_resolution_saved_idx =
+        settings_find_resolution_index(saved_width, saved_height);
+  } else {
+    settings_resolution_saved_idx = -1;
   }
 
   if (settings_resolution_pending_idx < 0 ||
       settings_resolution_pending_idx >= SETTINGS_RESOLUTION_OPTION_COUNT) {
-    settings_resolution_pending_idx = settings_resolution_current_idx >= 0
-                                          ? settings_resolution_current_idx
-                                          : 0;
+    if (settings_resolution_saved_idx >= 0)
+      settings_resolution_pending_idx = settings_resolution_saved_idx;
+    else if (settings_resolution_current_idx >= 0)
+      settings_resolution_pending_idx = settings_resolution_current_idx;
+    else
+      settings_resolution_pending_idx = 0;
   }
 }
 
@@ -1725,6 +1729,7 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   uint32_t *new_backbuffer = NULL;
   uint32_t new_pitch;
   uint32_t *old_backbuffer = primary_display.backbuffer;
+  int new_idx;
 
   if (width == primary_display.width && height == primary_display.height)
     return 0;
@@ -1746,6 +1751,14 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
 
   new_pitch = new_width * 4;
   new_backbuffer = kmalloc(new_pitch * new_height);
+  if (!new_backbuffer)
+    return -1;
+
+  {
+    extern void fb_set_info(uint32_t *buffer, uint32_t width, uint32_t height,
+                            uint32_t pitch);
+    fb_set_info(new_framebuffer, new_width, new_height, new_pitch);
+  }
 
   primary_display.framebuffer = new_framebuffer;
   primary_display.width = new_width;
@@ -1764,7 +1777,11 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   mouse_y = (int)new_height / 2;
   gui_clamp_windows_to_display();
   gui_save_resolution_preference(new_width, new_height);
-  settings_resolution_saved_idx = settings_resolution_pending_idx;
+  new_idx = settings_find_resolution_index(new_width, new_height);
+  settings_resolution_current_idx = new_idx;
+  settings_resolution_saved_idx = new_idx;
+  if (new_idx >= 0)
+    settings_resolution_pending_idx = new_idx;
   compositor_mark_full_redraw();
 
   printk(KERN_INFO "GUI: Resolution changed to %ux%u\n", new_width, new_height);
@@ -1814,6 +1831,8 @@ static void gui_save_resolution_preference(uint32_t width, uint32_t height) {
   char manifest[96];
   int idx = 0;
 
+  vfs_mkdir("/System", 0755);
+
   for (const char *p = "width="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
   append_decimal(manifest, &idx, (int)width);
@@ -1825,6 +1844,7 @@ static void gui_save_resolution_preference(uint32_t width, uint32_t height) {
   manifest[idx] = '\0';
 
   write_text_file(GUI_DISPLAY_CONFIG_PATH, manifest);
+  settings_resolution_saved_idx = settings_find_resolution_index(width, height);
 }
 
 static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
@@ -1853,6 +1873,12 @@ static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
   bochs_get_info(&new_framebuffer, &new_width, &new_height);
   if (!new_framebuffer || new_width != saved_width || new_height != saved_height)
     return;
+
+  {
+    extern void fb_set_info(uint32_t *buffer, uint32_t width, uint32_t height,
+                            uint32_t pitch);
+    fb_set_info(new_framebuffer, new_width, new_height, new_width * 4);
+  }
 
   *framebuffer = new_framebuffer;
   *width = new_width;
