@@ -255,7 +255,7 @@ static struct {
   const char *name;   /* Display name */
   const char *path;   /* Image path (for type=1) */
 } wallpapers[NUM_WALLPAPERS] = {
-    {1, 38, 72, 120, 16, 30, 58, "Landscape", "/assets/wallpapers/landscape.jpg"},
+    {1, 38, 72, 120, 16, 30, 58, "Landscape", "/assets/wallpapers/landscape.png"},
     {1, 26, 92, 82, 9, 37, 48, "Nature", "/assets/wallpapers/nature.jpg"},
     {1, 84, 108, 148, 26, 33, 52, "City", "/assets/wallpapers/city.jpg"},
     {1, 124, 82, 126, 48, 28, 64, "Portrait", "/assets/wallpapers/portrait.jpg"},
@@ -270,6 +270,7 @@ static struct {
 /* Cached wallpaper image for desktop background */
 static media_image_t wallpaper_image = {0, 0, NULL};
 static int wallpaper_loaded = -1; /* Which wallpaper is currently loaded */
+static int wallpaper_image_heap_allocated = 0;
 
 /* Cached thumbnails for Background Settings window */
 static media_image_t thumbnail_cache[NUM_WALLPAPERS] = {{0}};
@@ -285,7 +286,12 @@ static void load_thumbnails(void) {
       uint8_t *data = NULL;
       size_t size = 0;
       if (media_load_file(wallpapers[i].path, &data, &size) == 0) {
-        media_decode_jpeg(data, size, &thumbnail_cache[i]);
+        if (size >= 4 && data[0] == 0x89 && data[1] == 'P' &&
+            data[2] == 'N' && data[3] == 'G') {
+          media_decode_png(data, size, &thumbnail_cache[i]);
+        } else {
+          media_decode_jpeg(data, size, &thumbnail_cache[i]);
+        }
         media_free_file(data);
       }
     }
@@ -303,10 +309,16 @@ static void wallpaper_ensure_loaded(void) {
   if (wallpaper_loaded == current_wallpaper && wallpaper_image.pixels != NULL)
     return; /* Already loaded */
 
+  if (wallpaper_image_heap_allocated && wallpaper_image.pixels != NULL) {
+    media_free_image(&wallpaper_image);
+    wallpaper_image_heap_allocated = 0;
+  }
+
   /* Reset previous image state (don't free valid static buffer, just reuse it)
    */
   wallpaper_image.width = 0;
   wallpaper_image.height = 0;
+  wallpaper_image.pixels = NULL;
   wallpaper_loaded = -1;
 
   /* Load new image */
@@ -315,8 +327,20 @@ static void wallpaper_ensure_loaded(void) {
   size_t size = 0;
 
   if (media_load_file(path, &data, &size) == 0) {
-    if (media_decode_jpeg_buffer(data, size, &wallpaper_image, wallpaper_buffer,
-                                 sizeof(wallpaper_buffer)) == 0) {
+    int decode_ok = -1;
+    if (size >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' &&
+        data[3] == 'G') {
+      decode_ok = media_decode_png(data, size, &wallpaper_image);
+      if (decode_ok == 0)
+        wallpaper_image_heap_allocated = 1;
+    } else {
+      decode_ok = media_decode_jpeg_buffer(data, size, &wallpaper_image,
+                                           wallpaper_buffer,
+                                           sizeof(wallpaper_buffer));
+      if (decode_ok == 0)
+        wallpaper_image_heap_allocated = 0;
+    }
+    if (decode_ok == 0) {
       wallpaper_loaded = current_wallpaper;
     } else {
       /* Fallback to gradient if decode fails */
@@ -7511,7 +7535,7 @@ void gui_open_image_viewer(const char *path) {
   /* Known image files in Pictures folder */
   static const char *pictures_files[] = {
       "test.png",      "pig.jpg",    "city.jpg",     "nature.jpg",
-      "wallpaper.jpg", "square.jpg", "portrait.jpg", "landscape.jpg"};
+      "wallpaper.jpg", "square.jpg", "portrait.jpg", "landscape.png"};
   int num_pictures = sizeof(pictures_files) / sizeof(pictures_files[0]);
 
   /* Check if we're in Pictures folder */
@@ -12652,20 +12676,18 @@ void gui_open_rename(const char *path) {
 /* Image Viewer                                                          */
 /* ===================================================================== */
 
-extern const unsigned char bootstrap_test_png[];
-extern const unsigned int bootstrap_test_png_len;
-
 /* g_imgview is already defined as extern earlier in the file */
 
-#define NUM_BOOTSTRAP_IMAGES 5
+#define NUM_BOOTSTRAP_IMAGES 6
 
 static const char *get_bootstrap_image_path(int index) {
   static const char *paths[] = {
-      "/assets/wallpapers/landscape.jpg",
+      "/assets/wallpapers/landscape.png",
+      "/assets/wallpapers/nature.jpg",
+      "/assets/wallpapers/city.jpg",
       "/assets/wallpapers/portrait.jpg",
       "/assets/wallpapers/square.jpg",
       "/assets/wallpapers/wallpaper.jpg",
-      NULL,
   };
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
     return paths[index];
@@ -12673,8 +12695,8 @@ static const char *get_bootstrap_image_path(int index) {
 }
 
 static const char *get_bootstrap_image_name(int index) {
-  static const char *names[] = {"Landscape", "Portrait", "Square", "Wallpaper",
-                                "PNG Test"};
+  static const char *names[] = {"Landscape", "Nature", "City",
+                                "Portrait",  "Square", "Wallpaper"};
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
     return names[index];
   return "Unknown";
@@ -12702,9 +12724,6 @@ static void image_viewer_load_bootstrap(int index) {
     data = external_data;
     len = (unsigned int)external_size;
     used_external_file = 1;
-  } else if (index == 4) {
-    data = bootstrap_test_png;
-    len = bootstrap_test_png_len;
   } else {
     printk(KERN_ERR "Image Viewer: Missing bootstrap asset %s\n",
            path ? path : "(null)");

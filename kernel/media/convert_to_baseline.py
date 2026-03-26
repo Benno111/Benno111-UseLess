@@ -8,7 +8,7 @@ import os
 
 images_dir = "bootstrap_images"
 
-images = ["landscape.jpg", "portrait.jpg", "square.jpg", "wallpaper.jpg"]
+images = ["portrait.jpg", "square.jpg", "wallpaper.jpg"]
 
 for img_name in images:
     img_path = os.path.join(images_dir, img_name)

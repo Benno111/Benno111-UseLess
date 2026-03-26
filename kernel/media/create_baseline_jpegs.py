@@ -60,11 +60,6 @@ def save_baseline_jpeg(img, filename):
 # Create output directory
 os.makedirs("bootstrap_images", exist_ok=True)
 
-# Create landscape image (blue sky gradient)
-print("Creating landscape.jpg...")
-img = create_gradient_image(320, 200, (135, 206, 235), (25, 25, 112), 'vertical')
-save_baseline_jpeg(img, "bootstrap_images/landscape.jpg")
-
 # Create portrait image (sunset colors)
 print("Creating portrait.jpg...")
 img = create_gradient_image(200, 320, (255, 183, 77), (128, 0, 128), 'vertical')

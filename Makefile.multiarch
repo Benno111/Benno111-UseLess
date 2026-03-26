@@ -272,7 +272,7 @@ assets: $(BUILD_DIR)
 	fi
 	@if [ -d "$(KERNEL_DIR)/media/bootstrap_images" ]; then \
 		mkdir -p "$(BUILD_ASSETS_DIR)/wallpapers"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/landscape.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.jpg"; \
+		cp "$(KERNEL_DIR)/media/bootstrap_images/landscape.png" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.png"; \
 		cp "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/nature.jpg"; \
 		cp "$(KERNEL_DIR)/media/bootstrap_images/city.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/city.jpg"; \
 		cp "$(KERNEL_DIR)/media/bootstrap_images/portrait.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/portrait.jpg"; \

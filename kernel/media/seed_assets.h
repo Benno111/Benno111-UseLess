@@ -13,8 +13,8 @@ extern const unsigned char bootstrap_logo_png[];
 extern const unsigned int bootstrap_logo_png_len;
 
 /* Bootstrap images */
-extern const unsigned char bootstrap_landscape_jpg[];
-extern const unsigned int bootstrap_landscape_jpg_len;
+extern const unsigned char bootstrap_landscape_png[];
+extern const unsigned int bootstrap_landscape_png_len;
 
 extern const unsigned char bootstrap_portrait_jpg[];
 extern const unsigned int bootstrap_portrait_jpg_len;

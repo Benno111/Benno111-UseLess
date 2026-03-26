@@ -43,7 +43,6 @@ def create_minimal_jpeg(width, height, r, g, b, filename):
     return ppm_filename
 
 # Create simple test images
-create_minimal_jpeg(320, 240, 100, 150, 200, "bootstrap_images/landscape.jpg")
 create_minimal_jpeg(240, 320, 200, 100, 150, "bootstrap_images/portrait.jpg")
 create_minimal_jpeg(200, 200, 150, 200, 100, "bootstrap_images/square.jpg")
 create_minimal_jpeg(400, 300, 180, 180, 220, "bootstrap_images/wallpaper.jpg")

@@ -556,8 +556,8 @@ static void populate_seed_tree_at(const char *prefix) {
   seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
   seed_write_bytes(prefix, "assets/logo.png", 0644, bootstrap_logo_png,
                    bootstrap_logo_png_len);
-  seed_write_bytes(prefix, "assets/wallpapers/landscape.jpg", 0644,
-                   bootstrap_landscape_jpg, bootstrap_landscape_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/landscape.png", 0644,
+                   bootstrap_landscape_png, bootstrap_landscape_png_len);
   seed_write_bytes(prefix, "assets/wallpapers/nature.jpg", 0644,
                    bootstrap_nature_jpg, bootstrap_nature_jpg_len);
   seed_write_bytes(prefix, "assets/wallpapers/city.jpg", 0644,
