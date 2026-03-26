@@ -1,27 +1,20 @@
-The DOS setup path prefers source-built FreeDOS assets, but unattended builds
-can bootstrap from official FreeDOS release media when no local outputs are
-present.
-
-Upstream source bootstrap:
-- Run `make -f Makefile.multiarch ARCH=x86_64 freedos-source` to download the
-  upstream FreeDOS source packages used by the DOS setup stack.
-- The helper populates `boot/bios/freedos/source/` with official source trees
-  for the FreeDOS kernel, FreeCOM, SHSUCDX, and UDVD2, plus cached release
-  media archives for the boot-image path.
+The DOS setup path uses local FreeDOS assets only.
 
 Build behavior:
 - Place source-built FreeDOS outputs in `boot/bios/freedos/out/` or point the
   build at them with environment variables.
+- Vendored package copies live under `boot/bios/freedos/vendor/packages/`.
+- Local bootable FreeDOS media should be stored under
+  `boot/bios/freedos/vendor/media/`.
 - Required assets are:
   `fd-lite.img` or `fd-x86.img` for disk-image builds, and `SHSUCDX.COM` plus
   `UDVD2.SYS` for the standalone ISO boot flow.
 - `scripts/prepare-freedos-source-assets.sh` resolves those assets and can
   optionally invoke a source-tree build command via `FREEDOS_BUILD_COMMAND`.
-- If source-built assets are absent, the helper falls back to official FreeDOS
-  1.4 media:
-  `FD14-LiteUSB.zip` for the disk-image path, `FD14-LegacyCD.zip` for the
-  standalone ISO boot image, and the official `shcdx308.zip` / `udvd2.zip`
-  packages for the CD-ROM drivers.
+- The resolver auto-extracts `SHSUCDX.COM` and `UDVD2.SYS` from the vendored
+  package archives when they are available locally.
+- If source-built assets are absent, the helper fails and asks you to provide
+  the required local files.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
   OS8-specific startup hooks. They preserve the original FreeDOS startup
   files and append `CALL OS8AUTO.BAT` plus any required config lines, instead of
@@ -36,6 +29,9 @@ The installer utility and OS image stay on the ISO:
 
 Relevant environment variables:
 - `FREEDOS_OUTPUT_DIR`
+- `FREEDOS_VENDOR_DIR`
+- `FREEDOS_VENDOR_PACKAGES_DIR`
+- `FREEDOS_VENDOR_MEDIA_DIR`
 - `FREEDOS_MEDIA_IMAGE`
 - `FREEDOS_SHSUCDX_COM`
 - `FREEDOS_UDVD2_SYS`
