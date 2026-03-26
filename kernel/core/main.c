@@ -1107,7 +1107,40 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "  Loading framebuffer driver...\n");
   extern int fb_init(void);
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
+  extern uint32_t fb_get_pitch(void);
+  extern void pci_init(void);
+  extern void storage_init(void);
+  extern void gui_notify_storage_ready(void);
+  extern void pit_sleep(uint32_t ms);
+  extern int intel_gfx_is_ready(void);
+  extern int intel_gfx_has_framebuffer(void);
+  extern const char *intel_gfx_get_name(void);
+  extern int virtio_gpu_init(pci_device_t * pci);
+  extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
+  extern void gui_refresh_hardware_acceleration_policy(void);
   fb_init();
+
+  /* Discover PCI GPUs before GUI startup so Intel handoff is ready in time. */
+  printk(KERN_INFO "  Initializing PCI bus...\n");
+  storage_init();
+  pci_init();
+
+  printk(KERN_INFO "  Initializing GPU driver...\n");
+  if (intel_gfx_is_ready()) {
+    printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
+           intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
+  }
+
+  pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
+  if (gpu) {
+    if (virtio_gpu_init(gpu) == 0) {
+      printk(KERN_INFO "  GPU: virtio-gpu initialized with 3D acceleration\n");
+    } else {
+      printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
+    }
+  } else if (!intel_gfx_is_ready()) {
+    printk(KERN_INFO "  GPU: No virtio-gpu found (software rendering)\n");
+  }
 
   /* Initialize GUI windowing system */
   printk(KERN_INFO "  Initializing GUI...\n");
@@ -1120,10 +1153,12 @@ static void init_subsystems(void *dtb) {
 
   uint32_t *fb_buffer;
   uint32_t fb_width, fb_height;
+  uint32_t fb_pitch;
   fb_get_info(&fb_buffer, &fb_width, &fb_height);
+  fb_pitch = fb_get_pitch();
 
   if (fb_buffer) {
-    gui_init(fb_buffer, fb_width, fb_height, fb_width * 4);
+    gui_init(fb_buffer, fb_width, fb_height, fb_pitch);
 
     /* Create demo windows with working terminal */
     extern struct window *gui_create_file_manager(int x, int y);
@@ -1140,39 +1175,6 @@ static void init_subsystems(void *dtb) {
     }
 
     gui_create_file_manager(200, 100);
-  }
-
-  /* Initialize PCI bus and detect devices (including Audio) */
-  printk(KERN_INFO "  Initializing PCI bus...\n");
-  extern void pci_init(void);
-  extern void storage_init(void);
-  extern void gui_notify_storage_ready(void);
-  extern void pit_sleep(uint32_t ms);
-  storage_init();
-  pci_init();
-
-  /* Initialize GPU driver (virtio-gpu for QEMU acceleration) */
-  printk(KERN_INFO "  Initializing GPU driver...\n");
-  extern int intel_gfx_is_ready(void);
-  extern int intel_gfx_has_framebuffer(void);
-  extern const char *intel_gfx_get_name(void);
-  extern int virtio_gpu_init(pci_device_t * pci);
-  extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
-  extern void gui_refresh_hardware_acceleration_policy(void);
-  if (intel_gfx_is_ready()) {
-    printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
-           intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
-  }
-
-  pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
-  if (gpu) {
-    if (virtio_gpu_init(gpu) == 0) {
-      printk(KERN_INFO "  GPU: virtio-gpu initialized with 3D acceleration\n");
-    } else {
-      printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
-    }
-  } else if (!intel_gfx_is_ready()) {
-    printk(KERN_INFO "  GPU: No virtio-gpu found (software rendering)\n");
   }
   gui_refresh_hardware_acceleration_policy();
 

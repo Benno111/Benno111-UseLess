@@ -21,6 +21,8 @@
 #include "toolbar_icons.h" /* Toolbar icons for image viewer */
 #include "types.h"
 
+#define GUI_DISPLAY_CONFIG_PATH "/System/display.cfg"
+
 struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
 void gui_open_notepad(const char *path);
@@ -73,6 +75,10 @@ static void draw_partition_manager_window(int content_x, int content_y,
 static void partition_manager_refresh_partitions(void);
 static void installer_ensure_parent_dirs(const char *path);
 static int write_text_file(const char *path, const char *content);
+static int read_text_file(const char *path, char *buf, int max);
+static int manifest_get_value(const char *manifest, const char *key, char *out,
+                              int out_max);
+static uint64_t parse_u64(const char *text);
 static void gui_flush_account_state_before_power_transition(void);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
@@ -83,6 +89,8 @@ static int user_storage_mkdir(const char *path, mode_t mode);
 static int user_storage_unlink(const char *path);
 static int user_storage_rmdir(const char *path);
 static int user_storage_rename(const char *old_path, const char *new_path);
+static void mount_active_user_home(void);
+static void unmount_active_user_home(void);
 static void runtime_sync_log_line(const char *line);
 static void runtime_sync_flush_best_effort(const char *path);
 void gui_open_image_viewer(const char *path);
@@ -161,6 +169,8 @@ static int session_authenticated = 1;
 static char account_username[32];
 static char account_password[33];
 static char startup_input_username[32];
+static int user_home_mount_active = 0;
+static char user_home_mounted_username[32];
 static void startup_begin_login_flow(const char *message, int preserve_username);
 
 static int dock_is_visible(void) {
@@ -311,11 +321,12 @@ static void wallpaper_ensure_loaded(void) {
 /* Get wallpaper pixel color at position */
 static uint32_t wallpaper_get_pixel(int x, int y, int height) {
   int idx = current_wallpaper;
+  int width = (int)primary_display.width;
 
   /* Image wallpaper */
   if (wallpapers[idx].type == 1 && wallpaper_image.pixels) {
     /* Scale image to fit screen */
-    int img_x = (x * wallpaper_image.width) / 1024; /* Assuming 1024 width */
+    int img_x = width > 0 ? (x * (int)wallpaper_image.width) / width : 0;
     int img_y = (y * wallpaper_image.height) / height;
     if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
         img_y < (int)wallpaper_image.height) {
@@ -444,6 +455,11 @@ static int mouse_x = 512, mouse_y = 384;
 static int mouse_buttons = 0;
 static int settings_active_tab = 0;
 static char settings_status[96] = "Tune your desktop experience.";
+static char settings_user_new_name[32] = "";
+static char settings_user_new_password[32] = "";
+static char settings_user_selected[32] = "";
+static int settings_user_new_role_idx = 1;
+static int settings_user_active_field = 0;
 
 typedef struct {
   uint16_t width;
@@ -462,13 +478,32 @@ static const settings_resolution_option_t settings_resolution_options[] = {
   ((int)(sizeof(settings_resolution_options) / \
          sizeof(settings_resolution_options[0])))
 
+#define SETTINGS_MAX_ACCOUNTS 8
+
+static const char *settings_user_role_options[] = {"admin", "user", "child"};
+
+#define SETTINGS_USER_ROLE_COUNT                                               \
+  ((int)(sizeof(settings_user_role_options) /                                 \
+         sizeof(settings_user_role_options[0])))
+
 static int settings_resolution_current_idx = -1;
 static int settings_resolution_pending_idx = -1;
+static int settings_resolution_saved_idx = -1;
 static uint32_t *g_saved_backbuffer;
 static int wallpaper_cached;
 static int wallpaper_cached_idx;
 static void gui_clamp_windows_to_display(void);
 static int gui_apply_resolution(uint32_t width, uint32_t height);
+static int gui_load_saved_resolution(uint32_t *width, uint32_t *height);
+static void gui_save_resolution_preference(uint32_t width, uint32_t height);
+static void gui_apply_saved_boot_resolution(uint32_t *framebuffer,
+                                            uint32_t *width,
+                                            uint32_t *height,
+                                            uint32_t *pitch);
+static void ensure_gui_app_dirs(void);
+static int settings_add_user_account(void);
+static int settings_remove_selected_user_account(void);
+static int account_role_is_admin(void);
 
 static void notepad_append_to_buf(char *dst, int max, const char *src) {
   int idx = 0;
@@ -1528,12 +1563,26 @@ static void build_resolution_string(char *buf, uint32_t width, uint32_t height) 
 }
 
 static void settings_sync_resolution_picker(void) {
+  uint32_t saved_width = 0;
+  uint32_t saved_height = 0;
+
   settings_resolution_current_idx = -1;
+  settings_resolution_saved_idx = -1;
   for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
     if (settings_resolution_options[i].width == primary_display.width &&
         settings_resolution_options[i].height == primary_display.height) {
       settings_resolution_current_idx = i;
       break;
+    }
+  }
+
+  if (gui_load_saved_resolution(&saved_width, &saved_height) == 0) {
+    for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+      if (settings_resolution_options[i].width == saved_width &&
+          settings_resolution_options[i].height == saved_height) {
+        settings_resolution_saved_idx = i;
+        break;
+      }
     }
   }
 
@@ -1708,6 +1757,95 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
 
   printk(KERN_INFO "GUI: Resolution changed to %ux%u\n", new_width, new_height);
   return 0;
+}
+
+static int gui_load_saved_resolution(uint32_t *width, uint32_t *height) {
+  char manifest[96];
+  char width_buf[16];
+  char height_buf[16];
+  uint32_t parsed_width;
+  uint32_t parsed_height;
+
+  if (width)
+    *width = 0;
+  if (height)
+    *height = 0;
+
+  if (read_text_file(GUI_DISPLAY_CONFIG_PATH, manifest, sizeof(manifest)) < 0)
+    return -1;
+  if (manifest_get_value(manifest, "width", width_buf, sizeof(width_buf)) != 0 ||
+      manifest_get_value(manifest, "height", height_buf,
+                         sizeof(height_buf)) != 0) {
+    return -1;
+  }
+
+  parsed_width = (uint32_t)parse_u64(width_buf);
+  parsed_height = (uint32_t)parse_u64(height_buf);
+  if (!parsed_width || !parsed_height)
+    return -1;
+
+  for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
+    if (settings_resolution_options[i].width == parsed_width &&
+        settings_resolution_options[i].height == parsed_height) {
+      if (width)
+        *width = parsed_width;
+      if (height)
+        *height = parsed_height;
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
+static void gui_save_resolution_preference(uint32_t width, uint32_t height) {
+  char manifest[96];
+  int idx = 0;
+
+  for (const char *p = "width="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  append_decimal(manifest, &idx, (int)width);
+  manifest[idx++] = '\n';
+  for (const char *p = "height="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  append_decimal(manifest, &idx, (int)height);
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  write_text_file(GUI_DISPLAY_CONFIG_PATH, manifest);
+}
+
+static void gui_apply_saved_boot_resolution(uint32_t *framebuffer,
+                                            uint32_t *width,
+                                            uint32_t *height,
+                                            uint32_t *pitch) {
+  uint32_t saved_width = 0;
+  uint32_t saved_height = 0;
+  uint32_t *new_framebuffer = NULL;
+  uint32_t new_width = 0;
+  uint32_t new_height = 0;
+
+  if (!framebuffer || !width || !height || !pitch)
+    return;
+  if (gui_load_saved_resolution(&saved_width, &saved_height) != 0)
+    return;
+  if (saved_width == *width && saved_height == *height)
+    return;
+#if !defined(ARCH_X86_64) && !defined(ARCH_X86)
+  return;
+#endif
+  if (!pci_find_device(0x1234, 0x1111))
+    return;
+  if (bochs_init(saved_width, saved_height) != 0)
+    return;
+  bochs_get_info(&new_framebuffer, &new_width, &new_height);
+  if (!new_framebuffer || new_width != saved_width || new_height != saved_height)
+    return;
+
+  *framebuffer = new_framebuffer;
+  *width = new_width;
+  *height = new_height;
+  *pitch = new_width * 4;
 }
 
 static struct window *notepad_find_window(void) {
@@ -2314,6 +2452,8 @@ static startup_flow_t startup_flow = STARTUP_FLOW_NONE;
 static startup_setup_page_t startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
 static char account_username[32] = "";
 static char account_password[33] = "";
+static char account_role[16] = "admin";
+static int account_wallpaper = 0;
 static char account_partition_label[32] = "";
 static char account_disk_location[32] = "";
 static int account_partition_storage_ready = 0;
@@ -2323,6 +2463,42 @@ static char startup_input_password[32] = "";
 static int startup_active_field = 0;
 static char startup_status[96] = "";
 static struct window *startup_window = NULL;
+
+static int account_role_is_admin(void) {
+  return str_cmp(account_role, "admin") == 0;
+}
+
+static const char *account_role_label(void) {
+  if (str_cmp(account_role, "child") == 0)
+    return "Child";
+  if (str_cmp(account_role, "user") == 0)
+    return "User";
+  return "Admin";
+}
+
+static const char *settings_role_label_from_index(int idx) {
+  if (idx < 0 || idx >= SETTINGS_USER_ROLE_COUNT)
+    idx = 1;
+  if (str_cmp(settings_user_role_options[idx], "child") == 0)
+    return "Child";
+  if (str_cmp(settings_user_role_options[idx], "user") == 0)
+    return "User";
+  return "Admin";
+}
+
+static int clamp_wallpaper_index(int idx) {
+  if (idx < 0 || idx >= NUM_WALLPAPERS)
+    return 0;
+  return idx;
+}
+
+static void apply_account_wallpaper(int idx) {
+  current_wallpaper = clamp_wallpaper_index(idx);
+  wallpaper_cached = 0;
+  wallpaper_cached_idx = -1;
+  wallpaper_loaded = -1;
+  wallpaper_ensure_loaded();
+}
 
 static uint64_t parse_u64(const char *text) {
   uint64_t value = 0;
@@ -2515,6 +2691,25 @@ static int write_text_file(const char *path, const char *content) {
   if (!path || !content)
     return -1;
 
+  target = resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
+  if (path_is_active_account_home(path) && str_cmp(target, path) != 0 &&
+      !path_is_active_account_home_root(path)) {
+    ret = media_install_text_file(target, content);
+    if (ret != 0) {
+      str_copy_safe(log_line, "sync mounted write failed: ", sizeof(log_line));
+      installer_append_to_buf(log_line, sizeof(log_line), target);
+      runtime_sync_log_line(log_line);
+      return ret;
+    }
+    runtime_sync_flush_best_effort(target);
+    str_copy_safe(log_line, "sync mounted write complete: ", sizeof(log_line));
+    installer_append_to_buf(log_line, sizeof(log_line), path);
+    installer_append_to_buf(log_line, sizeof(log_line), " -> ");
+    installer_append_to_buf(log_line, sizeof(log_line), target);
+    runtime_sync_log_line(log_line);
+    return 0;
+  }
+
   ret = media_install_text_file(path, content);
   if (ret != 0) {
     str_copy_safe(log_line, "sync write failed: ", sizeof(log_line));
@@ -2523,7 +2718,6 @@ static int write_text_file(const char *path, const char *content) {
     return ret;
   }
 
-  target = resolve_user_storage_path(path, resolved_path, sizeof(resolved_path));
   if (str_cmp(target, path) != 0) {
     ret = media_install_text_file(target, content);
     if (ret != 0) {
@@ -2693,20 +2887,37 @@ static int path_is_active_account_home(const char *path) {
   char home_prefix[96];
   int idx = 0;
 
-  if (!path || !account_username[0])
+  if (!path || !user_home_mount_active || !user_home_mounted_username[0])
     return 0;
 
   str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
   idx = 7;
-  for (int i = 0; account_username[i] && idx < (int)sizeof(home_prefix) - 1;
+  for (int i = 0; user_home_mounted_username[i] &&
+                  idx < (int)sizeof(home_prefix) - 1;
        i++)
-    home_prefix[idx++] = account_username[i];
+    home_prefix[idx++] = user_home_mounted_username[i];
   home_prefix[idx] = '\0';
 
   if (!path_starts_with(path, home_prefix))
     return 0;
 
   return path[idx] == '\0' || path[idx] == '/';
+}
+
+static int path_is_active_account_home_root(const char *path) {
+  char home_path[96];
+  int idx = 7;
+
+  if (!path || !user_home_mount_active || !user_home_mounted_username[0])
+    return 0;
+
+  str_copy_safe(home_path, "/Users/", sizeof(home_path));
+  for (int i = 0; user_home_mounted_username[i] &&
+                  idx < (int)sizeof(home_path) - 1;
+       i++)
+    home_path[idx++] = user_home_mounted_username[i];
+  home_path[idx] = '\0';
+  return str_cmp(path, home_path) == 0;
 }
 
 static int path_is_user_storage(const char *path) {
@@ -2820,14 +3031,57 @@ static void ensure_user_storage_dirs(void) {
     user_home[idx++] = account_username[i];
   user_home[idx] = '\0';
 
-  vfs_mkdir(user_home, 0755);
   resolve_user_storage_path(user_home, persistent_path, sizeof(persistent_path));
+  if (user_home_mount_active &&
+      str_cmp(user_home_mounted_username, account_username) == 0) {
+    vfs_mkdir(user_home, 0755);
+  }
   if (str_cmp(persistent_path, user_home) != 0)
     vfs_mkdir(persistent_path, 0755);
   if (account_storage_root_path(account_root, sizeof(account_root)) == 0) {
     installer_ensure_parent_dirs(account_root);
     vfs_mkdir(account_root, 0755);
   }
+}
+
+static void mount_active_user_home(void) {
+  char user_home[96];
+  int idx = 7;
+
+  if (!account_username[0])
+    return;
+
+  user_home_mount_active = 1;
+  str_copy_safe(user_home_mounted_username, account_username,
+                sizeof(user_home_mounted_username));
+  ensure_user_storage_dirs();
+
+  str_copy_safe(user_home, "/Users/", sizeof(user_home));
+  for (int i = 0; account_username[i] && idx < (int)sizeof(user_home) - 1; i++)
+    user_home[idx++] = account_username[i];
+  user_home[idx] = '\0';
+  vfs_mkdir("/Users", 0755);
+  vfs_mkdir(user_home, 0755);
+}
+
+static void unmount_active_user_home(void) {
+  char user_home[96];
+  int idx = 7;
+  extern int vfs_rmdir(const char *path);
+
+  if (!user_home_mount_active || !user_home_mounted_username[0])
+    return;
+
+  str_copy_safe(user_home, "/Users/", sizeof(user_home));
+  for (int i = 0; user_home_mounted_username[i] &&
+                  idx < (int)sizeof(user_home) - 1;
+       i++)
+    user_home[idx++] = user_home_mounted_username[i];
+  user_home[idx] = '\0';
+
+  vfs_rmdir(user_home);
+  user_home_mount_active = 0;
+  user_home_mounted_username[0] = '\0';
 }
 
 static int user_storage_mkdir(const char *path, mode_t mode) {
@@ -2837,6 +3091,9 @@ static int user_storage_mkdir(const char *path, mode_t mode) {
 
   if (path_is_user_storage(path))
     vfs_mkdir("/Users", 0755);
+  if (path_is_active_account_home(path) && str_cmp(target, path) != 0 &&
+      !path_is_active_account_home_root(path))
+    return vfs_mkdir(target, mode);
   ret = vfs_mkdir(path, mode);
   if (str_cmp(target, path) != 0)
     vfs_mkdir(target, mode);
@@ -2846,6 +3103,9 @@ static int user_storage_mkdir(const char *path, mode_t mode) {
 static int user_storage_unlink(const char *path) {
   char resolved[256];
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+  if (path_is_active_account_home(path) && str_cmp(target, path) != 0 &&
+      !path_is_active_account_home_root(path))
+    return vfs_unlink(target);
   int ret = vfs_unlink(path);
   if (str_cmp(target, path) != 0)
     vfs_unlink(target);
@@ -2856,6 +3116,9 @@ static int user_storage_rmdir(const char *path) {
   char resolved[256];
   extern int vfs_rmdir(const char *path);
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
+  if (path_is_active_account_home(path) && str_cmp(target, path) != 0 &&
+      !path_is_active_account_home_root(path))
+    return vfs_rmdir(target);
   int ret = vfs_rmdir(path);
   if (str_cmp(target, path) != 0)
     vfs_rmdir(target);
@@ -2870,6 +3133,12 @@ static int user_storage_rename(const char *old_path, const char *new_path) {
       resolve_user_storage_path(old_path, resolved_old, sizeof(resolved_old));
   const char *new_target =
       resolve_user_storage_path(new_path, resolved_new, sizeof(resolved_new));
+  if (path_is_active_account_home(old_path) && path_is_active_account_home(new_path) &&
+      (str_cmp(old_target, old_path) != 0 || str_cmp(new_target, new_path) != 0) &&
+      !path_is_active_account_home_root(old_path) &&
+      !path_is_active_account_home_root(new_path)) {
+    return vfs_rename(old_target, new_target);
+  }
   int ret = vfs_rename(old_path, new_path);
   if (str_cmp(old_target, old_path) != 0 || str_cmp(new_target, new_path) != 0)
     vfs_rename(old_target, new_target);
@@ -3272,6 +3541,11 @@ typedef struct {
   int found;
 } account_scan_ctx_t;
 
+typedef struct {
+  char names[SETTINGS_MAX_ACCOUNTS][32];
+  int count;
+} settings_account_list_t;
+
 static int find_first_account_manifest_callback(void *raw_ctx, const char *name,
                                                 int len, loff_t offset,
                                                 ino_t ino, unsigned type) {
@@ -3297,6 +3571,130 @@ static int find_first_account_manifest_callback(void *raw_ctx, const char *name,
   scan->path[idx] = '\0';
   scan->found = 1;
   return 0;
+}
+
+static int settings_collect_accounts_callback(void *raw_ctx, const char *name,
+                                              int len, loff_t offset,
+                                              ino_t ino, unsigned type) {
+  settings_account_list_t *list = (settings_account_list_t *)raw_ctx;
+  int copy_len = 0;
+
+  (void)offset;
+  (void)ino;
+
+  if (!list || !name || type == 4 || len < 5 ||
+      list->count >= SETTINGS_MAX_ACCOUNTS)
+    return 0;
+  if (name[len - 4] != '.' || name[len - 3] != 'c' || name[len - 2] != 'f' ||
+      name[len - 1] != 'g')
+    return 0;
+
+  copy_len = len - 4;
+  if (copy_len > 31)
+    copy_len = 31;
+  for (int i = 0; i < copy_len; i++)
+    list->names[list->count][i] = name[i];
+  list->names[list->count][copy_len] = '\0';
+  list->count++;
+  return 0;
+}
+
+static void settings_collect_accounts(settings_account_list_t *list) {
+  struct file *dir;
+
+  if (!list)
+    return;
+  list->count = 0;
+  for (int i = 0; i < SETTINGS_MAX_ACCOUNTS; i++)
+    list->names[i][0] = '\0';
+
+  dir = vfs_open(GUI_ACCOUNTS_DIR, O_RDONLY, 0);
+  if (dir) {
+    vfs_readdir(dir, list, settings_collect_accounts_callback);
+    vfs_close(dir);
+  }
+
+  if (account_username[0]) {
+    int found = 0;
+    for (int i = 0; i < list->count; i++) {
+      if (str_cmp(list->names[i], account_username) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found && list->count < SETTINGS_MAX_ACCOUNTS) {
+      str_copy_safe(list->names[list->count], account_username,
+                    sizeof(list->names[list->count]));
+      list->count++;
+    }
+  }
+}
+
+static void settings_sync_selected_user(void) {
+  settings_account_list_t list;
+  int found = 0;
+
+  settings_collect_accounts(&list);
+  if (!settings_user_selected[0]) {
+    if (list.count > 0)
+      str_copy_safe(settings_user_selected, list.names[0],
+                    sizeof(settings_user_selected));
+    return;
+  }
+  for (int i = 0; i < list.count; i++) {
+    if (str_cmp(settings_user_selected, list.names[i]) == 0) {
+      found = 1;
+      break;
+    }
+  }
+  if (!found) {
+    if (list.count > 0)
+      str_copy_safe(settings_user_selected, list.names[0],
+                    sizeof(settings_user_selected));
+    else
+      settings_user_selected[0] = '\0';
+  }
+}
+
+static const char *settings_user_role_for_name(const char *username,
+                                               char *buf, int max) {
+  char manifest[256];
+  char parsed_username[32];
+  char parsed_password[33];
+  char parsed_role[16];
+  int parsed_wallpaper = 0;
+  char parsed_partition[32];
+  char parsed_disk[32];
+
+  if (!buf || max <= 0)
+    return "";
+  buf[0] = '\0';
+  if (!username || !username[0])
+    return "";
+
+  if (account_username[0] && str_cmp(username, account_username) == 0) {
+    str_copy_safe(buf, account_role_label(), max);
+    return buf;
+  }
+
+  if (read_account_manifest(username, manifest, sizeof(manifest)) != 0 ||
+      parse_account_manifest(manifest, username, parsed_username,
+                             sizeof(parsed_username), parsed_password,
+                             sizeof(parsed_password), parsed_role,
+                             sizeof(parsed_role), &parsed_wallpaper, parsed_partition,
+                             sizeof(parsed_partition), parsed_disk,
+                             sizeof(parsed_disk)) != 0) {
+    str_copy_safe(buf, "Unknown", max);
+    return buf;
+  }
+
+  if (str_cmp(parsed_role, "child") == 0)
+    str_copy_safe(buf, "Child", max);
+  else if (str_cmp(parsed_role, "user") == 0)
+    str_copy_safe(buf, "User", max);
+  else
+    str_copy_safe(buf, "Admin", max);
+  return buf;
 }
 
 static int account_manifest_path(const char *username, char *path, int max) {
@@ -3531,9 +3929,12 @@ done:
 static int parse_account_manifest(const char *manifest, const char *fallback_name,
                                   char *username, int username_max,
                                   char *password_hash, int password_hash_max,
+                                  char *role, int role_max,
+                                  int *wallpaper_index,
                                   char *partition_label, int partition_label_max,
                                   char *disk_location, int disk_location_max) {
   char legacy_password[32];
+  char wallpaper_buf[16];
 
   if (!manifest)
     return -1;
@@ -3542,6 +3943,10 @@ static int parse_account_manifest(const char *manifest, const char *fallback_nam
     username[0] = '\0';
   if (password_hash && password_hash_max > 0)
     password_hash[0] = '\0';
+  if (role && role_max > 0)
+    str_copy_safe(role, "admin", role_max);
+  if (wallpaper_index)
+    *wallpaper_index = 0;
   if (partition_label && partition_label_max > 0)
     partition_label[0] = '\0';
   if (disk_location && disk_location_max > 0)
@@ -3555,6 +3960,20 @@ static int parse_account_manifest(const char *manifest, const char *fallback_nam
   if (partition_label && partition_label_max > 0)
     manifest_get_value(manifest, "partition_label", partition_label,
                        partition_label_max);
+  if (role && role_max > 0 && manifest_get_value(manifest, "role", role,
+                                                 role_max) == 0) {
+    if (str_cmp(role, "admin") != 0 && str_cmp(role, "user") != 0 &&
+        str_cmp(role, "child") != 0) {
+      str_copy_safe(role, "user", role_max);
+    }
+  }
+  wallpaper_buf[0] = '\0';
+  if (wallpaper_index &&
+      manifest_get_value(manifest, "wallpaper", wallpaper_buf,
+                         sizeof(wallpaper_buf)) == 0 &&
+      wallpaper_buf[0]) {
+    *wallpaper_index = clamp_wallpaper_index((int)parse_u64(wallpaper_buf));
+  }
   if (disk_location && disk_location_max > 0)
     manifest_get_value(manifest, "disk_location", disk_location,
                        disk_location_max);
@@ -3576,6 +3995,158 @@ static int parse_account_manifest(const char *manifest, const char *fallback_nam
   }
 
   return -1;
+}
+
+static int settings_add_user_account(void) {
+  char manifest[256];
+  char path[160];
+  char password_hash[33];
+  char user_home[96];
+  const char *role_value;
+  int wallpaper_value;
+  int idx = 0;
+
+  if (!account_role_is_admin()) {
+    str_copy_safe(settings_status, "Admin mode is required to add users.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (!settings_user_new_name[0] || !settings_user_new_password[0]) {
+    str_copy_safe(settings_status, "Enter a username and password first.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (account_manifest_path(settings_user_new_name, path, sizeof(path)) != 0) {
+    str_copy_safe(settings_status, "Username is invalid or too long.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (read_text_file(path, manifest, sizeof(manifest)) >= 0 ||
+      (account_username[0] &&
+       str_cmp(account_username, settings_user_new_name) == 0)) {
+    str_copy_safe(settings_status, "That user already exists.",
+                  sizeof(settings_status));
+    return -1;
+  }
+
+  vib_password_hash_hex(settings_user_new_name, settings_user_new_password,
+                        password_hash, sizeof(password_hash));
+  role_value = settings_user_role_options[settings_user_new_role_idx];
+  wallpaper_value = clamp_wallpaper_index(0);
+  idx = 0;
+  for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; settings_user_new_name[i] &&
+                  idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = settings_user_new_name[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "password_hash=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; password_hash[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = password_hash[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "role="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; role_value[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = role_value[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "wallpaper="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx++] = (char)('0' + wallpaper_value);
+  manifest[idx++] = '\n';
+  for (const char *p = "partition_label=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_partition_label[i] &&
+                  idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = account_partition_label[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "disk_location=";
+       *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_disk_location[i] &&
+                  idx < (int)sizeof(manifest) - 2;
+       i++)
+    manifest[idx++] = account_disk_location[i];
+  manifest[idx++] = '\n';
+  manifest[idx] = '\0';
+
+  ensure_gui_app_dirs();
+  if (write_text_file(path, manifest) != 0) {
+    str_copy_safe(settings_status, "Failed to save the new user.",
+                  sizeof(settings_status));
+    return -1;
+  }
+
+  str_copy_safe(user_home, "/Users/", sizeof(user_home));
+  idx = 7;
+  for (int i = 0; settings_user_new_name[i] && idx < (int)sizeof(user_home) - 1;
+       i++)
+    user_home[idx++] = settings_user_new_name[i];
+  user_home[idx] = '\0';
+  user_storage_mkdir(user_home, 0755);
+
+  str_copy_safe(settings_user_selected, settings_user_new_name,
+                sizeof(settings_user_selected));
+  settings_user_new_name[0] = '\0';
+  settings_user_new_password[0] = '\0';
+  settings_user_new_role_idx = 1;
+  settings_user_active_field = 0;
+  str_copy_safe(settings_status, "User added successfully.",
+                sizeof(settings_status));
+  return 0;
+}
+
+static int settings_remove_selected_user_account(void) {
+  char path[160];
+  char user_home[96];
+  int idx = 0;
+
+  if (!account_role_is_admin()) {
+    str_copy_safe(settings_status, "Admin mode is required to remove users.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (!settings_user_selected[0]) {
+    str_copy_safe(settings_status, "Select a user to remove.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (account_username[0] &&
+      str_cmp(settings_user_selected, account_username) == 0) {
+    str_copy_safe(settings_status, "Sign out before removing the current user.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (account_manifest_path(settings_user_selected, path, sizeof(path)) != 0) {
+    str_copy_safe(settings_status, "Could not resolve that user account.",
+                  sizeof(settings_status));
+    return -1;
+  }
+  if (vfs_unlink(path) != 0) {
+    str_copy_safe(settings_status, "Failed to remove the selected user.",
+                  sizeof(settings_status));
+    return -1;
+  }
+
+  str_copy_safe(user_home, "/Users/", sizeof(user_home));
+  idx = 7;
+  for (int i = 0; settings_user_selected[i] &&
+                  idx < (int)sizeof(user_home) - 1;
+       i++)
+    user_home[idx++] = settings_user_selected[i];
+  user_home[idx] = '\0';
+  user_storage_rmdir(user_home);
+
+  settings_user_selected[0] = '\0';
+  settings_sync_selected_user();
+  str_copy_safe(settings_status,
+                "User removed. Existing files were left in place if not empty.",
+                sizeof(settings_status));
+  return 0;
 }
 
 static void set_startup_status(const char *message) {
@@ -3751,18 +4322,23 @@ static void load_account_state(void) {
   int storage_ready = account_partition_storage_ready;
   char username[32];
   char password[33];
+  char role[16];
+  int wallpaper_index = 0;
   char partition_label[32];
   char disk_location[32];
   int parsed = -1;
 
   account_username[0] = '\0';
   account_password[0] = '\0';
+  str_copy_safe(account_role, "admin", sizeof(account_role));
+  account_wallpaper = 0;
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
   account_state_persist_pending = 0;
   if (read_account_manifest(NULL, manifest, sizeof(manifest)) == 0) {
     parsed = parse_account_manifest(manifest, NULL, username, sizeof(username),
-                                    password, sizeof(password), partition_label,
+                                    password, sizeof(password), role,
+                                    sizeof(role), &wallpaper_index, partition_label,
                                     sizeof(partition_label), disk_location,
                                     sizeof(disk_location));
   }
@@ -3780,7 +4356,8 @@ static void load_account_state(void) {
     if (load_account_manifest_from_partition(manifest, sizeof(manifest)) != 0)
       return;
     parsed = parse_account_manifest(manifest, NULL, username, sizeof(username),
-                                    password, sizeof(password), partition_label,
+                                    password, sizeof(password), role,
+                                    sizeof(role), &wallpaper_index, partition_label,
                                     sizeof(partition_label), disk_location,
                                     sizeof(disk_location));
     if (parsed != 0)
@@ -3789,6 +4366,8 @@ static void load_account_state(void) {
 
   str_copy_safe(account_username, username, sizeof(account_username));
   str_copy_safe(account_password, password, sizeof(account_password));
+  str_copy_safe(account_role, role, sizeof(account_role));
+  account_wallpaper = clamp_wallpaper_index(wallpaper_index);
   str_copy_safe(account_partition_label, partition_label,
                 sizeof(account_partition_label));
   str_copy_safe(account_disk_location, disk_location,
@@ -3798,6 +4377,7 @@ static void load_account_state(void) {
     load_install_target_disk_location(account_disk_location,
                                       sizeof(account_disk_location));
   }
+  apply_account_wallpaper(account_wallpaper);
 }
 
 static void load_setup_state(int *setup_complete, int *apps_seeded,
@@ -3867,6 +4447,18 @@ static void save_account_state(void) {
     manifest[idx++] = *p;
   for (int i = 0; account_password[i] && idx < (int)sizeof(manifest) - 2; i++)
     manifest[idx++] = account_password[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "role="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; account_role[i] && idx < (int)sizeof(manifest) - 2; i++)
+    manifest[idx++] = account_role[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "wallpaper="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  {
+    int wallpaper_value = clamp_wallpaper_index(account_wallpaper);
+    manifest[idx++] = (char)('0' + wallpaper_value);
+  }
   manifest[idx++] = '\n';
   for (const char *p = "partition_label=";
        *p && idx < (int)sizeof(manifest) - 1; p++)
@@ -4055,6 +4647,7 @@ static void startup_open_modal_window(void) {
 }
 
 static void startup_begin_login_flow(const char *message, int preserve_username) {
+  unmount_active_user_home();
   session_authenticated = 0;
   startup_flow = STARTUP_FLOW_LOGIN;
   startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
@@ -4146,6 +4739,7 @@ static void complete_startup_auth(void) {
   int apps_seeded = 0;
   int state_found = 0;
 
+  mount_active_user_home();
   session_authenticated = 1;
   startup_flow = STARTUP_FLOW_NONE;
   set_startup_status("");
@@ -4197,6 +4791,9 @@ static void submit_startup_flow(void) {
     vib_password_hash_hex(account_username, startup_input_password,
                           password_hash, sizeof(password_hash));
     str_copy_safe(account_password, password_hash, sizeof(account_password));
+    str_copy_safe(account_role, "admin", sizeof(account_role));
+    account_wallpaper = 0;
+    apply_account_wallpaper(account_wallpaper);
     startup_setup_page = STARTUP_SETUP_PAGE_STORAGE;
     startup_active_field = 0;
     set_startup_status("Prepare a personal data partition for this account.");
@@ -4212,6 +4809,8 @@ static void submit_startup_flow(void) {
     char manifest[256];
     char login_username[32];
     char login_password_hash[33];
+    char login_role[16];
+    int login_wallpaper = 0;
     char login_partition_label[32];
     char login_disk_location[32];
     char password_hash[33];
@@ -4231,7 +4830,8 @@ static void submit_startup_flow(void) {
                               sizeof(manifest)) == 0 &&
         parse_account_manifest(manifest, startup_input_username, login_username,
                                sizeof(login_username), login_password_hash,
-                               sizeof(login_password_hash),
+                               sizeof(login_password_hash), login_role,
+                               sizeof(login_role), &login_wallpaper,
                                login_partition_label,
                                sizeof(login_partition_label),
                                login_disk_location,
@@ -4242,10 +4842,13 @@ static void submit_startup_flow(void) {
         str_copy_safe(account_username, login_username, sizeof(account_username));
         str_copy_safe(account_password, login_password_hash,
                       sizeof(account_password));
+        str_copy_safe(account_role, login_role, sizeof(account_role));
+        account_wallpaper = clamp_wallpaper_index(login_wallpaper);
         str_copy_safe(account_partition_label, login_partition_label,
                       sizeof(account_partition_label));
         str_copy_safe(account_disk_location, login_disk_location,
                       sizeof(account_disk_location));
+        apply_account_wallpaper(account_wallpaper);
         ensure_user_storage_dirs();
         complete_startup_auth();
         return;
@@ -7542,6 +8145,16 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 282, resolution_card_y + 28,
                       settings_resolution_options[settings_resolution_pending_idx].label,
                       0xA5B4FC, 0x252535);
+      gui_draw_string(panel_x + 16, resolution_card_y + 44, "Boot:", 0xCBD5E1,
+                      0x252535);
+      gui_draw_string(panel_x + 64, resolution_card_y + 44,
+                      settings_resolution_saved_idx >= 0
+                          ? settings_resolution_options[settings_resolution_saved_idx].label
+                          : "Current default",
+                      0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 210, resolution_card_y + 44,
+                      "Apply now or save for reboot",
+                      0x94A3B8, 0x252535);
 
       for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
         int bx, by, bw, bh;
@@ -7574,6 +8187,9 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 302, resolution_card_y + 66, 90, 24, 0x4B5563);
       gui_draw_string(panel_x + 330, resolution_card_y + 74, "Apply",
                       0xFFFFFF, 0x4B5563);
+      gui_draw_rect(panel_x + 400, resolution_card_y + 66, 96, 24, 0x374151);
+      gui_draw_string(panel_x + 418, resolution_card_y + 74, "On Reboot",
+                      0xFFFFFF, 0x374151);
     } else if (settings_active_tab == 2) {
       int block_y = panel_y + 72;
       gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
@@ -7617,7 +8233,9 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 16, block_y + 12, "Current User", 0x89B4FA,
                       0x252535);
       gui_draw_string(panel_x + 16, block_y + 32, username, 0xFFFFFF, 0x252535);
-      gui_draw_string(panel_x + 16, block_y + 52, auth_state, 0xCBD5E1,
+      gui_draw_string(panel_x + 16, block_y + 52, account_role_label(), 0xA5B4FC,
+                      0x252535);
+      gui_draw_string(panel_x + 112, block_y + 52, auth_state, 0xCBD5E1,
                       0x252535);
 
       block_y += 88;
@@ -7643,6 +8261,89 @@ static void draw_window(struct window *win) {
                     session_can_logout() ? 0x2563EB : 0x4B5563);
       gui_draw_string(panel_x + 30, block_y + 9, "Sign Out", 0xFFFFFF,
                       session_can_logout() ? 0x2563EB : 0x4B5563);
+
+      {
+        settings_account_list_t accounts;
+        char masked_password[32];
+        char selected_role[16];
+        uint32_t user_field_bg =
+            settings_user_active_field == 0 ? 0x31314A : 0x232337;
+        uint32_t pass_field_bg =
+            settings_user_active_field == 1 ? 0x31314A : 0x232337;
+        int list_y = block_y + 44;
+        int editor_x = panel_x + 224;
+        int editor_w = panel_w - 224;
+        int footer_y;
+
+        settings_collect_accounts(&accounts);
+        settings_sync_selected_user();
+        mask_secret(settings_user_new_password, masked_password,
+                    sizeof(masked_password));
+        settings_user_role_for_name(settings_user_selected, selected_role,
+                                    sizeof(selected_role));
+
+        gui_draw_rect(panel_x, list_y, 210, 132, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 12, "Accounts", 0x89B4FA, 0x252535);
+        for (int i = 0; i < accounts.count && i < 4; i++) {
+          int row_y = list_y + 34 + i * 22;
+          uint32_t row_bg =
+              str_cmp(settings_user_selected, accounts.names[i]) == 0 ? 0x2563EB
+                                                                      : 0x1E293B;
+          gui_draw_rect(panel_x + 12, row_y, 186, 18, row_bg);
+          gui_draw_string(panel_x + 20, row_y + 5, accounts.names[i], 0xFFFFFF,
+                          row_bg);
+        }
+
+        gui_draw_rect(editor_x, list_y, editor_w, 132, 0x252535);
+        gui_draw_string(editor_x + 16, list_y + 12, "Add User", 0x89B4FA,
+                        0x252535);
+        gui_draw_rect(editor_x + 16, list_y + 34, editor_w - 32, 24, user_field_bg);
+        gui_draw_string(editor_x + 24, list_y + 41,
+                        settings_user_new_name[0] ? settings_user_new_name
+                                                  : "Username",
+                        settings_user_new_name[0] ? 0xFFFFFF : 0x6C7086,
+                        user_field_bg);
+        gui_draw_rect(editor_x + 16, list_y + 66, editor_w - 32, 24, pass_field_bg);
+        gui_draw_string(editor_x + 24, list_y + 73,
+                        masked_password[0] ? masked_password : "Password",
+                        masked_password[0] ? 0xFFFFFF : 0x6C7086, pass_field_bg);
+        gui_draw_rect(editor_x + 16, list_y + 98, 110, 26,
+                      account_role_is_admin() ? 0x1E293B : 0x4B5563);
+        gui_draw_string(editor_x + 24, list_y + 106, "Role", 0x89B4FA,
+                        account_role_is_admin() ? 0x1E293B : 0x4B5563);
+        gui_draw_string(editor_x + 60, list_y + 106,
+                        settings_role_label_from_index(settings_user_new_role_idx),
+                        0xFFFFFF,
+                        account_role_is_admin() ? 0x1E293B : 0x4B5563);
+        gui_draw_rect(editor_x + 136, list_y + 100, 92, 24,
+                      account_role_is_admin() ? 0x2563EB : 0x4B5563);
+        gui_draw_string(editor_x + 164, list_y + 107, "Add", 0xFFFFFF,
+                        account_role_is_admin() ? 0x2563EB : 0x4B5563);
+        gui_draw_rect(editor_x + 236, list_y + 100, 108, 24,
+                      (account_role_is_admin() && settings_user_selected[0])
+                          ? 0x7C2D12
+                          : 0x4B5563);
+        gui_draw_string(editor_x + 260, list_y + 107, "Remove", 0xFFFFFF,
+                        (account_role_is_admin() && settings_user_selected[0])
+                            ? 0x7C2D12
+                            : 0x4B5563);
+
+        footer_y = list_y + 144;
+        gui_draw_rect(panel_x, footer_y, panel_w, 54, 0x1E293B);
+        gui_draw_string(panel_x + 16, footer_y + 12,
+                        settings_user_selected[0] ? settings_user_selected
+                                                  : "No user selected",
+                        0xFFFFFF, 0x1E293B);
+        gui_draw_string(panel_x + 16, footer_y + 30,
+                        settings_user_selected[0] ? selected_role
+                                                  : "Select a user to inspect the account mode.",
+                        0xCBD5E1, 0x1E293B);
+        if (!account_role_is_admin()) {
+          gui_draw_string(panel_x + 140, footer_y + 30,
+                          "Admin mode is required to add or remove users.",
+                          0xF9A8D4, 0x1E293B);
+        }
+      }
     }
   }
   /* Device Manager window */
@@ -8309,6 +9010,7 @@ static void draw_window(struct window *win) {
 /* Menu dropdown state */
 static int menu_open = 0; /* 0=closed, 1=main menu open */
 static int main_menu_power_open = 0;
+static int main_menu_power_row_y_anim = -1;
 
 #define MAIN_MENU_W 364
 #define MAIN_MENU_H 350
@@ -8380,6 +9082,43 @@ static void main_menu_panel_rect(int *x, int *y, int *w, int *h) {
     *h = MAIN_MENU_H;
 }
 
+static int main_menu_power_row_y(void) {
+  int panel_y = main_menu_panel_y();
+  int extra_dropdown_h = session_can_logout() ? (MAIN_MENU_RIGHT_ROW_H + 4) : 0;
+  return panel_y + MAIN_MENU_H - 108 - extra_dropdown_h;
+}
+
+static int main_menu_power_row_y_current(void) {
+  if (main_menu_power_row_y_anim < 0)
+    return main_menu_power_row_y();
+  return main_menu_power_row_y_anim;
+}
+
+static void update_main_menu_power_animation(void) {
+  int target_y = main_menu_power_row_y();
+  int diff;
+
+  if (main_menu_power_row_y_anim < 0) {
+    main_menu_power_row_y_anim = target_y;
+    return;
+  }
+
+  diff = target_y - main_menu_power_row_y_anim;
+  if (diff == 0)
+    return;
+  if (diff > 0) {
+    int step = diff / 4;
+    if (step < 1)
+      step = 1;
+    main_menu_power_row_y_anim += step;
+  } else {
+    int step = (-diff) / 4;
+    if (step < 1)
+      step = 1;
+    main_menu_power_row_y_anim -= step;
+  }
+}
+
 static int main_menu_contains_point(int x, int y) {
   int panel_x, panel_y, panel_w, panel_h;
   main_menu_panel_rect(&panel_x, &panel_y, &panel_w, &panel_h);
@@ -8431,7 +9170,7 @@ static int main_menu_item_bounds(int item_index, int *x, int *y, int *w,
     if (x)
       *x = right_x;
     if (y)
-      *y = panel_y + MAIN_MENU_H - 108;
+      *y = main_menu_power_row_y_current();
     if (w)
       *w = right_w;
     if (h)
@@ -9229,27 +9968,56 @@ static void draw_wallpaper(void) {
 
   /* Check if this is an image wallpaper */
   if (wallpapers[current_wallpaper].type == 1 && wallpaper_image.pixels) {
-    /* Draw scaled JPEG image - simple nearest neighbor for reliability */
+    /* Draw scaled JPEG image with bilinear filtering for better quality. */
     uint32_t img_w = wallpaper_image.width;
     uint32_t img_h = wallpaper_image.height;
     uint32_t *pixels = wallpaper_image.pixels;
+    uint32_t scale_x_fp;
+    uint32_t scale_y_fp;
 
-    /* Calculate scale factors (fixed point 16.16) */
-    uint32_t scale_x = (img_w << 16) / width;
-    uint32_t scale_y = (img_h << 16) / height;
+    if (img_w == 0 || img_h == 0)
+      return;
+
+    /* Calculate scale factors in 16.16 fixed point. */
+    scale_x_fp = width > 1 ? ((img_w - 1) << 16) / (uint32_t)(width - 1) : 0;
+    scale_y_fp = height > 1 ? ((img_h - 1) << 16) / (uint32_t)(height - 1) : 0;
 
     for (int y = start_y; y < end_y; y++) {
       uint32_t *line = target + y * (primary_display.pitch / 4);
-      uint32_t src_y = ((y - start_y) * scale_y) >> 16;
-      if (src_y >= img_h)
-        src_y = img_h - 1;
-      uint32_t *src_row = pixels + src_y * img_w;
+      uint32_t src_y_fp = (uint32_t)(y - start_y) * scale_y_fp;
+      uint32_t src_y = src_y_fp >> 16;
+      uint32_t frac_y = src_y_fp & 0xFFFF;
+      uint32_t src_y1 = src_y + 1 < img_h ? src_y + 1 : src_y;
+      uint32_t wy0 = 0x10000 - frac_y;
 
       for (int x = 0; x < width; x++) {
-        uint32_t src_x = (x * scale_x) >> 16;
-        if (src_x >= img_w)
-          src_x = img_w - 1;
-        line[x] = src_row[src_x];
+        uint32_t src_x_fp = (uint32_t)x * scale_x_fp;
+        uint32_t src_x = src_x_fp >> 16;
+        uint32_t frac_x = src_x_fp & 0xFFFF;
+        uint32_t src_x1 = src_x + 1 < img_w ? src_x + 1 : src_x;
+        uint32_t wx0 = 0x10000 - frac_x;
+        uint32_t c00 = pixels[src_y * img_w + src_x];
+        uint32_t c10 = pixels[src_y * img_w + src_x1];
+        uint32_t c01 = pixels[src_y1 * img_w + src_x];
+        uint32_t c11 = pixels[src_y1 * img_w + src_x1];
+        uint32_t w00 = (wx0 >> 8) * (wy0 >> 8);
+        uint32_t w10 = (frac_x >> 8) * (wy0 >> 8);
+        uint32_t w01 = (wx0 >> 8) * (frac_y >> 8);
+        uint32_t w11 = (frac_x >> 8) * (frac_y >> 8);
+        uint32_t r = (((c00 >> 16) & 0xFF) * w00 +
+                      ((c10 >> 16) & 0xFF) * w10 +
+                      ((c01 >> 16) & 0xFF) * w01 +
+                      ((c11 >> 16) & 0xFF) * w11) >>
+                     16;
+        uint32_t g = ((((c00 >> 8) & 0xFF) * w00) +
+                      (((c10 >> 8) & 0xFF) * w10) +
+                      (((c01 >> 8) & 0xFF) * w01) +
+                      (((c11 >> 8) & 0xFF) * w11)) >>
+                     16;
+        uint32_t b = (((c00 & 0xFF) * w00) + ((c10 & 0xFF) * w10) +
+                      ((c01 & 0xFF) * w01) + ((c11 & 0xFF) * w11)) >>
+                     16;
+        line[x] = (r << 16) | (g << 8) | b;
       }
     }
     return;
@@ -9559,6 +10327,7 @@ void gui_compose(void) {
   g_frame_count++;
   if (!startup_setup_account_active())
     installer_process_background_install();
+  update_main_menu_power_animation();
 
   /* Draw desktop and taskbar */
   draw_desktop();
@@ -9783,6 +10552,23 @@ void gui_handle_key_event(int key) {
 
   /* Route key to focused window */
   if (focused_window && focused_window->visible) {
+    if (focused_window->title[0] == 'S' && focused_window->title[1] == 'e' &&
+        focused_window->title[2] == 't' && settings_active_tab == 3) {
+      if (!account_role_is_admin())
+        return;
+      char *target = settings_user_active_field == 0 ? settings_user_new_name
+                                                     : settings_user_new_password;
+      if (key == '\t') {
+        settings_user_active_field = 1 - settings_user_active_field;
+        return;
+      }
+      if (key == '\r' || key == '\n') {
+        settings_add_user_account();
+        return;
+      }
+      append_input_char(target, 32, key);
+      return;
+    }
     /* Check if it's a Terminal window */
     if (focused_window->title[0] == 'T' && focused_window->title[1] == 'e' &&
         focused_window->title[2] == 'r') {
@@ -10485,8 +11271,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           int ty = grid_y + row * (thumb_h + gap + 20);
 
           if (x >= tx && x < tx + thumb_w && y >= ty && y < ty + thumb_h) {
-            current_wallpaper = i;
-            wallpaper_ensure_loaded(); /* Load JPEG if needed */
+            apply_account_wallpaper(i);
+            account_wallpaper = current_wallpaper;
+            if (account_username[0] && account_password[0])
+              save_account_state();
             break;
           }
         }
@@ -10499,6 +11287,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
         int sidebar_w = 118;
+        int panel_w = win->width - BORDER_WIDTH * 2 - sidebar_w - 24;
         int panel_x = content_x + sidebar_w + 14;
         int panel_y = content_y + 14;
 
@@ -10603,22 +11392,35 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (x >= panel_x + 302 && x < panel_x + 392 && y >= button_y &&
               y < button_y + 24) {
+            const settings_resolution_option_t *opt =
+                &settings_resolution_options[settings_resolution_pending_idx];
+            gui_save_resolution_preference(opt->width, opt->height);
+            settings_resolution_saved_idx = settings_resolution_pending_idx;
             if (settings_resolution_pending_idx == settings_resolution_current_idx) {
-              str_copy_safe(settings_status, "That resolution is already active.",
+              str_copy_safe(settings_status,
+                            "Resolution saved as the boot default.",
+                            sizeof(settings_status));
+            } else if (gui_apply_resolution(opt->width, opt->height) == 0) {
+              settings_sync_resolution_picker();
+              str_copy_safe(settings_status,
+                            "Resolution changed now and saved for reboot.",
                             sizeof(settings_status));
             } else {
-              const settings_resolution_option_t *opt =
-                  &settings_resolution_options[settings_resolution_pending_idx];
-              if (gui_apply_resolution(opt->width, opt->height) == 0) {
-                settings_sync_resolution_picker();
-                str_copy_safe(settings_status, "Resolution changed successfully.",
-                              sizeof(settings_status));
-              } else {
-                str_copy_safe(settings_status,
-                              "Live resolution switching is unavailable on this display backend.",
-                              sizeof(settings_status));
-              }
+              str_copy_safe(settings_status,
+                            "Resolution saved. Restart OS8 to apply it.",
+                            sizeof(settings_status));
             }
+            break;
+          }
+          if (x >= panel_x + 400 && x < panel_x + 496 && y >= button_y &&
+              y < button_y + 24) {
+            const settings_resolution_option_t *opt =
+                &settings_resolution_options[settings_resolution_pending_idx];
+            gui_save_resolution_preference(opt->width, opt->height);
+            settings_resolution_saved_idx = settings_resolution_pending_idx;
+            str_copy_safe(settings_status,
+                          "Resolution saved for the next reboot.",
+                          sizeof(settings_status));
             break;
           }
         } else if (settings_active_tab == 2) {
@@ -10662,7 +11464,16 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             break;
           }
         } else {
+          settings_account_list_t accounts;
           int signout_y = panel_y + 72 + 88 + 102;
+          int list_y = signout_y + 44;
+          int editor_x = panel_x + 224;
+          int editor_w = panel_w - 224;
+          int admin_mode = account_role_is_admin();
+          int handled_selection = 0;
+
+          settings_collect_accounts(&accounts);
+          settings_sync_selected_user();
           if (session_can_logout() && x >= panel_x && x < panel_x + 112 &&
               y >= signout_y && y < signout_y + 30) {
             str_copy_safe(startup_input_username, account_username,
@@ -10670,6 +11481,74 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             startup_begin_login_flow("Signed out.", 1);
             str_copy_safe(settings_status, "Returned to the login screen.",
                           sizeof(settings_status));
+            break;
+          }
+          for (int i = 0; i < accounts.count && i < 4; i++) {
+            int row_y = list_y + 34 + i * 22;
+            if (x >= panel_x + 12 && x < panel_x + 198 && y >= row_y &&
+                y < row_y + 18) {
+              str_copy_safe(settings_user_selected, accounts.names[i],
+                            sizeof(settings_user_selected));
+              str_copy_safe(settings_status, "Selected user account.",
+                            sizeof(settings_status));
+              handled_selection = 1;
+              break;
+            }
+          }
+          if (handled_selection)
+            break;
+          if (x >= editor_x + 16 && x < editor_x + editor_w - 16 &&
+              y >= list_y + 34 && y < list_y + 58) {
+            if (admin_mode)
+              settings_user_active_field = 0;
+            else
+              str_copy_safe(settings_status,
+                            "Admin mode is required to edit account details.",
+                            sizeof(settings_status));
+            break;
+          }
+          if (x >= editor_x + 16 && x < editor_x + editor_w - 16 &&
+              y >= list_y + 66 && y < list_y + 90) {
+            if (admin_mode)
+              settings_user_active_field = 1;
+            else
+              str_copy_safe(settings_status,
+                            "Admin mode is required to edit account details.",
+                            sizeof(settings_status));
+            break;
+          }
+          if (x >= editor_x + 16 && x < editor_x + 126 &&
+              y >= list_y + 98 && y < list_y + 124) {
+            if (admin_mode) {
+              settings_user_new_role_idx =
+                  (settings_user_new_role_idx + 1) % SETTINGS_USER_ROLE_COUNT;
+              str_copy_safe(settings_status, "User mode updated.",
+                            sizeof(settings_status));
+            } else {
+              str_copy_safe(settings_status,
+                            "Admin mode is required to change user modes.",
+                            sizeof(settings_status));
+            }
+            break;
+          }
+          if (x >= editor_x + 136 && x < editor_x + 228 && y >= list_y + 100 &&
+              y < list_y + 124) {
+            if (admin_mode)
+              settings_add_user_account();
+            else
+              str_copy_safe(settings_status,
+                            "Admin mode is required to add users.",
+                            sizeof(settings_status));
+            break;
+          }
+          if (x >= editor_x + 236 && x < editor_x + 344 &&
+              y >= list_y + 100 && y < list_y + 124) {
+            if (admin_mode)
+              settings_remove_selected_user_account();
+            else
+              str_copy_safe(settings_status,
+                            "Admin mode is required to remove users.",
+                            sizeof(settings_status));
             break;
           }
         }
@@ -10941,6 +11820,8 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
     installer_show_restart_screen = 0;
     installer_set_status("Ready to install the system image.");
   }
+
+  gui_apply_saved_boot_resolution(&framebuffer, &width, &height, &pitch);
 
   primary_display.framebuffer = framebuffer;
   primary_display.width = width;
