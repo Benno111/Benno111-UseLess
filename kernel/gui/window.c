@@ -158,6 +158,10 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define KEY_RIGHT 0x103
 
 static int session_authenticated = 1;
+static char account_username[32];
+static char account_password[33];
+static char startup_input_username[32];
+static void startup_begin_login_flow(const char *message, int preserve_username);
 
 static int dock_is_visible(void) {
   return session_authenticated && !startup_flow_active();
@@ -167,6 +171,17 @@ static int dock_reserved_height(void) { return dock_is_visible() ? DOCK_HEIGHT :
 
 static int desktop_session_active(void) {
   return session_authenticated && !startup_flow_active();
+}
+
+static int session_can_logout(void) {
+  extern int boot_is_live_media(void);
+  extern int boot_is_usb_boot(void);
+
+  if (!desktop_session_active())
+    return 0;
+  if (!account_username[0] || !account_password[0])
+    return 0;
+  return !(boot_is_live_media() || boot_is_usb_boot());
 }
 
 static int gui_is_installer_mode(void) {
@@ -7386,10 +7401,13 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 24, content_y + 42, "Control center", 0x94A3B8,
                     0x101827);
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       int tab_y = content_y + 76 + i * 38;
       uint32_t tab_bg = i == settings_active_tab ? 0x2563EB : 0x1E293B;
-      const char *label = i == 0 ? "Overview" : (i == 1 ? "Appearance" : "System");
+      const char *label = i == 0
+                              ? "Overview"
+                              : (i == 1 ? "Appearance"
+                                        : (i == 2 ? "System" : "Users"));
       gui_draw_rect(content_x + 18, tab_y, sidebar_w - 28, 28, tab_bg);
       gui_draw_string(content_x + 30, tab_y + 8, label, 0xFFFFFF, tab_bg);
     }
@@ -7399,7 +7417,9 @@ static void draw_window(struct window *win) {
                     settings_active_tab == 0
                         ? "Desktop overview"
                         : (settings_active_tab == 1 ? "Appearance & effects"
-                                                    : "System tools"),
+                                                    : (settings_active_tab == 2
+                                                           ? "System tools"
+                                                           : "Users & sign-in")),
                     0xFFFFFF, 0x1F2937);
     gui_draw_string(panel_x + 18, panel_y + 34, settings_status, 0xCBD5E1,
                     0x1F2937);
@@ -7554,7 +7574,7 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 302, resolution_card_y + 66, 90, 24, 0x4B5563);
       gui_draw_string(panel_x + 330, resolution_card_y + 74, "Apply",
                       0xFFFFFF, 0x4B5563);
-    } else {
+    } else if (settings_active_tab == 2) {
       int block_y = panel_y + 72;
       gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
       gui_draw_string(panel_x + 16, block_y + 12, "System status", 0x89B4FA,
@@ -7584,6 +7604,45 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 120, block_y, panel_w - 120, 30, 0x1E293B);
       gui_draw_string(panel_x + 136, block_y + 9, "Use these tools to inspect and restore",
                       0xCBD5E1, 0x1E293B);
+    } else {
+      int block_y = panel_y + 72;
+      const char *username = account_username[0] ? account_username : "Guest session";
+      const char *auth_state =
+          desktop_session_active()
+              ? "Signed in to the desktop"
+              : (startup_flow_active() ? "Waiting at login screen"
+                                       : "Session inactive");
+
+      gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 12, "Current User", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + 16, block_y + 32, username, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 52, auth_state, 0xCBD5E1,
+                      0x252535);
+
+      block_y += 88;
+      gui_draw_rect(panel_x, block_y, panel_w, 90, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 12, "Account Storage", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + 16, block_y + 34,
+                      account_partition_label[0] ? account_partition_label
+                                                 : "No dedicated user partition",
+                      0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 54,
+                      account_disk_location[0] ? account_disk_location
+                                               : "Using local session storage",
+                      0xCBD5E1, 0x252535);
+      gui_draw_string(panel_x + 16, block_y + 72,
+                      session_can_logout()
+                          ? "Sign out to return to the login screen."
+                          : "Sign out is unavailable in this boot mode.",
+                      0xA5B4FC, 0x252535);
+
+      block_y += 102;
+      gui_draw_rect(panel_x, block_y, 112, 30,
+                    session_can_logout() ? 0x2563EB : 0x4B5563);
+      gui_draw_string(panel_x + 30, block_y + 9, "Sign Out", 0xFFFFFF,
+                      session_can_logout() ? 0x2563EB : 0x4B5563);
     }
   }
   /* Device Manager window */
@@ -8268,6 +8327,7 @@ enum {
   MAIN_MENU_ITEM_BROWSER,
   MAIN_MENU_ITEM_APPSTORE,
   MAIN_MENU_ITEM_POWER,
+  MAIN_MENU_ITEM_POWER_LOGOUT,
   MAIN_MENU_ITEM_POWER_SHUTDOWN,
   MAIN_MENU_ITEM_POWER_RESTART,
   MAIN_MENU_ITEM_COUNT
@@ -8385,19 +8445,33 @@ static int main_menu_item_bounds(int item_index, int *x, int *y, int *w,
 static int main_menu_power_item_bounds(int item_index, int *x, int *y, int *w,
                                        int *h) {
   int power_x, power_y, power_w, power_h;
+  int dropdown_y;
 
   if (!main_menu_power_open)
     return 0;
   if (!main_menu_item_bounds(MAIN_MENU_ITEM_POWER, &power_x, &power_y, &power_w,
                              &power_h))
     return 0;
+  dropdown_y = power_y + power_h + 8;
 
   switch (item_index) {
+  case MAIN_MENU_ITEM_POWER_LOGOUT:
+    if (!session_can_logout())
+      return 0;
+    if (x)
+      *x = power_x + 8;
+    if (y)
+      *y = dropdown_y;
+    if (w)
+      *w = power_w - 8;
+    if (h)
+      *h = MAIN_MENU_RIGHT_ROW_H;
+    return 1;
   case MAIN_MENU_ITEM_POWER_SHUTDOWN:
     if (x)
       *x = power_x + 8;
     if (y)
-      *y = power_y + power_h + 8;
+      *y = dropdown_y + (session_can_logout() ? MAIN_MENU_RIGHT_ROW_H + 4 : 0);
     if (w)
       *w = power_w - 8;
     if (h)
@@ -8407,7 +8481,9 @@ static int main_menu_power_item_bounds(int item_index, int *x, int *y, int *w,
     if (x)
       *x = power_x + 8;
     if (y)
-      *y = power_y + power_h + 8 + MAIN_MENU_RIGHT_ROW_H + 4;
+      *y = dropdown_y +
+           (session_can_logout() ? (MAIN_MENU_RIGHT_ROW_H + 4) * 2
+                                 : MAIN_MENU_RIGHT_ROW_H + 4);
     if (w)
       *w = power_w - 8;
     if (h)
@@ -8432,7 +8508,7 @@ static int main_menu_item_at(int x, int y) {
         y < item_y + item_h)
       return i;
   }
-  for (int i = MAIN_MENU_ITEM_POWER_SHUTDOWN;
+  for (int i = MAIN_MENU_ITEM_POWER_LOGOUT;
        i <= MAIN_MENU_ITEM_POWER_RESTART; i++) {
     int item_x, item_y, item_w, item_h;
     if (!main_menu_power_item_bounds(i, &item_x, &item_y, &item_w, &item_h))
@@ -8480,6 +8556,7 @@ static void draw_main_menu_power_dropdown(void) {
   int power_x, power_y, power_w, power_h;
   int item_x, item_y, item_w, item_h;
   int hovered_item = main_menu_item_at(mouse_x, mouse_y);
+  int dropdown_h = session_can_logout() ? 94 : 62;
 
   if (!main_menu_power_open)
     return;
@@ -8487,10 +8564,19 @@ static void draw_main_menu_power_dropdown(void) {
                              &power_h))
     return;
 
-  gui_fill_rect_alpha(power_x + 6, power_y + power_h + 6, power_w - 2, 64,
+  gui_fill_rect_alpha(power_x + 6, power_y + power_h + 6, power_w - 2, dropdown_h,
                       0x28070C14);
-  gui_draw_glass_panel(power_x, power_y + power_h + 4, power_w, 62, 0x6A2C3446,
+  gui_draw_glass_panel(power_x, power_y + power_h + 4, power_w, dropdown_h, 0x6A2C3446,
                        0x24FFFFFF, 0x8C75839A, 1);
+
+  if (main_menu_power_item_bounds(MAIN_MENU_ITEM_POWER_LOGOUT, &item_x, &item_y,
+                                  &item_w, &item_h)) {
+    if (hovered_item == MAIN_MENU_ITEM_POWER_LOGOUT) {
+      gui_fill_rect_alpha(item_x, item_y, item_w, item_h, 0x507256D9);
+      gui_draw_rect_outline(item_x, item_y, item_w, item_h, 0xAFCDBBFF, 1);
+    }
+    gui_draw_string(item_x + 8, item_y + 7, "Logout", 0xFFFFFF, 0x00000000);
+  }
 
   if (main_menu_power_item_bounds(MAIN_MENU_ITEM_POWER_SHUTDOWN, &item_x, &item_y,
                                   &item_w, &item_h)) {
@@ -8606,6 +8692,13 @@ static int main_menu_activate(int item_index) {
     break;
   case MAIN_MENU_ITEM_POWER:
     main_menu_power_open = main_menu_power_open ? 0 : 1;
+    return 1;
+  case MAIN_MENU_ITEM_POWER_LOGOUT:
+    main_menu_power_open = 0;
+    menu_open = 0;
+    str_copy_safe(startup_input_username, account_username,
+                  sizeof(startup_input_username));
+    startup_begin_login_flow("Signed out.", 1);
     return 1;
   case MAIN_MENU_ITEM_POWER_SHUTDOWN: {
     extern void arch_poweroff(void);
@@ -10409,7 +10502,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int panel_x = content_x + sidebar_w + 14;
         int panel_y = content_y + 14;
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
           int tab_y = content_y + 76 + i * 38;
           if (x >= content_x + 18 && x < content_x + sidebar_w - 10 &&
               y >= tab_y && y < tab_y + 28) {
@@ -10420,8 +10513,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             else if (i == 1)
               str_copy_safe(settings_status, "Adjust wallpapers, blur, and graphics.",
                             sizeof(settings_status));
-            else
+            else if (i == 2)
               str_copy_safe(settings_status, "Launch tools and recover defaults.",
+                            sizeof(settings_status));
+            else
+              str_copy_safe(settings_status, "Manage the active user session.",
                             sizeof(settings_status));
             break;
           }
@@ -10525,7 +10621,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             }
             break;
           }
-        } else {
+        } else if (settings_active_tab == 2) {
           int row1_y = panel_y + 72 + 90;
           int row2_y = row1_y + 42;
           if (x >= panel_x && x < panel_x + 110 && y >= row1_y && y < row1_y + 30) {
@@ -10562,6 +10658,17 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               y < row2_y + 30) {
             gui_create_window("About", 280, 180, 420, 260);
             str_copy_safe(settings_status, "Opened about window.",
+                          sizeof(settings_status));
+            break;
+          }
+        } else {
+          int signout_y = panel_y + 72 + 88 + 102;
+          if (session_can_logout() && x >= panel_x && x < panel_x + 112 &&
+              y >= signout_y && y < signout_y + 30) {
+            str_copy_safe(startup_input_username, account_username,
+                          sizeof(startup_input_username));
+            startup_begin_login_flow("Signed out.", 1);
+            str_copy_safe(settings_status, "Returned to the login screen.",
                           sizeof(settings_status));
             break;
           }
