@@ -3864,10 +3864,10 @@ static int read_account_manifest(const char *username, char *manifest, int max) 
   if (!manifest || max <= 0)
     return -1;
 
-  if (username && username[0] &&
-      account_manifest_path(username, path, sizeof(path)) == 0 &&
-      read_text_file(path, manifest, max) >= 0) {
-    return 0;
+  if (username && username[0]) {
+    if (account_manifest_path(username, path, sizeof(path)) != 0)
+      return -1;
+    return read_text_file(path, manifest, max) >= 0 ? 0 : -1;
   }
 
   if (read_text_file(GUI_ACCOUNT_PATH, manifest, max) >= 0)
