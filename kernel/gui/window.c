@@ -10950,17 +10950,15 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           if (x >= content_x + 200 && x < content_x + 296 &&
               y >= content_y + 204 + startup_login_extra_y &&
               y < content_y + 238 + startup_login_extra_y) {
-            extern void arch_reboot(void);
             startup_login_user_dropdown_open = 0;
-            arch_reboot();
+            execute_secure_attention_action(SECURE_ACTION_RESTART);
             return;
           }
           if (x >= content_x + 306 && x < content_x + 414 &&
               y >= content_y + 204 + startup_login_extra_y &&
               y < content_y + 238 + startup_login_extra_y) {
-            extern void arch_shutdown(void);
             startup_login_user_dropdown_open = 0;
-            arch_shutdown();
+            execute_secure_attention_action(SECURE_ACTION_SHUTDOWN);
             return;
           }
         }
