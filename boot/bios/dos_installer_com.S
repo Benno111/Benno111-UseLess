@@ -9,7 +9,6 @@
 .code16
 .section .text
 .global _start
-.org 0x100
 
 #define IMAGE_FILENAME "OSSYS.IMG"
 #define BOOT_AREA_SECTORS 2048

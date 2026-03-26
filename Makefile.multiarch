@@ -338,7 +338,7 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
 DOS_INSTALLER_COM_ELF := $(BUILD_DIR)/boot/OSINST.elf
 DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
-LDFLAGS_DOS_COM := -nostdlib -static -Ttext 0x0 -e _start -N
+LDFLAGS_DOS_COM := -nostdlib -static -Ttext 0x100 -e _start -N
 
 $(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
