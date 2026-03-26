@@ -89,8 +89,18 @@ static int user_storage_mkdir(const char *path, mode_t mode);
 static int user_storage_unlink(const char *path);
 static int user_storage_rmdir(const char *path);
 static int user_storage_rename(const char *old_path, const char *new_path);
+static int path_is_active_account_home(const char *path);
+static int path_is_active_account_home_root(const char *path);
 static void mount_active_user_home(void);
 static void unmount_active_user_home(void);
+static int read_account_manifest(const char *username, char *manifest, int max);
+static int parse_account_manifest(const char *manifest, const char *fallback_name,
+                                  char *username, int username_max,
+                                  char *password_hash, int password_hash_max,
+                                  char *role, int role_max,
+                                  int *wallpaper_index,
+                                  char *partition_label, int partition_label_max,
+                                  char *disk_location, int disk_location_max);
 static void runtime_sync_log_line(const char *line);
 static void runtime_sync_flush_best_effort(const char *path);
 void gui_open_image_viewer(const char *path);
@@ -318,39 +328,6 @@ static void wallpaper_ensure_loaded(void) {
   }
 }
 
-/* Get wallpaper pixel color at position */
-static uint32_t wallpaper_get_pixel(int x, int y, int height) {
-  int idx = current_wallpaper;
-  int width = (int)primary_display.width;
-
-  /* Image wallpaper */
-  if (wallpapers[idx].type == 1 && wallpaper_image.pixels) {
-    /* Scale image to fit screen */
-    int img_x = width > 0 ? (x * (int)wallpaper_image.width) / width : 0;
-    int img_y = (y * wallpaper_image.height) / height;
-    if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
-        img_y < (int)wallpaper_image.height) {
-      return wallpaper_image.pixels[img_y * wallpaper_image.width + img_x];
-    }
-  }
-
-  /* Gradient fallback */
-  int progress = (y * 256) / height;
-  if (progress < 0)
-    progress = 0;
-  if (progress > 255)
-    progress = 255;
-
-  uint8_t r = wallpapers[idx].tr +
-              ((wallpapers[idx].br - wallpapers[idx].tr) * progress) / 256;
-  uint8_t g = wallpapers[idx].tg +
-              ((wallpapers[idx].bg - wallpapers[idx].tg) * progress) / 256;
-  uint8_t b = wallpapers[idx].tb +
-              ((wallpapers[idx].bb - wallpapers[idx].tb) * progress) / 256;
-
-  return (r << 16) | (g << 8) | b;
-}
-
 /* Calculator state (global for click handling) */
 static long calc_display = 0;
 static long calc_pending = 0;
@@ -496,7 +473,7 @@ static void gui_clamp_windows_to_display(void);
 static int gui_apply_resolution(uint32_t width, uint32_t height);
 static int gui_load_saved_resolution(uint32_t *width, uint32_t *height);
 static void gui_save_resolution_preference(uint32_t width, uint32_t height);
-static void gui_apply_saved_boot_resolution(uint32_t *framebuffer,
+static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
                                             uint32_t *width,
                                             uint32_t *height,
                                             uint32_t *pitch);
@@ -1135,6 +1112,38 @@ struct display {
 };
 
 static struct display primary_display = {0};
+
+/* Get wallpaper pixel color at position */
+static uint32_t wallpaper_get_pixel(int x, int y, int height) {
+  int idx = current_wallpaper;
+  int width = (int)primary_display.width;
+
+  if (wallpapers[idx].type == 1 && wallpaper_image.pixels) {
+    int img_x = width > 0 ? (x * (int)wallpaper_image.width) / width : 0;
+    int img_y = (y * wallpaper_image.height) / height;
+    if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
+        img_y < (int)wallpaper_image.height) {
+      return wallpaper_image.pixels[img_y * wallpaper_image.width + img_x];
+    }
+  }
+
+  {
+    int progress = (y * 256) / height;
+    if (progress < 0)
+      progress = 0;
+    if (progress > 255)
+      progress = 255;
+
+    uint8_t r = wallpapers[idx].tr +
+                ((wallpapers[idx].br - wallpapers[idx].tr) * progress) / 256;
+    uint8_t g = wallpapers[idx].tg +
+                ((wallpapers[idx].bg - wallpapers[idx].tg) * progress) / 256;
+    uint8_t b = wallpapers[idx].tb +
+                ((wallpapers[idx].bb - wallpapers[idx].tb) * progress) / 256;
+
+    return (r << 16) | (g << 8) | b;
+  }
+}
 
 struct gui_clip_state {
   int enabled;
@@ -1815,7 +1824,7 @@ static void gui_save_resolution_preference(uint32_t width, uint32_t height) {
   write_text_file(GUI_DISPLAY_CONFIG_PATH, manifest);
 }
 
-static void gui_apply_saved_boot_resolution(uint32_t *framebuffer,
+static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
                                             uint32_t *width,
                                             uint32_t *height,
                                             uint32_t *pitch) {
@@ -1825,7 +1834,7 @@ static void gui_apply_saved_boot_resolution(uint32_t *framebuffer,
   uint32_t new_width = 0;
   uint32_t new_height = 0;
 
-  if (!framebuffer || !width || !height || !pitch)
+  if (!framebuffer || !*framebuffer || !width || !height || !pitch)
     return;
   if (gui_load_saved_resolution(&saved_width, &saved_height) != 0)
     return;
