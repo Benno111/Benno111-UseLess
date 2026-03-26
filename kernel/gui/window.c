@@ -243,7 +243,8 @@ static int secure_attention_selection = 0;
 /* Wallpaper Manager                                                     */
 /* ===================================================================== */
 #define NUM_WALLPAPERS 10
-static int current_wallpaper = 0; /* 0 = Landscape (default image) */
+#define DEFAULT_WALLPAPER_INDEX 4
+static int current_wallpaper = DEFAULT_WALLPAPER_INDEX;
 
 /* Wallpaper types: 0 = gradient, 1 = image */
 /* Wallpaper types: 0 = gradient, 1 = image */
@@ -2491,7 +2492,7 @@ static startup_setup_page_t startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
 static char account_username[32] = "";
 static char account_password[33] = "";
 static char account_role[16] = "admin";
-static int account_wallpaper = 0;
+static int account_wallpaper = DEFAULT_WALLPAPER_INDEX;
 static char account_partition_label[32] = "";
 static char account_disk_location[32] = "";
 static int account_partition_storage_ready = 0;
@@ -2526,7 +2527,7 @@ static const char *settings_role_label_from_index(int idx) {
 
 static int clamp_wallpaper_index(int idx) {
   if (idx < 0 || idx >= NUM_WALLPAPERS)
-    return 0;
+    return DEFAULT_WALLPAPER_INDEX;
   return idx;
 }
 
@@ -3776,7 +3777,7 @@ static const char *settings_user_role_for_name(const char *username,
   char parsed_username[32];
   char parsed_password[33];
   char parsed_role[16];
-  int parsed_wallpaper = 0;
+  int parsed_wallpaper = DEFAULT_WALLPAPER_INDEX;
   char parsed_partition[32];
   char parsed_disk[32];
 
@@ -4060,7 +4061,7 @@ static int parse_account_manifest(const char *manifest, const char *fallback_nam
   if (role && role_max > 0)
     str_copy_safe(role, "admin", role_max);
   if (wallpaper_index)
-    *wallpaper_index = 0;
+    *wallpaper_index = DEFAULT_WALLPAPER_INDEX;
   if (partition_label && partition_label_max > 0)
     partition_label[0] = '\0';
   if (disk_location && disk_location_max > 0)
@@ -4146,7 +4147,7 @@ static int settings_add_user_account(void) {
   vib_password_hash_hex(settings_user_new_name, settings_user_new_password,
                         password_hash, sizeof(password_hash));
   role_value = settings_user_role_options[settings_user_new_role_idx];
-  wallpaper_value = clamp_wallpaper_index(0);
+  wallpaper_value = clamp_wallpaper_index(DEFAULT_WALLPAPER_INDEX);
   idx = 0;
   for (const char *p = "username="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
@@ -4437,7 +4438,7 @@ static void load_account_state(void) {
   char username[32];
   char password[33];
   char role[16];
-  int wallpaper_index = 0;
+  int wallpaper_index = DEFAULT_WALLPAPER_INDEX;
   char partition_label[32];
   char disk_location[32];
   int parsed = -1;
@@ -4445,7 +4446,7 @@ static void load_account_state(void) {
   account_username[0] = '\0';
   account_password[0] = '\0';
   str_copy_safe(account_role, "admin", sizeof(account_role));
-  account_wallpaper = 0;
+  account_wallpaper = DEFAULT_WALLPAPER_INDEX;
   account_partition_label[0] = '\0';
   account_disk_location[0] = '\0';
   account_state_persist_pending = 0;
@@ -4907,7 +4908,7 @@ static void submit_startup_flow(void) {
                           password_hash, sizeof(password_hash));
     str_copy_safe(account_password, password_hash, sizeof(account_password));
     str_copy_safe(account_role, "admin", sizeof(account_role));
-    account_wallpaper = 0;
+    account_wallpaper = DEFAULT_WALLPAPER_INDEX;
     apply_account_wallpaper(account_wallpaper);
     startup_setup_page = STARTUP_SETUP_PAGE_STORAGE;
     startup_active_field = 0;
@@ -4925,7 +4926,7 @@ static void submit_startup_flow(void) {
     char login_username[32];
     char login_password_hash[33];
     char login_role[16];
-    int login_wallpaper = 0;
+    int login_wallpaper = DEFAULT_WALLPAPER_INDEX;
     char login_partition_label[32];
     char login_disk_location[32];
     char password_hash[33];
