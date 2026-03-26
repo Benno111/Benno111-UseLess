@@ -378,12 +378,12 @@ install_image_to_target:
 
     movb    selected_drive, %dl
     call    probe_drive
-    jc      .fail
+    jc      dos_install_fail
 
     mov     $image_filename_dos, %dx
     mov     $0x3D00, %ax
     int     $0x21
-    jc      .file_open_failed
+    jc      dos_install_file_open_failed
     mov     %ax, file_handle
 
     xor     %ax, %ax
@@ -436,14 +436,14 @@ dos_install_write_sector:
     jc      dos_install_write_failed
 
     incw    current_lba
-    jnz     .progress
+    jnz     dos_install_progress
     incw    current_lba + 2
-    jnz     .progress
+    jnz     dos_install_progress
     incw    current_lba + 4
-    jnz     .progress
+    jnz     dos_install_progress
     incw    current_lba + 6
 
-.dos_install_progress:
+dos_install_progress:
     incw    progress_divider
     testw   $0x003F, progress_divider
     jnz     dos_install_read_loop
@@ -508,7 +508,7 @@ install_bootloader_to_target:
 
     movb    selected_drive, %dl
     call    probe_drive
-    jc      dos_install_bootloader_fail
+    jc      dos_install_bootloader_write_failed
 
     mov     $image_filename_dos, %dx
     mov     $0x3D00, %ax
@@ -558,13 +558,13 @@ dos_install_bootloader_copy_loop:
     jc      dos_install_bootloader_write_failed
 
     incw    current_lba
-    jnz     .next
+    jnz     dos_install_bootloader_next
     incw    current_lba + 2
-    jnz     .next
+    jnz     dos_install_bootloader_next
     incw    current_lba + 4
-    jnz     .next
+    jnz     dos_install_bootloader_next
     incw    current_lba + 6
-.next:
+dos_install_bootloader_next:
     decw    bootloader_remaining_sectors
     jmp     dos_install_bootloader_copy_loop
 
