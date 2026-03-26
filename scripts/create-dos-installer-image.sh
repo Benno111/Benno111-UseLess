@@ -33,36 +33,6 @@ require_cmd() {
     fi
 }
 
-extract_image_text_file() {
-    local image_path="$1"
-    local image_file="$2"
-    local host_path="$3"
-    rm -f "$host_path"
-    if mcopy -n -i "$image_path" "::/${image_file}" "$host_path" >/dev/null 2>&1; then
-        return 0
-    fi
-    return 1
-}
-
-append_line_if_missing() {
-    local host_path="$1"
-    local line="$2"
-    if [ -f "$host_path" ] && grep -Fqi "$line" "$host_path"; then
-        return 0
-    fi
-    printf '%s\r\n' "$line" >> "$host_path"
-}
-
-prepare_existing_startup_file() {
-    local image_path="$1"
-    local image_file="$2"
-    local host_path="$3"
-    extract_image_text_file "$image_path" "$image_file" "$host_path" || :
-    if [ ! -f "$host_path" ]; then
-        : > "$host_path"
-    fi
-}
-
 ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
     require_cmd mcopy
@@ -107,15 +77,29 @@ ECHO.
 ECHO Type EXIT to return to the FreeDOS shell.
 EOF
 
-    prepare_existing_startup_file "$FREEDOS_BOOT_IMAGE" "FDAUTO.BAT" "${FREEDOS_CACHE_DIR}/FDAUTO.BAT"
-    prepare_existing_startup_file "$FREEDOS_BOOT_IMAGE" "AUTOEXEC.BAT" "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT"
-    prepare_existing_startup_file "$FREEDOS_BOOT_IMAGE" "FDCONFIG.SYS" "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS"
-    prepare_existing_startup_file "$FREEDOS_BOOT_IMAGE" "CONFIG.SYS" "${FREEDOS_CACHE_DIR}/CONFIG.SYS"
+    cat > "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" <<'EOF'
+@ECHO OFF
+CALL OS8AUTO.BAT
+EOF
 
-    append_line_if_missing "${FREEDOS_CACHE_DIR}/FDAUTO.BAT" "CALL OS8AUTO.BAT"
-    append_line_if_missing "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" "CALL OS8AUTO.BAT"
-    append_line_if_missing "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" "LASTDRIVE=Z"
-    append_line_if_missing "${FREEDOS_CACHE_DIR}/CONFIG.SYS" "LASTDRIVE=Z"
+    cat > "${FREEDOS_CACHE_DIR}/AUTOEXEC.BAT" <<'EOF'
+@ECHO OFF
+CALL OS8AUTO.BAT
+EOF
+
+    cat > "${FREEDOS_CACHE_DIR}/FDCONFIG.SYS" <<'EOF'
+LASTDRIVE=Z
+FILES=30
+BUFFERS=20
+DOS=HIGH
+EOF
+
+    cat > "${FREEDOS_CACHE_DIR}/CONFIG.SYS" <<'EOF'
+LASTDRIVE=Z
+FILES=30
+BUFFERS=20
+DOS=HIGH
+EOF
 
     mdel -i "$FREEDOS_BOOT_IMAGE" ::/OS8AUTO.BAT >/dev/null 2>&1 || true
     mdel -i "$FREEDOS_BOOT_IMAGE" ::/FDAUTO.BAT >/dev/null 2>&1 || true
