@@ -397,7 +397,10 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@cp "$(IMAGE_DIR)/os8-x86_64-system.img" "$(IMAGE_DIR)/os-x86_64-system.img"
+	@cp "$(IMAGE_DIR)/os8-x86_64-installer.iso" "$(IMAGE_DIR)/os-x86_64-installer.iso"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-installer.iso"
+	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-installer.iso"
 else
 	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
 	@exit 1
@@ -408,7 +411,9 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating FreeDOS-based BIOS installer image..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@cp "$(IMAGE_DIR)/os8-x86_64-dos-installer.img" "$(IMAGE_DIR)/os-x86_64-dos-installer.img"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-dos-installer.img"
+	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
 else
 	@echo "[IMAGE] dos-installer-image is currently supported only for ARCH=x86_64"
 	@exit 1
@@ -419,7 +424,9 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating standalone BIOS DOS installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-dos-installer-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@cp "$(IMAGE_DIR)/os8-x86_64-dos-installer.iso" "$(IMAGE_DIR)/os-x86_64-dos-installer.iso"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-dos-installer.iso"
+	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-dos-installer.iso"
 else
 	@echo "[IMAGE] dos-installer-iso is currently supported only for ARCH=x86_64"
 	@exit 1
