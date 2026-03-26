@@ -1434,6 +1434,30 @@ static void gui_draw_image_scaled(int x, int y, int w, int h,
   }
 }
 
+static int gui_draw_embedded_logo(int x, int y, int w, int h) {
+  static media_image_t embedded_logo = {0};
+  static int embedded_logo_state = 0;
+
+  if (w <= 0 || h <= 0)
+    return -1;
+
+  if (embedded_logo_state == 0) {
+    if (media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len,
+                         &embedded_logo) == 0 &&
+        embedded_logo.width && embedded_logo.height) {
+      embedded_logo_state = 1;
+    } else {
+      embedded_logo_state = -1;
+    }
+  }
+
+  if (embedded_logo_state != 1 || !embedded_logo.pixels)
+    return -1;
+
+  gui_draw_image_scaled(x, y, w, h, &embedded_logo);
+  return 0;
+}
+
 static void gui_wait_for_boot_splash(uint64_t duration_ms) {
   uint64_t start_ms = arch_timer_get_ms();
   uint64_t last_ms = start_ms;
@@ -9594,8 +9618,10 @@ static void draw_main_menu_panel(void) {
 
   gui_fill_rect_alpha(panel_x + 14, panel_y + 40, 42, 42, 0x40556F92);
   draw_filled_circle(panel_x + 35, panel_y + 61, 16, 0xFFFFFFFF);
-  gui_draw_os_logo(panel_x + 24, panel_y + 50, 2, 0x3B82F6, 0x1D4ED8,
-                   0x00000000);
+  if (gui_draw_embedded_logo(panel_x + 19, panel_y + 45, 32, 32) != 0) {
+    gui_draw_os_logo(panel_x + 24, panel_y + 50, 2, 0x3B82F6, 0x1D4ED8,
+                     0x00000000);
+  }
   gui_draw_string(panel_x + 68, panel_y + 45, "Username", 0xFFFFFF,
                   0x00000000);
   gui_draw_string(panel_x + MAIN_MENU_LEFT_W + 16, panel_y + 46, "System",
@@ -10035,8 +10061,10 @@ static void draw_dock(void) {
                         menu_open ? 0xB8E8FFFF
                                   : (hovered_launcher ? 0x7EA7D8 : 0x506A87A8),
                         1);
-  gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
-                   0x89B4FA, 0x00000000);
+  if (gui_draw_embedded_logo(launcher_btn_x + 8, launcher_btn_y + 7, 28, 28) != 0) {
+    gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
+                     0x89B4FA, 0x00000000);
+  }
 
   draw_dock_status_indicators(dock_y, dock_h);
 
