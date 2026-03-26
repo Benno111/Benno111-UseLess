@@ -1819,14 +1819,24 @@ static int gui_load_saved_resolution(uint32_t *width, uint32_t *height) {
   char height_buf[16];
   uint32_t parsed_width;
   uint32_t parsed_height;
+  uint8_t *manifest_data = NULL;
+  size_t manifest_size = 0;
 
   if (width)
     *width = 0;
   if (height)
     *height = 0;
 
-  if (read_text_file(GUI_DISPLAY_CONFIG_PATH, manifest, sizeof(manifest)) < 0)
+  if (media_load_file(GUI_DISPLAY_CONFIG_PATH, &manifest_data, &manifest_size) < 0)
     return -1;
+  if (!manifest_data || manifest_size == 0 || manifest_size >= sizeof(manifest)) {
+    media_free_file(manifest_data);
+    return -1;
+  }
+  for (size_t i = 0; i < manifest_size; i++)
+    manifest[i] = (char)manifest_data[i];
+  manifest[manifest_size] = '\0';
+  media_free_file(manifest_data);
   if (manifest_get_value(manifest, "width", width_buf, sizeof(width_buf)) != 0 ||
       manifest_get_value(manifest, "height", height_buf,
                          sizeof(height_buf)) != 0) {
@@ -1868,7 +1878,7 @@ static void gui_save_resolution_preference(uint32_t width, uint32_t height) {
   manifest[idx++] = '\n';
   manifest[idx] = '\0';
 
-  write_text_file(GUI_DISPLAY_CONFIG_PATH, manifest);
+  media_install_text_file(GUI_DISPLAY_CONFIG_PATH, manifest);
   settings_resolution_saved_idx = settings_find_resolution_index(width, height);
 }
 
