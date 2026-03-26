@@ -181,6 +181,7 @@ static char account_password[33];
 static char startup_input_username[32];
 static int user_home_mount_active = 0;
 static char user_home_mounted_username[32];
+static int startup_login_user_dropdown_open = 0;
 static void startup_begin_login_flow(const char *message, int preserve_username);
 
 static int dock_is_visible(void) {
@@ -1762,6 +1763,8 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   mouse_x = (int)new_width / 2;
   mouse_y = (int)new_height / 2;
   gui_clamp_windows_to_display();
+  gui_save_resolution_preference(new_width, new_height);
+  settings_resolution_saved_idx = settings_resolution_pending_idx;
   compositor_mark_full_redraw();
 
   printk(KERN_INFO "GUI: Resolution changed to %ux%u\n", new_width, new_height);
@@ -4659,6 +4662,7 @@ static void startup_begin_login_flow(const char *message, int preserve_username)
   unmount_active_user_home();
   session_authenticated = 0;
   startup_flow = STARTUP_FLOW_LOGIN;
+  startup_login_user_dropdown_open = 0;
   startup_setup_page = STARTUP_SETUP_PAGE_WELCOME;
   startup_input_password[0] = '\0';
   startup_active_field = preserve_username ? 1 : 0;
@@ -4881,6 +4885,32 @@ static void startup_handle_key(int key) {
     if (key == '\r' || key == '\n' || key == ' ')
       submit_startup_flow();
     return;
+  }
+
+  if (startup_flow == STARTUP_FLOW_LOGIN && startup_active_field == 0) {
+    settings_account_list_t accounts;
+    settings_collect_accounts(&accounts);
+    if (key == KEY_DOWN || key == KEY_UP) {
+      int current_idx = -1;
+      if (accounts.count <= 0)
+        return;
+      for (int i = 0; i < accounts.count; i++) {
+        if (str_cmp(startup_input_username, accounts.names[i]) == 0) {
+          current_idx = i;
+          break;
+        }
+      }
+      if (current_idx < 0)
+        current_idx = 0;
+      if (key == KEY_DOWN)
+        current_idx = (current_idx + 1) % accounts.count;
+      else
+        current_idx = (current_idx + accounts.count - 1) % accounts.count;
+      str_copy_safe(startup_input_username, accounts.names[current_idx],
+                    sizeof(startup_input_username));
+      startup_login_user_dropdown_open = 0;
+      return;
+    }
   }
 
   target = startup_active_field == 0 ? startup_input_username
@@ -6131,6 +6161,9 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                                      int content_y, int content_w,
                                      int content_h) {
   char masked_password[32];
+  settings_account_list_t startup_accounts;
+  int startup_dropdown_rows = 0;
+  int startup_login_extra_y = 0;
   uint32_t user_bg = startup_active_field == 0 ? 0x31314A : 0x232337;
   uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
   uint32_t button_bg =
@@ -6314,6 +6347,17 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   }
 
   mask_secret(startup_input_password, masked_password, sizeof(masked_password));
+  settings_collect_accounts(&startup_accounts);
+  if (startup_flow == STARTUP_FLOW_LOGIN && !startup_input_username[0] &&
+      startup_accounts.count > 0) {
+    str_copy_safe(startup_input_username, startup_accounts.names[0],
+                  sizeof(startup_input_username));
+  }
+  if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open &&
+      startup_accounts.count > 0) {
+    startup_dropdown_rows = startup_accounts.count < 4 ? startup_accounts.count : 4;
+    startup_login_extra_y = 8 + startup_dropdown_rows * 22;
+  }
 
   gui_draw_rect(content_x, content_y, content_w, 56, 0x181827);
   gui_draw_string(content_x + 20, content_y + 18, title, 0xFFFFFF, 0x181827);
@@ -6329,6 +6373,25 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                   startup_input_username[0] ? startup_input_username
                                             : "enter username",
                   startup_input_username[0] ? 0xFFFFFF : 0x6C7086, user_bg);
+  if (startup_flow == STARTUP_FLOW_LOGIN) {
+    gui_draw_string(content_x + content_w - 58, content_y + 92, "v",
+                    0xCBD5E1, user_bg);
+    if (startup_dropdown_rows > 0) {
+      int dropdown_h = 8 + startup_dropdown_rows * 22;
+      gui_draw_rect(content_x + 20, content_y + 118, content_w - 40, dropdown_h,
+                    0x1E293B);
+      for (int i = 0; i < startup_dropdown_rows; i++) {
+        int row_y = content_y + 122 + i * 22;
+        uint32_t row_bg =
+            str_cmp(startup_input_username, startup_accounts.names[i]) == 0
+                ? 0x2563EB
+                : 0x1E293B;
+        gui_draw_rect(content_x + 24, row_y, content_w - 48, 18, row_bg);
+        gui_draw_string(content_x + 34, row_y + 5, startup_accounts.names[i],
+                        0xFFFFFF, row_bg);
+      }
+    }
+  }
 
   gui_draw_string(content_x + 20, content_y + 128,
                   startup_setup_account_active()
@@ -6336,16 +6399,31 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                       : "Password",
                   0xA6ADC8,
                   THEME_BG);
-  gui_draw_rect(content_x + 20, content_y + 148, content_w - 40, 34, pass_bg);
-  gui_draw_string(content_x + 30, content_y + 160,
+  gui_draw_rect(content_x + 20, content_y + 148 + startup_login_extra_y,
+                content_w - 40, 34, pass_bg);
+  gui_draw_string(content_x + 30, content_y + 160 + startup_login_extra_y,
                   masked_password[0] ? masked_password : "enter password",
                   masked_password[0] ? 0xFFFFFF : 0x6C7086, pass_bg);
 
-  gui_draw_rect(content_x + 20, content_y + 204, 170, 34, button_bg);
-  gui_draw_string(content_x + 34, content_y + 216, button_label, 0xFFFFFF,
-                  button_bg);
-  gui_draw_string(content_x + 210, content_y + 215, startup_status, 0xCDD6F4,
-                  THEME_BG);
+  gui_draw_rect(content_x + 20, content_y + 204 + startup_login_extra_y, 170, 34,
+                button_bg);
+  gui_draw_string(content_x + 34, content_y + 216 + startup_login_extra_y,
+                  button_label, 0xFFFFFF, button_bg);
+  if (startup_flow == STARTUP_FLOW_LOGIN) {
+    gui_draw_rect(content_x + 200, content_y + 204 + startup_login_extra_y, 96, 34,
+                  0x475569);
+    gui_draw_string(content_x + 224, content_y + 216 + startup_login_extra_y,
+                    "Restart", 0xFFFFFF, 0x475569);
+    gui_draw_rect(content_x + 306, content_y + 204 + startup_login_extra_y, 108, 34,
+                  0x7F1D1D);
+    gui_draw_string(content_x + 326, content_y + 216 + startup_login_extra_y,
+                    "Shut Down", 0xFFFFFF, 0x7F1D1D);
+    gui_draw_string(content_x + 20, content_y + 252 + startup_login_extra_y,
+                    "Power options are available before sign-in.",
+                    0x94A3B8, THEME_BG);
+  }
+  gui_draw_string(content_x + 210, content_y + 215 + startup_login_extra_y,
+                  startup_status, 0xCDD6F4, THEME_BG);
 }
 
 static void draw_icon(int x, int y, int size, const unsigned char *icon,
@@ -10818,10 +10896,74 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         }
         return;
       }
+      if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open) {
+        settings_account_list_t accounts;
+        settings_collect_accounts(&accounts);
+        if (accounts.count > 0 && x >= content_x + 20 &&
+            x < content_x + content_w - 20 && y >= content_y + 118) {
+          int dropdown_rows = accounts.count < 4 ? accounts.count : 4;
+          for (int i = 0; i < dropdown_rows; i++) {
+            int row_y = content_y + 122 + i * 22;
+            if (x >= content_x + 24 && x < content_x + content_w - 24 &&
+                y >= row_y && y < row_y + 18) {
+              str_copy_safe(startup_input_username, accounts.names[i],
+                            sizeof(startup_input_username));
+              startup_login_user_dropdown_open = 0;
+              startup_active_field = 1;
+              return;
+            }
+          }
+        }
+      }
       if (x >= content_x + 20 && x < content_x + content_w - 20 &&
           y >= content_y + 94 && y < content_y + 128) {
+        if (startup_flow == STARTUP_FLOW_LOGIN) {
+          startup_login_user_dropdown_open = !startup_login_user_dropdown_open;
+        }
         startup_active_field = 0;
         return;
+      }
+      {
+        settings_account_list_t accounts;
+        int startup_dropdown_rows = 0;
+        int startup_login_extra_y = 0;
+        if (startup_flow == STARTUP_FLOW_LOGIN && startup_login_user_dropdown_open) {
+          settings_collect_accounts(&accounts);
+          startup_dropdown_rows = accounts.count < 4 ? accounts.count : 4;
+          if (startup_dropdown_rows > 0)
+            startup_login_extra_y = 8 + startup_dropdown_rows * 22;
+        }
+        if (x >= content_x + 20 && x < content_x + content_w - 20 &&
+            y >= content_y + 162 + startup_login_extra_y &&
+            y < content_y + 196 + startup_login_extra_y) {
+          startup_active_field = 1;
+          startup_login_user_dropdown_open = 0;
+          return;
+        }
+        if (x >= content_x + 20 && x < content_x + 190 &&
+            y >= content_y + 214 + startup_login_extra_y &&
+            y < content_y + 248 + startup_login_extra_y) {
+          submit_startup_flow();
+          return;
+        }
+        if (startup_flow == STARTUP_FLOW_LOGIN) {
+          if (x >= content_x + 200 && x < content_x + 296 &&
+              y >= content_y + 204 + startup_login_extra_y &&
+              y < content_y + 238 + startup_login_extra_y) {
+            extern void arch_reboot(void);
+            startup_login_user_dropdown_open = 0;
+            arch_reboot();
+            return;
+          }
+          if (x >= content_x + 306 && x < content_x + 414 &&
+              y >= content_y + 204 + startup_login_extra_y &&
+              y < content_y + 238 + startup_login_extra_y) {
+            extern void arch_shutdown(void);
+            startup_login_user_dropdown_open = 0;
+            arch_shutdown();
+            return;
+          }
+        }
       }
       if (x >= content_x + 20 && x < content_x + content_w - 20 &&
           y >= content_y + 162 && y < content_y + 196) {
@@ -10833,6 +10975,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         submit_startup_flow();
         return;
       }
+      startup_login_user_dropdown_open = 0;
     }
     return;
   }
