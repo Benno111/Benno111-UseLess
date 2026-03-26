@@ -106,37 +106,39 @@ build_vendored_tools_from_source() {
 
     if [ -f "${FREEDOS_SOURCE_ROOT}/shsucdx.nsm" ] && [ -f "${FREEDOS_SOURCE_ROOT}/nasm.mac" ] && [ ! -f "${FREEDOS_OUTPUT_DIR}/SHSUCDX.COM" ]; then
         log_freedos "Building SHSUCDX.COM from vendored source"
-        (
+        if ! (
             cd "$FREEDOS_SOURCE_ROOT"
             nasm -I "${FREEDOS_SOURCE_ROOT}/" -f bin -o "${FREEDOS_OUTPUT_DIR}/SHSUCDX.COM" shsucdx.nsm
-        )
+        ); then
+            rm -f "${FREEDOS_OUTPUT_DIR}/SHSUCDX.COM"
+            log_freedos "SHSUCDX source build failed, using vendored local package fallback"
+        fi
     fi
 
     if [ -f "${FREEDOS_SOURCE_ROOT}/UDVD2.ASM" ] && [ ! -f "${FREEDOS_OUTPUT_DIR}/UDVD2.SYS" ]; then
         log_freedos "Building UDVD2.SYS from vendored source"
-        (
+        if ! (
             cd "$FREEDOS_SOURCE_ROOT"
             nasm -f bin -o "${FREEDOS_OUTPUT_DIR}/UDVD2.SYS" UDVD2.ASM
-        )
+        ); then
+            rm -f "${FREEDOS_OUTPUT_DIR}/UDVD2.SYS"
+            log_freedos "UDVD2 source build failed, using vendored local package fallback"
+        fi
     fi
 }
 
 resolve_assets_once() {
     mkdir -p "$FREEDOS_CACHE_DIR"
 
-    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/FD14-LiteUSB.zip" "FD14LITE.img" "${FREEDOS_CACHE_DIR}/FD14LITE.img"
-    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/FD14-LegacyCD.zip" "FD14BOOT.img" "${FREEDOS_CACHE_DIR}/FD14BOOT.img"
+    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/shcdx308.zip" "shsucdx.com" "${FREEDOS_CACHE_DIR}/SHSUCDX.COM"
+    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/udvd2.zip" "UDVD2.SYS" "${FREEDOS_CACHE_DIR}/UDVD2.SYS"
 
     if [ -n "${FREEDOS_MEDIA_IMAGE:-}" ] && [ -f "${FREEDOS_MEDIA_IMAGE}" ]; then
         :
     elif [ -d "$FREEDOS_OUTPUT_DIR" ]; then
         FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_OUTPUT_DIR" "$FREEDOS_MEDIA_NAME" 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
     elif [ -d "$FREEDOS_VENDOR_MEDIA_DIR" ]; then
-        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_VENDOR_MEDIA_DIR" "$FREEDOS_MEDIA_NAME" 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
-    elif [ "$FREEDOS_BOOT_MODE" = "legacycd" ] && [ -f "${FREEDOS_CACHE_DIR}/FD14BOOT.img" ]; then
-        FREEDOS_MEDIA_IMAGE="${FREEDOS_CACHE_DIR}/FD14BOOT.img"
-    elif [ "$FREEDOS_BOOT_MODE" = "liteusb" ] && [ -f "${FREEDOS_CACHE_DIR}/FD14LITE.img" ]; then
-        FREEDOS_MEDIA_IMAGE="${FREEDOS_CACHE_DIR}/FD14LITE.img"
+        FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_VENDOR_MEDIA_DIR" "$FREEDOS_MEDIA_NAME" 'FD14LITE.img' 'FD14BOOT.img' 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
     fi
 
     if [ -n "${FREEDOS_SHSUCDX_COM:-}" ] && [ -f "${FREEDOS_SHSUCDX_COM}" ]; then

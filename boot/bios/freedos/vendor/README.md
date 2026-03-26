@@ -5,19 +5,26 @@ need to download packages on every build.
 
 Layout:
 
-- `packages/` holds vendored upstream package archives already checked into the repo
-- `media/` is where you place the local bootable FreeDOS media images used by the build
+- `packages/` holds small vendored local package archives used as tool fallbacks
+- `media/` stores the local bootable FreeDOS media images used by the build
 
 Current vendored packages:
 
-- `FD14-LiteUSB.zip`
-- `FD14-LegacyCD.zip`
+- `shcdx308.zip`
+- `udvd2.zip`
+
+Current vendored media:
+
+- `FD14BOOT.img`
+- `FD14LITE.img`
 
 Build behavior:
 
-- `scripts/prepare-freedos-source-assets.sh` can extract `FD14LITE.img` and
-  `FD14BOOT.img` from the vendored FreeDOS release-media ZIPs.
+- `scripts/prepare-freedos-source-assets.sh` reads `FD14BOOT.img` and
+  `FD14LITE.img` directly from `media/`.
 - FreeDOS source code lives in `../source/` and is used for local tool builds.
+- If a local source build of `SHSUCDX.COM` or `UDVD2.SYS` fails, the resolver
+  falls back to the vendored local package ZIPs here.
 - You can still provide your own local image such as `fd-lite.img` or
   `fd-x86.img` under `media/`, or point the build at one with
   `FREEDOS_MEDIA_IMAGE`.

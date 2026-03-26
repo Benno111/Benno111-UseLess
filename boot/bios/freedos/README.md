@@ -14,8 +14,10 @@ Build behavior:
   optionally invoke a source-tree build command via `FREEDOS_BUILD_COMMAND`.
 - The resolver auto-builds `SHSUCDX.COM` and `UDVD2.SYS` from the vendored
   source tree when `nasm` is available locally.
-- The resolver also auto-extracts `FD14LITE.img` and `FD14BOOT.img` from the
-  vendored FreeDOS release-media ZIPs when those package copies are present.
+- If one of those local source builds fails, the resolver falls back to the
+  matching vendored local package copy instead of downloading anything.
+- The resolver reads `FD14LITE.img` and `FD14BOOT.img` directly from the
+  vendored media folder when they are present there.
 - If source-built assets are absent, the helper fails and asks you to provide
   the required local files.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
