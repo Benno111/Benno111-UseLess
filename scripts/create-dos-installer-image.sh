@@ -5,9 +5,9 @@ set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-IMAGE_NAME="${IMAGE_NAME:-os-x86_64-dos-installer.img}"
+IMAGE_NAME="${IMAGE_NAME:-os8-x86_64-dos-installer.img}"
 IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-16}"
-DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
+DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-disk.img"

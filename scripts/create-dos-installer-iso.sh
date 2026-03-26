@@ -5,10 +5,10 @@ set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-ISO_NAME="${ISO_NAME:-os-x86_64-dos-installer.iso}"
+ISO_NAME="${ISO_NAME:-os8-x86_64-dos-installer.iso}"
 ISO_ROOT="${BUILD_DIR}/dos_installer_iso_root"
 DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
-DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os-x86_64-system.img}"
+DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 FREEDOS_CACHE_DIR="${BUILD_DIR}/freedos"
 FREEDOS_BOOT_IMAGE="${FREEDOS_CACHE_DIR}/os8-freedos-boot.img"
 

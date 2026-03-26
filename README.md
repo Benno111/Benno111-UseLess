@@ -82,6 +82,7 @@ Common targets:
 - `kernel` builds only the kernel
 - `image` builds the bootable image or ISO
 - `installer-image` builds the x86_64 installer ISO
+- `freedos-source` downloads the upstream FreeDOS source packages used by the DOS setup flow
 - `dos-installer-image` builds a BIOS-only 16-bit text installer image with 64-bit kernel handoff disabled
 - `qemu` runs the default emulator flow
 - `qemu-bios` runs BIOS boot where supported
@@ -119,7 +120,7 @@ make ARCH=x86_64 installer-image
 This produces:
 
 ```text
-image/os-x86_64-installer.iso
+image/os8-x86_64-installer.iso
 ```
 
 ### x86_64 DOS-style text installer
@@ -131,7 +132,7 @@ make ARCH=x86_64 dos-installer-image
 This produces:
 
 ```text
-image/os-x86_64-dos-installer.img
+image/os8-x86_64-dos-installer.img
 ```
 
 ### x86_64 default image
@@ -284,5 +285,3 @@ If you are changing boot or installer behavior, always check:
 - the staged `/setup/` tree in installer mode
 
 Those paths are often the fastest way to see whether a change landed in the runtime you actually booted.
-
-

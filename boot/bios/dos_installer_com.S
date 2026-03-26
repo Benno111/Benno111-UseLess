@@ -617,13 +617,13 @@ exit_to_dos:
 title_text:
     .asciz  "OS8 DOS System Image Writer\r\n"
 subtitle_text:
-    .asciz  "Run this from an existing DOS system with OSSYS.IMG nearby.\r\nIt writes the regular OS system image to another BIOS disk.\r\n\r\n"
+    .asciz  "Run this from an existing DOS system with OSSYS.IMG nearby.\r\nIt writes the regular OS8 system image to another BIOS disk.\r\n\r\n"
 menu_text:
     .asciz  "  1. Write OSSYS.IMG to target disk\r\n  2. Change target disk\r\n  3. Apply bootloader to disk\r\n  4. Help\r\n  5. Exit to DOS\r\n  ESC. Exit to DOS\r\n\r\nSelect an option: "
 help_text:
     .asciz  "Usage:\r\n  Place OSINST.COM and OSSYS.IMG in the same DOS folder.\r\n  Boot DOS, change to that directory, and run OSINST.COM.\r\n  Option 1 writes the regular raw system image to the selected BIOS disk.\r\n  Option 3 rewrites the early BIOS boot area from OSSYS.IMG.\r\n\r\nFor safety, target selection starts at BIOS disk 0x81 instead of 0x80.\r\n\r\n"
 install_intro_text:
-    .asciz  "This writes the regular OS system image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
+    .asciz  "This writes the regular OS8 system image file to the selected BIOS disk.\r\nThe target disk contents will be overwritten sector-by-sector.\r\n\r\n"
 bootloader_intro_text:
     .asciz  "This rewrites the early BIOS boot area from OSSYS.IMG to the\r\nselected BIOS disk. Use it to repair bootability without rewriting\r\nthe full system image.\r\n\r\n"
 confirm_text:

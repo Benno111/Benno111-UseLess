@@ -5144,7 +5144,7 @@ static int installer_validate_system_image_payload(void) {
 }
 
 static const char *installer_system_disk_image_path(void) {
-  static const char *paths[] = {
+    static const char *paths[] = {
       "/install/system-image/dos/OSSYS.IMG",
       "/setup/install/system-image/dos/OSSYS.IMG",
       "/dos/OSSYS.IMG",

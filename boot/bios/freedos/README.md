@@ -2,6 +2,13 @@ The DOS setup path prefers source-built FreeDOS assets, but unattended builds
 can bootstrap from official FreeDOS release media when no local outputs are
 present.
 
+Upstream source bootstrap:
+- Run `make -f Makefile.multiarch ARCH=x86_64 freedos-source` to download the
+  upstream FreeDOS source packages used by the DOS setup stack.
+- The helper populates `boot/bios/freedos/source/` with official source trees
+  for the FreeDOS kernel, FreeCOM, SHSUCDX, and UDVD2, plus cached release
+  media archives for the boot-image path.
+
 Build behavior:
 - Place source-built FreeDOS outputs in `boot/bios/freedos/out/` or point the
   build at them with environment variables.
@@ -16,8 +23,8 @@ Build behavior:
   standalone ISO boot image, and the official `shcdx308.zip` / `udvd2.zip`
   packages for the CD-ROM drivers.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
-  OS8-specific startup hooks. They preserve the original FreeDOS startup files
-  and append `CALL OS8AUTO.BAT` plus any required config lines, instead of
+  OS8-specific startup hooks. They preserve the original FreeDOS startup
+  files and append `CALL OS8AUTO.BAT` plus any required config lines, instead of
   replacing the shipped `FDAUTO.BAT`, `AUTOEXEC.BAT`, `FDCONFIG.SYS`, or
   `CONFIG.SYS` wholesale.
 - The ISO boot flow loads FreeDOS CD support through `UDVD2.SYS` and
