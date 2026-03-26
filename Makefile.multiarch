@@ -406,7 +406,7 @@ else
 	@exit 1
 endif
 
-dos-installer-image: freedos-source $(DOS_INSTALLER_COM_BIN)
+dos-installer-image: kernel freedos-source $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating FreeDOS-based BIOS installer image..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
@@ -419,7 +419,7 @@ else
 	@exit 1
 endif
 
-dos-installer-iso: freedos-source $(DOS_INSTALLER_COM_BIN)
+dos-installer-iso: kernel freedos-source $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating standalone BIOS DOS installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
@@ -432,7 +432,7 @@ else
 	@exit 1
 endif
 
-dos-installer-binary: freedos-source $(DOS_INSTALLER_COM_BIN)
+dos-installer-binary: kernel freedos-source $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating DOS runnable installer utility package..."
 	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)

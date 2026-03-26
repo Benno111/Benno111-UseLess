@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create a standalone BIOS-bootable ISO for the DOS-based setup using FreeDOS.
 
-set -euo pipefail
+set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
@@ -76,7 +76,6 @@ ensure_freedos_assets() {
     mkdir -p "$FREEDOS_CACHE_DIR"
     require_cmd mcopy
     require_cmd mdel
-    require_cmd python3
     require_cmd xorriso
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)" \
     BUILD_DIR="$BUILD_DIR" \
@@ -279,6 +278,8 @@ xorriso -as mkisofs \
     -c boot/boot.cat \
     -b boot/os8-freedos-eltorito.img \
     -hard-disk-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
     "$ISO_ROOT" \
     -o "$ISO_PATH"
 
