@@ -10185,32 +10185,54 @@ static void draw_dock(void) {
 static uint32_t *cached_wallpaper = NULL;
 static int wallpaper_cached = 0;
 static int wallpaper_cached_idx = -1; /* Which wallpaper is cached */
+static int cached_wallpaper_w = 0;
+static int cached_wallpaper_h = 0;
 
-/* Draw wallpaper - supports both gradients and JPEG images */
-static void draw_wallpaper(void) {
-  int start_y = MENU_BAR_HEIGHT;
-  /* Extend wallpaper all the way to bottom of screen (dock drawn on top) */
-  int end_y = primary_display.height;
-  int height = end_y - start_y;
-  int width = primary_display.width;
-  uint32_t *target =
-      primary_display.backbuffer ? primary_display.backbuffer
-                                 : primary_display.framebuffer;
+static int ensure_wallpaper_cache_size(int width, int height) {
+  size_t pixel_count;
+  size_t bytes;
+  uint32_t *new_cache;
 
-  if (!target)
+  if (width <= 0 || height <= 0)
+    return -1;
+  if (cached_wallpaper && cached_wallpaper_w == width &&
+      cached_wallpaper_h == height)
+    return 0;
+
+  pixel_count = (size_t)width * (size_t)height;
+  bytes = pixel_count * sizeof(uint32_t);
+  new_cache = (uint32_t *)kmalloc(bytes);
+  if (!new_cache)
+    return -1;
+
+  if (cached_wallpaper)
+    kfree(cached_wallpaper);
+  cached_wallpaper = new_cache;
+  cached_wallpaper_w = width;
+  cached_wallpaper_h = height;
+  wallpaper_cached = 0;
+  return 0;
+}
+
+static void render_wallpaper_cache(void) {
+  int height = (int)primary_display.height - MENU_BAR_HEIGHT;
+  int width = (int)primary_display.width;
+
+  if (width <= 0 || height <= 0)
     return;
 
-  /* Check if we need to reload (wallpaper changed) */
   if (wallpaper_cached_idx != current_wallpaper) {
     wallpaper_cached = 0;
     wallpaper_cached_idx = current_wallpaper;
-    /* Load image if needed */
     wallpaper_ensure_loaded();
   }
 
-  /* Check if this is an image wallpaper */
+  if (ensure_wallpaper_cache_size(width, height) != 0 || !cached_wallpaper)
+    return;
+  if (wallpaper_cached)
+    return;
+
   if (wallpapers[current_wallpaper].type == 1 && wallpaper_image.pixels) {
-    /* Draw scaled JPEG image with bilinear filtering for better quality. */
     uint32_t img_w = wallpaper_image.width;
     uint32_t img_h = wallpaper_image.height;
     uint32_t *pixels = wallpaper_image.pixels;
@@ -10220,13 +10242,13 @@ static void draw_wallpaper(void) {
     if (img_w == 0 || img_h == 0)
       return;
 
-    /* Calculate scale factors in 16.16 fixed point. */
     scale_x_fp = width > 1 ? ((img_w - 1) << 16) / (uint32_t)(width - 1) : 0;
-    scale_y_fp = height > 1 ? ((img_h - 1) << 16) / (uint32_t)(height - 1) : 0;
+    scale_y_fp =
+        height > 1 ? ((img_h - 1) << 16) / (uint32_t)(height - 1) : 0;
 
-    for (int y = start_y; y < end_y; y++) {
-      uint32_t *line = target + y * (primary_display.pitch / 4);
-      uint32_t src_y_fp = (uint32_t)(y - start_y) * scale_y_fp;
+    for (int y = 0; y < height; y++) {
+      uint32_t *line = cached_wallpaper + y * width;
+      uint32_t src_y_fp = (uint32_t)y * scale_y_fp;
       uint32_t src_y = src_y_fp >> 16;
       uint32_t frac_y = src_y_fp & 0xFFFF;
       uint32_t src_y1 = src_y + 1 < img_h ? src_y + 1 : src_y;
@@ -10262,16 +10284,43 @@ static void draw_wallpaper(void) {
         line[x] = (r << 16) | (g << 8) | b;
       }
     }
-    return;
+  } else {
+    for (int y = 0; y < height; y++) {
+      uint32_t *line = cached_wallpaper + y * width;
+      uint32_t color = wallpaper_get_pixel(0, y, height);
+
+      for (int x = 0; x < width; x++) {
+        line[x] = color;
+      }
+    }
   }
 
-  /* Gradient wallpaper - use wallpaper_get_pixel */
-  for (int y = start_y; y < end_y; y++) {
-    uint32_t *line = target + y * (primary_display.pitch / 4);
-    uint32_t color = wallpaper_get_pixel(0, y - start_y, height);
+  wallpaper_cached = 1;
+}
 
+/* Draw wallpaper - supports both gradients and JPEG images */
+static void draw_wallpaper(void) {
+  int start_y = MENU_BAR_HEIGHT;
+  /* Extend wallpaper all the way to bottom of screen (dock drawn on top) */
+  int end_y = primary_display.height;
+  int height = end_y - start_y;
+  int width = primary_display.width;
+  uint32_t *target =
+      primary_display.backbuffer ? primary_display.backbuffer
+                                 : primary_display.framebuffer;
+
+  if (!target)
+    return;
+  render_wallpaper_cache();
+  if (!cached_wallpaper || !wallpaper_cached || cached_wallpaper_w != width ||
+      cached_wallpaper_h != height)
+    return;
+
+  for (int y = 0; y < height; y++) {
+    uint32_t *dst = target + (start_y + y) * (primary_display.pitch / 4);
+    uint32_t *src = cached_wallpaper + y * width;
     for (int x = 0; x < width; x++) {
-      line[x] = color;
+      dst[x] = src[x];
     }
   }
 }
