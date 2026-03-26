@@ -113,6 +113,16 @@ under `boot/bios/freedos/vendor/packages/`. Put the matching bootable FreeDOS
 media image under `boot/bios/freedos/vendor/media/` so the DOS installer build
 can reuse local inputs without downloading them each time.
 
+For Windows-based repo automation, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\auto-push.ps1 -Message "Your commit message"
+```
+
+The helper looks for `git.exe` on `PATH`, standard Git installs, and GitHub
+Desktop's bundled Git, then performs `git add -A`, `git commit -m ...`, and
+`git push origin HEAD`.
+
 ## Quick Start
 
 ### x86_64 installer ISO

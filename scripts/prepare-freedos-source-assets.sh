@@ -97,11 +97,35 @@ extract_vendor_member_if_needed() {
     }
 }
 
+build_vendored_tools_from_source() {
+    if ! command -v nasm >/dev/null 2>&1; then
+        return 0
+    fi
+
+    mkdir -p "$FREEDOS_OUTPUT_DIR"
+
+    if [ -f "${FREEDOS_SOURCE_ROOT}/shsucdx.nsm" ] && [ -f "${FREEDOS_SOURCE_ROOT}/nasm.mac" ] && [ ! -f "${FREEDOS_OUTPUT_DIR}/SHSUCDX.COM" ]; then
+        log_freedos "Building SHSUCDX.COM from vendored source"
+        (
+            cd "$FREEDOS_SOURCE_ROOT"
+            nasm -I "${FREEDOS_SOURCE_ROOT}/" -f bin -o "${FREEDOS_OUTPUT_DIR}/SHSUCDX.COM" shsucdx.nsm
+        )
+    fi
+
+    if [ -f "${FREEDOS_SOURCE_ROOT}/UDVD2.ASM" ] && [ ! -f "${FREEDOS_OUTPUT_DIR}/UDVD2.SYS" ]; then
+        log_freedos "Building UDVD2.SYS from vendored source"
+        (
+            cd "$FREEDOS_SOURCE_ROOT"
+            nasm -f bin -o "${FREEDOS_OUTPUT_DIR}/UDVD2.SYS" UDVD2.ASM
+        )
+    fi
+}
+
 resolve_assets_once() {
     mkdir -p "$FREEDOS_CACHE_DIR"
 
-    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/shcdx308.zip" "shsucdx.com" "${FREEDOS_CACHE_DIR}/SHSUCDX.COM"
-    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/udvd2.zip" "UDVD2.SYS" "${FREEDOS_CACHE_DIR}/UDVD2.SYS"
+    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/FD14-LiteUSB.zip" "FD14LITE.img" "${FREEDOS_CACHE_DIR}/FD14LITE.img"
+    extract_vendor_member_if_needed "${FREEDOS_VENDOR_PACKAGES_DIR}/FD14-LegacyCD.zip" "FD14BOOT.img" "${FREEDOS_CACHE_DIR}/FD14BOOT.img"
 
     if [ -n "${FREEDOS_MEDIA_IMAGE:-}" ] && [ -f "${FREEDOS_MEDIA_IMAGE}" ]; then
         :
@@ -109,6 +133,10 @@ resolve_assets_once() {
         FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_OUTPUT_DIR" "$FREEDOS_MEDIA_NAME" 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
     elif [ -d "$FREEDOS_VENDOR_MEDIA_DIR" ]; then
         FREEDOS_MEDIA_IMAGE="$(find_first_matching_file "$FREEDOS_VENDOR_MEDIA_DIR" "$FREEDOS_MEDIA_NAME" 'fd-lite.img' 'fd-full.img' 'boot-standard.img' 'fd-x86.img' || true)"
+    elif [ "$FREEDOS_BOOT_MODE" = "legacycd" ] && [ -f "${FREEDOS_CACHE_DIR}/FD14BOOT.img" ]; then
+        FREEDOS_MEDIA_IMAGE="${FREEDOS_CACHE_DIR}/FD14BOOT.img"
+    elif [ "$FREEDOS_BOOT_MODE" = "liteusb" ] && [ -f "${FREEDOS_CACHE_DIR}/FD14LITE.img" ]; then
+        FREEDOS_MEDIA_IMAGE="${FREEDOS_CACHE_DIR}/FD14LITE.img"
     fi
 
     if [ -n "${FREEDOS_SHSUCDX_COM:-}" ] && [ -f "${FREEDOS_SHSUCDX_COM}" ]; then
@@ -145,6 +173,11 @@ have_required_assets() {
 
 resolve_assets_once
 
+if ! have_required_assets && [ -d "$FREEDOS_SOURCE_ROOT" ]; then
+    build_vendored_tools_from_source
+    resolve_assets_once
+fi
+
 if ! have_required_assets && [ -d "$FREEDOS_SOURCE_ROOT" ] && [ -n "$FREEDOS_BUILD_COMMAND" ]; then
     log_freedos "Building FreeDOS assets from source in $FREEDOS_SOURCE_ROOT"
     (
@@ -172,7 +205,8 @@ if ! have_required_assets; then
         echo "          FREEDOS_UDVD2_SYS=/path/to/UDVD2.SYS" >&2
     fi
     echo "        Vendored packages are read from: $FREEDOS_VENDOR_PACKAGES_DIR" >&2
-    echo "        To build automatically from a local source tree, also set:" >&2
+    echo "        Vendored source code is read from: $FREEDOS_SOURCE_ROOT" >&2
+    echo "        To build additional assets automatically from a local source tree, also set:" >&2
     echo "          FREEDOS_SOURCE_ROOT=/path/to/freedos/source" >&2
     echo "          FREEDOS_BUILD_COMMAND='...'" >&2
     exit 1

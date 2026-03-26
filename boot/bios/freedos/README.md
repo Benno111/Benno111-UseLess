@@ -1,6 +1,7 @@
 The DOS setup path uses local FreeDOS assets only.
 
 Build behavior:
+- Vendored source code lives under `boot/bios/freedos/source/`.
 - Place source-built FreeDOS outputs in `boot/bios/freedos/out/` or point the
   build at them with environment variables.
 - Vendored package copies live under `boot/bios/freedos/vendor/packages/`.
@@ -11,8 +12,10 @@ Build behavior:
   `UDVD2.SYS` for the standalone ISO boot flow.
 - `scripts/prepare-freedos-source-assets.sh` resolves those assets and can
   optionally invoke a source-tree build command via `FREEDOS_BUILD_COMMAND`.
-- The resolver auto-extracts `SHSUCDX.COM` and `UDVD2.SYS` from the vendored
-  package archives when they are available locally.
+- The resolver auto-builds `SHSUCDX.COM` and `UDVD2.SYS` from the vendored
+  source tree when `nasm` is available locally.
+- The resolver also auto-extracts `FD14LITE.img` and `FD14BOOT.img` from the
+  vendored FreeDOS release-media ZIPs when those package copies are present.
 - If source-built assets are absent, the helper fails and asks you to provide
   the required local files.
 - The DOS image and ISO scripts patch the chosen FreeDOS image with
