@@ -92,8 +92,15 @@ typedef struct {
   uint8_t io_buffer[NVME_PAGE_SIZE] __attribute__((aligned(NVME_PAGE_SIZE)));
 } storage_nvme_ctx_t;
 
+typedef struct {
+  uint16_t io_base;
+  uint8_t drive_select;
+  int active;
+} storage_ide_atapi_ctx_t;
+
 static storage_ahci_port_ctx_t storage_ahci_ports[STORAGE_MAX_DISKS];
 static storage_nvme_ctx_t storage_nvme_contexts[STORAGE_MAX_DISKS];
+static storage_ide_atapi_ctx_t storage_ide_atapi_contexts[4];
 
 static void storage_copy_string(char *dst, const char *src, int max) {
   int i = 0;
@@ -515,15 +522,13 @@ static int storage_ide_read_sector(const storage_disk_t *disk, uint32_t lba,
   return 0;
 }
 
-static int storage_ide_read_atapi_block(const storage_disk_t *disk, uint32_t lba,
-                                        void *buffer) {
-  uint16_t io_base;
-  uint8_t drive_select;
+static int storage_ide_read_atapi_packet(uint16_t io_base, uint8_t drive_select,
+                                         uint32_t lba, void *buffer) {
   int status;
   uint16_t *words = (uint16_t *)buffer;
   uint8_t packet[12] = {0};
 
-  if (!buffer || storage_ide_disk_geometry(disk, &io_base, &drive_select) != 0)
+  if (!buffer)
     return -1;
 
   outb(io_base + 6, (uint8_t)(0xA0 | drive_select));
@@ -556,6 +561,33 @@ static int storage_ide_read_atapi_block(const storage_disk_t *disk, uint32_t lba
 
   for (int i = 0; i < 1024; i++)
     words[i] = inw(io_base);
+
+  return 0;
+}
+
+static int storage_ide_read_atapi_block(const storage_disk_t *disk, uint32_t lba,
+                                        void *buffer) {
+  uint16_t io_base;
+  uint8_t drive_select;
+
+  if (!buffer || storage_ide_disk_geometry(disk, &io_base, &drive_select) != 0)
+    return -1;
+  return storage_ide_read_atapi_packet(io_base, drive_select, lba, buffer);
+}
+
+static int storage_ide_atapi_read(uint64_t lba, uint32_t count, void *buffer,
+                                  void *ctx) {
+  storage_ide_atapi_ctx_t *ide_ctx = (storage_ide_atapi_ctx_t *)ctx;
+  uint8_t *dst = (uint8_t *)buffer;
+
+  if (!ide_ctx || !ide_ctx->active || !buffer || count == 0)
+    return -1;
+
+  for (uint32_t i = 0; i < count; i++) {
+    if (storage_ide_read_atapi_packet(ide_ctx->io_base, ide_ctx->drive_select,
+                                      (uint32_t)(lba + i), dst + i * 2048) != 0)
+      return -1;
+  }
 
   return 0;
 }
@@ -604,6 +636,7 @@ static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
   uint8_t hi;
   uint32_t total_sectors;
   int disk_slot;
+  storage_ide_atapi_ctx_t *ide_ctx;
 
   outb(io_base + 6, (uint8_t)(0xA0 | drive_select));
   io_wait();
@@ -638,6 +671,17 @@ static void storage_probe_ide_channel(int controller_index, uint16_t io_base,
       storage_append_location(location, sizeof(location), "cd", storage_disk_count);
       storage_record_disk(STORAGE_KIND_CDROM, controller_index, ide_index,
                           "ATAPI CD-ROM", location);
+      disk_slot = storage_find_disk_by_location(location);
+      if (disk_slot >= 0 && ide_index >= 0 &&
+          ide_index < (int)(sizeof(storage_ide_atapi_contexts) /
+                            sizeof(storage_ide_atapi_contexts[0]))) {
+        ide_ctx = &storage_ide_atapi_contexts[ide_index];
+        ide_ctx->io_base = io_base;
+        ide_ctx->drive_select = drive_select;
+        ide_ctx->active = 1;
+        storage_register_disk_backend(location, storage_ide_atapi_read, NULL,
+                                      ide_ctx);
+      }
     }
     return;
   }
