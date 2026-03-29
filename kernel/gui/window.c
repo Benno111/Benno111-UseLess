@@ -6170,11 +6170,13 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
   return 0;
 }
 
+static const char *installer_system_image_root_path(void);
+
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
-  static const char *installer_system_image_root = "/install/system-image";
-  installer_copy_ctx_t ctx = {"/install/system-image", "", 0, 0};
+  const char *installer_system_image_root = installer_system_image_root_path();
+  installer_copy_ctx_t ctx = {"", "", 0, 0};
   struct file *dir;
   char msg[320];
 
@@ -6235,43 +6237,67 @@ static int installer_payload_any_file_exists(const char **paths, int count) {
   return 0;
 }
 
+static const char *installer_system_image_root_path(void) {
+  static const char *roots[] = {"/install/system-image",
+                                "/setup/install/system-image"};
+  char probe[192];
+
+  for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
+    str_copy_safe(probe, roots[i], sizeof(probe));
+    installer_append_to_buf(probe, sizeof(probe), "/boot/main.sys");
+    if (installer_payload_file_exists(probe))
+      return roots[i];
+  }
+
+  return "/install/system-image";
+}
+
 static int installer_validate_system_image_payload(void) {
-  static const char *required_paths[] = {
-      "/install/system-image/boot/main.sys",
-      "/install/system-image/boot/bootloader.sys",
-      "/install/system-image/boot/limine-bios.sys",
-      "/install/system-image/boot/limine-bios-cd.bin",
-      "/install/system-image/boot/limine-uefi-cd.bin",
-      "/install/system-image/EFI/BOOT/BOOTX64.EFI",
+  static const char *required_suffixes[] = {
+      "/boot/main.sys",
+      "/boot/bootloader.sys",
+      "/boot/limine-bios.sys",
+      "/boot/limine-bios-cd.bin",
+      "/boot/limine-uefi-cd.bin",
+      "/EFI/BOOT/BOOTX64.EFI",
   };
-  static const char *limine_cfg_paths[] = {
-      "/install/system-image/limine.conf",
-      "/install/system-image/boot/limine.conf",
-      "/install/system-image/limine/limine.conf",
-      "/install/system-image/EFI/BOOT/limine.conf",
+  static const char *limine_cfg_suffixes[] = {
+      "/limine.conf",
+      "/boot/limine.conf",
+      "/limine/limine.conf",
+      "/EFI/BOOT/limine.conf",
   };
+  const char *payload_root = installer_system_image_root_path();
+  char full_path[192];
   char msg[320];
 
-  for (int i = 0; i < (int)(sizeof(required_paths) / sizeof(required_paths[0]));
+  for (int i = 0;
+       i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
        i++) {
-    if (installer_payload_file_exists(required_paths[i]))
+    str_copy_safe(full_path, payload_root, sizeof(full_path));
+    installer_append_to_buf(full_path, sizeof(full_path), required_suffixes[i]);
+    if (installer_payload_file_exists(full_path))
       continue;
     str_copy_safe(msg, "install payload missing: ", sizeof(msg));
-    installer_append_to_buf(msg, sizeof(msg), required_paths[i]);
+    installer_append_to_buf(msg, sizeof(msg), full_path);
     installer_log(msg);
     return -1;
   }
 
-  if (!installer_payload_any_file_exists(
-          limine_cfg_paths,
-          (int)(sizeof(limine_cfg_paths) / sizeof(limine_cfg_paths[0])))) {
-    str_copy_safe(msg, "install payload missing: no Limine config in system image",
-                  sizeof(msg));
-    installer_log(msg);
-    return -1;
+  for (int i = 0;
+       i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
+       i++) {
+    str_copy_safe(full_path, payload_root, sizeof(full_path));
+    installer_append_to_buf(full_path, sizeof(full_path),
+                            limine_cfg_suffixes[i]);
+    if (installer_payload_file_exists(full_path))
+      return 0;
   }
 
-  return 0;
+  str_copy_safe(msg, "install payload missing: no Limine config in system image",
+                sizeof(msg));
+  installer_log(msg);
+  return -1;
 }
 
 static int installer_apply_system_image_payload(const char *target_root) {
