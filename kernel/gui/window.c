@@ -6322,9 +6322,15 @@ static int installer_apply_system_image_payload(const char *target_root) {
   char msg[160];
   int idx = 0;
   struct file *stage3_boot = NULL;
+  struct file *stage3_limine = NULL;
+  struct file *stage3_root_cfg = NULL;
   char stage3_boot_root[192];
   char stage3_efi_root[192];
+  char stage3_limine_root[192];
+  char stage3_root_cfg_path[192];
   char target_efi_boot_root[192];
+  char target_limine_root[192];
+  char target_root_cfg_path[192];
 
   if (installer_copy_system_image_to_root(target_root, &copied, &failed) != 0) {
     installer_log("install failed: extracted system image copy failed");
@@ -6340,6 +6346,39 @@ static int installer_apply_system_image_payload(const char *target_root) {
                                       &copied, &failed, "stage 3 boot files") !=
           0) {
         installer_log("install failed: stage 3 boot files copy failed");
+        return -1;
+      }
+    }
+
+    str_copy_safe(stage3_root_cfg_path, "/setup/limine.conf",
+                  sizeof(stage3_root_cfg_path));
+    stage3_root_cfg = vfs_open(stage3_root_cfg_path, O_RDONLY, 0);
+    if (stage3_root_cfg) {
+      vfs_close(stage3_root_cfg);
+      str_copy_safe(target_root_cfg_path, target_root,
+                    sizeof(target_root_cfg_path));
+      installer_append_to_buf(target_root_cfg_path,
+                              sizeof(target_root_cfg_path), "/limine.conf");
+      if (installer_copy_file(stage3_root_cfg_path, target_root_cfg_path) == 0) {
+        copied++;
+      } else {
+        failed++;
+        installer_log("install failed: stage 3 root limine.conf copy failed");
+        return -1;
+      }
+    }
+
+    str_copy_safe(stage3_limine_root, "/setup/limine", sizeof(stage3_limine_root));
+    stage3_limine = vfs_open(stage3_limine_root, O_RDONLY, 0);
+    if (stage3_limine) {
+      vfs_close(stage3_limine);
+      str_copy_safe(target_limine_root, target_root, sizeof(target_limine_root));
+      installer_append_to_buf(target_limine_root, sizeof(target_limine_root),
+                              "/limine");
+      if (installer_copy_tree_to_root(stage3_limine_root, target_limine_root,
+                                      &copied, &failed,
+                                      "stage 3 limine files") != 0) {
+        installer_log("install failed: stage 3 limine files copy failed");
         return -1;
       }
     }
