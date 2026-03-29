@@ -6358,7 +6358,14 @@ static int installer_apply_system_image_payload(const char *target_root) {
       }
     }
 
-    str_copy_safe(stage3_bios_path, stage3_boot_root, sizeof(stage3_bios_path));
+    if (installer_update_root[0]) {
+      str_copy_safe(stage3_bios_path, installer_update_root,
+                    sizeof(stage3_bios_path));
+    } else {
+      str_copy_safe(stage3_bios_path, target_root, sizeof(stage3_bios_path));
+      installer_append_to_buf(stage3_bios_path, sizeof(stage3_bios_path),
+                              "/boot");
+    }
     installer_append_to_buf(stage3_bios_path, sizeof(stage3_bios_path),
                             "/limine-bios.sys");
 
