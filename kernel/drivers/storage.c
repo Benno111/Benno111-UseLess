@@ -855,6 +855,61 @@ static int storage_ahci_issue(storage_ahci_port_ctx_t *ctx, uint8_t command,
   return (port[0x20 / 4] & 0x01) ? -1 : 0;
 }
 
+static int storage_ahci_issue_atapi(storage_ahci_port_ctx_t *ctx, uint32_t lba,
+                                    uint16_t blocks, void *buffer) {
+  volatile uint32_t *port;
+  ahci_cmd_header_t *header;
+  ahci_cmd_table_t *table;
+  ahci_fis_reg_h2d_t *fis;
+  uint64_t deadline;
+
+  if (!ctx || !ctx->port_mmio || !buffer || blocks == 0)
+    return -1;
+  if (storage_ahci_port_wait_ready(ctx) != 0)
+    return -1;
+
+  port = (volatile uint32_t *)ctx->port_mmio;
+  header = (ahci_cmd_header_t *)ctx->command_list;
+  table = (ahci_cmd_table_t *)ctx->command_table;
+  for (int i = 0; i < (int)sizeof(ctx->command_table); i++)
+    ctx->command_table[i] = 0;
+
+  header[0].flags = (uint16_t)(5 | (1U << 5));
+  header[0].prdtl = 1;
+  header[0].prdbc = 0;
+
+  fis = (ahci_fis_reg_h2d_t *)table->cfis;
+  fis->fis_type = 0x27;
+  fis->pmport_c = 1U << 7;
+  fis->command = 0xA0;
+  fis->lba1 = 0x08;
+
+  table->acmd[0] = 0xA8;
+  table->acmd[2] = (uint8_t)((lba >> 24) & 0xFF);
+  table->acmd[3] = (uint8_t)((lba >> 16) & 0xFF);
+  table->acmd[4] = (uint8_t)((lba >> 8) & 0xFF);
+  table->acmd[5] = (uint8_t)(lba & 0xFF);
+  table->acmd[7] = (uint8_t)((blocks >> 8) & 0xFF);
+  table->acmd[8] = (uint8_t)(blocks & 0xFF);
+
+  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
+  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  table->prdt[0].dbc_i = (uint32_t)(blocks * 2048U - 1U) | (1U << 31);
+
+  port[0x10 / 4] = 0xFFFFFFFF;
+  port[0x38 / 4] = 1;
+  deadline = storage_get_deadline_ms(STORAGE_IO_TIMEOUT_MS);
+  while (arch_timer_get_ms() <= deadline) {
+    if ((port[0x38 / 4] & 1U) == 0)
+      break;
+    if (port[0x10 / 4] & (1U << 30))
+      return -1;
+  }
+  if (port[0x38 / 4] & 1U)
+    return -1;
+  return (port[0x20 / 4] & 0x01) ? -1 : 0;
+}
+
 static int storage_ahci_read(uint64_t lba, uint32_t count, void *buffer,
                              void *ctx_ptr) {
   storage_ahci_port_ctx_t *ctx = (storage_ahci_port_ctx_t *)ctx_ptr;
@@ -875,6 +930,19 @@ static int storage_ahci_write(uint64_t lba, uint32_t count, const void *buffer,
     if (storage_ahci_issue(ctx, 0x35, lba + i, 1,
                            (void *)(uintptr_t)(src + i * AHCI_SECTOR_SIZE),
                            1) != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static int storage_ahci_atapi_read(uint64_t lba, uint32_t count, void *buffer,
+                                   void *ctx_ptr) {
+  storage_ahci_port_ctx_t *ctx = (storage_ahci_port_ctx_t *)ctx_ptr;
+  uint8_t *dst = (uint8_t *)buffer;
+
+  for (uint32_t i = 0; i < count; i++) {
+    if (storage_ahci_issue_atapi(ctx, (uint32_t)(lba + i), 1,
+                                 dst + i * 2048U) != 0)
       return -1;
   }
   return 0;
@@ -1090,10 +1158,24 @@ static void storage_probe_ahci_controller(int controller_index,
     if (det != 3 || ipm != 1)
       continue;
     if (sig == 0xEB140101) {
+      storage_ahci_port_ctx_t *cd_ctx;
+
       location[0] = '\0';
       storage_append_location(location, sizeof(location), "cd", storage_disk_count);
       storage_record_disk(STORAGE_KIND_CDROM, controller_index, port,
                           "SATA ATAPI CD-ROM", location);
+      disk_slot = storage_find_disk_by_location(location);
+      if (disk_slot < 0)
+        continue;
+
+      cd_ctx = &storage_ahci_ports[disk_slot];
+      cd_ctx->abar = abar;
+      cd_ctx->port_mmio = (volatile uint8_t *)port_regs;
+      cd_ctx->port_no = port;
+      cd_ctx->active = 1;
+      storage_ahci_setup_port(cd_ctx);
+      storage_register_disk_backend(location, storage_ahci_atapi_read, NULL,
+                                    cd_ctx);
       continue;
     }
     if (sig == 0x96690101)
@@ -1728,6 +1810,10 @@ int storage_read_block(int disk_index, uint32_t lba, void *buffer,
     return storage_disk_read_sector(disk_index, lba, buffer);
 
   if (block_size == 2048 && storage_disks[disk_index].kind == STORAGE_KIND_CDROM) {
+    if (storage_disks[disk_index].read_fn) {
+      return storage_disks[disk_index].read_fn(lba, 1, buffer,
+                                               storage_disks[disk_index].backend_ctx);
+    }
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
     return storage_ide_read_atapi_block(&storage_disks[disk_index], lba, buffer);
 #else
