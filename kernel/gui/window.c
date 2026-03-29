@@ -12420,7 +12420,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
         int content_w = win->width - BORDER_WIDTH * 2;
         int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+        int panel_x = content_x + 20;
         int panel_y = content_y + 18;
+        int panel_w = content_w - 40;
         int panel_h = content_h - 36;
         int rail_w = 180;
         int body_x = panel_x + rail_w + 18;
