@@ -3584,12 +3584,16 @@ static int installer_write_raw_file(const char *path, const uint8_t *data,
 
   installer_ensure_parent_dirs(path);
   vfs_unlink(path);
-  f = vfs_open(path, O_CREAT | O_WRONLY, 0644);
+  f = vfs_open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (!f)
     return -1;
   written = vfs_write(f, (const char *)data, size);
   vfs_close(f);
-  return (written < 0) ? (int)written : 0;
+  if (written < 0)
+    return (int)written;
+  if ((size_t)written != size)
+    return -EIO;
+  return 0;
 }
 
 static int installer_write_target_file(const char *logical_path,
