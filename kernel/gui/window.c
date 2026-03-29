@@ -214,6 +214,14 @@ static char installer_status[96] = "Ready to install the system image.";
 static int installer_has_run = 0;
 static int installer_active = 0;
 static int installer_show_restart_screen = 0;
+enum {
+  INSTALLER_PAGE_WELCOME = 0,
+  INSTALLER_PAGE_TARGET = 1,
+  INSTALLER_PAGE_REVIEW = 2,
+  INSTALLER_PAGE_PROGRESS = 3,
+  INSTALLER_PAGE_COMPLETE = 4
+};
+static int installer_page = INSTALLER_PAGE_WELCOME;
 static int installer_phase = 0;
 static int installer_progress_done = 0;
 static int installer_progress_total = 5;
@@ -6305,6 +6313,21 @@ static int installer_reboot_seconds_remaining(void) {
   return (int)((remaining_ms + 999) / 1000);
 }
 
+static const char *installer_page_title(void) {
+  switch (installer_page) {
+  case INSTALLER_PAGE_TARGET:
+    return "Step 2  Choose Disk";
+  case INSTALLER_PAGE_REVIEW:
+    return "Step 3  Review";
+  case INSTALLER_PAGE_PROGRESS:
+    return "Step 4  Install";
+  case INSTALLER_PAGE_COMPLETE:
+    return "Step 5  Finish";
+  default:
+    return "Step 1  Welcome";
+  }
+}
+
 static int installer_finalize_install(void) {
   char summary[96];
   const char *installer_state =
@@ -6341,6 +6364,7 @@ static int installer_finalize_install(void) {
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_show_restart_screen = 1;
+  installer_page = INSTALLER_PAGE_COMPLETE;
   installer_active = 0;
   installer_phase = 0;
   installer_reboot_deadline_ms = arch_timer_get_ms() + 3000;
@@ -6353,6 +6377,7 @@ static void installer_start_background_install(void) {
   installer_has_run = 0;
   installer_show_restart_screen = 0;
   installer_active = 1;
+  installer_page = INSTALLER_PAGE_PROGRESS;
   installer_phase = 1;
   installer_progress_done = 0;
   installer_progress_total = 4;
@@ -6371,6 +6396,7 @@ static void installer_fail_background(const char *status, const char *log_line) 
   installer_active = 0;
   installer_phase = 0;
   installer_show_restart_screen = 0;
+  installer_page = INSTALLER_PAGE_REVIEW;
   installer_set_status(status);
   if (log_line)
     installer_log(log_line);
@@ -6459,125 +6485,219 @@ static void installer_process_background_install(void) {
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
   installer_refresh_disk_inventory();
-  int card_x = content_x + 24;
-  int card_y = content_y + 22;
-  int card_w = content_w - 48;
-  int button_w = 180;
-  int manage_w = 150;
-  int button_h = 34;
-  int button_x = content_x + 24;
-  int manage_x = button_x + button_w + 12;
-  int button_y = content_y + content_h - 64;
-  uint32_t button_bg =
-      installer_active ? 0x2563EB : (installer_has_run ? 0x4B5563 : 0x16A34A);
-  const char *action_label =
-      installer_active ? "Installing..." : "Install System Image";
-  int disk_y = card_y + 102;
-  int progress_y = card_y + 318;
-  int progress_w = card_w - 36;
-  int fill_w = installer_progress_total > 0
-                   ? (progress_w * installer_progress_done) /
-                         installer_progress_total
-                   : 0;
+  if (installer_show_restart_screen)
+    installer_page = INSTALLER_PAGE_COMPLETE;
+  else if (installer_active)
+    installer_page = INSTALLER_PAGE_PROGRESS;
 
-  if (installer_show_restart_screen) {
-    char countdown[96];
-    int seconds = installer_reboot_seconds_remaining();
-    int restart_x = content_x + 24;
-    int restart_y = content_y + content_h - 64;
-    int restart_w = 180;
-    int restart_h = 34;
+  {
+    int panel_x = content_x + 20;
+    int panel_y = content_y + 18;
+    int panel_w = content_w - 40;
+    int panel_h = content_h - 36;
+    int rail_w = 180;
+    int rail_x = panel_x;
+    int rail_y = panel_y;
+    int body_x = panel_x + rail_w + 18;
+    int body_y = panel_y + 18;
+    int body_w = panel_w - rail_w - 36;
+    int footer_y = panel_y + panel_h - 54;
+    int primary_x = body_x;
+    int secondary_x = body_x + 154;
+    int utility_x = body_x + body_w - 166;
+    int button_w = 140;
+    int button_h = 34;
+    int progress_w = body_w - 36;
+    int fill_w = installer_progress_total > 0
+                     ? (progress_w * installer_progress_done) /
+                           installer_progress_total
+                     : 0;
+    const char *steps[] = {"Welcome", "Choose Disk", "Review", "Install", "Finish"};
+    const char *selected_disk = installer_selected_disk_label();
 
-    gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
-    gui_draw_rect(card_x + 18, card_y + 18, card_w - 36, 72, 0x123B2A);
-    gui_draw_string(card_x + 34, card_y + 34, "Installation Complete",
-                    0xFFFFFF, 0x123B2A);
-    gui_draw_string(card_x + 34, card_y + 58,
-                    "The system image is installed and ready to boot.",
-                    0xD1FAE5, 0x123B2A);
+    gui_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x111827);
+    gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x334155, 1);
 
-    gui_draw_string(card_x + 18, card_y + 118, "Next step:", 0x89B4FA,
-                    0x232337);
-    gui_draw_string(card_x + 30, card_y + 142,
-                    "Restart to boot from the installed disk.", 0xE5E7EB,
-                    0x232337);
-    gui_draw_string(card_x + 30, card_y + 162,
-                    "Remove the installer media if your VM or machine keeps",
-                    0xE5E7EB, 0x232337);
-    gui_draw_string(card_x + 30, card_y + 182,
-                    "booting back into setup after restart.", 0xE5E7EB,
-                    0x232337);
+    gui_draw_rect(rail_x, rail_y, rail_w, panel_h, 0x0F172A);
+    gui_draw_string(rail_x + 20, rail_y + 24, "OS8 Installer", 0xFFFFFF, 0x0F172A);
+    gui_draw_string(rail_x + 20, rail_y + 48, "Dedicated setup pages", 0x93C5FD,
+                    0x0F172A);
 
-    gui_draw_string(card_x + 18, card_y + 222, "Status:", 0x89B4FA, 0x232337);
-    gui_draw_rect(card_x + 18, card_y + 242, card_w - 36, 34, 0x1B1B2B);
-    gui_draw_string(card_x + 28, card_y + 253, installer_status, 0xFFFFFF,
-                    0x1B1B2B);
-
-    str_copy_safe(countdown, "Automatic restart in ", sizeof(countdown));
-    {
+    for (int i = 0; i < 5; i++) {
+      int step_y = rail_y + 96 + i * 54;
+      uint32_t bg = i == installer_page ? 0x1D4ED8 : (i < installer_page ? 0x15324F : 0x172033);
+      char step_label[24] = "";
       int idx = 0;
-      while (countdown[idx] && idx < (int)sizeof(countdown) - 1)
-        idx++;
-      append_decimal(countdown, &idx, seconds > 0 ? seconds : 0);
-      installer_append_to_buf(countdown, sizeof(countdown), " seconds...");
+      step_label[idx++] = '1' + i;
+      step_label[idx++] = ' ';
+      step_label[idx++] = ' ';
+      for (int j = 0; steps[i][j] && idx < (int)sizeof(step_label) - 1; j++)
+        step_label[idx++] = steps[i][j];
+      step_label[idx] = '\0';
+      gui_draw_rect(rail_x + 16, step_y, rail_w - 32, 40, bg);
+      gui_draw_string(rail_x + 28, step_y + 13, step_label, 0xFFFFFF, bg);
     }
-    gui_draw_string(card_x + 18, card_y + 298, countdown, 0xA6E3A1, 0x232337);
 
-    gui_draw_rect(restart_x, restart_y, restart_w, restart_h, 0x16A34A);
-    gui_draw_string(restart_x + 42, restart_y + 10, "Restart Now", 0xFFFFFF,
-                    0x16A34A);
-    return;
+    gui_draw_string(rail_x + 20, rail_y + panel_h - 98, "Current Target",
+                    0x93C5FD, 0x0F172A);
+    gui_draw_string(rail_x + 20, rail_y + panel_h - 72, selected_disk, 0xE5E7EB,
+                    0x0F172A);
+    gui_draw_string(rail_x + 20, rail_y + panel_h - 44,
+                    installer_active ? "Writing system image" : installer_status,
+                    0x94A3B8, 0x0F172A);
+
+    gui_draw_string(body_x, body_y, installer_page_title(), 0x93C5FD, 0x111827);
+
+    if (installer_page == INSTALLER_PAGE_WELCOME) {
+      gui_draw_string(body_x, body_y + 30, "Install OS8 in guided steps",
+                      0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 64,
+                      "This installer now uses dedicated pages for each step.",
+                      0xCBD5E1, 0x111827);
+      gui_draw_string(body_x, body_y + 88,
+                      "You will choose a disk, review what will happen,",
+                      0xCBD5E1, 0x111827);
+      gui_draw_string(body_x, body_y + 112,
+                      "then start the raw system image install.", 0xCBD5E1,
+                      0x111827);
+
+      gui_draw_rect(body_x, body_y + 156, body_w - 24, 122, 0x172033);
+      gui_draw_string(body_x + 18, body_y + 178, "What this installer does",
+                      0xFFFFFF, 0x172033);
+      gui_draw_string(body_x + 18, body_y + 206,
+                      "- overwrites the selected hard disk", 0xE5E7EB, 0x172033);
+      gui_draw_string(body_x + 18, body_y + 228,
+                      "- writes the bundled BIOS+UEFI bootable image", 0xE5E7EB,
+                      0x172033);
+      gui_draw_string(body_x + 18, body_y + 250,
+                      "- prepares first-boot account setup", 0xE5E7EB, 0x172033);
+    } else if (installer_page == INSTALLER_PAGE_TARGET) {
+      gui_draw_string(body_x, body_y + 30, "Choose the install target disk",
+                      0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 58,
+                      "Only real writable disks should be selected here.",
+                      0xCBD5E1, 0x111827);
+
+      for (int i = 0; i < installer_disk_count && i < 5; i++) {
+        int row_y = body_y + 96 + i * 34;
+        uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x172033;
+        gui_draw_rect(body_x, row_y, body_w - 18, 28, row_bg);
+        gui_draw_string(body_x + 14, row_y + 8, installer_disk_labels[i], 0xFFFFFF,
+                        row_bg);
+      }
+
+      gui_draw_rect(body_x, body_y + 286, body_w - 18, 64, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 306, "Selected disk", 0x93C5FD,
+                      0x172033);
+      gui_draw_string(body_x + 16, body_y + 330, selected_disk, 0xFFFFFF, 0x172033);
+    } else if (installer_page == INSTALLER_PAGE_REVIEW) {
+      gui_draw_string(body_x, body_y + 30, "Review the install plan",
+                      0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 58, "Target disk:", 0x93C5FD, 0x111827);
+      gui_draw_string(body_x + 98, body_y + 58, selected_disk, 0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 96, "Actions", 0x93C5FD, 0x111827);
+      gui_draw_string(body_x + 16, body_y + 122,
+                      "1. Write the bundled raw system image to the disk.",
+                      0xE5E7EB, 0x111827);
+      gui_draw_string(body_x + 16, body_y + 146,
+                      "2. Preserve bootability for BIOS and UEFI startup.",
+                      0xE5E7EB, 0x111827);
+      gui_draw_string(body_x + 16, body_y + 170,
+                      "3. Prepare a user data area for first boot.", 0xE5E7EB,
+                      0x111827);
+      gui_draw_string(body_x + 16, body_y + 194,
+                      "4. Schedule reboot into the installed system.", 0xE5E7EB,
+                      0x111827);
+      gui_draw_rect(body_x, body_y + 236, body_w - 18, 64, 0x3A1D1D);
+      gui_draw_string(body_x + 16, body_y + 256, "Warning", 0xFCA5A5, 0x3A1D1D);
+      gui_draw_string(body_x + 16, body_y + 280,
+                      "This step overwrites the selected target disk.",
+                      0xFDE2E2, 0x3A1D1D);
+      gui_draw_rect(body_x, body_y + 318, body_w - 18, 36, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 330, installer_status, 0xFFFFFF,
+                      0x172033);
+    } else if (installer_page == INSTALLER_PAGE_PROGRESS) {
+      gui_draw_string(body_x, body_y + 30, "Installing the system image",
+                      0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 58,
+                      "The installer is processing the selected disk in phases.",
+                      0xCBD5E1, 0x111827);
+      gui_draw_rect(body_x, body_y + 98, progress_w, 16, 0x172033);
+      if (fill_w > 0)
+        gui_draw_rect(body_x, body_y + 98, fill_w, 16, 0x22C55E);
+      gui_draw_string(body_x, body_y + 128, installer_status, 0xFFFFFF, 0x111827);
+      gui_draw_rect(body_x, body_y + 164, body_w - 18, 188, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 184, "Install log", 0x93C5FD,
+                      0x172033);
+      gui_draw_string(body_x + 16, body_y + 212, installer_log_buffer[0]
+                                                     ? installer_log_buffer
+                                                     : "Waiting for installer output...",
+                      0xCBD5E1, 0x172033);
+    } else {
+      char countdown[96];
+      int seconds = installer_reboot_seconds_remaining();
+      gui_draw_rect(body_x, body_y + 26, body_w - 18, 76, 0x123B2A);
+      gui_draw_string(body_x + 18, body_y + 46, "Installation Complete",
+                      0xFFFFFF, 0x123B2A);
+      gui_draw_string(body_x + 18, body_y + 72,
+                      "The system image is installed and ready to boot.",
+                      0xD1FAE5, 0x123B2A);
+      gui_draw_string(body_x, body_y + 130, "Next step", 0x93C5FD, 0x111827);
+      gui_draw_string(body_x + 16, body_y + 156,
+                      "Restart to boot from the installed disk.", 0xE5E7EB,
+                      0x111827);
+      gui_draw_string(body_x + 16, body_y + 180,
+                      "Remove installer media if the machine boots setup again.",
+                      0xE5E7EB, 0x111827);
+      gui_draw_rect(body_x, body_y + 226, body_w - 18, 36, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 238, installer_status, 0xFFFFFF,
+                      0x172033);
+      str_copy_safe(countdown, "Automatic restart in ", sizeof(countdown));
+      {
+        int idx = 0;
+        while (countdown[idx] && idx < (int)sizeof(countdown) - 1)
+          idx++;
+        append_decimal(countdown, &idx, seconds > 0 ? seconds : 0);
+        installer_append_to_buf(countdown, sizeof(countdown), " seconds...");
+      }
+      gui_draw_string(body_x, body_y + 286, countdown, 0xA6E3A1, 0x111827);
+    }
+
+    gui_draw_rect(panel_x, footer_y, panel_w, 1, 0x334155);
+
+    if (installer_page != INSTALLER_PAGE_PROGRESS &&
+        installer_page != INSTALLER_PAGE_COMPLETE) {
+      if (installer_page > INSTALLER_PAGE_WELCOME) {
+        gui_draw_rect(primary_x, footer_y + 12, button_w, button_h, 0x374151);
+        gui_draw_string(primary_x + 52, footer_y + 22, "Back", 0xFFFFFF,
+                        0x374151);
+      }
+
+      if (installer_page == INSTALLER_PAGE_REVIEW) {
+        gui_draw_rect(secondary_x, footer_y + 12, button_w, button_h,
+                      installer_active ? 0x4B5563 : 0x16A34A);
+        gui_draw_string(secondary_x + 28, footer_y + 22, "Install System Image",
+                        0xFFFFFF, installer_active ? 0x4B5563 : 0x16A34A);
+      } else {
+        gui_draw_rect(secondary_x, footer_y + 12, button_w, button_h, 0x2563EB);
+        gui_draw_string(secondary_x + 52, footer_y + 22, "Next", 0xFFFFFF,
+                        0x2563EB);
+      }
+    }
+
+    if (installer_page == INSTALLER_PAGE_TARGET ||
+        installer_page == INSTALLER_PAGE_REVIEW) {
+      gui_draw_rect(utility_x, footer_y + 12, 150, button_h, 0x2563EB);
+      gui_draw_string(utility_x + 18, footer_y + 22, "Partition Manager",
+                      0xFFFFFF, 0x2563EB);
+    }
+
+    if (installer_page == INSTALLER_PAGE_COMPLETE) {
+      gui_draw_rect(primary_x, footer_y + 12, button_w, button_h, 0x16A34A);
+      gui_draw_string(primary_x + 34, footer_y + 22, "Restart Now", 0xFFFFFF,
+                      0x16A34A);
+    }
   }
-
-  gui_draw_rect(card_x, card_y, card_w, content_h - 110, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 18, "OS8 Installer",
-                  0xFFFFFF, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 42,
-                  "This ISO boots directly into the installer environment.",
-                  0xCDD6F4, 0x232337);
-  gui_draw_string(card_x + 18, card_y + 66,
-                  "It carries a bundled bootable system image payload.",
-                  0xA6ADC8, 0x232337);
-  gui_draw_string(card_x + 18, disk_y, "Target disk:", 0x89B4FA, 0x232337);
-  for (int i = 0; i < installer_disk_count && i < 3; i++) {
-    int row_y = disk_y + 18 + i * 26;
-    uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x1B1B2B;
-    gui_draw_rect(card_x + 18, row_y, card_w - 36, 22, row_bg);
-    gui_draw_string(card_x + 28, row_y + 4, installer_disk_labels[i], 0xFFFFFF,
-                    row_bg);
-  }
-  gui_draw_string(card_x + 18, disk_y + 104, "Install actions:", 0x89B4FA,
-                  0x232337);
-  gui_draw_string(card_x + 30, disk_y + 126,
-                  "- overwrites the selected hard disk", 0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 30, disk_y + 146,
-                  "- writes the bundled raw system image", 0xE5E7EB, 0x232337);
-  gui_draw_string(card_x + 30, disk_y + 166,
-                  "- installs BIOS+UEFI boot data from that image", 0xE5E7EB,
-                  0x232337);
-  gui_draw_string(card_x + 30, disk_y + 186,
-                  "- prepares a user data partition on the HDD", 0xE5E7EB,
-                  0x232337);
-  gui_draw_string(card_x + 30, disk_y + 206,
-                  "- runs first-boot account setup after restart", 0xE5E7EB,
-                  0x232337);
-  gui_draw_string(card_x + 18, card_y + 254, "Status:", 0x89B4FA, 0x232337);
-  gui_draw_rect(card_x + 18, card_y + 274, card_w - 36, 34, 0x1B1B2B);
-  gui_draw_string(card_x + 28, card_y + 285, installer_status, 0xFFFFFF,
-                  0x1B1B2B);
-  gui_draw_string(card_x + 18, progress_y - 18, "Progress:", 0x89B4FA,
-                  0x232337);
-  gui_draw_rect(card_x + 18, progress_y, progress_w, 14, 0x1B1B2B);
-  if (fill_w > 0)
-    gui_draw_rect(card_x + 18, progress_y, fill_w, 14, 0x22C55E);
-
-  gui_draw_rect(button_x, button_y, button_w, button_h, button_bg);
-  gui_draw_string(button_x + 24, button_y + 10,
-                  installer_has_run ? "Install Complete" : action_label,
-                  0xFFFFFF, button_bg);
-  gui_draw_rect(manage_x, button_y, manage_w, button_h, 0x2563EB);
-  gui_draw_string(manage_x + 18, button_y + 10, "Partition Manager",
-                  0xFFFFFF, 0x2563EB);
 }
 
 static void draw_startup_auth_window(struct window *win, int content_x,
@@ -12300,19 +12420,29 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
         int content_w = win->width - BORDER_WIDTH * 2;
         int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
-        int card_x = content_x + 24;
-        int card_y = content_y + 22;
-        int button_x = content_x + 24;
-        int manage_x = button_x + 180 + 12;
-        int button_y = content_y + content_h - 64;
-        int button_w = 180;
+        int panel_y = content_y + 18;
+        int panel_h = content_h - 36;
+        int rail_w = 180;
+        int body_x = panel_x + rail_w + 18;
+        int body_y = panel_y + 18;
+        int body_w = panel_w - rail_w - 36;
+        int footer_y = panel_y + panel_h - 54;
+        int primary_x = body_x;
+        int secondary_x = body_x + 154;
+        int utility_x = body_x + body_w - 166;
+        int button_y = footer_y + 12;
+        int button_w = 140;
         int button_h = 34;
-        int disk_y = card_y + 102;
 
         installer_refresh_disk_inventory();
 
-        if (installer_show_restart_screen) {
-          if (x >= button_x && x < button_x + button_w && y >= button_y &&
+        if (installer_show_restart_screen)
+          installer_page = INSTALLER_PAGE_COMPLETE;
+        else if (installer_active)
+          installer_page = INSTALLER_PAGE_PROGRESS;
+
+        if (installer_page == INSTALLER_PAGE_COMPLETE) {
+          if (x >= primary_x && x < primary_x + button_w && y >= button_y &&
               y < button_y + button_h) {
             installer_reboot_deadline_ms = 0;
             {
@@ -12325,25 +12455,52 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           return;
         }
 
-        for (int i = 0; i < installer_disk_count && i < 3; i++) {
-          int row_y = disk_y + 18 + i * 26;
-          if (x >= card_x + 18 && x < card_x + content_w - 60 && y >= row_y &&
-              y < row_y + 22) {
-            installer_selected_disk = i;
-            installer_set_status("Installer target disk updated.");
-            return;
+        if (installer_page == INSTALLER_PAGE_TARGET) {
+          for (int i = 0; i < installer_disk_count && i < 5; i++) {
+            int row_y = body_y + 96 + i * 34;
+            if (x >= body_x && x < body_x + body_w - 18 && y >= row_y &&
+                y < row_y + 28) {
+              installer_selected_disk = i;
+              installer_set_status("Installer target disk updated.");
+              return;
+            }
           }
         }
 
-        if (x >= button_x && x < button_x + button_w && y >= button_y &&
+        if (installer_page > INSTALLER_PAGE_WELCOME &&
+            installer_page < INSTALLER_PAGE_PROGRESS &&
+            x >= primary_x && x < primary_x + button_w && y >= button_y &&
             y < button_y + button_h) {
-          if (!installer_has_run && !installer_active) {
-            installer_start_background_install();
-          }
+          installer_page--;
           return;
         }
 
-        if (x >= manage_x && x < manage_x + 150 && y >= button_y &&
+        if (installer_page == INSTALLER_PAGE_WELCOME &&
+            x >= secondary_x && x < secondary_x + button_w && y >= button_y &&
+            y < button_y + button_h) {
+          installer_page = INSTALLER_PAGE_TARGET;
+          return;
+        }
+
+        if (installer_page == INSTALLER_PAGE_TARGET &&
+            x >= secondary_x && x < secondary_x + button_w && y >= button_y &&
+            y < button_y + button_h) {
+          installer_page = INSTALLER_PAGE_REVIEW;
+          installer_set_status("Review the install plan before continuing.");
+          return;
+        }
+
+        if (installer_page == INSTALLER_PAGE_REVIEW &&
+            x >= secondary_x && x < secondary_x + button_w && y >= button_y &&
+            y < button_y + button_h) {
+          if (!installer_has_run && !installer_active)
+            installer_start_background_install();
+          return;
+        }
+
+        if ((installer_page == INSTALLER_PAGE_TARGET ||
+             installer_page == INSTALLER_PAGE_REVIEW) &&
+            x >= utility_x && x < utility_x + 150 && y >= button_y &&
             y < button_y + button_h) {
           open_partition_manager_window(win->x + 36, win->y + 30);
           return;
@@ -12526,7 +12683,9 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 
   if (gui_is_installer_mode()) {
     installer_has_run = 0;
+    installer_active = 0;
     installer_show_restart_screen = 0;
+    installer_page = INSTALLER_PAGE_WELCOME;
     installer_set_status("Ready to install the system image.");
   }
 
