@@ -17,19 +17,15 @@ static vfs_node_t node_pool[MAX_VFS_NODES];
 static int node_used[MAX_VFS_NODES] = {0};
 
 /* Simple string compare */
-static int strcmp_simple(const char *s1, const char *s2) {
-  while (*s1 && *s1 == *s2) {
-    s1++;
-    s2++;
-  }
-  return *s1 - *s2;
-}
-
 /* Allocate a node from pool */
 static vfs_node_t *alloc_node(void) {
   for (int i = 0; i < MAX_VFS_NODES; i++) {
     if (!node_used[i]) {
       node_used[i] = 1;
+      node_pool[i].name[0] = '\0';
+      node_pool[i].size = 0;
+      node_pool[i].is_dir = 0;
+      node_pool[i].internal = NULL;
       return &node_pool[i];
     }
   }
@@ -58,6 +54,8 @@ static void strcpy_safe(char *dst, const char *src, size_t max) {
 
 /* Look up a file by path */
 vfs_node_t *vfs_lookup(const char *path) {
+  if (!path || path[0] == '\0')
+    return NULL;
   vfs_node_t *node = alloc_node();
   if (!node)
     return NULL;
@@ -81,7 +79,7 @@ vfs_node_t *vfs_lookup(const char *path) {
   if (ramfs_lookup_path_info(path, &rsize, &ris_dir, &rdata) == 0) {
     node->size = rsize;
     node->is_dir = ris_dir;
-    node->internal = rdata; /* Store pointer to data buffer */
+    node->internal = rdata; /* Store pointer to ramfs inode */
     return node;
   }
 
@@ -147,7 +145,13 @@ int vfs_write_compat(vfs_node_t *node, const char *buf, size_t size) {
 int vfs_is_dir(vfs_node_t *node) { return node ? node->is_dir : 0; }
 
 /* Create file */
-vfs_node_t *vfs_create_compat(const char *path) {
+vfs_node_t *vfs_create(const char *path) {
+  if (!path || path[0] == '\0')
+    return NULL;
+  extern int ramfs_create_file(const char *path, mode_t mode, const char *content);
+  if (ramfs_create_file(path, 0644, NULL) != 0) {
+    return NULL;
+  }
   vfs_node_t *node = alloc_node();
   if (!node)
     return NULL;
@@ -160,6 +164,12 @@ vfs_node_t *vfs_create_compat(const char *path) {
 
 /* Create directory */
 vfs_node_t *vfs_mkdir_compat(const char *path) {
+  if (!path || path[0] == '\0')
+    return NULL;
+  extern int ramfs_create_dir(const char *path, mode_t mode);
+  if (ramfs_create_dir(path, 0755) != 0) {
+    return NULL;
+  }
   vfs_node_t *node = alloc_node();
   if (!node)
     return NULL;
@@ -172,14 +182,14 @@ vfs_node_t *vfs_mkdir_compat(const char *path) {
 
 /* Delete file */
 int vfs_delete(const char *path) {
-  (void)path;
-  return -1; /* Not implemented */
+  extern int vfs_unlink(const char *path);
+  return vfs_unlink(path);
 }
 
 /* Delete directory */
 int vfs_delete_dir(const char *path) {
-  (void)path;
-  return -1;
+  extern int vfs_rmdir(const char *path);
+  return vfs_rmdir(path);
 }
 
 /* Delete recursive */
@@ -190,9 +200,8 @@ int vfs_delete_recursive(const char *path) {
 
 /* Rename */
 int vfs_rename_compat(const char *oldpath, const char *newname) {
-  (void)oldpath;
-  (void)newname;
-  return -1;
+  extern int vfs_rename(const char *oldpath, const char *newpath);
+  return vfs_rename(oldpath, newname);
 }
 
 /* Read directory */

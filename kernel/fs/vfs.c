@@ -6,6 +6,8 @@
 #include "fs/fat32.h"
 #include "printk.h"
 
+extern int ramfs_truncate_file(void *inode_private);
+
 /* ===================================================================== */
 /* Static data */
 /* ===================================================================== */
@@ -313,9 +315,17 @@ static struct dentry *vfs_lookup_parent(const char *path, char *name_buf) {
 
 /* Redefine vfs_open with lookup */
 struct file *vfs_open(const char *path, int flags, mode_t mode) {
+  if (!path || path[0] == '\0') {
+    return NULL;
+  }
   /* Special case for root */
   if (path[0] == '/' && path[1] == '\0') {
     struct file *f = kzalloc(sizeof(struct file), GFP_KERNEL);
+    if (!root_dentry || !root_dentry->d_inode) {
+      if (f)
+        kfree(f);
+      return NULL;
+    }
     f->f_dentry = root_dentry;
     f->f_op = root_dentry->d_inode->i_fop;
     f->private_data = root_dentry->d_inode->i_private;
@@ -352,8 +362,16 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
 
   /* Now look for the file in parent */
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
+  if (!child)
+    return NULL;
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
+  if (name[0] == '\0') {
+    kfree(child);
+    return NULL;
+  }
+  child->d_parent = parent;
+  child->d_sb = parent->d_sb;
 
   if (parent->d_inode && parent->d_inode->i_op &&
       parent->d_inode->i_op->lookup) {
@@ -364,12 +382,15 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
     /* Check O_CREAT */
     if (flags & O_CREAT) {
       /* Create it */
-      if (parent->d_inode->i_op->create) {
+      if (parent->d_inode->i_op && parent->d_inode->i_op->create) {
         int ret = parent->d_inode->i_op->create(parent->d_inode, child, mode);
         if (ret != 0) {
           kfree(child);
           return NULL;
         }
+      } else {
+        kfree(child);
+        return NULL;
       }
     } else {
       kfree(child);
@@ -388,8 +409,21 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
   f->f_flags = flags;
   f->f_count.counter = 1;
 
+  if ((flags & O_TRUNC) && child->d_inode && S_ISREG(child->d_inode->i_mode)) {
+    child->d_inode->i_size = 0;
+    ramfs_truncate_file(f->private_data);
+  }
+
+  if ((flags & O_APPEND) && child->d_inode && S_ISREG(child->d_inode->i_mode)) {
+    f->f_pos = child->d_inode->i_size;
+  }
+
   if (f->f_op && f->f_op->open) {
     f->f_op->open(child->d_inode, f);
+    if ((flags & O_APPEND) && child->d_inode &&
+        S_ISREG(child->d_inode->i_mode)) {
+      f->f_pos = child->d_inode->i_size;
+    }
   }
 
   return f;
@@ -400,15 +434,26 @@ int vfs_create(const char *path, mode_t mode) {
   struct dentry *parent = vfs_lookup_parent(path, name);
   if (!parent)
     return -ENOENT;
+  if (name[0] == '\0')
+    return -EINVAL;
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
+  if (!child)
+    return -ENOMEM;
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
+  child->d_parent = parent;
+  child->d_sb = parent->d_sb;
 
-  if (!parent->d_inode->i_op || !parent->d_inode->i_op->create)
+  if (!parent->d_inode || !parent->d_inode->i_op || !parent->d_inode->i_op->create) {
+    kfree(child);
     return -EPERM;
+  }
 
-  return parent->d_inode->i_op->create(parent->d_inode, child, mode);
+  int ret = parent->d_inode->i_op->create(parent->d_inode, child, mode);
+  if (ret != 0)
+    kfree(child);
+  return ret;
 }
 
 int vfs_mkdir(const char *path, mode_t mode) {
@@ -416,15 +461,26 @@ int vfs_mkdir(const char *path, mode_t mode) {
   struct dentry *parent = vfs_lookup_parent(path, name);
   if (!parent)
     return -ENOENT;
+  if (name[0] == '\0')
+    return -EINVAL;
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
+  if (!child)
+    return -ENOMEM;
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
+  child->d_parent = parent;
+  child->d_sb = parent->d_sb;
 
-  if (!parent->d_inode->i_op || !parent->d_inode->i_op->mkdir)
+  if (!parent->d_inode || !parent->d_inode->i_op || !parent->d_inode->i_op->mkdir) {
+    kfree(child);
     return -EPERM;
+  }
 
-  return parent->d_inode->i_op->mkdir(parent->d_inode, child, mode);
+  int ret = parent->d_inode->i_op->mkdir(parent->d_inode, child, mode);
+  if (ret != 0)
+    kfree(child);
+  return ret;
 }
 
 int vfs_readdir(struct file *file, void *ctx,

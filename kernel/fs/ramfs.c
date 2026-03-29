@@ -179,8 +179,18 @@ static ssize_t ramfs_write(struct file *file, const char *buf, size_t count,
       kfree(inode->data);
     }
 
+    for (size_t i = inode->size; i < new_cap; i++) {
+      new_data[i] = 0;
+    }
+
     inode->data = new_data;
     inode->data_capacity = new_cap;
+  }
+
+  if ((size_t)*pos > inode->size) {
+    for (size_t i = inode->size; i < (size_t)*pos; i++) {
+      inode->data[i] = 0;
+    }
   }
 
   /* Write data */
@@ -192,6 +202,9 @@ static ssize_t ramfs_write(struct file *file, const char *buf, size_t count,
 
   if (*pos > (loff_t)inode->size) {
     inode->size = *pos;
+  }
+  if (file->f_dentry && file->f_dentry->d_inode) {
+    file->f_dentry->d_inode->i_size = inode->size;
   }
 
   return count;
@@ -310,13 +323,22 @@ static struct dentry *ramfs_lookup(struct inode *dir, struct dentry *dentry) {
 
 static int ramfs_create(struct inode *dir, struct dentry *dentry, mode_t mode) {
   struct ramfs_inode *ram_dir = (struct ramfs_inode *)dir->i_private;
+  if (!ram_dir || !dentry || !dentry->d_name[0]) {
+    return -EINVAL;
+  }
+  if (ramfs_lookup_child(ram_dir, dentry->d_name)) {
+    return -EEXIST;
+  }
   struct ramfs_inode *ram_file =
       ramfs_alloc_inode(S_IFREG | mode, dentry->d_name);
 
   if (!ram_file)
     return -ENOMEM;
 
-  ramfs_add_child(ram_dir, ram_file);
+  if (ramfs_add_child(ram_dir, ram_file) != 0) {
+    ramfs_free_inode(ram_file);
+    return -ENOTDIR;
+  }
 
   /* Create VFS inode */
   struct inode *inode = kzalloc(sizeof(struct inode), GFP_KERNEL);
@@ -338,13 +360,22 @@ static int ramfs_create(struct inode *dir, struct dentry *dentry, mode_t mode) {
 
 static int ramfs_mkdir(struct inode *dir, struct dentry *dentry, mode_t mode) {
   struct ramfs_inode *ram_dir = (struct ramfs_inode *)dir->i_private;
+  if (!ram_dir || !dentry || !dentry->d_name[0]) {
+    return -EINVAL;
+  }
+  if (ramfs_lookup_child(ram_dir, dentry->d_name)) {
+    return -EEXIST;
+  }
   struct ramfs_inode *ram_child =
       ramfs_alloc_inode(S_IFDIR | mode, dentry->d_name);
 
   if (!ram_child)
     return -ENOMEM;
 
-  ramfs_add_child(ram_dir, ram_child);
+  if (ramfs_add_child(ram_dir, ram_child) != 0) {
+    ramfs_free_inode(ram_child);
+    return -ENOTDIR;
+  }
 
   /* Create VFS inode */
   struct inode *inode = kzalloc(sizeof(struct inode), GFP_KERNEL);
@@ -590,6 +621,9 @@ int ramfs_create_file(const char *path, mode_t mode, const char *content) {
     return -ENOENT;
   }
 
+  if (ramfs_lookup_child(parent, filename)) {
+    return -EEXIST;
+  }
   struct ramfs_inode *file = ramfs_alloc_inode(S_IFREG | mode, filename);
   if (!file) {
     return -ENOMEM;
@@ -602,19 +636,35 @@ int ramfs_create_file(const char *path, mode_t mode, const char *content) {
       len++;
 
     file->data = kmalloc(len, GFP_KERNEL);
-    if (file->data) {
-      for (size_t i = 0; i < len; i++) {
-        file->data[i] = content[i];
-      }
-      file->size = len;
-      file->data_capacity = len;
+    if (!file->data) {
+      ramfs_free_inode(file);
+      return -ENOMEM;
     }
+    for (size_t i = 0; i < len; i++) {
+      file->data[i] = content[i];
+    }
+    file->size = len;
+    file->data_capacity = len;
   }
 
-  ramfs_add_child(parent, file);
+  if (ramfs_add_child(parent, file) != 0) {
+    ramfs_free_inode(file);
+    return -ENOTDIR;
+  }
 
   printk(KERN_INFO "RAMFS: Created file '%s'\n", path);
 
+  return 0;
+}
+
+int ramfs_truncate_file(void *inode_private) {
+  struct ramfs_inode *inode = (struct ramfs_inode *)inode_private;
+
+  if (!inode || S_ISDIR(inode->mode)) {
+    return -EINVAL;
+  }
+
+  inode->size = 0;
   return 0;
 }
 
@@ -653,10 +703,15 @@ int ramfs_create_file_bytes(const char *path, mode_t mode, const uint8_t *data,
   if (!file) {
     return -ENOMEM;
   }
+  if (ramfs_lookup_child(parent, filename)) {
+    ramfs_free_inode(file);
+    return -EEXIST;
+  }
 
   if (data && size > 0) {
     file->data = kmalloc(size, GFP_KERNEL);
     if (!file->data) {
+      ramfs_free_inode(file);
       return -ENOMEM;
     }
     for (size_t i = 0; i < size; i++) {
@@ -666,7 +721,10 @@ int ramfs_create_file_bytes(const char *path, mode_t mode, const uint8_t *data,
     file->data_capacity = size;
   }
 
-  ramfs_add_child(parent, file);
+  if (ramfs_add_child(parent, file) != 0) {
+    ramfs_free_inode(file);
+    return -ENOTDIR;
+  }
   printk(KERN_INFO "RAMFS: Created file '%s' (%lu bytes)\n", path,
          (unsigned long)size);
   return 0;
@@ -844,7 +902,7 @@ int ramfs_lookup_path_info(const char *path, size_t *out_size, int *out_is_dir,
   if (out_is_dir)
     *out_is_dir = S_ISDIR(current->mode) ? 1 : 0;
   if (out_data)
-    *out_data = current->data;
+    *out_data = current;
 
   return 0;
 }
