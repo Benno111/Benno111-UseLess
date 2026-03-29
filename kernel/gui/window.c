@@ -2265,6 +2265,9 @@ static int window_minimize_disabled(const struct window *win) {
   return gui_is_installer_mode() && window_title_equals(win, "Installer");
 }
 
+struct window *gui_create_window(const char *title, int x, int y, int w, int h);
+void gui_focus_window(struct window *win);
+
 static void gui_open_installer_window(void) {
   struct window *win;
   int win_w;
