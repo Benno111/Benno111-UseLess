@@ -45,8 +45,11 @@ The live environment is still largely RAMFS-based. The installer writes a staged
 ## Repository Layout
 
 ```text
+assets/               Shared art, wallpapers, and branding assets
 boot/                 Boot configs and bootloader-related assets
+docs/                 Build notes and supporting documentation
 drivers/              Shared driver code
+fixes/                Patch snapshots and one-off fix bundles
 kernel/               Core kernel, arch code, GUI, FS, media, apps
 libc/                 C library work
 runtimes/             Runtime/toolchain experiments
@@ -55,6 +58,13 @@ userspace/            Userspace programs and binaries used by seeding/builds
 vib-os-x86_64/        Limine config and x86_64 boot assets
 Makefile.multiarch    Main build entry point
 ```
+
+Repo hygiene notes:
+
+- generated output belongs under `build/` and `image/`
+- helper launchers live under `scripts/`
+- standalone docs belong under `docs/`
+- ad-hoc patch files belong under `fixes/`
 
 ## Build System
 
@@ -122,6 +132,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\auto-push.ps1 -Message "Your 
 The helper looks for `git.exe` on `PATH`, standard Git installs, and GitHub
 Desktop's bundled Git, then performs `git add -A`, `git commit -m ...`, and
 `git push origin HEAD`.
+
+The Windows desktop launcher lives at `scripts/run-desktop.cmd`.
+
+For Linux host setup notes, see `docs/BUILD_LINUX.md`.
 
 ## Quick Start
 
@@ -299,4 +313,3 @@ If you are changing boot or installer behavior, always check:
 - the staged `/setup/` tree in installer mode
 
 Those paths are often the fastest way to see whether a change landed in the runtime you actually booted.
-

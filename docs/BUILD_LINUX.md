@@ -175,4 +175,4 @@ For Apple Silicon, use macOS build with `-mcpu=apple-m2` (modify Makefile if nee
 
 ## Next Steps
 
-See [AGENTS.md](AGENTS.md) for detailed development guide.
+See [AGENTS.md](../AGENTS.md) for detailed development guide.
