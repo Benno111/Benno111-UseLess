@@ -3066,10 +3066,10 @@ static const char *resolve_user_storage_path(const char *path, char *buf,
     path_idx = 7;
     while (home_prefix[path_idx] && path_idx < (int)sizeof(home_prefix) - 1)
       path_idx++;
-    for (int i = 0; account_username[i] &&
+    for (int i = 0; user_home_mounted_username[i] &&
                     path_idx < (int)sizeof(home_prefix) - 1;
          i++) {
-      home_prefix[path_idx++] = account_username[i];
+      home_prefix[path_idx++] = user_home_mounted_username[i];
     }
     home_prefix[path_idx] = '\0';
     path_idx = 0;
