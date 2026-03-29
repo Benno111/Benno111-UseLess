@@ -5972,6 +5972,11 @@ static int installer_try_make_dir(const char *path) {
   installer_ensure_parent_dirs(normalized);
   ret = vfs_mkdir(normalized, 0755);
   if (ret < 0) {
+    existing = vfs_open(normalized, O_RDONLY, 0);
+    if (existing) {
+      vfs_close(existing);
+      return 0;
+    }
     char msg[320];
     str_copy_safe(msg, "mkdir failed: ", sizeof(msg));
     installer_append_to_buf(msg, sizeof(msg), normalized);
