@@ -408,6 +408,9 @@ static void calc_button_click(char key) {
 static char notepad_text[NOTEPAD_MAX_TEXT];
 static char notepad_filepath[256]; /* Track open file */
 static int notepad_cursor = 0;
+static int notepad_selection_anchor = -1;
+static int notepad_selection_cursor = -1;
+static int notepad_selecting_with_mouse = 0;
 static char notepad_status[96] = "Ready";
 static int notepad_dirty = 0;
 
@@ -562,9 +565,268 @@ static void notepad_set_status(const char *msg) {
   str_copy_safe(notepad_status, msg, sizeof(notepad_status));
 }
 
+static int notepad_text_length(void) {
+  int len = 0;
+  while (notepad_text[len])
+    len++;
+  return len;
+}
+
+static void notepad_clear_selection(void) {
+  notepad_selection_anchor = -1;
+  notepad_selection_cursor = -1;
+}
+
+static int notepad_has_selection(void) {
+  return notepad_selection_anchor >= 0 && notepad_selection_cursor >= 0 &&
+         notepad_selection_anchor != notepad_selection_cursor;
+}
+
+static void notepad_get_selection_bounds(int *start, int *end) {
+  int a = notepad_selection_anchor;
+  int b = notepad_selection_cursor;
+
+  if (a < 0 || b < 0) {
+    if (start)
+      *start = 0;
+    if (end)
+      *end = 0;
+    return;
+  }
+
+  if (a > b) {
+    int tmp = a;
+    a = b;
+    b = tmp;
+  }
+
+  if (start)
+    *start = a;
+  if (end)
+    *end = b;
+}
+
+static void notepad_mark_dirty(const char *status) {
+  notepad_dirty = 1;
+  notepad_set_status(status);
+  notepad_update_window_title();
+}
+
+static void notepad_copy_range_to_clipboard(int start, int end) {
+  int out = 0;
+  int len = notepad_text_length();
+
+  if (start < 0)
+    start = 0;
+  if (end < start)
+    end = start;
+  if (end > len)
+    end = len;
+
+  for (int i = start; i < end && out < CLIPBOARD_MAX - 1; i++)
+    clipboard_buffer[out++] = notepad_text[i];
+  clipboard_buffer[out] = '\0';
+  clipboard_len = out;
+}
+
+static int notepad_copy_selection_to_clipboard(void) {
+  int start, end;
+
+  if (!notepad_has_selection())
+    return 0;
+
+  notepad_get_selection_bounds(&start, &end);
+  notepad_copy_range_to_clipboard(start, end);
+  return 1;
+}
+
+static int notepad_delete_range(int start, int end) {
+  int len = notepad_text_length();
+  int remove_len;
+
+  if (start < 0)
+    start = 0;
+  if (end < start)
+    end = start;
+  if (end > len)
+    end = len;
+  if (start >= end)
+    return 0;
+
+  remove_len = end - start;
+  for (int i = start; i + remove_len <= len; i++)
+    notepad_text[i] = notepad_text[i + remove_len];
+
+  notepad_cursor = start;
+  notepad_clear_selection();
+  return 1;
+}
+
+static int notepad_delete_selection(void) {
+  int start, end;
+
+  if (!notepad_has_selection())
+    return 0;
+  notepad_get_selection_bounds(&start, &end);
+  return notepad_delete_range(start, end);
+}
+
+static int notepad_insert_bytes(const char *src, int count) {
+  int len = notepad_text_length();
+
+  if (!src || count <= 0)
+    return 0;
+
+  if (notepad_has_selection())
+    notepad_delete_selection();
+  len = notepad_text_length();
+
+  if (count > NOTEPAD_MAX_TEXT - 1 - len)
+    count = NOTEPAD_MAX_TEXT - 1 - len;
+  if (count <= 0)
+    return 0;
+
+  for (int i = len; i >= notepad_cursor; i--)
+    notepad_text[i + count] = notepad_text[i];
+  for (int i = 0; i < count; i++)
+    notepad_text[notepad_cursor + i] = src[i];
+  notepad_cursor += count;
+  return count;
+}
+
+static int notepad_insert_char(char c) {
+  return notepad_insert_bytes(&c, 1);
+}
+
+static int notepad_column_for_index(int index) {
+  int col = 0;
+
+  if (index < 0)
+    index = 0;
+  for (int i = index - 1; i >= 0; i--) {
+    if (notepad_text[i] == '\n')
+      break;
+    col++;
+  }
+  return col;
+}
+
+static int notepad_line_start_for_index(int index) {
+  int len = notepad_text_length();
+
+  if (index < 0)
+    index = 0;
+  if (index > len)
+    index = len;
+  for (int start = index; start > 0; start--) {
+    if (notepad_text[start - 1] == '\n')
+      return start;
+  }
+  return 0;
+}
+
+static int notepad_move_vertical(int direction) {
+  int len = notepad_text_length();
+  int line_start = notepad_line_start_for_index(notepad_cursor);
+  int column = notepad_column_for_index(notepad_cursor);
+  int target_start = 0;
+  int target_end = 0;
+  int target_cursor = 0;
+
+  if (direction < 0) {
+    if (line_start == 0)
+      return notepad_cursor;
+    target_end = line_start - 1;
+    target_start = notepad_line_start_for_index(target_end);
+  } else {
+    int current_end = line_start;
+    while (current_end < len && notepad_text[current_end] &&
+           notepad_text[current_end] != '\n')
+      current_end++;
+    if (current_end >= len || !notepad_text[current_end])
+      return notepad_cursor;
+    target_start = current_end + 1;
+    target_end = target_start;
+    while (target_end < len && notepad_text[target_end] &&
+           notepad_text[target_end] != '\n')
+      target_end++;
+  }
+
+  target_cursor = target_start + column;
+  if (target_cursor > target_end)
+    target_cursor = target_end;
+  return target_cursor;
+}
+
+static void notepad_move_cursor(int new_cursor, int extend_selection) {
+  int len = notepad_text_length();
+
+  if (new_cursor < 0)
+    new_cursor = 0;
+  if (new_cursor > len)
+    new_cursor = len;
+
+  if (extend_selection) {
+    if (notepad_selection_anchor < 0)
+      notepad_selection_anchor = notepad_cursor;
+    notepad_selection_cursor = new_cursor;
+  } else {
+    notepad_clear_selection();
+  }
+
+  notepad_cursor = new_cursor;
+}
+
+static int notepad_cursor_from_point(int rel_x, int rel_y, int text_x, int text_y,
+                                     int max_x, int max_y) {
+  int len = notepad_text_length();
+  int tx = text_x;
+  int ty = text_y;
+  int char_w = 8;
+  int line_h = 16;
+
+  if (rel_y < text_y)
+    return 0;
+  if (rel_y >= max_y)
+    return len;
+  if (rel_x < text_x)
+    rel_x = text_x;
+
+  for (int i = 0; i <= len; i++) {
+    char c = notepad_text[i];
+
+    if (rel_y < ty + line_h) {
+      if (rel_x < tx + char_w / 2)
+        return i;
+      if (c == '\0' || c == '\n')
+        return i;
+      if (rel_x < tx + char_w + char_w / 2)
+        return i + 1;
+    }
+
+    if (c == '\0')
+      return i;
+    if (c == '\n') {
+      tx = text_x;
+      ty += line_h;
+      continue;
+    }
+
+    tx += char_w;
+    if (tx >= max_x) {
+      tx = text_x;
+      ty += line_h;
+    }
+  }
+
+  return len;
+}
+
 static void notepad_reset_document(void) {
   notepad_text[0] = '\0';
   notepad_cursor = 0;
+  notepad_clear_selection();
+  notepad_selecting_with_mouse = 0;
   notepad_filepath[0] = '\0';
   notepad_dirty = 0;
   notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
@@ -603,6 +865,8 @@ static int notepad_load_file(const char *path) {
 
   notepad_text[bytes] = '\0';
   notepad_cursor = bytes;
+  notepad_clear_selection();
+  notepad_selecting_with_mouse = 0;
   str_copy_safe(notepad_filepath, path, sizeof(notepad_filepath));
   notepad_dirty = 0;
   notepad_dialog_mode = NOTEPAD_DIALOG_NONE;
@@ -946,6 +1210,8 @@ static void snake_key(int key) {
 }
 
 static void notepad_key(int key) {
+  int len;
+
   if (notepad_dialog_mode != NOTEPAD_DIALOG_NONE) {
     if (key == 27) {
       notepad_close_dialog();
@@ -994,80 +1260,71 @@ static void notepad_key(int key) {
     return;
   }
 
-  /* Ctrl+C - Copy all text to clipboard */
   if (key == 3) { /* ASCII 3 = Ctrl+C */
-    clipboard_len = 0;
-    for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
-      clipboard_buffer[i] = notepad_text[i];
-      clipboard_len++;
-    }
-    clipboard_buffer[clipboard_len] = '\0';
+    if (notepad_copy_selection_to_clipboard())
+      notepad_set_status("Copied selection");
     return;
   }
 
-  /* Ctrl+V - Paste from clipboard */
   if (key == 22) { /* ASCII 22 = Ctrl+V */
-    for (int i = 0; i < clipboard_len && notepad_cursor < NOTEPAD_MAX_TEXT - 1;
-         i++) {
-      notepad_text[notepad_cursor++] = clipboard_buffer[i];
+    if (clipboard_len > 0 && notepad_insert_bytes(clipboard_buffer, clipboard_len) >
+                                 0) {
+      notepad_mark_dirty("Pasted from clipboard");
     }
-    notepad_text[notepad_cursor] = '\0';
-    notepad_dirty = 1;
-    notepad_set_status("Pasted from clipboard");
-    notepad_update_window_title();
     return;
   }
 
-  /* Ctrl+A - Select all (copy to clipboard) */
   if (key == 1) { /* ASCII 1 = Ctrl+A */
-    clipboard_len = 0;
-    for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
-      clipboard_buffer[i] = notepad_text[i];
-      clipboard_len++;
-    }
-    clipboard_buffer[clipboard_len] = '\0';
+    len = notepad_text_length();
+    notepad_cursor = len;
+    notepad_selection_anchor = 0;
+    notepad_selection_cursor = len;
+    notepad_set_status("Selected all");
     return;
   }
 
   if (key == 24) { /* Ctrl+X */
-    clipboard_len = 0;
-    for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
-      clipboard_buffer[i] = notepad_text[i];
-      clipboard_len++;
+    if (notepad_copy_selection_to_clipboard() && notepad_delete_selection()) {
+      notepad_mark_dirty("Cut selection to clipboard");
     }
-    clipboard_buffer[clipboard_len] = '\0';
-    notepad_text[0] = '\0';
-    notepad_cursor = 0;
-    notepad_dirty = 1;
-    notepad_set_status("Cut document to clipboard");
-    notepad_update_window_title();
+    return;
+  }
+
+  if (key == KEY_LEFT) {
+    if (notepad_cursor > 0)
+      notepad_move_cursor(notepad_cursor - 1, 0);
+    return;
+  }
+
+  if (key == KEY_RIGHT) {
+    if (notepad_cursor < notepad_text_length())
+      notepad_move_cursor(notepad_cursor + 1, 0);
+    return;
+  }
+
+  if (key == KEY_UP) {
+    notepad_move_cursor(notepad_move_vertical(-1), 0);
+    return;
+  }
+
+  if (key == KEY_DOWN) {
+    notepad_move_cursor(notepad_move_vertical(1), 0);
     return;
   }
 
   if (key == '\b' || key == 127) { /* Backspace */
-    if (notepad_cursor > 0) {
-      notepad_cursor--;
-      notepad_text[notepad_cursor] = '\0';
-      notepad_dirty = 1;
-      notepad_set_status("Edited");
-      notepad_update_window_title();
+    if (notepad_delete_selection()) {
+      notepad_mark_dirty("Edited");
+    } else if (notepad_cursor > 0 && notepad_delete_range(notepad_cursor - 1,
+                                                           notepad_cursor)) {
+      notepad_mark_dirty("Edited");
     }
   } else if (key >= 32 && key < 127) { /* Printable */
-    if (notepad_cursor < NOTEPAD_MAX_TEXT - 1) {
-      notepad_text[notepad_cursor++] = (char)key;
-      notepad_text[notepad_cursor] = '\0';
-      notepad_dirty = 1;
-      notepad_set_status("Edited");
-      notepad_update_window_title();
-    }
+    if (notepad_insert_char((char)key) > 0)
+      notepad_mark_dirty("Edited");
   } else if (key == '\n' || key == '\r') { /* Enter */
-    if (notepad_cursor < NOTEPAD_MAX_TEXT - 1) {
-      notepad_text[notepad_cursor++] = '\n';
-      notepad_text[notepad_cursor] = '\0';
-      notepad_dirty = 1;
-      notepad_set_status("Edited");
-      notepad_update_window_title();
-    }
+    if (notepad_insert_char('\n') > 0)
+      notepad_mark_dirty("Edited");
   }
 }
 
@@ -8964,18 +9221,44 @@ static void draw_window(struct window *win) {
     int max_y = text_area_y + text_area_h - 8;
     char *target_text = (win->title[0] == 'N') ? notepad_text : rename_text;
     int target_cursor = (win->title[0] == 'N') ? notepad_cursor : rename_cursor;
-
+    int selection_start = -1;
+    int selection_end = -1;
+    int cursor_x = tx;
+    int cursor_y = ty;
+    int cursor_line = 1;
+    int cursor_col = 1;
     int line_count = 1;
     int col_count = 1;
-    for (int i = 0; i < target_cursor && ty < max_y; i++) {
+
+    if (win->title[0] == 'N' && notepad_has_selection()) {
+      notepad_get_selection_bounds(&selection_start, &selection_end);
+    }
+
+    for (int i = 0; ty < max_y; i++) {
       char c = target_text[i];
+
+      if (i == target_cursor) {
+        cursor_x = tx;
+        cursor_y = ty;
+        cursor_line = line_count;
+        cursor_col = col_count;
+      }
+      if (c == '\0')
+        break;
       if (c == '\n') {
         tx = content_x + 8 + gutter_w;
         ty += 16;
         line_count++;
         col_count = 1;
       } else {
-        gui_draw_char(tx, ty, c, 0xD4D4D4, 0x1E1E1E);
+        uint32_t bg = 0x1E1E1E;
+        uint32_t fg = 0xD4D4D4;
+        if (selection_start >= 0 && i >= selection_start && i < selection_end) {
+          gui_draw_rect(tx, ty, 8, 16, 0x264F78);
+          bg = 0x264F78;
+          fg = 0xFFFFFF;
+        }
+        gui_draw_char(tx, ty, c, fg, bg);
         tx += 8;
         col_count++;
         if (tx >= max_x) {
@@ -8987,9 +9270,16 @@ static void draw_window(struct window *win) {
       }
     }
 
+    if (target_text[target_cursor] == '\0') {
+      cursor_x = tx;
+      cursor_y = ty;
+      cursor_line = line_count;
+      cursor_col = col_count;
+    }
+
     /* Cursor with blink effect */
     if (win->focused) {
-      gui_draw_rect(tx, ty, 2, 14, 0x569CD6);
+      gui_draw_rect(cursor_x, cursor_y, 2, 14, 0x569CD6);
     }
 
     /* Status bar */
@@ -8999,11 +9289,11 @@ static void draw_window(struct window *win) {
     /* Status text */
     char status_text[64] = "Ln ";
     int si = 3;
-    if (line_count < 10) {
-      status_text[si++] = '0' + line_count;
+    if (cursor_line < 10) {
+      status_text[si++] = '0' + cursor_line;
     } else {
-      status_text[si++] = '0' + (line_count / 10);
-      status_text[si++] = '0' + (line_count % 10);
+      status_text[si++] = '0' + (cursor_line / 10);
+      status_text[si++] = '0' + (cursor_line % 10);
     }
     status_text[si++] = ',';
     status_text[si++] = ' ';
@@ -9011,7 +9301,7 @@ static void draw_window(struct window *win) {
     status_text[si++] = 'o';
     status_text[si++] = 'l';
     status_text[si++] = ' ';
-    int col = col_count;
+    int col = cursor_col;
     if (col < 10) {
       status_text[si++] = '0' + col;
     } else {
@@ -12461,8 +12751,15 @@ struct window *gui_create_file_manager_path(int x, int y, const char *path) {
 static void notepad_on_mouse(struct window *win, int x, int y, int buttons) {
   int content_x = BORDER_WIDTH;
   int content_y = BORDER_WIDTH + TITLEBAR_HEIGHT;
-
-  (void)buttons;
+  int toolbar_h = 30;
+  int status_h = 22;
+  int text_area_y = content_y + toolbar_h + 2;
+  int text_area_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT - toolbar_h -
+                    status_h - 4;
+  int gutter_w = 40;
+  int text_x = content_x + 8 + gutter_w;
+  int max_x = content_x + win->width - BORDER_WIDTH * 2 - 12;
+  int max_y = text_area_y + text_area_h - 8;
 
   if (notepad_dialog_mode != NOTEPAD_DIALOG_NONE) {
     struct fm_item items[FM_MAX_ITEMS];
@@ -12544,41 +12841,42 @@ static void notepad_on_mouse(struct window *win, int x, int y, int buttons) {
       return;
     }
     if (x >= content_x + 259 && x < content_x + 301) {
-      clipboard_len = 0;
-      for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
-        clipboard_buffer[i] = notepad_text[i];
-        clipboard_len++;
-      }
-      clipboard_buffer[clipboard_len] = '\0';
-      notepad_text[0] = '\0';
-      notepad_cursor = 0;
-      notepad_dirty = 1;
-      notepad_set_status("Cut document to clipboard");
-      notepad_update_window_title();
+      if (notepad_copy_selection_to_clipboard() && notepad_delete_selection())
+        notepad_mark_dirty("Cut selection to clipboard");
       return;
     }
     if (x >= content_x + 305 && x < content_x + 355) {
-      clipboard_len = 0;
-      for (int i = 0; i < notepad_cursor && i < CLIPBOARD_MAX - 1; i++) {
-        clipboard_buffer[i] = notepad_text[i];
-        clipboard_len++;
-      }
-      clipboard_buffer[clipboard_len] = '\0';
-      notepad_set_status("Copied to clipboard");
+      if (notepad_copy_selection_to_clipboard())
+        notepad_set_status("Copied selection");
       return;
     }
     if (x >= content_x + 359 && x < content_x + 414) {
-      for (int i = 0; i < clipboard_len && notepad_cursor < NOTEPAD_MAX_TEXT - 1;
-           i++) {
-        notepad_text[notepad_cursor++] = clipboard_buffer[i];
-      }
-      notepad_text[notepad_cursor] = '\0';
-      notepad_dirty = 1;
-      notepad_set_status("Pasted from clipboard");
-      notepad_update_window_title();
+      if (clipboard_len > 0 &&
+          notepad_insert_bytes(clipboard_buffer, clipboard_len) > 0)
+        notepad_mark_dirty("Pasted from clipboard");
       return;
     }
   }
+
+  if (x >= content_x + 5 && x < content_x + win->width - BORDER_WIDTH * 2 - 4 &&
+      y >= text_area_y && y < text_area_y + text_area_h) {
+    int cursor = notepad_cursor_from_point(x, y, text_x, text_area_y + 4, max_x, max_y);
+
+    if (buttons & 1) {
+      if (!notepad_selecting_with_mouse)
+        notepad_selection_anchor = cursor;
+      notepad_selection_cursor = cursor;
+      notepad_selecting_with_mouse = 1;
+      notepad_cursor = cursor;
+    } else {
+      notepad_move_cursor(cursor, 0);
+      notepad_selecting_with_mouse = 0;
+    }
+    return;
+  }
+
+  if (!(buttons & 1))
+    notepad_selecting_with_mouse = 0;
 }
 
 void gui_open_notepad(const char *path) {
