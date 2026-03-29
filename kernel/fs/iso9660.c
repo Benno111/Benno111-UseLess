@@ -16,6 +16,12 @@ typedef struct iso_remove_ctx {
   int failed;
 } iso_remove_ctx_t;
 
+typedef struct iso_volume_info {
+  uint32_t root_extent;
+  uint32_t root_size;
+  int joliet;
+} iso_volume_info_t;
+
 static uint32_t iso_le32(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
          ((uint32_t)p[3] << 24);
@@ -40,7 +46,18 @@ static int iso_build_path(char *dst, int max, const char *root,
   return 0;
 }
 
-static void iso_trim_name(char *dst, int max, const uint8_t *src, int len) {
+static int iso_is_joliet_descriptor(const uint8_t *desc) {
+  if (!desc)
+    return 0;
+  if (desc[0] != 2)
+    return 0;
+  if (desc[88] != 0x25 || desc[89] != 0x2F)
+    return 0;
+  return desc[90] == 0x40 || desc[90] == 0x43 || desc[90] == 0x45;
+}
+
+static void iso_trim_name(char *dst, int max, const uint8_t *src, int len,
+                          int joliet) {
   int idx = 0;
   if (!dst || max <= 0)
     return;
@@ -54,14 +71,66 @@ static void iso_trim_name(char *dst, int max, const uint8_t *src, int len) {
     dst[2] = '\0';
     return;
   }
-  for (int i = 0; i < len && idx < max - 1; i++) {
-    if (src[i] == ';')
-      break;
-    dst[idx++] = (char)src[i];
+  if (joliet) {
+    for (int i = 0; i + 1 < len && idx < max - 1; i += 2) {
+      uint8_t hi = src[i];
+      uint8_t lo = src[i + 1];
+
+      if (hi == 0 && lo == ';')
+        break;
+      if (hi == 0 && lo != 0) {
+        dst[idx++] = (char)lo;
+      } else if (hi == 0 && lo == 0) {
+        break;
+      } else {
+        dst[idx++] = '_';
+      }
+    }
+  } else {
+    for (int i = 0; i < len && idx < max - 1; i++) {
+      if (src[i] == ';')
+        break;
+      dst[idx++] = (char)src[i];
+    }
   }
   if (idx > 0 && dst[idx - 1] == '.')
     idx--;
   dst[idx] = '\0';
+}
+
+static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
+  uint8_t desc[ISO_BLOCK_SIZE];
+  int saw_primary = 0;
+
+  if (!info)
+    return -1;
+
+  info->root_extent = 0;
+  info->root_size = 0;
+  info->joliet = 0;
+
+  for (uint32_t lba = 16; lba < 64; lba++) {
+    if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0)
+      return -1;
+    if (desc[1] != 'C' || desc[2] != 'D' || desc[3] != '0' || desc[4] != '0' ||
+        desc[5] != '1')
+      return -1;
+    if (desc[0] == 1 && !saw_primary) {
+      info->root_extent = iso_le32(&desc[158]);
+      info->root_size = iso_le32(&desc[166]);
+      info->joliet = 0;
+      saw_primary = 1;
+    } else if (iso_is_joliet_descriptor(desc)) {
+      info->root_extent = iso_le32(&desc[158]);
+      info->root_size = iso_le32(&desc[166]);
+      info->joliet = 1;
+      return 0;
+    } else if (desc[0] == 255) {
+      return saw_primary ? 0 : -1;
+    }
+  }
+
+  return saw_primary ? 0 : -1;
 }
 
 static void iso_ensure_parent_dirs(const char *path) {
@@ -190,7 +259,7 @@ static int iso_copy_file_from_extent(int disk_index, uint32_t extent,
 }
 
 static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size,
-                                  const char *dst_root) {
+                                  const char *dst_root, int joliet) {
   uint8_t *dir_data;
   uint8_t sector[ISO_BLOCK_SIZE];
   uint32_t sector_count = (size + ISO_BLOCK_SIZE - 1) / ISO_BLOCK_SIZE;
@@ -244,7 +313,7 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
     child_extent = iso_le32(&dir_data[pos + 2]);
     child_size = iso_le32(&dir_data[pos + 10]);
     flags = dir_data[pos + 25];
-    iso_trim_name(name, sizeof(name), &dir_data[pos + 33], name_len);
+    iso_trim_name(name, sizeof(name), &dir_data[pos + 33], name_len, joliet);
 
     if (name[0] != '\0' &&
         !(name[0] == '.' && name[1] == '\0') &&
@@ -253,7 +322,7 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
       if (flags & 0x02) {
         vfs_mkdir(child_path, 0755);
         if (iso_copy_dir_recursive(disk_index, child_extent, child_size,
-                                   child_path) != 0) {
+                                   child_path, joliet) != 0) {
           kfree(dir_data);
           return -1;
         }
@@ -275,9 +344,7 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
 
 int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
   int disk_index;
-  uint8_t pvd[ISO_BLOCK_SIZE];
-  uint32_t root_extent;
-  uint32_t root_size;
+  iso_volume_info_t volume_info;
 
   if (!disk_location || !dst_root)
     return -1;
@@ -285,17 +352,14 @@ int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
   disk_index = storage_get_disk_index_by_location(disk_location);
   if (disk_index < 0)
     return -1;
-  if (storage_read_block(disk_index, 16, pvd, ISO_BLOCK_SIZE) != 0)
+  if (iso_find_volume_info(disk_index, &volume_info) != 0)
     return -1;
-  if (pvd[0] != 1 || pvd[1] != 'C' || pvd[2] != 'D' || pvd[3] != '0' ||
-      pvd[4] != '0' || pvd[5] != '1')
-    return -1;
-
-  root_extent = iso_le32(&pvd[158]);
-  root_size = iso_le32(&pvd[166]);
   if (iso_clear_destination(dst_root) != 0)
     return -1;
   vfs_mkdir(dst_root, 0755);
-  printk(KERN_INFO "ISO9660: Copying '%s' to '%s'\n", disk_location, dst_root);
-  return iso_copy_dir_recursive(disk_index, root_extent, root_size, dst_root);
+  printk(KERN_INFO "ISO9660: Copying '%s' to '%s' using %s catalog\n",
+         disk_location, dst_root, volume_info.joliet ? "Joliet" : "primary");
+  return iso_copy_dir_recursive(disk_index, volume_info.root_extent,
+                                volume_info.root_size, dst_root,
+                                volume_info.joliet);
 }
