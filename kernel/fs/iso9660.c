@@ -17,9 +17,12 @@ typedef struct iso_remove_ctx {
 } iso_remove_ctx_t;
 
 typedef struct iso_volume_info {
-  uint32_t root_extent;
-  uint32_t root_size;
-  int joliet;
+  uint32_t primary_root_extent;
+  uint32_t primary_root_size;
+  uint32_t joliet_root_extent;
+  uint32_t joliet_root_size;
+  int has_primary;
+  int has_joliet;
 } iso_volume_info_t;
 
 static uint32_t iso_le32(const uint8_t *p) {
@@ -105,9 +108,12 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
   if (!info)
     return -1;
 
-  info->root_extent = 0;
-  info->root_size = 0;
-  info->joliet = 0;
+  info->primary_root_extent = 0;
+  info->primary_root_size = 0;
+  info->joliet_root_extent = 0;
+  info->joliet_root_size = 0;
+  info->has_primary = 0;
+  info->has_joliet = 0;
 
   for (uint32_t lba = 16; lba < 64; lba++) {
     if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0)
@@ -116,15 +122,14 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
         desc[5] != '1')
       return -1;
     if (desc[0] == 1 && !saw_primary) {
-      info->root_extent = iso_le32(&desc[158]);
-      info->root_size = iso_le32(&desc[166]);
-      info->joliet = 0;
+      info->primary_root_extent = iso_le32(&desc[158]);
+      info->primary_root_size = iso_le32(&desc[166]);
+      info->has_primary = 1;
       saw_primary = 1;
     } else if (iso_is_joliet_descriptor(desc)) {
-      info->root_extent = iso_le32(&desc[158]);
-      info->root_size = iso_le32(&desc[166]);
-      info->joliet = 1;
-      return 0;
+      info->joliet_root_extent = iso_le32(&desc[158]);
+      info->joliet_root_size = iso_le32(&desc[166]);
+      info->has_joliet = 1;
     } else if (desc[0] == 255) {
       return saw_primary ? 0 : -1;
     }
@@ -265,6 +270,7 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
   uint32_t sector_count = (size + ISO_BLOCK_SIZE - 1) / ISO_BLOCK_SIZE;
   uint32_t total_size = sector_count * ISO_BLOCK_SIZE;
   uint32_t pos = 0;
+  int copied_entries = 0;
 
   dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
   if (!dir_data)
@@ -322,16 +328,18 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
       if (flags & 0x02) {
         vfs_mkdir(child_path, 0755);
         if (iso_copy_dir_recursive(disk_index, child_extent, child_size,
-                                   child_path, joliet) != 0) {
+                                   child_path, joliet) < 0) {
           kfree(dir_data);
           return -1;
         }
+        copied_entries++;
       } else {
         if (iso_copy_file_from_extent(disk_index, child_extent, child_size,
                                       child_path) != 0) {
           kfree(dir_data);
           return -1;
         }
+        copied_entries++;
       }
     }
 
@@ -339,12 +347,19 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
   }
 
   kfree(dir_data);
-  return 0;
+  return copied_entries;
 }
 
 int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
   int disk_index;
   iso_volume_info_t volume_info;
+  struct {
+    uint32_t extent;
+    uint32_t size;
+    int joliet;
+    int available;
+  } attempts[2];
+  int attempt_count = 0;
 
   if (!disk_location || !dst_root)
     return -1;
@@ -354,12 +369,36 @@ int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
     return -1;
   if (iso_find_volume_info(disk_index, &volume_info) != 0)
     return -1;
-  if (iso_clear_destination(dst_root) != 0)
-    return -1;
-  vfs_mkdir(dst_root, 0755);
-  printk(KERN_INFO "ISO9660: Copying '%s' to '%s' using %s catalog\n",
-         disk_location, dst_root, volume_info.joliet ? "Joliet" : "primary");
-  return iso_copy_dir_recursive(disk_index, volume_info.root_extent,
-                                volume_info.root_size, dst_root,
-                                volume_info.joliet);
+  if (volume_info.has_joliet) {
+    attempts[attempt_count].extent = volume_info.joliet_root_extent;
+    attempts[attempt_count].size = volume_info.joliet_root_size;
+    attempts[attempt_count].joliet = 1;
+    attempts[attempt_count].available = 1;
+    attempt_count++;
+  }
+  if (volume_info.has_primary) {
+    attempts[attempt_count].extent = volume_info.primary_root_extent;
+    attempts[attempt_count].size = volume_info.primary_root_size;
+    attempts[attempt_count].joliet = 0;
+    attempts[attempt_count].available = 1;
+    attempt_count++;
+  }
+
+  for (int i = 0; i < attempt_count; i++) {
+    int copied;
+
+    if (!attempts[i].available)
+      continue;
+    if (iso_clear_destination(dst_root) != 0)
+      return -1;
+    vfs_mkdir(dst_root, 0755);
+    printk(KERN_INFO "ISO9660: Copying '%s' to '%s' using %s catalog\n",
+           disk_location, dst_root, attempts[i].joliet ? "Joliet" : "primary");
+    copied = iso_copy_dir_recursive(disk_index, attempts[i].extent, attempts[i].size,
+                                    dst_root, attempts[i].joliet);
+    if (copied > 0)
+      return 0;
+  }
+
+  return -1;
 }
