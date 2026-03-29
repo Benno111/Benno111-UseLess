@@ -6269,8 +6269,52 @@ static int installer_validate_system_image_payload(void) {
   return 0;
 }
 
+static void installer_stage_raw_system_image_payload(void) {
+  static const char *source_paths[] = {
+      "/dos/OSSYS.IMG",
+      "/setup/dos/OSSYS.IMG",
+      "/External/cd0/dos/OSSYS.IMG",
+      "/External/cd1/dos/OSSYS.IMG",
+      "/External/cd2/dos/OSSYS.IMG",
+      "/External/cd3/dos/OSSYS.IMG",
+      "/Media/cd0/dos/OSSYS.IMG",
+      "/Media/cd1/dos/OSSYS.IMG",
+      "/Media/cd2/dos/OSSYS.IMG",
+      "/Media/cd3/dos/OSSYS.IMG",
+  };
+  static const char *primary_target = "/install/system-image/dos/OSSYS.IMG";
+  static const char *setup_target = "/setup/install/system-image/dos/OSSYS.IMG";
+  uint8_t *data = NULL;
+  size_t size = 0;
+  char msg[320];
+  struct file *setup_dir = NULL;
+
+  if (installer_payload_file_exists(primary_target))
+    return;
+
+  for (int i = 0; i < (int)(sizeof(source_paths) / sizeof(source_paths[0])); i++) {
+    if (media_load_file(source_paths[i], &data, &size) != 0)
+      continue;
+
+    installer_ensure_parent_dirs(primary_target);
+    if (media_install_file(primary_target, data, size) == 0) {
+      setup_dir = vfs_open("/setup/install/system-image", O_RDONLY, 0);
+      if (setup_dir) {
+        vfs_close(setup_dir);
+        installer_ensure_parent_dirs(setup_target);
+        media_install_file(setup_target, data, size);
+      }
+      str_copy_safe(msg, "staged raw system image from ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), source_paths[i]);
+      installer_log(msg);
+    }
+    media_free_file(data);
+    return;
+  }
+}
+
 static const char *installer_system_disk_image_path(void) {
-    static const char *paths[] = {
+  static const char *paths[] = {
       "/install/system-image/dos/OSSYS.IMG",
       "/setup/install/system-image/dos/OSSYS.IMG",
       "/dos/OSSYS.IMG",
@@ -6284,6 +6328,8 @@ static const char *installer_system_disk_image_path(void) {
       "/Media/cd2/dos/OSSYS.IMG",
       "/Media/cd3/dos/OSSYS.IMG",
   };
+
+  installer_stage_raw_system_image_payload();
 
   for (int i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); i++) {
     if (installer_payload_file_exists(paths[i]))
