@@ -6171,47 +6171,17 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static const char *installer_system_image_root_path(void);
+static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
+                                       int *copied_files, int *failed_files,
+                                       const char *log_label);
 
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
   const char *installer_system_image_root = installer_system_image_root_path();
-  installer_copy_ctx_t ctx = {"", "", 0, 0};
-  struct file *dir;
-  char msg[320];
-
-  if (!target_root || !target_root[0])
-    return -1;
-
-  ctx.src_root = installer_system_image_root;
-  str_copy_safe(ctx.dst_root, target_root, sizeof(ctx.dst_root));
-  if (installer_try_make_dir(target_root) != 0) {
-    str_copy_safe(msg, "install failed: target root creation failed for ",
-                  sizeof(msg));
-    installer_append_to_buf(msg, sizeof(msg), target_root);
-    installer_log(msg);
-    return -1;
-  }
-
-  dir = vfs_open(ctx.src_root, O_RDONLY, 0);
-  if (!dir) {
-    installer_log("install failed: source payload missing");
-    return -1;
-  }
-
-  str_copy_safe(msg, "copying system image from ", sizeof(msg));
-  installer_append_to_buf(msg, sizeof(msg), installer_system_image_root);
-  installer_append_to_buf(msg, sizeof(msg), " to ");
-  installer_append_to_buf(msg, sizeof(msg), target_root);
-  installer_log(msg);
-  vfs_readdir(dir, &ctx, installer_copy_tree_callback);
-  vfs_close(dir);
-
-  if (copied_files)
-    *copied_files += ctx.copied_files;
-  if (failed_files)
-    *failed_files += ctx.failed_files;
-  return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
+  return installer_copy_tree_to_root(installer_system_image_root, target_root,
+                                     copied_files, failed_files,
+                                     "system image");
 }
 
 static int installer_payload_file_exists(const char *path) {
@@ -6300,15 +6270,93 @@ static int installer_validate_system_image_payload(void) {
   return -1;
 }
 
+static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
+                                       int *copied_files, int *failed_files,
+                                       const char *log_label) {
+  installer_copy_ctx_t ctx = {"", "", 0, 0};
+  struct file *dir;
+  char msg[320];
+
+  if (!src_root || !src_root[0] || !dst_root || !dst_root[0])
+    return -1;
+
+  ctx.src_root = src_root;
+  str_copy_safe(ctx.dst_root, dst_root, sizeof(ctx.dst_root));
+  if (installer_try_make_dir(dst_root) != 0) {
+    str_copy_safe(msg, "install failed: target root creation failed for ",
+                  sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), dst_root);
+    installer_log(msg);
+    return -1;
+  }
+
+  dir = vfs_open(ctx.src_root, O_RDONLY, 0);
+  if (!dir) {
+    str_copy_safe(msg, "install failed: source payload missing: ",
+                  sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), src_root);
+    installer_log(msg);
+    return -1;
+  }
+
+  str_copy_safe(msg, "copying ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), log_label ? log_label : "payload");
+  installer_append_to_buf(msg, sizeof(msg), " from ");
+  installer_append_to_buf(msg, sizeof(msg), src_root);
+  installer_append_to_buf(msg, sizeof(msg), " to ");
+  installer_append_to_buf(msg, sizeof(msg), dst_root);
+  installer_log(msg);
+  vfs_readdir(dir, &ctx, installer_copy_tree_callback);
+  vfs_close(dir);
+
+  if (copied_files)
+    *copied_files += ctx.copied_files;
+  if (failed_files)
+    *failed_files += ctx.failed_files;
+  return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
+}
+
 static int installer_apply_system_image_payload(const char *target_root) {
   int copied = 0;
   int failed = 0;
   char msg[160];
   int idx = 0;
+  struct file *stage3_boot = NULL;
+  char stage3_boot_root[192];
+  char stage3_efi_root[192];
+  char target_efi_boot_root[192];
 
   if (installer_copy_system_image_to_root(target_root, &copied, &failed) != 0) {
     installer_log("install failed: extracted system image copy failed");
     return -1;
+  }
+
+  str_copy_safe(stage3_boot_root, "/setup/boot", sizeof(stage3_boot_root));
+  stage3_boot = vfs_open(stage3_boot_root, O_RDONLY, 0);
+  if (stage3_boot) {
+    vfs_close(stage3_boot);
+    if (installer_update_root[0]) {
+      if (installer_copy_tree_to_root(stage3_boot_root, installer_update_root,
+                                      &copied, &failed, "stage 3 boot files") !=
+          0) {
+        installer_log("install failed: stage 3 boot files copy failed");
+        return -1;
+      }
+    }
+
+    if (installer_efi_root[0]) {
+      str_copy_safe(stage3_efi_root, "/setup/EFI/BOOT", sizeof(stage3_efi_root));
+      str_copy_safe(target_efi_boot_root, installer_efi_root,
+                    sizeof(target_efi_boot_root));
+      installer_append_to_buf(target_efi_boot_root,
+                              sizeof(target_efi_boot_root), "/BOOT");
+      if (installer_copy_tree_to_root(stage3_efi_root, target_efi_boot_root,
+                                      &copied, &failed,
+                                      "stage 3 EFI boot files") != 0) {
+        installer_log("install failed: stage 3 EFI boot files copy failed");
+        return -1;
+      }
+    }
   }
 
   installer_copied_files = copied;
