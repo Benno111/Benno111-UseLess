@@ -6321,6 +6321,7 @@ static int installer_copy_tree_to_root(const char *src_root, const char *dst_roo
 }
 
 static int installer_apply_system_image_payload(const char *target_root) {
+  const char *payload_root = installer_system_image_root_path();
   int copied = 0;
   int failed = 0;
   char msg[160];
@@ -6344,7 +6345,8 @@ static int installer_apply_system_image_payload(const char *target_root) {
     return -1;
   }
 
-  str_copy_safe(stage3_boot_root, "/setup/boot", sizeof(stage3_boot_root));
+  str_copy_safe(stage3_boot_root, payload_root, sizeof(stage3_boot_root));
+  installer_append_to_buf(stage3_boot_root, sizeof(stage3_boot_root), "/boot");
   stage3_boot = vfs_open(stage3_boot_root, O_RDONLY, 0);
   if (stage3_boot) {
     vfs_close(stage3_boot);
@@ -6370,8 +6372,9 @@ static int installer_apply_system_image_payload(const char *target_root) {
       installer_log("warning: root limine-bios.sys copy failed");
     }
 
-    str_copy_safe(stage3_root_cfg_path, "/setup/limine.conf",
-                  sizeof(stage3_root_cfg_path));
+    str_copy_safe(stage3_root_cfg_path, payload_root, sizeof(stage3_root_cfg_path));
+    installer_append_to_buf(stage3_root_cfg_path, sizeof(stage3_root_cfg_path),
+                            "/limine.conf");
     stage3_root_cfg = vfs_open(stage3_root_cfg_path, O_RDONLY, 0);
     if (stage3_root_cfg) {
       vfs_close(stage3_root_cfg);
@@ -6387,7 +6390,9 @@ static int installer_apply_system_image_payload(const char *target_root) {
       }
     }
 
-    str_copy_safe(stage3_limine_root, "/setup/limine", sizeof(stage3_limine_root));
+    str_copy_safe(stage3_limine_root, payload_root, sizeof(stage3_limine_root));
+    installer_append_to_buf(stage3_limine_root, sizeof(stage3_limine_root),
+                            "/limine");
     stage3_limine = vfs_open(stage3_limine_root, O_RDONLY, 0);
     if (stage3_limine) {
       vfs_close(stage3_limine);
@@ -6434,7 +6439,9 @@ static int installer_apply_system_image_payload(const char *target_root) {
     }
 
     if (installer_efi_root[0]) {
-      str_copy_safe(stage3_efi_root, "/setup/EFI/BOOT", sizeof(stage3_efi_root));
+      str_copy_safe(stage3_efi_root, payload_root, sizeof(stage3_efi_root));
+      installer_append_to_buf(stage3_efi_root, sizeof(stage3_efi_root),
+                              "/EFI/BOOT");
       str_copy_safe(target_efi_boot_root, installer_efi_root,
                     sizeof(target_efi_boot_root));
       installer_append_to_buf(target_efi_boot_root,
