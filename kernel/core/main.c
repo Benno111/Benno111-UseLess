@@ -50,7 +50,8 @@ static int boot_hdd_disk_index(void);
 static void populate_seed_tree_at(const char *prefix);
 static void ensure_boot_payload_dirs(const char *prefix);
 static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
-                               int skip_payload_roots);
+                               int skip_payload_roots,
+                               int skip_boot_root);
 static int copy_tree_callback(void *ctx, const char *name, int len,
                               loff_t offset, ino_t ino, unsigned type);
 static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
@@ -633,6 +634,7 @@ typedef struct {
   const char *src_root;
   const char *dst_root;
   int skip_payload_roots;
+  int skip_boot_root;
 } seed_copy_ctx_t;
 
 static int copy_tree_callback(void *ctx, const char *name, int len,
@@ -660,6 +662,9 @@ static int copy_tree_callback(void *ctx, const char *name, int len,
         name[3] == 't' && name[4] == 'a' && name[5] == 'l' && name[6] == 'l') ||
        (len == 5 && name[0] == 's' && name[1] == 'e' && name[2] == 't' &&
         name[3] == 'u' && name[4] == 'p')))
+    return 0;
+  if (copy->skip_boot_root && len == 4 && name[0] == 'b' && name[1] == 'o' &&
+      name[2] == 'o' && name[3] == 't')
     return 0;
 
   src_path[0] = '\0';
@@ -697,6 +702,7 @@ static int copy_tree_callback(void *ctx, const char *name, int len,
     next.src_root = src_path;
     next.dst_root = dst_path;
     next.skip_payload_roots = 0;
+    next.skip_boot_root = 0;
     dir = vfs_open(src_path, O_RDONLY, 0);
     if (!dir)
       return 0;
@@ -713,7 +719,8 @@ static int copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
-                               int skip_payload_roots) {
+                               int skip_payload_roots,
+                               int skip_boot_root) {
   struct file *dir;
   seed_copy_ctx_t ctx;
 
@@ -724,6 +731,7 @@ static int copy_tree_to_prefix(const char *src_root, const char *dst_root,
   ctx.src_root = src_root;
   ctx.dst_root = dst_root;
   ctx.skip_payload_roots = skip_payload_roots;
+  ctx.skip_boot_root = skip_boot_root;
   vfs_readdir(dir, &ctx, copy_tree_callback);
   vfs_close(dir);
   return 0;
@@ -737,9 +745,9 @@ static void import_staged_system_image(void) {
   }
 
   printk(KERN_INFO "INSTALL: staged system image found\n");
-  if (copy_tree_to_prefix("/install/system-image", "/", 0) == 0) {
+  if (copy_tree_to_prefix("/install/system-image", "/", 0, 1) == 0) {
     printk(KERN_INFO
-           "INSTALL: imported staged /install/system-image into live root\n");
+           "INSTALL: imported staged /install/system-image into live root (skipping /boot)\n");
   }
 }
 
@@ -794,18 +802,18 @@ void refresh_external_storage_views(void) {
       build_seed_path(media_root, sizeof(media_root), "/Media", location);
       seed_make_dir("", media_root);
       if (iso9660_copy_to_ramfs(location, media_root) == 0) {
-        copy_tree_to_prefix(media_root, external_root, 0);
+        copy_tree_to_prefix(media_root, external_root, 0, 0);
         continue;
       }
       if (boot_is_installer_mode()) {
-        copy_tree_to_prefix("/setup", media_root, 0);
-        copy_tree_to_prefix("/setup", external_root, 0);
+        copy_tree_to_prefix("/setup", media_root, 0, 0);
+        copy_tree_to_prefix("/setup", external_root, 0, 0);
         continue;
       }
     }
 
     build_seed_path(source_root, sizeof(source_root), "/Installed", location);
-    if (copy_tree_to_prefix(source_root, external_root, 0) == 0)
+    if (copy_tree_to_prefix(source_root, external_root, 0, 0) == 0)
       continue;
 
     build_seed_path(source_root, sizeof(source_root), "/Installed", location);
@@ -820,7 +828,7 @@ void refresh_external_storage_views(void) {
         source_root[len++] = 't';
         source_root[len++] = 'a';
         source_root[len] = '\0';
-        copy_tree_to_prefix(source_root, external_root, 0);
+        copy_tree_to_prefix(source_root, external_root, 0, 0);
       }
     }
   }
