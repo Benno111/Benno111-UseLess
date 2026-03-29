@@ -6178,14 +6178,19 @@ static const char *installer_system_image_root_path(void);
 static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
                                        int *copied_files, int *failed_files,
                                        const char *log_label);
+static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
+                                       int *failed_files);
 
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
   const char *installer_system_image_root = installer_system_image_root_path();
-  return installer_copy_tree_to_root(installer_system_image_root, target_root,
-                                     copied_files, failed_files,
-                                     "system image");
+  if (installer_copy_tree_to_root(installer_system_image_root, target_root,
+                                  copied_files, failed_files,
+                                  "system image") != 0) {
+    return -1;
+  }
+  return installer_copy_boot_aliases(target_root, copied_files, failed_files);
 }
 
 static int installer_payload_file_exists(const char *path) {
@@ -6320,145 +6325,80 @@ static int installer_copy_tree_to_root(const char *src_root, const char *dst_roo
   return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
 }
 
+static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
+                                       int *failed_files) {
+  char boot_bios_path[192];
+  char root_bios_path[192];
+  char limine_dir_path[192];
+  char limine_bios_path[192];
+  char boot_limine_dir_path[192];
+  char boot_limine_bios_path[192];
+  int copied = 0;
+  int failed = 0;
+
+  if (!target_root || !target_root[0])
+    return -1;
+
+  str_copy_safe(boot_bios_path, target_root, sizeof(boot_bios_path));
+  installer_append_to_buf(boot_bios_path, sizeof(boot_bios_path),
+                          "/boot/limine-bios.sys");
+  if (!installer_payload_file_exists(boot_bios_path))
+    return 0;
+
+  str_copy_safe(root_bios_path, target_root, sizeof(root_bios_path));
+  installer_append_to_buf(root_bios_path, sizeof(root_bios_path),
+                          "/limine-bios.sys");
+  if (installer_copy_file(boot_bios_path, root_bios_path) == 0)
+    copied++;
+  else
+    failed++;
+
+  str_copy_safe(limine_dir_path, target_root, sizeof(limine_dir_path));
+  installer_append_to_buf(limine_dir_path, sizeof(limine_dir_path), "/limine");
+  if (installer_try_make_dir(limine_dir_path) == 0) {
+    str_copy_safe(limine_bios_path, limine_dir_path, sizeof(limine_bios_path));
+    installer_append_to_buf(limine_bios_path, sizeof(limine_bios_path),
+                            "/limine-bios.sys");
+    if (installer_copy_file(boot_bios_path, limine_bios_path) == 0)
+      copied++;
+    else
+      failed++;
+  } else {
+    failed++;
+  }
+
+  str_copy_safe(boot_limine_dir_path, target_root, sizeof(boot_limine_dir_path));
+  installer_append_to_buf(boot_limine_dir_path, sizeof(boot_limine_dir_path),
+                          "/boot/limine");
+  if (installer_try_make_dir(boot_limine_dir_path) == 0) {
+    str_copy_safe(boot_limine_bios_path, boot_limine_dir_path,
+                  sizeof(boot_limine_bios_path));
+    installer_append_to_buf(boot_limine_bios_path,
+                            sizeof(boot_limine_bios_path), "/limine-bios.sys");
+    if (installer_copy_file(boot_bios_path, boot_limine_bios_path) == 0)
+      copied++;
+    else
+      failed++;
+  } else {
+    failed++;
+  }
+
+  if (copied_files)
+    *copied_files += copied;
+  if (failed_files)
+    *failed_files += failed;
+  return failed == 0 ? 0 : -1;
+}
+
 static int installer_apply_system_image_payload(const char *target_root) {
-  const char *payload_root = installer_system_image_root_path();
   int copied = 0;
   int failed = 0;
   char msg[160];
   int idx = 0;
-  struct file *stage3_boot = NULL;
-  struct file *stage3_limine = NULL;
-  struct file *stage3_root_cfg = NULL;
-  char stage3_boot_root[192];
-  char stage3_efi_root[192];
-  char stage3_limine_root[192];
-  char stage3_root_cfg_path[192];
-  char stage3_bios_path[192];
-  char target_efi_boot_root[192];
-  char target_limine_root[192];
-  char target_root_cfg_path[192];
-  char target_boot_limine_root[192];
-  char bios_target_path[192];
 
   if (installer_copy_system_image_to_root(target_root, &copied, &failed) != 0) {
     installer_log("install failed: extracted system image copy failed");
     return -1;
-  }
-
-  str_copy_safe(stage3_boot_root, payload_root, sizeof(stage3_boot_root));
-  installer_append_to_buf(stage3_boot_root, sizeof(stage3_boot_root), "/boot");
-  stage3_boot = vfs_open(stage3_boot_root, O_RDONLY, 0);
-  if (stage3_boot) {
-    vfs_close(stage3_boot);
-    if (installer_update_root[0]) {
-      if (installer_copy_tree_to_root(stage3_boot_root, installer_update_root,
-                                      &copied, &failed, "stage 3 boot files") !=
-          0) {
-        installer_log("warning: stage 3 boot files copy incomplete");
-      }
-    }
-
-    if (installer_update_root[0]) {
-      str_copy_safe(stage3_bios_path, installer_update_root,
-                    sizeof(stage3_bios_path));
-    } else {
-      str_copy_safe(stage3_bios_path, target_root, sizeof(stage3_bios_path));
-      installer_append_to_buf(stage3_bios_path, sizeof(stage3_bios_path),
-                              "/boot");
-    }
-    installer_append_to_buf(stage3_bios_path, sizeof(stage3_bios_path),
-                            "/limine-bios.sys");
-
-    str_copy_safe(bios_target_path, target_root, sizeof(bios_target_path));
-    installer_append_to_buf(bios_target_path, sizeof(bios_target_path),
-                            "/limine-bios.sys");
-    if (installer_copy_file(stage3_bios_path, bios_target_path) == 0) {
-      copied++;
-    } else {
-      failed++;
-      installer_log("warning: root limine-bios.sys copy failed");
-    }
-
-    str_copy_safe(stage3_root_cfg_path, payload_root, sizeof(stage3_root_cfg_path));
-    installer_append_to_buf(stage3_root_cfg_path, sizeof(stage3_root_cfg_path),
-                            "/limine.conf");
-    stage3_root_cfg = vfs_open(stage3_root_cfg_path, O_RDONLY, 0);
-    if (stage3_root_cfg) {
-      vfs_close(stage3_root_cfg);
-      str_copy_safe(target_root_cfg_path, target_root,
-                    sizeof(target_root_cfg_path));
-      installer_append_to_buf(target_root_cfg_path,
-                              sizeof(target_root_cfg_path), "/limine.conf");
-      if (installer_copy_file(stage3_root_cfg_path, target_root_cfg_path) == 0) {
-        copied++;
-      } else {
-        failed++;
-        installer_log("warning: stage 3 root limine.conf copy failed");
-      }
-    }
-
-    str_copy_safe(stage3_limine_root, payload_root, sizeof(stage3_limine_root));
-    installer_append_to_buf(stage3_limine_root, sizeof(stage3_limine_root),
-                            "/limine");
-    stage3_limine = vfs_open(stage3_limine_root, O_RDONLY, 0);
-    if (stage3_limine) {
-      vfs_close(stage3_limine);
-      str_copy_safe(target_limine_root, target_root, sizeof(target_limine_root));
-      installer_append_to_buf(target_limine_root, sizeof(target_limine_root),
-                              "/limine");
-      if (installer_copy_tree_to_root(stage3_limine_root, target_limine_root,
-                                      &copied, &failed,
-                                      "stage 3 limine files") != 0) {
-        installer_log("warning: stage 3 limine files copy incomplete");
-      }
-
-      str_copy_safe(bios_target_path, target_limine_root,
-                    sizeof(bios_target_path));
-      installer_append_to_buf(bios_target_path, sizeof(bios_target_path),
-                              "/limine-bios.sys");
-      if (installer_copy_file(stage3_bios_path, bios_target_path) == 0) {
-        copied++;
-      } else {
-        failed++;
-        installer_log("warning: /limine limine-bios.sys copy failed");
-      }
-    }
-
-    if (installer_update_root[0]) {
-      str_copy_safe(target_boot_limine_root, installer_update_root,
-                    sizeof(target_boot_limine_root));
-      installer_append_to_buf(target_boot_limine_root,
-                              sizeof(target_boot_limine_root), "/limine");
-      if (installer_try_make_dir(target_boot_limine_root) != 0) {
-        installer_log("warning: /boot/limine directory creation failed");
-      } else {
-        str_copy_safe(bios_target_path, target_boot_limine_root,
-                      sizeof(bios_target_path));
-        installer_append_to_buf(bios_target_path, sizeof(bios_target_path),
-                                "/limine-bios.sys");
-        if (installer_copy_file(stage3_bios_path, bios_target_path) == 0) {
-          copied++;
-        } else {
-          failed++;
-          installer_log("warning: /boot/limine limine-bios.sys copy failed");
-        }
-      }
-    }
-
-    if (installer_efi_root[0]) {
-      str_copy_safe(stage3_efi_root, payload_root, sizeof(stage3_efi_root));
-      installer_append_to_buf(stage3_efi_root, sizeof(stage3_efi_root),
-                              "/EFI/BOOT");
-      str_copy_safe(target_efi_boot_root, installer_efi_root,
-                    sizeof(target_efi_boot_root));
-      installer_append_to_buf(target_efi_boot_root,
-                              sizeof(target_efi_boot_root), "/BOOT");
-      if (installer_copy_tree_to_root(stage3_efi_root, target_efi_boot_root,
-                                      &copied, &failed,
-                                      "stage 3 EFI boot files") != 0) {
-        installer_log("warning: stage 3 EFI boot files copy incomplete");
-      }
-    }
   }
 
   installer_copied_files = copied;
