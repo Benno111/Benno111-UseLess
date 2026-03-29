@@ -6410,7 +6410,10 @@ static int installer_finalize_install(void) {
 }
 
 static void installer_start_background_install(void) {
+  extern void refresh_external_storage_views(void);
+
   installer_log_clear();
+  refresh_external_storage_views();
   installer_refresh_disk_inventory();
   installer_has_run = 0;
   installer_show_restart_screen = 0;
