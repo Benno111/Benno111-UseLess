@@ -164,6 +164,21 @@ static int xhci_ready = 0;
 static int xhci_probe_attempted = 0;
 static int xhci_init_failed = 0;
 
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+extern uint64_t limine_get_hhdm_offset(void);
+#endif
+
+static void *xhci_phys_to_cpu_virt(phys_addr_t paddr) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  uint64_t hhdm = limine_get_hhdm_offset();
+  if (!paddr || !hhdm)
+    return NULL;
+  return (void *)(uintptr_t)(paddr + hhdm);
+#else
+  return phys_to_virt(paddr);
+#endif
+}
+
 static int xhci_mmio_base_is_sane(phys_addr_t mmio_base) {
   if (!mmio_base)
     return 0;
@@ -360,7 +375,9 @@ static int xhci_setup_rings(void) {
   xhci.dcbaa_phys = pmm_alloc_page();
   if (!xhci.dcbaa_phys)
     return -1;
-  xhci.dcbaa = (uint64_t *)phys_to_virt(xhci.dcbaa_phys);
+  xhci.dcbaa = (uint64_t *)xhci_phys_to_cpu_virt(xhci.dcbaa_phys);
+  if (!xhci.dcbaa)
+    return -1;
   for (uint32_t i = 0; i <= xhci.max_slots; i++) {
     xhci.dcbaa[i] = 0;
   }
@@ -372,7 +389,9 @@ static int xhci_setup_rings(void) {
   xhci.cmd_ring_phys = pmm_alloc_page();
   if (!xhci.cmd_ring_phys)
     return -1;
-  xhci.cmd_ring = (struct xhci_trb *)phys_to_virt(xhci.cmd_ring_phys);
+  xhci.cmd_ring = (struct xhci_trb *)xhci_phys_to_cpu_virt(xhci.cmd_ring_phys);
+  if (!xhci.cmd_ring)
+    return -1;
   xhci.cmd_ring_enqueue = 0;
   xhci.cmd_ring_cycle = true;
 
@@ -383,7 +402,10 @@ static int xhci_setup_rings(void) {
   xhci.event_ring_phys = pmm_alloc_page();
   if (!xhci.event_ring_phys)
     return -1;
-  xhci.event_ring = (struct xhci_trb *)phys_to_virt(xhci.event_ring_phys);
+  xhci.event_ring =
+      (struct xhci_trb *)xhci_phys_to_cpu_virt(xhci.event_ring_phys);
+  if (!xhci.event_ring)
+    return -1;
   xhci.event_ring_dequeue = 0;
   xhci.event_ring_cycle = true;
 
@@ -525,7 +547,13 @@ int xhci_init(phys_addr_t mmio_base) {
   }
 
   /* Map MMIO */
-  xhci.base = (volatile uint8_t *)phys_to_virt(mmio_base);
+  xhci.base = (volatile uint8_t *)xhci_phys_to_cpu_virt(mmio_base);
+  if (!xhci.base) {
+    printk(KERN_ERR "XHCI: Failed to resolve MMIO CPU mapping for 0x%llx\n",
+           (unsigned long long)mmio_base);
+    xhci_init_failed = 1;
+    return -1;
+  }
   if (vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE) != 0) {
     printk(KERN_ERR "XHCI: Failed to map controller MMIO at 0x%llx\n",
            (unsigned long long)mmio_base);
