@@ -6269,116 +6269,33 @@ static int installer_validate_system_image_payload(void) {
   return 0;
 }
 
-static void installer_stage_raw_system_image_payload(void) {
-  static const char *source_paths[] = {
-      "/dos/OSSYS.IMG",
-      "/setup/dos/OSSYS.IMG",
-      "/External/cd0/dos/OSSYS.IMG",
-      "/External/cd1/dos/OSSYS.IMG",
-      "/External/cd2/dos/OSSYS.IMG",
-      "/External/cd3/dos/OSSYS.IMG",
-      "/Media/cd0/dos/OSSYS.IMG",
-      "/Media/cd1/dos/OSSYS.IMG",
-      "/Media/cd2/dos/OSSYS.IMG",
-      "/Media/cd3/dos/OSSYS.IMG",
-  };
-  static const char *primary_target = "/install/system-image/dos/OSSYS.IMG";
-  static const char *setup_target = "/setup/install/system-image/dos/OSSYS.IMG";
-  uint8_t *data = NULL;
-  size_t size = 0;
-  char msg[320];
-  struct file *setup_dir = NULL;
+static int installer_apply_system_image_payload(const char *target_root) {
+  int copied = 0;
+  int failed = 0;
+  char msg[160];
+  int idx = 0;
 
-  if (installer_payload_file_exists(primary_target))
-    return;
-
-  for (int i = 0; i < (int)(sizeof(source_paths) / sizeof(source_paths[0])); i++) {
-    if (media_load_file(source_paths[i], &data, &size) != 0)
-      continue;
-
-    installer_ensure_parent_dirs(primary_target);
-    if (media_install_file(primary_target, data, size) == 0) {
-      setup_dir = vfs_open("/setup/install/system-image", O_RDONLY, 0);
-      if (setup_dir) {
-        vfs_close(setup_dir);
-        installer_ensure_parent_dirs(setup_target);
-        media_install_file(setup_target, data, size);
-      }
-      str_copy_safe(msg, "staged raw system image from ", sizeof(msg));
-      installer_append_to_buf(msg, sizeof(msg), source_paths[i]);
-      installer_log(msg);
-    }
-    media_free_file(data);
-    return;
-  }
-}
-
-static const char *installer_system_disk_image_path(void) {
-  static const char *paths[] = {
-      "/install/system-image/dos/OSSYS.IMG",
-      "/setup/install/system-image/dos/OSSYS.IMG",
-      "/dos/OSSYS.IMG",
-      "/setup/dos/OSSYS.IMG",
-      "/External/cd0/dos/OSSYS.IMG",
-      "/External/cd1/dos/OSSYS.IMG",
-      "/External/cd2/dos/OSSYS.IMG",
-      "/External/cd3/dos/OSSYS.IMG",
-      "/Media/cd0/dos/OSSYS.IMG",
-      "/Media/cd1/dos/OSSYS.IMG",
-      "/Media/cd2/dos/OSSYS.IMG",
-      "/Media/cd3/dos/OSSYS.IMG",
-  };
-
-  installer_stage_raw_system_image_payload();
-
-  for (int i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); i++) {
-    if (installer_payload_file_exists(paths[i]))
-      return paths[i];
-  }
-
-  return NULL;
-}
-
-static int installer_write_raw_system_image_to_disk(int disk_index) {
-  const char *image_path;
-  uint8_t *data = NULL;
-  size_t size = 0;
-  char msg[320];
-
-  extern int storage_write_disk_image(int disk_index, const uint8_t *data,
-                                      size_t size);
-
-  image_path = installer_system_disk_image_path();
-  if (!image_path) {
-    installer_log("install failed: raw system disk image missing");
+  if (installer_copy_system_image_to_root(target_root, &copied, &failed) != 0) {
+    installer_log("install failed: extracted system image copy failed");
     return -1;
   }
 
-  if (media_load_file(image_path, &data, &size) != 0) {
-    str_copy_safe(msg, "install failed: could not read ", sizeof(msg));
-    installer_append_to_buf(msg, sizeof(msg), image_path);
-    installer_log(msg);
-    return -1;
+  installer_copied_files = copied;
+  installer_failed_files = failed;
+  str_copy_safe(msg, "installed extracted system image files: ", sizeof(msg));
+  while (msg[idx] && idx < (int)sizeof(msg) - 1)
+    idx++;
+  append_decimal(msg, &idx, copied);
+  installer_append_to_buf(msg, sizeof(msg), " copied");
+  if (failed > 0) {
+    installer_append_to_buf(msg, sizeof(msg), ", ");
+    idx = 0;
+    while (msg[idx] && idx < (int)sizeof(msg) - 1)
+      idx++;
+    append_decimal(msg, &idx, failed);
+    installer_append_to_buf(msg, sizeof(msg), " failed");
   }
-
-  if (size < 512 || data[510] != 0x55 || data[511] != 0xAA) {
-    installer_log("install failed: raw system image is not BIOS bootable");
-    media_free_file(data);
-    return -1;
-  }
-
-  str_copy_safe(msg, "writing raw system image from ", sizeof(msg));
-  installer_append_to_buf(msg, sizeof(msg), image_path);
   installer_log(msg);
-
-  if (storage_write_disk_image(disk_index, data, size) != 0) {
-    installer_log("install failed: raw disk image write failed");
-    media_free_file(data);
-    return -1;
-  }
-
-  media_free_file(data);
-  installer_log("raw system image written to target disk");
   return 0;
 }
 
@@ -6536,23 +6453,17 @@ static void installer_process_background_install(void) {
                                 "install blocked: boot payload incomplete");
       return;
     }
-    if (!installer_system_disk_image_path()) {
-      installer_fail_background("Install blocked. Raw disk image is missing from the installer media.",
-                                "install blocked: raw disk image missing");
-      return;
-    }
-    installer_set_status("Writing system image to disk...");
+    installer_set_status("Preparing extracted system image...");
     installer_progress_done = 2;
     installer_phase = 3;
     return;
   }
   case 3:
-    if (installer_write_raw_system_image_to_disk(installer_selected_disk) != 0) {
-      installer_fail_background("Install failed. Raw system image write failed.",
-                                "install failed: raw system image write failed");
+    if (installer_apply_system_image_payload(installer_target_root) != 0) {
+      installer_fail_background("Install failed. Extracted system image copy failed.",
+                                "install failed: extracted system image copy failed");
       return;
     }
-    installer_copied_files = 1;
     installer_set_status("Finalizing install...");
     installer_progress_done = 3;
     installer_phase = 4;
@@ -6645,7 +6556,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                       "You will choose a disk, review what will happen,",
                       0xCBD5E1, 0x111827);
       gui_draw_string(body_x, body_y + 112,
-                      "then start the raw system image install.", 0xCBD5E1,
+                      "then start the extracted system image install.", 0xCBD5E1,
                       0x111827);
 
       gui_draw_rect(body_x, body_y + 156, body_w - 24, 122, 0x172033);
@@ -6654,7 +6565,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
       gui_draw_string(body_x + 18, body_y + 206,
                       "- overwrites the selected hard disk", 0xE5E7EB, 0x172033);
       gui_draw_string(body_x + 18, body_y + 228,
-                      "- writes the bundled BIOS+UEFI bootable image", 0xE5E7EB,
+                      "- copies the extracted BIOS+UEFI system files", 0xE5E7EB,
                       0x172033);
       gui_draw_string(body_x + 18, body_y + 250,
                       "- prepares first-boot account setup", 0xE5E7EB, 0x172033);
@@ -6684,7 +6595,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
       gui_draw_string(body_x + 98, body_y + 58, selected_disk, 0xFFFFFF, 0x111827);
       gui_draw_string(body_x, body_y + 96, "Actions", 0x93C5FD, 0x111827);
       gui_draw_string(body_x + 16, body_y + 122,
-                      "1. Write the bundled raw system image to the disk.",
+                      "1. Copy the extracted system image to the target disk.",
                       0xE5E7EB, 0x111827);
       gui_draw_string(body_x + 16, body_y + 146,
                       "2. Preserve bootability for BIOS and UEFI startup.",
