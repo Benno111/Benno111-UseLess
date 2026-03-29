@@ -358,7 +358,9 @@ static int xhci_reset(void) {
 static int xhci_setup_rings(void) {
   /* Allocate DCBAA */
   xhci.dcbaa_phys = pmm_alloc_page();
-  xhci.dcbaa = (uint64_t *)xhci.dcbaa_phys;
+  if (!xhci.dcbaa_phys)
+    return -1;
+  xhci.dcbaa = (uint64_t *)phys_to_virt(xhci.dcbaa_phys);
   for (uint32_t i = 0; i <= xhci.max_slots; i++) {
     xhci.dcbaa[i] = 0;
   }
@@ -368,7 +370,9 @@ static int xhci_setup_rings(void) {
 
   /* Allocate Command Ring */
   xhci.cmd_ring_phys = pmm_alloc_page();
-  xhci.cmd_ring = (struct xhci_trb *)xhci.cmd_ring_phys;
+  if (!xhci.cmd_ring_phys)
+    return -1;
+  xhci.cmd_ring = (struct xhci_trb *)phys_to_virt(xhci.cmd_ring_phys);
   xhci.cmd_ring_enqueue = 0;
   xhci.cmd_ring_cycle = true;
 
@@ -377,7 +381,9 @@ static int xhci_setup_rings(void) {
 
   /* Allocate Event Ring */
   xhci.event_ring_phys = pmm_alloc_page();
-  xhci.event_ring = (struct xhci_trb *)xhci.event_ring_phys;
+  if (!xhci.event_ring_phys)
+    return -1;
+  xhci.event_ring = (struct xhci_trb *)phys_to_virt(xhci.event_ring_phys);
   xhci.event_ring_dequeue = 0;
   xhci.event_ring_cycle = true;
 
@@ -519,7 +525,7 @@ int xhci_init(phys_addr_t mmio_base) {
   }
 
   /* Map MMIO */
-  xhci.base = (volatile uint8_t *)mmio_base;
+  xhci.base = (volatile uint8_t *)phys_to_virt(mmio_base);
   if (vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE) != 0) {
     printk(KERN_ERR "XHCI: Failed to map controller MMIO at 0x%llx\n",
            (unsigned long long)mmio_base);
