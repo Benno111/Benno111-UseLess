@@ -2265,6 +2265,41 @@ static int window_minimize_disabled(const struct window *win) {
   return gui_is_installer_mode() && window_title_equals(win, "Installer");
 }
 
+static void gui_open_installer_window(void) {
+  struct window *win;
+  int win_w;
+  int win_h;
+  int win_x;
+  int win_y;
+
+  if (!gui_is_installer_mode())
+    return;
+
+  for (int i = 0; i < MAX_WINDOWS; i++) {
+    if (windows[i].id != 0 && window_title_equals(&windows[i], "Installer")) {
+      windows[i].visible = true;
+      windows[i].resizable = false;
+      gui_focus_window(&windows[i]);
+      return;
+    }
+  }
+
+  win_w = (int)primary_display.width - 80;
+  win_h = (int)primary_display.height - 80;
+  if (win_w < 640)
+    win_w = (int)primary_display.width;
+  if (win_h < 420)
+    win_h = (int)primary_display.height;
+  win_x = ((int)primary_display.width - win_w) / 2;
+  win_y = ((int)primary_display.height - win_h) / 2;
+
+  win = gui_create_window("Installer", win_x, win_y, win_w, win_h);
+  if (win) {
+    win->resizable = false;
+    gui_focus_window(win);
+  }
+}
+
 
 static void build_windows_string(char *buf) {
   int idx = 0;
@@ -12814,6 +12849,9 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
 #ifndef ARCH_X86_64
   desktop_manager_init();
 #endif
+
+  if (gui_is_installer_mode())
+    gui_open_installer_window();
 
   printk(KERN_INFO "GUI: Display %ux%u initialized\n", width, height);
 
