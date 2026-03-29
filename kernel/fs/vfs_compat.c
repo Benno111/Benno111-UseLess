@@ -145,7 +145,7 @@ int vfs_write_compat(vfs_node_t *node, const char *buf, size_t size) {
 int vfs_is_dir(vfs_node_t *node) { return node ? node->is_dir : 0; }
 
 /* Create file */
-vfs_node_t *vfs_create(const char *path) {
+vfs_node_t *vfs_create_compat(const char *path) {
   if (!path || path[0] == '\0')
     return NULL;
   extern int ramfs_create_file(const char *path, mode_t mode, const char *content);
