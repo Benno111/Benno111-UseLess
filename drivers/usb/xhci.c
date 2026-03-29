@@ -518,13 +518,6 @@ int xhci_init(phys_addr_t mmio_base) {
     return -1;
   }
 
-#if defined(ARCH_X86_64) || defined(ARCH_X86)
-  printk(KERN_WARNING
-         "XHCI: Deferred on x86 bring-up path for hardware stability\n");
-  xhci_init_failed = 1;
-  return -1;
-#endif
-
   /* Map MMIO */
   xhci.base = (volatile uint8_t *)mmio_base;
   if (vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE) != 0) {
