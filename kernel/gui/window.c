@@ -66,7 +66,7 @@ static void startup_get_setup_field_rect(int content_x, int content_y,
                                          int *w, int *h);
 static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
-static void installer_write_target_config(void);
+static int installer_write_target_config(void);
 static void installer_append_to_buf(char *buf, int max, const char *text);
 static int load_install_target_disk_location(char *buf, int max);
 static void open_partition_manager_window(int x, int y);
@@ -236,6 +236,7 @@ static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
 static char installer_disk_labels[8][80];
+static int installer_disk_indices[8];
 static int partition_manager_partition_count = 0;
 static int partition_manager_selected_partition = 0;
 static char partition_manager_labels[8][96];
@@ -5879,6 +5880,15 @@ static void installer_append_to_buf(char *buf, int max, const char *text) {
   buf[idx] = '\0';
 }
 
+static int installer_selected_disk_index(void) {
+  installer_refresh_disk_inventory();
+  if (installer_disk_count == 0)
+    return -1;
+  if (installer_selected_disk < 0 || installer_selected_disk >= installer_disk_count)
+    return -1;
+  return installer_disk_indices[installer_selected_disk];
+}
+
 static void installer_log_clear(void) {
   installer_log_buffer[0] = '\0';
   installer_log_target_root[0] = '\0';
@@ -6238,7 +6248,13 @@ static int installer_validate_system_image_payload(void) {
       "/boot/limine-bios.sys",
       "/boot/limine-bios-cd.bin",
       "/boot/limine-uefi-cd.bin",
+      "/BOOTABLE.CFG",
+      "/boot/BOOTABLE.CFG",
       "/EFI/BOOT/BOOTX64.EFI",
+      "/EFI/BOOT/BOOTABLE.CFG",
+      "/System/installer-state.txt",
+      "/System/efi-boot.cfg",
+      "/System/mbr-boot.cfg",
   };
   static const char *limine_cfg_suffixes[] = {
       "/limine.conf",
@@ -6456,6 +6472,7 @@ static int installer_finalize_install(void) {
   const char *installer_state =
       "installed=1\nprofile=system-image\nsource=installer-iso\n"
       "first_boot_setup=1\n";
+  int selected_disk_index;
   int user_partition_result = 0;
 
   extern int storage_prepare_user_partition(int disk_index);
@@ -6463,10 +6480,18 @@ static int installer_finalize_install(void) {
   dock_loaded = 0;
   load_dock_config();
   desktop_refresh();
-  installer_write_target_config();
+  selected_disk_index = installer_selected_disk_index();
+  if (selected_disk_index < 0) {
+    installer_log("install failed: target disk index unavailable");
+    return -1;
+  }
+  if (installer_write_target_config() != 0) {
+    installer_log("install failed: could not persist install target config");
+    return -1;
+  }
 
   user_partition_result =
-      storage_prepare_user_partition(installer_selected_disk);
+      storage_prepare_user_partition(selected_disk_index);
   if (user_partition_result > 0) {
     installer_log("created HDD user data partition for first boot");
   } else if (user_partition_result == 0) {
@@ -6475,14 +6500,20 @@ static int installer_finalize_install(void) {
     installer_log("warning: could not prepare HDD user data partition");
   }
 
-  write_text_file("/System/installer-state.txt", installer_state);
+  if (write_text_file("/System/installer-state.txt", installer_state) != 0) {
+    installer_log("install failed: could not update live installer state");
+    return -1;
+  }
   str_copy_safe(target_installer_state_path, installer_target_root,
                 sizeof(target_installer_state_path));
   installer_append_to_buf(target_installer_state_path,
                           sizeof(target_installer_state_path),
                           "/System/installer-state.txt");
-  installer_write_target_text_file(target_installer_state_path,
-                                   installer_state);
+  if (installer_write_target_text_file(target_installer_state_path,
+                                       installer_state) != 0) {
+    installer_log("install failed: could not persist target installer state");
+    return -1;
+  }
 
   summary[0] = '\0';
   str_copy_safe(summary, "Installed system image; first boot will run setup",
@@ -6564,7 +6595,13 @@ static void installer_process_background_install(void) {
     return;
   case 2: {
     extern int storage_disk_supports_partition_writes(int disk_index);
-    if (!storage_disk_supports_partition_writes(installer_selected_disk)) {
+    int selected_disk_index = installer_selected_disk_index();
+    if (selected_disk_index < 0) {
+      installer_fail_background("Install blocked. No valid target disk is selected.",
+                                "install blocked: selected target disk missing");
+      return;
+    }
+    if (!storage_disk_supports_partition_writes(selected_disk_index)) {
       installer_fail_background("Install blocked. Target disk is not writable.",
                                 "install blocked: target disk is not writable");
       return;
@@ -7486,13 +7523,18 @@ static void fm_truncate_label(const char *src, char *dst, int max_chars) {
 
 static void installer_refresh_disk_inventory(void) {
   extern int storage_get_disk_count(void);
+  extern int storage_get_disk_kind(int index);
   extern int storage_describe_disk(int index, char *buf, int max);
   int count = storage_get_disk_count();
 
   installer_disk_count = 0;
   for (int i = 0; i < count && installer_disk_count < 8; i++) {
+    int kind = storage_get_disk_kind(i);
+    if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
+      continue;
     if (storage_describe_disk(i, installer_disk_labels[installer_disk_count],
                               sizeof(installer_disk_labels[0])) == 0) {
+      installer_disk_indices[installer_disk_count] = i;
       installer_disk_count++;
     }
   }
@@ -7519,16 +7561,21 @@ static const char *installer_selected_disk_label(void) {
   return installer_disk_labels[installer_selected_disk];
 }
 
-static void installer_write_target_config(void) {
+static int installer_write_target_config(void) {
   char manifest[256];
   char target_root[96];
   char target_cfg[128];
   char disk_location[32];
+  int selected_disk_index;
   int idx = 0;
   const char *disk = installer_selected_disk_label();
   int partition_count = 0;
 
   extern int storage_get_disk_location(int index, char *buf, int max);
+
+  selected_disk_index = installer_selected_disk_index();
+  if (selected_disk_index < 0)
+    return -1;
 
   for (const char *p = "disk="; *p && idx < (int)sizeof(manifest) - 1; p++)
     manifest[idx++] = *p;
@@ -7536,7 +7583,7 @@ static void installer_write_target_config(void) {
     manifest[idx++] = disk[i];
   manifest[idx++] = '\n';
   disk_location[0] = '\0';
-  if (storage_get_disk_location(installer_selected_disk, disk_location,
+  if (storage_get_disk_location(selected_disk_index, disk_location,
                                 sizeof(disk_location)) == 0 &&
       disk_location[0]) {
     for (const char *p = "disk_location=";
@@ -7549,7 +7596,7 @@ static void installer_write_target_config(void) {
   {
     extern int storage_get_partition_count(int disk_index);
     extern int storage_has_efi_partition(int disk_index);
-    partition_count = storage_get_partition_count(installer_selected_disk);
+    partition_count = storage_get_partition_count(selected_disk_index);
     for (const char *p = "partitions=";
          *p && idx < (int)sizeof(manifest) - 1; p++)
       manifest[idx++] = *p;
@@ -7558,12 +7605,13 @@ static void installer_write_target_config(void) {
     for (const char *p = "efi="; *p && idx < (int)sizeof(manifest) - 1; p++)
       manifest[idx++] = *p;
     append_decimal(manifest, &idx,
-                   storage_has_efi_partition(installer_selected_disk) ? 1 : 0);
+                   storage_has_efi_partition(selected_disk_index) ? 1 : 0);
     manifest[idx++] = '\n';
   }
   manifest[idx] = '\0';
 
-  write_text_file("/System/install-target.cfg", manifest);
+  if (write_text_file("/System/install-target.cfg", manifest) != 0)
+    return -1;
   installer_target_root_path(target_root, sizeof(target_root));
   str_copy_safe(target_cfg, target_root, sizeof(target_cfg));
   idx = 0;
@@ -7575,18 +7623,21 @@ static void installer_write_target_config(void) {
        *p && idx < (int)sizeof(target_cfg) - 1; p++)
     target_cfg[idx++] = *p;
   target_cfg[idx] = '\0';
-  installer_write_target_text_file(target_cfg, manifest);
+  return installer_write_target_text_file(target_cfg, manifest);
 }
 
 static void partition_manager_refresh_partitions(void) {
   extern int storage_get_partition_count(int disk_index);
   extern int storage_describe_partition(int disk_index, int partition_index,
                                         char *buf, int max);
+  int selected_disk_index = installer_selected_disk_index();
+
   partition_manager_partition_count = 0;
-  for (int i = 0; i < storage_get_partition_count(installer_selected_disk) &&
+  for (int i = 0; selected_disk_index >= 0 &&
+                  i < storage_get_partition_count(selected_disk_index) &&
                   partition_manager_partition_count < 8;
        i++) {
-    if (storage_describe_partition(installer_selected_disk, i,
+    if (storage_describe_partition(selected_disk_index, i,
                                    partition_manager_labels
                                        [partition_manager_partition_count],
                                    sizeof(partition_manager_labels[0])) == 0) {
@@ -7614,6 +7665,7 @@ static void open_partition_manager_window(int x, int y) {
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h) {
   extern int storage_disk_supports_partition_writes(int disk_index);
+  int selected_disk_index = installer_selected_disk_index();
   installer_refresh_disk_inventory();
   partition_manager_refresh_partitions();
 
@@ -7625,7 +7677,8 @@ static void draw_partition_manager_window(int content_x, int content_y,
                   "Create, edit, delete, and auto-layout partitions.",
                   0xCDD6F4, 0x232337);
   gui_draw_string(content_x + 24, content_y + 58,
-                  storage_disk_supports_partition_writes(installer_selected_disk)
+                  (selected_disk_index >= 0 &&
+                   storage_disk_supports_partition_writes(selected_disk_index))
                       ? "Selected disk supports on-disk partition writes."
                       : "Selected disk has no real partition-write backend yet.",
                   0xF9E2AF, 0x232337);
@@ -12640,6 +12693,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 'r' && win->title[3] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int selected_disk_index = installer_selected_disk_index();
         extern int storage_create_partition(int disk_index,
                                             storage_partition_kind_t kind,
                                             uint32_t size_mib);
@@ -12675,17 +12729,23 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= content_x + 24 && x < content_x + 144 && y >= content_y + 298 &&
             y < content_y + 328) {
-          installer_write_target_config();
-          str_copy_safe(partition_manager_status,
-                        "Real disk set as installer target.",
-                        sizeof(partition_manager_status));
-          installer_set_status("Installer target disk updated.");
+          if (installer_write_target_config() == 0) {
+            str_copy_safe(partition_manager_status,
+                          "Real disk set as installer target.",
+                          sizeof(partition_manager_status));
+            installer_set_status("Installer target disk updated.");
+          } else {
+            str_copy_safe(partition_manager_status,
+                          "Failed to write installer target config.",
+                          sizeof(partition_manager_status));
+          }
           return;
         }
 
         if (x >= content_x + 152 && x < content_x + 230 &&
             y >= content_y + 298 && y < content_y + 328) {
-          if (storage_create_partition(installer_selected_disk,
+          if (selected_disk_index >= 0 &&
+              storage_create_partition(selected_disk_index,
                                        STORAGE_PARTITION_EFI, 256) == 0) {
             partition_manager_refresh_partitions();
             str_copy_safe(partition_manager_status, "EFI partition created.",
@@ -12699,7 +12759,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= content_x + 238 && x < content_x + 332 &&
             y >= content_y + 298 && y < content_y + 328) {
-          if (storage_create_partition(installer_selected_disk,
+          if (selected_disk_index >= 0 &&
+              storage_create_partition(selected_disk_index,
                                        STORAGE_PARTITION_SYSTEM, 8192) == 0) {
             partition_manager_refresh_partitions();
             str_copy_safe(partition_manager_status, "System partition created.",
@@ -12714,7 +12775,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= content_x + 340 && x < content_x + 424 &&
             y >= content_y + 298 && y < content_y + 328) {
-          if (storage_create_partition(installer_selected_disk,
+          if (selected_disk_index >= 0 &&
+              storage_create_partition(selected_disk_index,
                                        STORAGE_PARTITION_DATA, 4096) == 0) {
             partition_manager_refresh_partitions();
             str_copy_safe(partition_manager_status, "Data partition created.",
@@ -12729,7 +12791,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         if (x >= content_x + 432 && x < content_x + 528 &&
             y >= content_y + 298 && y < content_y + 328) {
           if (partition_manager_partition_count > 0 &&
-              storage_delete_partition(installer_selected_disk,
+              selected_disk_index >= 0 &&
+              storage_delete_partition(selected_disk_index,
                                        partition_manager_selected_partition) ==
                   0) {
             partition_manager_refresh_partitions();
@@ -12745,7 +12808,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         if (x >= content_x + 24 && x < content_x + 124 &&
             y >= content_y + 332 && y < content_y + 362) {
           if (partition_manager_partition_count > 0 &&
-              storage_update_partition(installer_selected_disk,
+              selected_disk_index >= 0 &&
+              storage_update_partition(selected_disk_index,
                                        partition_manager_selected_partition,
                                        STORAGE_PARTITION_DATA, 6144) == 0) {
             partition_manager_refresh_partitions();
@@ -12761,7 +12825,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
         if (x >= content_x + 132 && x < content_x + 242 &&
             y >= content_y + 332 && y < content_y + 362) {
-          if (storage_ensure_install_partitions(installer_selected_disk) >= 0) {
+          if (selected_disk_index >= 0 &&
+              storage_ensure_install_partitions(selected_disk_index) >= 0) {
             partition_manager_refresh_partitions();
             str_copy_safe(partition_manager_status,
                           "Auto layout ensured EFI and System partitions.",
