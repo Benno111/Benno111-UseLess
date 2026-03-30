@@ -231,14 +231,20 @@ enum {
 static int installer_page = INSTALLER_PAGE_WELCOME;
 static int installer_phase = 0;
 static int installer_progress_done = 0;
-static int installer_progress_total = 5;
+static int installer_progress_total = 100;
 static int installer_copied_files = 0;
 static int installer_failed_files = 0;
 static int installer_ensured_changes = 0;
 static uint64_t installer_reboot_deadline_ms = 0;
+static int installer_progress_total_files = 0;
+static int installer_progress_processed_files = 0;
 static char installer_target_root[96];
 static char installer_efi_root[128];
 static char installer_update_root[128];
+static char installer_progress_stage[64] = "Ready";
+static char installer_progress_detail[160] =
+    "The installer is waiting to start.";
+static char installer_progress_current_item[160] = "";
 static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
@@ -5904,12 +5910,80 @@ static void installer_set_status(const char *message) {
   str_copy_safe(installer_status, message, sizeof(installer_status));
 }
 
+static void installer_set_progress_state(int done, const char *stage,
+                                         const char *status,
+                                         const char *detail) {
+  if (done < 0)
+    done = 0;
+  if (done > installer_progress_total)
+    done = installer_progress_total;
+  installer_progress_done = done;
+  if (stage)
+    str_copy_safe(installer_progress_stage, stage,
+                  sizeof(installer_progress_stage));
+  if (status)
+    installer_set_status(status);
+  if (detail)
+    str_copy_safe(installer_progress_detail, detail,
+                  sizeof(installer_progress_detail));
+}
+
+static const char *installer_path_basename(const char *path) {
+  const char *base = path;
+
+  if (!path)
+    return "";
+  for (const char *p = path; *p; p++) {
+    if (*p == '/')
+      base = p + 1;
+  }
+  return base;
+}
+
+static void installer_note_copy_progress(const char *path, int success) {
+  char detail[160];
+  int idx = 0;
+  int percent = 20;
+
+  installer_progress_processed_files++;
+  if (installer_progress_total_files > 0)
+    percent += (installer_progress_processed_files * 70) /
+               installer_progress_total_files;
+  if (percent > 90)
+    percent = 90;
+
+  str_copy_safe(detail, success ? "Copied " : "Skipped ", sizeof(detail));
+  installer_append_to_buf(detail, sizeof(detail), installer_path_basename(path));
+  installer_append_to_buf(detail, sizeof(detail), "  ");
+  while (detail[idx] && idx < (int)sizeof(detail) - 1)
+    idx++;
+  append_decimal(detail, &idx, installer_progress_processed_files);
+  installer_append_to_buf(detail, sizeof(detail), "/");
+  idx = 0;
+  while (detail[idx] && idx < (int)sizeof(detail) - 1)
+    idx++;
+  append_decimal(detail, &idx, installer_progress_total_files);
+  installer_append_to_buf(detail, sizeof(detail), " files processed");
+
+  str_copy_safe(installer_progress_current_item, path,
+                sizeof(installer_progress_current_item));
+  installer_set_progress_state(
+      percent, "Copying Files",
+      success ? "Copying system files..." :
+                "Copying system files with warnings...",
+      detail);
+}
+
 typedef struct {
   const char *src_root;
   char dst_root[256];
   int copied_files;
   int failed_files;
 } installer_copy_ctx_t;
+
+typedef struct {
+  int files;
+} installer_count_ctx_t;
 
 static char installer_log_buffer[4096];
 static char installer_log_target_root[256];
@@ -6163,6 +6237,7 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
   installer_copy_ctx_t *copy = (installer_copy_ctx_t *)ctx;
   char src_path[256];
   char dst_path[256];
+  int copy_result;
   int src_len = 0;
   int dst_len = 0;
 
@@ -6223,10 +6298,12 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
     return 0;
   }
 
-  if (installer_copy_file(src_path, dst_path) == 0)
+  copy_result = installer_copy_file(src_path, dst_path);
+  if (copy_result == 0)
     copy->copied_files++;
   else
     copy->failed_files++;
+  installer_note_copy_progress(dst_path, copy_result == 0);
   return 0;
 }
 
@@ -6270,6 +6347,56 @@ static int installer_payload_any_file_exists(const char **paths, int count) {
       return 1;
   }
   return 0;
+}
+
+static int installer_count_tree_callback(void *ctx, const char *name, int len,
+                                         loff_t offset, ino_t ino,
+                                         unsigned type) {
+  installer_count_ctx_t *count = (installer_count_ctx_t *)ctx;
+
+  (void)offset;
+  (void)ino;
+
+  if (!count || !name || len <= 0)
+    return 0;
+  if ((len == 1 && name[0] == '.') ||
+      (len == 2 && name[0] == '.' && name[1] == '.'))
+    return 0;
+  if (type == 4)
+    return 0;
+  if (len == 14 && name[0] == 'I' && name[1] == 'M' && name[2] == 'A' &&
+      name[3] == 'G' && name[4] == 'E' && name[5] == '_' &&
+      name[6] == 'I' && name[7] == 'N' && name[8] == 'F' &&
+      name[9] == 'O' && name[10] == '.' && name[11] == 't' &&
+      name[12] == 'x' && name[13] == 't')
+    return 0;
+  count->files++;
+  return 0;
+}
+
+static int installer_count_tree_files(const char *src_root) {
+  struct file *dir;
+  installer_count_ctx_t ctx = {0};
+
+  if (!src_root || !src_root[0])
+    return 0;
+  dir = vfs_open(src_root, O_RDONLY, 0);
+  if (!dir)
+    return 0;
+  vfs_readdir(dir, &ctx, installer_count_tree_callback);
+  vfs_close(dir);
+  return ctx.files;
+}
+
+static int installer_boot_alias_copy_count(const char *target_root) {
+  char boot_bios_path[192];
+
+  if (!target_root || !target_root[0])
+    return 0;
+  str_copy_safe(boot_bios_path, target_root, sizeof(boot_bios_path));
+  installer_append_to_buf(boot_bios_path, sizeof(boot_bios_path),
+                          "/boot/limine-bios.sys");
+  return installer_payload_file_exists(boot_bios_path) ? 3 : 0;
 }
 
 static const char *installer_system_image_root_path(void) {
@@ -6410,10 +6537,13 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
   str_copy_safe(root_bios_path, target_root, sizeof(root_bios_path));
   installer_append_to_buf(root_bios_path, sizeof(root_bios_path),
                           "/limine-bios.sys");
-  if (installer_copy_file(boot_bios_path, root_bios_path) == 0)
+  if (installer_copy_file(boot_bios_path, root_bios_path) == 0) {
     copied++;
-  else
+    installer_note_copy_progress(root_bios_path, 1);
+  } else {
     failed++;
+    installer_note_copy_progress(root_bios_path, 0);
+  }
 
   str_copy_safe(limine_dir_path, target_root, sizeof(limine_dir_path));
   installer_append_to_buf(limine_dir_path, sizeof(limine_dir_path), "/limine");
@@ -6421,10 +6551,13 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
     str_copy_safe(limine_bios_path, limine_dir_path, sizeof(limine_bios_path));
     installer_append_to_buf(limine_bios_path, sizeof(limine_bios_path),
                             "/limine-bios.sys");
-    if (installer_copy_file(boot_bios_path, limine_bios_path) == 0)
+    if (installer_copy_file(boot_bios_path, limine_bios_path) == 0) {
       copied++;
-    else
+      installer_note_copy_progress(limine_bios_path, 1);
+    } else {
       failed++;
+      installer_note_copy_progress(limine_bios_path, 0);
+    }
   } else {
     failed++;
   }
@@ -6437,10 +6570,13 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
                   sizeof(boot_limine_bios_path));
     installer_append_to_buf(boot_limine_bios_path,
                             sizeof(boot_limine_bios_path), "/limine-bios.sys");
-    if (installer_copy_file(boot_bios_path, boot_limine_bios_path) == 0)
+    if (installer_copy_file(boot_bios_path, boot_limine_bios_path) == 0) {
       copied++;
-    else
+      installer_note_copy_progress(boot_limine_bios_path, 1);
+    } else {
       failed++;
+      installer_note_copy_progress(boot_limine_bios_path, 0);
+    }
   } else {
     failed++;
   }
@@ -6557,7 +6693,10 @@ static int installer_finalize_install(void) {
   installer_log("install complete");
   installer_log("selected hard disk now contains the bootable system image");
   installer_log("first boot will prompt for account creation");
-  installer_set_status(summary);
+  installer_progress_current_item[0] = '\0';
+  installer_set_progress_state(
+      100, "Ready To Reboot", summary,
+      "Installation complete. Sync finished and automatic reboot is armed.");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_show_restart_screen = 1;
@@ -6580,7 +6719,9 @@ static void installer_start_background_install(void) {
   installer_page = INSTALLER_PAGE_PROGRESS;
   installer_phase = 1;
   installer_progress_done = 0;
-  installer_progress_total = 4;
+  installer_progress_total = 100;
+  installer_progress_total_files = 0;
+  installer_progress_processed_files = 0;
   installer_copied_files = 0;
   installer_failed_files = 0;
   installer_ensured_changes = 0;
@@ -6588,7 +6729,9 @@ static void installer_start_background_install(void) {
   installer_target_root[0] = '\0';
   installer_efi_root[0] = '\0';
   installer_update_root[0] = '\0';
-  installer_set_status("Preparing install...");
+  installer_progress_current_item[0] = '\0';
+  installer_set_progress_state(2, "Preparing", "Preparing install...",
+                               "Loading installer context and refreshing storage.");
   installer_log("starting system image install");
 }
 
@@ -6625,8 +6768,9 @@ static void installer_process_background_install(void) {
                                 "install blocked: no real target disk");
       return;
     }
-    installer_set_status("Checking target disk...");
-    installer_progress_done = 1;
+    installer_set_progress_state(
+        8, "Scanning Disks", "Checking target disk...",
+        "Validating that a real writable target disk is available.");
     installer_phase = 2;
     return;
   case 2: {
@@ -6655,8 +6799,16 @@ static void installer_process_background_install(void) {
                                 "install blocked: boot payload incomplete");
       return;
     }
-    installer_set_status("Preparing extracted system image...");
-    installer_progress_done = 2;
+    installer_progress_total_files =
+        installer_count_tree_files(installer_system_image_root_path());
+    installer_progress_total_files +=
+        installer_boot_alias_copy_count(installer_target_root);
+    if (installer_progress_total_files <= 0)
+      installer_progress_total_files = 1;
+    installer_progress_processed_files = 0;
+    installer_set_progress_state(
+        18, "Validating Payload", "Preparing extracted system image...",
+        "Payload verified. Counting files before copy begins.");
     installer_phase = 3;
     return;
   }
@@ -6666,12 +6818,14 @@ static void installer_process_background_install(void) {
                                 "install failed: extracted system image copy failed");
       return;
     }
-    installer_set_status("Finalizing install...");
-    installer_progress_done = 3;
+    installer_set_progress_state(92, "Finalizing", "Finalizing install...",
+                                 "Writing boot state and preparing first boot.");
     installer_phase = 4;
     return;
   case 4:
-    installer_progress_done = 4;
+    installer_set_progress_state(
+        97, "Scheduling Reboot", "Wrapping up installation...",
+        "Syncing install metadata and scheduling reboot.");
     if (installer_finalize_install() != 0) {
       installer_fail_background("Install failed during finalization.",
                                 "install failed: finalization failed");
@@ -6708,12 +6862,26 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
     int button_w = 140;
     int button_h = 34;
     int progress_w = body_w - 36;
+    int progress_percent = installer_progress_total > 0
+                               ? (installer_progress_done * 100) /
+                                     installer_progress_total
+                               : 0;
     int fill_w = installer_progress_total > 0
                      ? (progress_w * installer_progress_done) /
                            installer_progress_total
                      : 0;
+    char progress_label[64];
     const char *steps[] = {"Welcome", "Choose Disk", "Review", "Install", "Finish"};
     const char *selected_disk = installer_selected_disk_label();
+
+    str_copy_safe(progress_label, "Progress ", sizeof(progress_label));
+    {
+      int idx = 0;
+      while (progress_label[idx] && idx < (int)sizeof(progress_label) - 1)
+        idx++;
+      append_decimal(progress_label, &idx, progress_percent);
+      installer_append_to_buf(progress_label, sizeof(progress_label), "%");
+    }
 
     gui_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x111827);
     gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x334155, 1);
@@ -6742,8 +6910,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
                     0x93C5FD, 0x0F172A);
     gui_draw_string(rail_x + 20, rail_y + panel_h - 72, selected_disk, 0xE5E7EB,
                     0x0F172A);
-    gui_draw_string(rail_x + 20, rail_y + panel_h - 44,
-                    installer_active ? "Writing system image" : installer_status,
+    gui_draw_string(rail_x + 20, rail_y + panel_h - 44, installer_progress_stage,
                     0x94A3B8, 0x0F172A);
 
     gui_draw_string(body_x, body_y, installer_page_title(), 0x93C5FD, 0x111827);
@@ -6819,17 +6986,27 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
     } else if (installer_page == INSTALLER_PAGE_PROGRESS) {
       gui_draw_string(body_x, body_y + 30, "Installing the system image",
                       0xFFFFFF, 0x111827);
-      gui_draw_string(body_x, body_y + 58,
-                      "The installer is processing the selected disk in phases.",
-                      0xCBD5E1, 0x111827);
+      gui_draw_string(body_x, body_y + 58, installer_progress_stage, 0x93C5FD,
+                      0x111827);
       gui_draw_rect(body_x, body_y + 98, progress_w, 16, 0x172033);
       if (fill_w > 0)
         gui_draw_rect(body_x, body_y + 98, fill_w, 16, 0x22C55E);
-      gui_draw_string(body_x, body_y + 128, installer_status, 0xFFFFFF, 0x111827);
-      gui_draw_rect(body_x, body_y + 164, body_w - 18, 188, 0x172033);
-      gui_draw_string(body_x + 16, body_y + 184, "Install log", 0x93C5FD,
+      gui_draw_string(body_x, body_y + 124, progress_label, 0xA7F3D0, 0x111827);
+      gui_draw_string(body_x, body_y + 148, installer_status, 0xFFFFFF, 0x111827);
+      gui_draw_string(body_x, body_y + 174, installer_progress_detail, 0xCBD5E1,
+                      0x111827);
+      if (installer_progress_current_item[0]) {
+        gui_draw_rect(body_x, body_y + 204, body_w - 18, 44, 0x172033);
+        gui_draw_string(body_x + 16, body_y + 220, "Current file", 0x93C5FD,
+                        0x172033);
+        gui_draw_string(body_x + 16, body_y + 236,
+                        installer_path_basename(installer_progress_current_item),
+                        0xFFFFFF, 0x172033);
+      }
+      gui_draw_rect(body_x, body_y + 264, body_w - 18, 112, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 284, "Install log", 0x93C5FD,
                       0x172033);
-      gui_draw_string(body_x + 16, body_y + 212, installer_log_buffer[0]
+      gui_draw_string(body_x + 16, body_y + 312, installer_log_buffer[0]
                                                      ? installer_log_buffer
                                                      : "Waiting for installer output...",
                       0xCBD5E1, 0x172033);
@@ -6839,18 +7016,21 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
       gui_draw_rect(body_x, body_y + 26, body_w - 18, 76, 0x123B2A);
       gui_draw_string(body_x + 18, body_y + 46, "Installation Complete",
                       0xFFFFFF, 0x123B2A);
-      gui_draw_string(body_x + 18, body_y + 72,
-                      "The system image is installed and ready to boot.",
+      gui_draw_string(body_x + 18, body_y + 72, installer_progress_detail,
                       0xD1FAE5, 0x123B2A);
-      gui_draw_string(body_x, body_y + 130, "Next step", 0x93C5FD, 0x111827);
-      gui_draw_string(body_x + 16, body_y + 156,
+      gui_draw_rect(body_x, body_y + 122, progress_w, 16, 0x172033);
+      if (fill_w > 0)
+        gui_draw_rect(body_x, body_y + 122, fill_w, 16, 0x22C55E);
+      gui_draw_string(body_x, body_y + 148, progress_label, 0xA7F3D0, 0x111827);
+      gui_draw_string(body_x, body_y + 178, "Next step", 0x93C5FD, 0x111827);
+      gui_draw_string(body_x + 16, body_y + 204,
                       "Restart to boot from the installed disk.", 0xE5E7EB,
                       0x111827);
-      gui_draw_string(body_x + 16, body_y + 180,
+      gui_draw_string(body_x + 16, body_y + 228,
                       "Remove installer media if the machine boots setup again.",
                       0xE5E7EB, 0x111827);
-      gui_draw_rect(body_x, body_y + 226, body_w - 18, 36, 0x172033);
-      gui_draw_string(body_x + 16, body_y + 238, installer_status, 0xFFFFFF,
+      gui_draw_rect(body_x, body_y + 274, body_w - 18, 36, 0x172033);
+      gui_draw_string(body_x + 16, body_y + 286, installer_status, 0xFFFFFF,
                       0x172033);
       str_copy_safe(countdown, "Automatic restart in ", sizeof(countdown));
       {
@@ -6860,7 +7040,7 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
         append_decimal(countdown, &idx, seconds > 0 ? seconds : 0);
         installer_append_to_buf(countdown, sizeof(countdown), " seconds...");
       }
-      gui_draw_string(body_x, body_y + 286, countdown, 0xA6E3A1, 0x111827);
+      gui_draw_string(body_x, body_y + 334, countdown, 0xA6E3A1, 0x111827);
     }
 
     gui_draw_rect(panel_x, footer_y, panel_w, 1, 0x334155);
