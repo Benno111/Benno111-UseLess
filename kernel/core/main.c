@@ -876,28 +876,28 @@ static void populate_installer_payload(void) {
   static const char *installed_bootable_cfg =
       "bootable=1\n"
       "loader=limine\n"
-      "source=installer\n";
+      "source=installed-system\n";
   static const char *installed_bios_bootable_cfg =
       "bootable=1\n"
       "scheme=mbr\n"
       "active_partition=System\n"
       "loader=limine\n"
-      "source=installer\n";
+      "source=installed-system\n";
   static const char *installed_installer_state =
       "installed=1\n"
       "profile=system-image\n"
-      "source=installer-iso\n"
+      "source=installed-system\n"
       "first_boot_setup=1\n";
   static const char *installed_efi_boot_cfg =
       "bootable=1\n"
       "loader=limine\n"
-      "source=installer\n";
+      "source=installed-system\n";
   static const char *installed_mbr_boot_cfg =
       "bootable=1\n"
       "scheme=mbr\n"
       "active_partition=System\n"
       "loader=limine\n"
-      "source=installer\n";
+      "source=installed-system\n";
   static const char *setup_info =
       "OS8 Installer Media\n"
       "\n"

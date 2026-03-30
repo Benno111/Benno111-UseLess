@@ -69,6 +69,13 @@ static const char *installer_selected_disk_label(void);
 static int installer_write_target_config(void);
 static void installer_append_to_buf(char *buf, int max, const char *text);
 static int load_install_target_disk_location(char *buf, int max);
+static const char *installed_system_bootable_cfg(void);
+static const char *installed_system_bios_bootable_cfg(void);
+static const char *installed_system_installer_state(int first_boot_setup);
+static const char *installed_system_efi_boot_cfg(void);
+static const char *installed_system_mbr_boot_cfg(void);
+static int installer_refresh_bootloader_state(const char *target_root,
+                                              int first_boot_setup);
 static void open_partition_manager_window(int x, int y);
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h);
@@ -4715,10 +4722,92 @@ static void startup_get_setup_field_rect(int content_x, int content_y,
     *h = 42;
 }
 
+static const char *installed_system_bootable_cfg(void) {
+  return "bootable=1\nloader=limine\nsource=installed-system\n";
+}
+
+static const char *installed_system_bios_bootable_cfg(void) {
+  return "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\n"
+         "source=installed-system\n";
+}
+
+static const char *installed_system_installer_state(int first_boot_setup) {
+  return first_boot_setup
+             ? "installed=1\nprofile=system-image\nsource=installed-system\n"
+               "first_boot_setup=1\n"
+             : "installed=1\nprofile=system-image\nsource=installed-system\n"
+               "first_boot_setup=0\n";
+}
+
+static const char *installed_system_efi_boot_cfg(void) {
+  return "bootable=1\nloader=limine\nsource=installed-system\n";
+}
+
+static const char *installed_system_mbr_boot_cfg(void) {
+  return "bootable=1\nscheme=mbr\nactive_partition=System\nloader=limine\n"
+         "source=installed-system\n";
+}
+
+static int installer_refresh_bootloader_state(const char *target_root,
+                                              int first_boot_setup) {
+  char path[192];
+  const char *bootable_cfg = installed_system_bootable_cfg();
+  const char *bios_bootable_cfg = installed_system_bios_bootable_cfg();
+  const char *installer_state =
+      installed_system_installer_state(first_boot_setup);
+  const char *efi_boot_cfg = installed_system_efi_boot_cfg();
+  const char *mbr_boot_cfg = installed_system_mbr_boot_cfg();
+
+  if (target_root && target_root[0]) {
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/BOOTABLE.CFG");
+    if (installer_write_target_text_file(path, bootable_cfg) != 0)
+      return -1;
+
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/EFI/BOOT/BOOTABLE.CFG");
+    if (installer_write_target_text_file(path, bootable_cfg) != 0)
+      return -1;
+
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/boot/BOOTABLE.CFG");
+    if (installer_write_target_text_file(path, bios_bootable_cfg) != 0)
+      return -1;
+
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/System/installer-state.txt");
+    if (installer_write_target_text_file(path, installer_state) != 0)
+      return -1;
+
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/System/efi-boot.cfg");
+    if (installer_write_target_text_file(path, efi_boot_cfg) != 0)
+      return -1;
+
+    str_copy_safe(path, target_root, sizeof(path));
+    installer_append_to_buf(path, sizeof(path), "/System/mbr-boot.cfg");
+    if (installer_write_target_text_file(path, mbr_boot_cfg) != 0)
+      return -1;
+    return 0;
+  }
+
+  if (write_text_file("/BOOTABLE.CFG", bootable_cfg) != 0)
+    return -1;
+  if (write_text_file("/EFI/BOOT/BOOTABLE.CFG", bootable_cfg) != 0)
+    return -1;
+  if (write_text_file("/boot/BOOTABLE.CFG", bios_bootable_cfg) != 0)
+    return -1;
+  if (write_text_file("/System/installer-state.txt", installer_state) != 0)
+    return -1;
+  if (write_text_file("/System/efi-boot.cfg", efi_boot_cfg) != 0)
+    return -1;
+  if (write_text_file("/System/mbr-boot.cfg", mbr_boot_cfg) != 0)
+    return -1;
+  return 0;
+}
+
 static void installer_clear_first_boot_setup_flag(void) {
-  write_text_file("/System/installer-state.txt",
-                  "installed=1\nprofile=system-image\nsource=installer-iso\n"
-                  "first_boot_setup=0\n");
+  installer_refresh_bootloader_state("", 0);
 }
 
 static void mask_secret(const char *src, char *dst, int max) {
@@ -6420,10 +6509,6 @@ static const char *installer_page_title(void) {
 
 static int installer_finalize_install(void) {
   char summary[96];
-  char target_installer_state_path[160];
-  const char *installer_state =
-      "installed=1\nprofile=system-image\nsource=installer-iso\n"
-      "first_boot_setup=1\n";
   int selected_disk_index;
   int user_partition_result = 0;
 
@@ -6452,18 +6537,12 @@ static int installer_finalize_install(void) {
     installer_log("warning: could not prepare HDD user data partition");
   }
 
-  if (write_text_file("/System/installer-state.txt", installer_state) != 0) {
-    installer_log("install failed: could not update live installer state");
+  if (installer_refresh_bootloader_state("", 1) != 0) {
+    installer_log("install failed: could not refresh live bootloader state");
     return -1;
   }
-  str_copy_safe(target_installer_state_path, installer_target_root,
-                sizeof(target_installer_state_path));
-  installer_append_to_buf(target_installer_state_path,
-                          sizeof(target_installer_state_path),
-                          "/System/installer-state.txt");
-  if (installer_write_target_text_file(target_installer_state_path,
-                                       installer_state) != 0) {
-    installer_log("install failed: could not persist target installer state");
+  if (installer_refresh_bootloader_state(installer_target_root, 1) != 0) {
+    installer_log("install failed: could not persist target bootloader state");
     return -1;
   }
 
