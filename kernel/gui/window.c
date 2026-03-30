@@ -3163,9 +3163,6 @@ static int installer_get_persistent_root(char *buf, int max) {
 
 static int boot_storage_root_path(char *buf, int max) {
   char disk_location[32];
-  char manifest[256];
-  struct file *f;
-  int bytes = -1;
   int idx = 0;
 
   if (!buf || max <= 0)
@@ -3181,54 +3178,8 @@ static int boot_storage_root_path(char *buf, int max) {
   if (account_disk_location[0]) {
     str_copy_safe(disk_location, account_disk_location, sizeof(disk_location));
   } else {
-    disk_location[0] = '\0';
-    f = vfs_open("/System/install-target.cfg", O_RDONLY, 0);
-    if (f) {
-      bytes = (int)vfs_read(f, manifest, sizeof(manifest) - 1);
-      vfs_close(f);
-    }
-    if (bytes > 0) {
-      int i = 0;
-      manifest[bytes] = '\0';
-      while (manifest[i]) {
-        int j = 0;
-        const char *key = "disk_location=";
-        while (key[j] && manifest[i + j] == key[j])
-          j++;
-        if (!key[j]) {
-          int out = 0;
-          i += j;
-          while (manifest[i] && manifest[i] != '\n' && manifest[i] != '\r' &&
-                 out < (int)sizeof(disk_location) - 1) {
-            disk_location[out++] = manifest[i++];
-          }
-          disk_location[out] = '\0';
-          break;
-        }
-        while (manifest[i] && manifest[i] != '\n')
-          i++;
-        if (manifest[i] == '\n')
-          i++;
-      }
-    }
-    if (!disk_location[0]) {
-      extern int storage_get_disk_count(void);
-      extern int storage_get_disk_kind(int index);
-      extern int storage_get_disk_location(int index, char *buf, int max);
-      int disk_count = storage_get_disk_count();
-
-      for (int i = 0; i < disk_count; i++) {
-        int kind = storage_get_disk_kind(i);
-        if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
-          continue;
-        if (storage_get_disk_location(i, disk_location,
-                                      sizeof(disk_location)) == 0 &&
-            disk_location[0]) {
-          break;
-        }
-      }
-    }
-    if (!disk_location[0]) {
+    if (load_install_target_disk_location(disk_location,
+                                          sizeof(disk_location)) != 0) {
       return -1;
     }
   }
@@ -4980,6 +4931,7 @@ static void gui_flush_account_state_before_power_transition(void) {
 static int load_install_target_disk_location(char *buf, int max) {
   char manifest[256];
   int fallback_disk = -1;
+  int fixed_disk_count = 0;
 
   if (!buf || max <= 0)
     return -1;
@@ -4997,10 +4949,10 @@ static int load_install_target_disk_location(char *buf, int max) {
       if (kind == STORAGE_KIND_CDROM || kind == STORAGE_KIND_USB_MASS_STORAGE)
         continue;
       fallback_disk = i;
-      break;
+      fixed_disk_count++;
     }
 
-    if (fallback_disk >= 0 &&
+    if (fixed_disk_count == 1 && fallback_disk >= 0 &&
         storage_get_disk_location(fallback_disk, buf, max) == 0 && buf[0]) {
       return 0;
     }
