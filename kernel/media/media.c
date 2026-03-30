@@ -79,30 +79,29 @@ static int media_write_raw_file(const char *path, const uint8_t *data,
 /* File loading                                                          */
 /* --------------------------------------------------------------------- */
 
-int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
-  char persistent_path[256];
+static int media_load_file_from_exact_path(const char *path, uint8_t **out_data,
+                                           size_t *out_size) {
+  struct file *f;
+  struct inode *inode;
+  uint8_t *buf;
+  size_t size;
+  size_t total_read = 0;
+
   if (!path || !out_data || !out_size)
     return -EINVAL;
 
-  struct file *f = NULL;
-  if (media_try_build_persistent_path(path, persistent_path,
-                                      sizeof(persistent_path)) == 0) {
-    f = vfs_open(persistent_path, O_RDONLY, 0);
-  }
-  if (!f)
-    f = vfs_open(path, O_RDONLY, 0);
+  f = vfs_open(path, O_RDONLY, 0);
   if (!f)
     return -ENOENT;
 
-  struct inode *inode = f->f_dentry ? f->f_dentry->d_inode : NULL;
+  inode = f->f_dentry ? f->f_dentry->d_inode : NULL;
   if (!inode || inode->i_size <= 0) {
     vfs_close(f);
     return -EINVAL;
   }
 
-  size_t size = (size_t)inode->i_size;
-  uint8_t *buf = (uint8_t *)kmalloc(size, GFP_KERNEL);
-  size_t total_read = 0;
+  size = (size_t)inode->i_size;
+  buf = (uint8_t *)kmalloc(size, GFP_KERNEL);
   if (!buf) {
     vfs_close(f);
     return -ENOMEM;
@@ -131,6 +130,23 @@ int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
   *out_data = buf;
   *out_size = total_read;
   return 0;
+}
+
+int media_load_file(const char *path, uint8_t **out_data, size_t *out_size) {
+  char persistent_path[256];
+  int ret;
+
+  if (!path || !out_data || !out_size)
+    return -EINVAL;
+
+  if (media_try_build_persistent_path(path, persistent_path,
+                                      sizeof(persistent_path)) == 0) {
+    ret = media_load_file_from_exact_path(persistent_path, out_data, out_size);
+    if (ret == 0)
+      return 0;
+  }
+
+  return media_load_file_from_exact_path(path, out_data, out_size);
 }
 
 void media_free_file(uint8_t *data) {
