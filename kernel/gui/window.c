@@ -353,7 +353,12 @@ static void wallpaper_ensure_loaded(void) {
       decode_ok = media_decode_jpeg_buffer(data, size, &wallpaper_image,
                                            wallpaper_buffer,
                                            sizeof(wallpaper_buffer));
+      if (decode_ok == -ENOMEM)
+        decode_ok = media_decode_jpeg(data, size, &wallpaper_image);
       if (decode_ok == 0)
+        wallpaper_image_heap_allocated =
+            wallpaper_image.pixels != wallpaper_buffer;
+      else
         wallpaper_image_heap_allocated = 0;
     }
     if (decode_ok == 0) {

@@ -171,9 +171,11 @@ extern uint64_t limine_get_hhdm_offset(void);
 static void *xhci_phys_to_cpu_virt(phys_addr_t paddr) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   uint64_t hhdm = limine_get_hhdm_offset();
-  if (!paddr || !hhdm)
+  if (!paddr)
     return NULL;
-  return (void *)(uintptr_t)(paddr + hhdm);
+  if (hhdm)
+    return (void *)(uintptr_t)(paddr + hhdm);
+  return phys_to_virt(paddr);
 #else
   return phys_to_virt(paddr);
 #endif
