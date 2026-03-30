@@ -6452,6 +6452,7 @@ static const char *installer_page_title(void) {
 
 static int installer_finalize_install(void) {
   char summary[96];
+  char target_installer_state_path[160];
   const char *installer_state =
       "installed=1\nprofile=system-image\nsource=installer-iso\n"
       "first_boot_setup=1\n";
@@ -6475,6 +6476,13 @@ static int installer_finalize_install(void) {
   }
 
   write_text_file("/System/installer-state.txt", installer_state);
+  str_copy_safe(target_installer_state_path, installer_target_root,
+                sizeof(target_installer_state_path));
+  installer_append_to_buf(target_installer_state_path,
+                          sizeof(target_installer_state_path),
+                          "/System/installer-state.txt");
+  installer_write_target_text_file(target_installer_state_path,
+                                   installer_state);
 
   summary[0] = '\0';
   str_copy_safe(summary, "Installed system image; first boot will run setup",
@@ -7567,7 +7575,7 @@ static void installer_write_target_config(void) {
        *p && idx < (int)sizeof(target_cfg) - 1; p++)
     target_cfg[idx++] = *p;
   target_cfg[idx] = '\0';
-  write_text_file(target_cfg, manifest);
+  installer_write_target_text_file(target_cfg, manifest);
 }
 
 static void partition_manager_refresh_partitions(void) {

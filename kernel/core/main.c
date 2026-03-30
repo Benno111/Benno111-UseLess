@@ -873,6 +873,31 @@ static void populate_installer_payload(void) {
       "\n"
       "This installer boot seeds a bundled system image at\n"
       "/install/system-image so the GUI installer can copy it to disk.\n";
+  static const char *installed_bootable_cfg =
+      "bootable=1\n"
+      "loader=limine\n"
+      "source=installer\n";
+  static const char *installed_bios_bootable_cfg =
+      "bootable=1\n"
+      "scheme=mbr\n"
+      "active_partition=System\n"
+      "loader=limine\n"
+      "source=installer\n";
+  static const char *installed_installer_state =
+      "installed=1\n"
+      "profile=system-image\n"
+      "source=installer-iso\n"
+      "first_boot_setup=1\n";
+  static const char *installed_efi_boot_cfg =
+      "bootable=1\n"
+      "loader=limine\n"
+      "source=installer\n";
+  static const char *installed_mbr_boot_cfg =
+      "bootable=1\n"
+      "scheme=mbr\n"
+      "active_partition=System\n"
+      "loader=limine\n"
+      "source=installer\n";
   static const char *setup_info =
       "OS8 Installer Media\n"
       "\n"
@@ -966,9 +991,21 @@ static void populate_installer_payload(void) {
       media_install_file("/install/system-image/boot/limine-uefi-cd.bin",
                          installer_payload_limine_uefi_cd_bin,
                          limine_uefi_cd_size) != 0 ||
+      media_install_text_file("/install/system-image/BOOTABLE.CFG",
+                              installed_bootable_cfg) != 0 ||
+      media_install_text_file("/install/system-image/EFI/BOOT/BOOTABLE.CFG",
+                              installed_bootable_cfg) != 0 ||
+      media_install_text_file("/install/system-image/boot/BOOTABLE.CFG",
+                              installed_bios_bootable_cfg) != 0 ||
       media_install_file("/install/system-image/EFI/BOOT/BOOTX64.EFI",
                          installer_payload_bootx64_efi,
                          bootx64_efi_size) != 0 ||
+      media_install_text_file("/install/system-image/System/installer-state.txt",
+                              installed_installer_state) != 0 ||
+      media_install_text_file("/install/system-image/System/efi-boot.cfg",
+                              installed_efi_boot_cfg) != 0 ||
+      media_install_text_file("/install/system-image/System/mbr-boot.cfg",
+                              installed_mbr_boot_cfg) != 0 ||
       media_install_text_file("/install/system-image/IMAGE_INFO.txt",
                               image_info) != 0 ||
       (installer_mode &&
@@ -993,9 +1030,23 @@ static void populate_installer_payload(void) {
         media_install_file("/setup/install/system-image/boot/limine-uefi-cd.bin",
                            installer_payload_limine_uefi_cd_bin,
                            limine_uefi_cd_size) != 0 ||
+        media_install_text_file("/setup/install/system-image/BOOTABLE.CFG",
+                                installed_bootable_cfg) != 0 ||
+        media_install_text_file(
+            "/setup/install/system-image/EFI/BOOT/BOOTABLE.CFG",
+            installed_bootable_cfg) != 0 ||
+        media_install_text_file("/setup/install/system-image/boot/BOOTABLE.CFG",
+                                installed_bios_bootable_cfg) != 0 ||
         media_install_file("/setup/install/system-image/EFI/BOOT/BOOTX64.EFI",
                            installer_payload_bootx64_efi,
                            bootx64_efi_size) != 0 ||
+        media_install_text_file(
+            "/setup/install/system-image/System/installer-state.txt",
+            installed_installer_state) != 0 ||
+        media_install_text_file("/setup/install/system-image/System/efi-boot.cfg",
+                                installed_efi_boot_cfg) != 0 ||
+        media_install_text_file("/setup/install/system-image/System/mbr-boot.cfg",
+                                installed_mbr_boot_cfg) != 0 ||
         media_install_text_file("/setup/install/system-image/IMAGE_INFO.txt",
                                 image_info) != 0))) {
     printk(KERN_ERR "INSTALL: failed to seed setup media payload\n");
