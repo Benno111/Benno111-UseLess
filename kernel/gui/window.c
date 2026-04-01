@@ -8455,24 +8455,33 @@ static void draw_window(struct window *win) {
   struct gui_clip_state prev_clip = gui_set_clip_rect(x, y, w, h);
 
   gui_draw_glass_panel(x, y, w, h,
-                       win->focused ? 0x6A2C3446 : 0x58303440,
-                       win->focused ? 0x42FFFFFF : 0x24FFFFFF, 0x8C75839A, 2);
+                       win->focused ? 0x6A4A4A4A : 0x58555555,
+                       win->focused ? 0x28FFFFFF : 0x18FFFFFF, 0x8C7A7A7A, 2);
 
   /* Draw border */
-  gui_fill_rect_alpha(x, y, w, BORDER_WIDTH, 0x506C7A92);
-  gui_fill_rect_alpha(x, y + h - BORDER_WIDTH, w, BORDER_WIDTH, 0x3C0C1018);
-  gui_fill_rect_alpha(x, y, BORDER_WIDTH, h, 0x506C7A92);
-  gui_fill_rect_alpha(x + w - BORDER_WIDTH, y, BORDER_WIDTH, h, 0x506C7A92);
-  gui_draw_rect_outline(x, y, w, h, 0x8B8FA1BC, BORDER_WIDTH);
+  gui_fill_rect_alpha(x, y, w, BORDER_WIDTH, 0x709B9B9B);
+  gui_fill_rect_alpha(x, y + h - BORDER_WIDTH, w, BORDER_WIDTH, 0x70505050);
+  gui_fill_rect_alpha(x, y, BORDER_WIDTH, h, 0x70808080);
+  gui_fill_rect_alpha(x + w - BORDER_WIDTH, y, BORDER_WIDTH, h, 0x70808080);
+  gui_draw_rect_outline(x, y, w, h, 0x8B747474, BORDER_WIDTH);
 
   if (win->has_titlebar) {
-    uint32_t titlebar_bg = win->focused ? 0x344D6488 : 0x2C3B4458;
-    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2,
-                        TITLEBAR_HEIGHT, titlebar_bg);
-    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH, w - BORDER_WIDTH * 2,
-                        1, 0x55FFFFFF);
-    gui_fill_rect_alpha(x + BORDER_WIDTH, y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
-                        w - BORDER_WIDTH * 2, 1, 0x440A0D12);
+    int title_x0 = x + BORDER_WIDTH;
+    int title_y0 = y + BORDER_WIDTH;
+    int title_w = w - BORDER_WIDTH * 2;
+    uint8_t top_gray = win->focused ? 0xB7 : 0xAA;
+    uint8_t bottom_gray = win->focused ? 0x76 : 0x70;
+    for (int py = 0; py < TITLEBAR_HEIGHT; py++) {
+      uint8_t gray = top_gray + ((bottom_gray - top_gray) * py) / TITLEBAR_HEIGHT;
+      gui_draw_rect(title_x0, title_y0 + py, title_w, 1,
+                    (gray << 16) | (gray << 8) | gray);
+    }
+    gui_fill_rect_alpha(title_x0, title_y0, title_w, 2, 0x55FFFFFF);
+    gui_fill_rect_alpha(title_x0, title_y0 + 2, title_w, 1, 0x30DCDCDC);
+    gui_fill_rect_alpha(title_x0, title_y0 + TITLEBAR_HEIGHT - 2, title_w, 1,
+                        0x60444444);
+    gui_fill_rect_alpha(title_x0, title_y0 + TITLEBAR_HEIGHT - 1, title_w, 1,
+                        0x90202020);
 
     /* Traffic light buttons on LEFT side - Modern rounded */
     int btn_cx = x + BORDER_WIDTH + 16; /* First circle center X */
@@ -8523,7 +8532,7 @@ static void draw_window(struct window *win) {
       title_len++;
     int title_x = x + (w - title_len * 8) / 2;
     gui_draw_string(title_x, y + BORDER_WIDTH + 7, win->title,
-                    win->focused ? 0xFFF7FBFF : 0xD8DDE6F2, 0x00000000);
+                    win->focused ? 0x1B1B1B : 0x303030, 0x00000000);
   }
 
   /* Draw content area */
