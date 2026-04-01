@@ -519,6 +519,13 @@ static const char *settings_user_role_options[] = {"admin", "user", "child"};
   ((int)(sizeof(settings_user_role_options) /                                 \
          sizeof(settings_user_role_options[0])))
 
+#define SETTINGS_MENU_COUNT 10
+
+static const char *settings_menu_labels[SETTINGS_MENU_COUNT] = {
+    "HOME",   "NETWORK", "DISKS",   "THEMES", "BACKUP",
+    "SYSTEM", "ACTIVATE","UPDATES", "RECOVERY", "INFO",
+};
+
 static int settings_resolution_current_idx = -1;
 static int settings_resolution_pending_idx = -1;
 static int settings_resolution_saved_idx = -1;
@@ -538,6 +545,60 @@ static void ensure_gui_app_dirs(void);
 static int settings_add_user_account(void);
 static int settings_remove_selected_user_account(void);
 static int account_role_is_admin(void);
+
+static const char *settings_page_heading(int page) {
+  switch (page) {
+  case 0:
+    return "HOME";
+  case 1:
+    return "NETWORK";
+  case 2:
+    return "DISKS";
+  case 3:
+    return "THEMES";
+  case 4:
+    return "BACKUP";
+  case 5:
+    return "SYSTEM";
+  case 6:
+    return "ACTIVATE";
+  case 7:
+    return "UPDATES";
+  case 8:
+    return "RECOVERY";
+  default:
+    return "INFO";
+  }
+}
+
+static const char *settings_default_status_message(int page) {
+  switch (page) {
+  case 0:
+    return "Tune your desktop experience.";
+  case 1:
+    return "Review the current network state.";
+  case 2:
+    return "Inspect storage and disk tools.";
+  case 3:
+    return "Adjust wallpapers, blur, and graphics.";
+  case 4:
+    return "Backup tools are not available yet.";
+  case 5:
+    return "Manage the active system session.";
+  case 6:
+    return "Activation is not available in this build.";
+  case 7:
+    return "System updates are not available yet.";
+  case 8:
+    return "Recovery tools and reset actions.";
+  default:
+    return "System build and environment details.";
+  }
+}
+
+static int settings_user_editor_is_visible(void) {
+  return settings_active_tab == 5;
+}
 
 static void notepad_append_to_buf(char *dst, int max, const char *src) {
   int idx = 0;
@@ -8989,11 +9050,13 @@ static void draw_window(struct window *win) {
     const char *blur_status;
     const char *gpu_status;
     extern int intel_hda_is_playing(void);
-    int sidebar_w = 118;
-    int panel_x = content_x + sidebar_w + 14;
-    int panel_y = content_y + 14;
-    int panel_w = content_w - sidebar_w - 24;
-    int card_w = (panel_w - 12) / 2;
+    int sidebar_w = 104;
+    int divider_x = content_x + sidebar_w;
+    int panel_x = divider_x + 3;
+    int panel_y = content_y + 42;
+    int panel_w = content_w - sidebar_w - 3;
+    int panel_h = content_h - 42;
+    int card_w = (panel_w - 30) / 2;
     int dock_count_buf_idx = 0;
     char dock_count_buf[24];
     char installed_buf[24];
@@ -9032,35 +9095,28 @@ static void draw_window(struct window *win) {
     append_decimal(installed_buf, &dock_count_buf_idx, installed_apps);
     notepad_append_to_buf(installed_buf, sizeof(installed_buf), " installed");
 
-    gui_draw_rect(content_x, content_y, content_w, content_h, 0x141824);
-    gui_draw_rect(content_x + 10, content_y + 10, sidebar_w - 12, content_h - 20,
-                  0x101827);
-    gui_draw_string(content_x + 24, content_y + 24, "Settings", 0xFFFFFF, 0x101827);
-    gui_draw_string(content_x + 24, content_y + 42, "Control center", 0x94A3B8,
-                    0x101827);
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0xF2F2F2);
+    gui_draw_rect(content_x, content_y, content_w, 3, 0x111111);
+    gui_draw_rect(content_x, content_y + 39, content_w, 3, 0x111111);
+    gui_draw_rect(divider_x, content_y + 39, 3, content_h - 39, 0x111111);
+    gui_draw_string(content_x + 18, content_y + 15, "OS SETTINGS", 0x111111,
+                    0xF2F2F2);
 
-    for (int i = 0; i < 4; i++) {
-      int tab_y = content_y + 76 + i * 38;
-      uint32_t tab_bg = i == settings_active_tab ? 0x2563EB : 0x1E293B;
-      const char *label = i == 0
-                              ? "Overview"
-                              : (i == 1 ? "Appearance"
-                                        : (i == 2 ? "System" : "Users"));
-      gui_draw_rect(content_x + 18, tab_y, sidebar_w - 28, 28, tab_bg);
-      gui_draw_string(content_x + 30, tab_y + 8, label, 0xFFFFFF, tab_bg);
+    for (int i = 0; i < SETTINGS_MENU_COUNT; i++) {
+      int tab_y = content_y + 56 + i * 28;
+      uint32_t tab_bg = i == settings_active_tab ? 0x111111 : 0xF2F2F2;
+      uint32_t tab_fg = i == settings_active_tab ? 0xF2F2F2 : 0x111111;
+      gui_draw_rect(content_x + 10, tab_y, sidebar_w - 20, 18, tab_bg);
+      gui_draw_string(content_x + 16, tab_y + 5, settings_menu_labels[i], tab_fg,
+                      tab_bg);
     }
 
-    gui_draw_rect(panel_x, panel_y, panel_w, 60, 0x1F2937);
+    gui_draw_rect(panel_x, panel_y, panel_w - 3, panel_h - 3, 0xF8F8F8);
     gui_draw_string(panel_x + 18, panel_y + 16,
-                    settings_active_tab == 0
-                        ? "Desktop overview"
-                        : (settings_active_tab == 1 ? "Appearance & effects"
-                                                    : (settings_active_tab == 2
-                                                           ? "System tools"
-                                                           : "Users & sign-in")),
-                    0xFFFFFF, 0x1F2937);
-    gui_draw_string(panel_x + 18, panel_y + 34, settings_status, 0xCBD5E1,
-                    0x1F2937);
+                    settings_page_heading(settings_active_tab), 0x111111,
+                    0xF8F8F8);
+    gui_draw_string(panel_x + 18, panel_y + 34, settings_status, 0x4A4A4A,
+                    0xF8F8F8);
 
     if (settings_active_tab == 0) {
       int card_y = panel_y + 72;
@@ -9097,6 +9153,29 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 328, card_y, 84, 30, 0x4B5563);
       gui_draw_string(panel_x + 354, card_y + 9, "About", 0xFFFFFF, 0x4B5563);
     } else if (settings_active_tab == 1) {
+      gui_draw_string(panel_x + 18, panel_y + 72, "virtio-net online with user-mode NAT",
+                      0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92,
+                      intel_hda_is_playing() ? "Audio playback is active."
+                                             : "Audio backend is standing by.",
+                      0x4A4A4A, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 112,
+                      "This page mirrors the simpler network view from the new layout.",
+                      0x4A4A4A, 0xF8F8F8);
+    } else if (settings_active_tab == 2) {
+      gui_draw_string(panel_x + 18, panel_y + 72,
+                      account_partition_label[0] ? account_partition_label
+                                                 : "No dedicated user partition",
+                      0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92,
+                      account_disk_location[0] ? account_disk_location
+                                               : "Using local session storage",
+                      0x4A4A4A, 0xF8F8F8);
+      gui_draw_rect(panel_x + 18, panel_y + 126, 110, 30, 0x111111);
+      gui_draw_string(panel_x + 40, panel_y + 135, "Devices", 0xF2F2F2, 0x111111);
+      gui_draw_rect(panel_x + 138, panel_y + 126, 96, 30, 0x111111);
+      gui_draw_string(panel_x + 172, panel_y + 135, "Files", 0xF2F2F2, 0x111111);
+    } else if (settings_active_tab == 3) {
       int preview_x = panel_x;
       int preview_y = panel_y + 72;
       int preview_w = 180;
@@ -9225,7 +9304,13 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 400, resolution_card_y + 66, 96, 24, 0x374151);
       gui_draw_string(panel_x + 418, resolution_card_y + 74, "On Reboot",
                       0xFFFFFF, 0x374151);
-    } else if (settings_active_tab == 2) {
+    } else if (settings_active_tab == 4) {
+      gui_draw_string(panel_x + 18, panel_y + 72, "Backup tools are not implemented yet.",
+                      0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92,
+                      "This page is reserved for future backup and restore features.",
+                      0x4A4A4A, 0xF8F8F8);
+    } else if (settings_active_tab == 8) {
       int block_y = panel_y + 72;
       gui_draw_rect(panel_x, block_y, panel_w, 76, 0x252535);
       gui_draw_string(panel_x + 16, block_y + 12, "System status", 0x89B4FA,
@@ -9255,7 +9340,7 @@ static void draw_window(struct window *win) {
       gui_draw_rect(panel_x + 120, block_y, panel_w - 120, 30, 0x1E293B);
       gui_draw_string(panel_x + 136, block_y + 9, "Use these tools to inspect and restore",
                       0xCBD5E1, 0x1E293B);
-    } else {
+    } else if (settings_active_tab == 5) {
       int block_y = panel_y + 72;
       const char *username = account_username[0] ? account_username : "Guest session";
       const char *auth_state =
@@ -9389,6 +9474,26 @@ static void draw_window(struct window *win) {
         }
         settings_account_list_free(&accounts);
       }
+    } else if (settings_active_tab == 6) {
+      gui_draw_string(panel_x + 18, panel_y + 72,
+                      "Activation is not implemented in this build.",
+                      0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92,
+                      "This page is present to match the requested layout.",
+                      0x4A4A4A, 0xF8F8F8);
+    } else if (settings_active_tab == 7) {
+      gui_draw_string(panel_x + 18, panel_y + 72, "Updates are not available yet.",
+                      0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92,
+                      "Future builds can expose package or system update actions here.",
+                      0x4A4A4A, 0xF8F8F8);
+    } else {
+      gui_draw_string(panel_x + 18, panel_y + 72, BUILD_UUID, 0x111111, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 92, resolution, 0x4A4A4A, 0xF8F8F8);
+      gui_draw_string(panel_x + 18, panel_y + 112, g_gpu_backend_name, 0x4A4A4A,
+                      0xF8F8F8);
+      gui_draw_rect(panel_x + 18, panel_y + 146, 88, 30, 0x111111);
+      gui_draw_string(panel_x + 44, panel_y + 155, "About", 0xF2F2F2, 0x111111);
     }
   }
   /* Device Manager window */
@@ -11684,7 +11789,7 @@ void gui_handle_key_event(int key) {
   /* Route key to focused window */
   if (focused_window && focused_window->visible) {
     if (focused_window->title[0] == 'S' && focused_window->title[1] == 'e' &&
-        focused_window->title[2] == 't' && settings_active_tab == 3) {
+        focused_window->title[2] == 't' && settings_user_editor_is_visible()) {
       if (!account_role_is_admin())
         return;
       char *target = settings_user_active_field == 0 ? settings_user_new_name
@@ -12494,28 +12599,18 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           win->title[2] == 't') {
         int content_x = win->x + BORDER_WIDTH;
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        int sidebar_w = 118;
-        int panel_w = win->width - BORDER_WIDTH * 2 - sidebar_w - 24;
-        int panel_x = content_x + sidebar_w + 14;
-        int panel_y = content_y + 14;
+        int sidebar_w = 104;
+        int panel_w = win->width - BORDER_WIDTH * 2 - sidebar_w - 3;
+        int panel_x = content_x + sidebar_w + 3;
+        int panel_y = content_y + 42;
 
-        for (int i = 0; i < 4; i++) {
-          int tab_y = content_y + 76 + i * 38;
-          if (x >= content_x + 18 && x < content_x + sidebar_w - 10 &&
-              y >= tab_y && y < tab_y + 28) {
+        for (int i = 0; i < SETTINGS_MENU_COUNT; i++) {
+          int tab_y = content_y + 56 + i * 28;
+          if (x >= content_x + 10 && x < content_x + sidebar_w - 10 &&
+              y >= tab_y && y < tab_y + 18) {
             settings_active_tab = i;
-            if (i == 0)
-              str_copy_safe(settings_status, "Tune your desktop experience.",
-                            sizeof(settings_status));
-            else if (i == 1)
-              str_copy_safe(settings_status, "Adjust wallpapers, blur, and graphics.",
-                            sizeof(settings_status));
-            else if (i == 2)
-              str_copy_safe(settings_status, "Launch tools and recover defaults.",
-                            sizeof(settings_status));
-            else
-              str_copy_safe(settings_status, "Manage the active user session.",
-                            sizeof(settings_status));
+            str_copy_safe(settings_status, settings_default_status_message(i),
+                          sizeof(settings_status));
             break;
           }
         }
@@ -12551,7 +12646,24 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                           sizeof(settings_status));
             break;
           }
-        } else if (settings_active_tab == 1) {
+        } else if (settings_active_tab == 2) {
+          int row_y = panel_y + 126;
+          if (x >= panel_x + 18 && x < panel_x + 128 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_window("Device Manager", win->x + 40, win->y + 40, 460,
+                              360);
+            str_copy_safe(settings_status, "Opened device manager.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 138 && x < panel_x + 234 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_file_manager_path(win->x + 26, win->y + 26, "/");
+            str_copy_safe(settings_status, "Opened file manager.",
+                          sizeof(settings_status));
+            break;
+          }
+        } else if (settings_active_tab == 3) {
           int resolution_card_y = panel_y + 72 + 104 + 84;
           int button_y = resolution_card_y + 66;
           int picked_resolution = 0;
@@ -12631,7 +12743,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                           sizeof(settings_status));
             break;
           }
-        } else if (settings_active_tab == 2) {
+        } else if (settings_active_tab == 8) {
           int row1_y = panel_y + 72 + 90;
           int row2_y = row1_y + 42;
           if (x >= panel_x && x < panel_x + 110 && y >= row1_y && y < row1_y + 30) {
@@ -12671,7 +12783,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                           sizeof(settings_status));
             break;
           }
-        } else {
+        } else if (settings_active_tab == 5) {
           settings_account_list_t accounts;
           int signout_y = panel_y + 72 + 88 + 102;
           int list_y = signout_y + 44;
@@ -12776,6 +12888,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             break;
           }
           settings_account_list_free(&accounts);
+        } else if (settings_active_tab == 9) {
+          if (x >= panel_x + 18 && x < panel_x + 106 && y >= panel_y + 146 &&
+              y < panel_y + 176) {
+            gui_create_window("About", 280, 180, 420, 260);
+            str_copy_safe(settings_status, "Opened about window.",
+                          sizeof(settings_status));
+            break;
+          }
         }
       }
 
