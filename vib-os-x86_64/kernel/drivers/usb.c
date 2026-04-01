@@ -32,29 +32,8 @@ void usb_set_keyboard_callback(usb_keyboard_callback_t cb) {
 }
 
 void usb_hid_handle_key(int key) {
-  static int first_key = 1;
-  if (first_key) {
-    /* [6] ORANGE BLOCK - key decoded */
-    for (int y = 0; y < 100; y++) {
-      for (int x = 0; x < 100; x++) {
-        debug_rect(x, 500 + y, 1, 1, 0xFFFF9900);
-      }
-    }
-    serial_puts("[USB] First key: ");
-    serial_puthex(key);
-    serial_puts("\n");
-    first_key = 0;
-  }
-  
   if (keyboard_cb) {
     keyboard_cb(key);
-  } else {
-    /* No callback registered - PINK BLOCK (error) */
-    for (int y = 0; y < 100; y++) {
-      for (int x = 0; x < 100; x++) {
-        debug_rect(x, 500 + y, 1, 1, 0xFFFF00AA);
-      }
-    }
   }
 }
 
@@ -62,27 +41,7 @@ void usb_submit_hid_report(const uint8_t *rep, int len) {
   if (!rep || len <= 0) {
     return;
   }
-  
-  static int first_report = 1;
-  if (first_report) {
-    /* AQUA block - report submitted to queue */
-    for (int y = 0; y < 50; y++) {
-      for (int x = 0; x < 50; x++) {
-        debug_rect(110 + x, 50 + y, 1, 1, 0xFF00AAAA);
-      }
-    }
-    
-    serial_puts("[USB] First HID report received! len=");
-    serial_puthex(len);
-    serial_puts(" data=");
-    for (int i = 0; i < len && i < 8; i++) {
-      serial_puthex(rep[i]);
-      serial_puts(" ");
-    }
-    serial_puts("\n");
-    first_report = 0;
-  }
-  
+
   int next = (report_head + 1) % USB_REPORT_QUEUE_SIZE;
   if (next == report_tail) {
     return; /* drop when queue is full */
@@ -104,20 +63,6 @@ void usb_init(void) {
 }
 
 void usb_poll(void) {
-  static int poll_count = 0;
-  static int shown_poll = 0;
-  
-  poll_count++;
-  if (poll_count == 1000 && !shown_poll) {
-    /* Show that polling is happening - PINK block */
-    for (int y = 0; y < 50; y++) {
-      for (int x = 0; x < 50; x++) {
-        debug_rect(110 + x, y, 1, 1, 0xFFFF00AA);
-      }
-    }
-    shown_poll = 1;
-  }
-  
   if (usb_xhci_ready()) {
     usb_xhci_poll();
   }
