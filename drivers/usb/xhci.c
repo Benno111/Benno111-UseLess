@@ -548,7 +548,7 @@ int xhci_init(phys_addr_t mmio_base) {
     return -1;
   }
 
-  /* Map MMIO */
+  /* Resolve MMIO virtual mapping */
   xhci.base = (volatile uint8_t *)xhci_phys_to_cpu_virt(mmio_base);
   if (!xhci.base) {
     printk(KERN_ERR "XHCI: Failed to resolve MMIO CPU mapping for 0x%llx\n",
@@ -556,17 +556,37 @@ int xhci_init(phys_addr_t mmio_base) {
     xhci_init_failed = 1;
     return -1;
   }
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  /*
+   * On x86 bring-up we keep Limine paging active, so VMM remaps are not
+   * reliable yet. Use the existing HHDM mapping for PCI MMIO instead.
+   */
+  if (!limine_get_hhdm_offset()) {
+    printk(KERN_ERR "XHCI: Missing HHDM mapping for MMIO base 0x%llx\n",
+           (unsigned long long)mmio_base);
+    xhci_init_failed = 1;
+    return -1;
+  }
+#else
   if (vmm_map_range(mmio_base, mmio_base, 0x10000, VM_DEVICE) != 0) {
     printk(KERN_ERR "XHCI: Failed to map controller MMIO at 0x%llx\n",
            (unsigned long long)mmio_base);
     xhci_init_failed = 1;
     return -1;
   }
+#endif
 
   /* Read capability registers */
   uint8_t cap_length = xhci.base[XHCI_CAPLENGTH];
-  uint16_t hci_version = *(uint16_t *)(xhci.base + XHCI_HCIVERSION);
+  uint16_t hci_version = (uint16_t)(xhci_cap_read32(XHCI_HCSPARAMS1 - 0x4) >> 16);
   uint32_t hcsparams1 = xhci_cap_read32(XHCI_HCSPARAMS1);
+
+  if (cap_length < 0x20 || cap_length > 0x80) {
+    printk(KERN_ERR "XHCI: Invalid CAPLENGTH=0x%x\n", cap_length);
+    xhci_init_failed = 1;
+    return -1;
+  }
 
   xhci.max_slots = hcsparams1 & 0xFF;
   xhci.max_ports = (hcsparams1 >> 24) & 0xFF;
@@ -590,6 +610,14 @@ int xhci_init(phys_addr_t mmio_base) {
 
   uint32_t dboff = xhci_cap_read32(XHCI_DBOFF) & ~0x3;
   xhci.db_base = xhci.base + dboff;
+
+  if (rtsoff >= 0x10000 || dboff >= 0x10000 || (rtsoff + 0x1000) > 0x10000 ||
+      (dboff + 0x1000) > 0x10000) {
+    printk(KERN_ERR "XHCI: Invalid register offsets RTSOFF=0x%x DBOFF=0x%x\n",
+           rtsoff, dboff);
+    xhci_init_failed = 1;
+    return -1;
+  }
 
   /* Get page size */
   xhci.page_size = xhci_op_read32(XHCI_PAGESIZE) << 12;
