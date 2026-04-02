@@ -16,6 +16,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include "../include/command.h"
 #include "../include/context.h"
@@ -30,9 +31,13 @@ int ctxtAddStatus(const Context_Tag tag)
 
 	ctxtCheckInfoTag(tag);
 
-	*(unsigned*)value = CTXT_INFO(tag, sizemax) | 0x8001;
-	value[sizeof(unsigned)] = 0;
+	{
+		uint16_t encoded = (uint16_t)(CTXT_INFO(tag, sizemax) | 0x8001);
 
+		value[0] = (char)(encoded & 0xFF);
+		value[1] = (char)((encoded >> 8) & 0xFF);
+		value[2] = '\0';
+	}
 
 	return ctxtSet(tag, 0, value);
 }
