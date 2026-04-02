@@ -62,6 +62,8 @@ static void seed_write_text(const char *prefix, const char *path, mode_t mode,
 static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
                              const uint8_t *data, size_t size);
 static void keyboard_handler(int key);
+static void keyboard_gui_handler(int key);
+static int gui_key_queue_pop(int *key_out);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
 #endif
@@ -1275,6 +1277,11 @@ static void init_subsystems(void *dtb) {
 /* Global terminal pointer for keyboard callback */
 static void *g_active_terminal = 0;
 
+#define GUI_KEY_QUEUE_SIZE 256
+static volatile int g_gui_key_queue[GUI_KEY_QUEUE_SIZE];
+static volatile int g_gui_key_r = 0;
+static volatile int g_gui_key_w = 0;
+
 /* Keyboard callback wrapper */
 /* Keyboard callback wrapper */
 static void keyboard_handler(int key) {
@@ -1289,6 +1296,34 @@ static void keyboard_handler(int key) {
       key == '\b' || key == 27) {
     kapi_sys_key_event(key);
   }
+}
+
+static void keyboard_gui_handler(int key) {
+  int next;
+
+  if (key < 0 || key > 0x1FF)
+    return;
+
+  next = (g_gui_key_w + 1) % GUI_KEY_QUEUE_SIZE;
+  if (next == g_gui_key_r) {
+    /* Drop newest key if full; keep system responsive and non-crashing. */
+    return;
+  }
+
+  g_gui_key_queue[g_gui_key_w] = key;
+  g_gui_key_w = next;
+}
+
+static int gui_key_queue_pop(int *key_out) {
+  int key;
+
+  if (!key_out || g_gui_key_r == g_gui_key_w)
+    return 0;
+
+  key = g_gui_key_queue[g_gui_key_r];
+  g_gui_key_r = (g_gui_key_r + 1) % GUI_KEY_QUEUE_SIZE;
+  *key_out = key;
+  return 1;
 }
 
 static void start_init_process(void) {
@@ -1319,13 +1354,17 @@ static void start_init_process(void) {
   extern int input_init(void);
   extern void input_poll(void);
   extern void input_set_key_callback(void (*callback)(int key));
+  extern void input_set_gui_key_callback(void (*callback)(int key));
   extern void gui_compose(void);
   extern void gui_draw_cursor(void);
 
   input_init();
+  g_gui_key_r = 0;
+  g_gui_key_w = 0;
 
   /* Connect keyboard input to terminal */
   input_set_key_callback(keyboard_handler);
+  input_set_gui_key_callback(keyboard_gui_handler);
 
   printk(KERN_INFO "GUI: Event loop started - type in terminal!\\n");
 
@@ -1367,6 +1406,14 @@ static void start_init_process(void) {
       /* Route to focused window */
       gui_handle_key_event(c);
       needs_redraw = 1;
+    }
+
+    {
+      int queued_key;
+      while (gui_key_queue_pop(&queued_key)) {
+        gui_handle_key_event(queued_key);
+        needs_redraw = 1;
+      }
     }
 
     /* Get mouse state (updated by input_poll) */
