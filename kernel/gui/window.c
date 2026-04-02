@@ -11773,6 +11773,15 @@ void gui_move_mouse(int dx, int dy) {
 void gui_set_mouse_buttons(int buttons) { mouse_buttons = buttons; }
 
 void gui_handle_key_event(int key) {
+  if (key < 0 || key > 0x1FF) {
+    static int warned_bad_key = 0;
+    if (!warned_bad_key) {
+      printk(KERN_WARNING "GUI: Ignoring invalid keycode %d\n", key);
+      warned_bad_key = 1;
+    }
+    return;
+  }
+
   if (startup_flow_active()) {
     startup_handle_key(key);
     return;

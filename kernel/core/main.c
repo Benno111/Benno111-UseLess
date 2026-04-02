@@ -1280,9 +1280,15 @@ static void *g_active_terminal = 0;
 static void keyboard_handler(int key) {
   /* gui_handle_key_event is now called via gui_key_callback, not here */
 
-      /* Send to the KAPI input buffer for non-windowed apps. */
+  /*
+   * Send only canonical text/control keys to the KAPI input buffer.
+   * Navigation/meta virtual keys are handled by the GUI callback path.
+   */
   extern void kapi_sys_key_event(int key);
-  kapi_sys_key_event(key);
+  if ((key >= 32 && key <= 126) || key == '\n' || key == '\r' || key == '\t' ||
+      key == '\b' || key == 27) {
+    kapi_sys_key_event(key);
+  }
 }
 
 static void start_init_process(void) {

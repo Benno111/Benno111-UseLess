@@ -1432,9 +1432,27 @@ void term_handle_key(struct terminal *term, int key) {
   } else if (key == '\b' || key == 127) {
     if (term->input_len > 0) {
       term->input_len--;
-      term->cursor_x--;
+      if (term->cursor_x > 0) {
+        term->cursor_x--;
+      } else if (term->cursor_y > 0) {
+        term->cursor_y--;
+        term->cursor_x = term->cols > 0 ? term->cols - 1 : 0;
+      }
+
+      if (term->cursor_x < 0)
+        term->cursor_x = 0;
+      if (term->cursor_y < 0)
+        term->cursor_y = 0;
+      if (term->cursor_x >= term->cols)
+        term->cursor_x = term->cols > 0 ? term->cols - 1 : 0;
+      if (term->cursor_y >= term->rows)
+        term->cursor_y = term->rows > 0 ? term->rows - 1 : 0;
+
       int idx = term->cursor_y * term->cols + term->cursor_x;
-      term->chars[idx] = ' ';
+      int max = term->cols * term->rows;
+      if (idx >= 0 && idx < max) {
+        term->chars[idx] = ' ';
+      }
     }
   } else if (key >= 32 && key < 127) {
     if (term->input_len < 255) {
