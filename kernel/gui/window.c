@@ -1535,14 +1535,24 @@ struct display {
 
 static struct display primary_display = {0};
 
+/* Map a destination coordinate to source image space for full stretch-to-fit. */
+static inline int wallpaper_stretch_coord(int dst, int dst_size, int src_size) {
+  if (dst_size <= 1 || src_size <= 1)
+    return 0;
+
+  return (int)(((uint64_t)dst * (uint64_t)(src_size - 1)) /
+               (uint64_t)(dst_size - 1));
+}
+
 /* Get wallpaper pixel color at position */
 static uint32_t wallpaper_get_pixel(int x, int y, int height) {
   int idx = current_wallpaper;
   int width = (int)primary_display.width;
 
-  if (wallpapers[idx].type == 1 && wallpaper_image.pixels) {
-    int img_x = width > 0 ? (x * (int)wallpaper_image.width) / width : 0;
-    int img_y = (y * wallpaper_image.height) / height;
+  if (wallpapers[idx].type == 1 && wallpaper_image.pixels && width > 0 &&
+      height > 0) {
+    int img_x = wallpaper_stretch_coord(x, width, (int)wallpaper_image.width);
+    int img_y = wallpaper_stretch_coord(y, height, (int)wallpaper_image.height);
     if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
         img_y < (int)wallpaper_image.height) {
       return wallpaper_image.pixels[img_y * wallpaper_image.width + img_x];
