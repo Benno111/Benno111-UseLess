@@ -207,6 +207,12 @@ static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {
       pci_dev->prog_if == 0x30) {
     printk("PCI: Found xHCI USB controller at %02x:%02x.%x\n", bus, slot,
            func);
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+    printk("PCI: xHCI disabled on x86 bring-up path (temporary safety guard)\n");
+    return;
+#endif
+
     pci_enable_device(pci_dev);
 
     if (pci_dev->bar0) {
