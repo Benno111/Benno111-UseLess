@@ -8542,12 +8542,20 @@ static void draw_window(struct window *win) {
     int title_y0 = y + BORDER_WIDTH;
     int title_w = w - BORDER_WIDTH * 2;
 
-    /* Frosted translucent titlebar (with blur fallback even on software paths). */
-    if (g_blur_effects_requested) {
+    /*
+     * Window bar should carry both effects together:
+     * 1) backdrop blur (when requested)
+     * 2) translucent glass tint layered on top
+     */
+    if (g_blur_effects_requested || g_blur_effects_enabled) {
       gui_apply_backdrop_blur(title_x0, title_y0, title_w, TITLEBAR_HEIGHT, 2);
     }
+    /* Base translucent tint */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
                         win->focused ? 0x4A4E6A8A : 0x3F3D4A5D);
+    /* Secondary glass veil to keep transparency visible over bright content */
+    gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
+                        win->focused ? 0x18324860 : 0x142A3442);
     gui_fill_rect_alpha(title_x0, title_y0, title_w, 1, 0x34FFFFFF);
     gui_fill_rect_alpha(title_x0, title_y0 + TITLEBAR_HEIGHT - 1, title_w, 1,
                         0x50313C4E);
