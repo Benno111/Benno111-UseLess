@@ -2502,8 +2502,21 @@ void gui_destroy_window(struct window *win) {
 
   if (win->content_buffer) {
     kfree(win->content_buffer);
+    win->content_buffer = NULL;
   }
 
+  if (focused_window == win) {
+    focused_window = NULL;
+  }
+
+  win->visible = false;
+  win->focused = false;
+  win->on_draw = NULL;
+  win->on_key = NULL;
+  win->on_mouse = NULL;
+  win->on_close = NULL;
+  win->userdata = NULL;
+  win->next = NULL;
   win->id = 0;
 }
 
@@ -2558,6 +2571,16 @@ static int count_visible_windows(void) {
       count++;
   }
   return count;
+}
+
+static int gui_window_in_stack(struct window *target) {
+  if (!target || target->id == 0)
+    return 0;
+  for (struct window *win = window_stack; win; win = win->next) {
+    if (win == target)
+      return 1;
+  }
+  return 0;
 }
 
 static struct window *find_next_switchable_window(void) {
@@ -11793,6 +11816,11 @@ void gui_handle_key_event(int key) {
   if (desktop_is_renaming()) {
     if (desktop_handle_key(key))
       return; /* Desktop consumed the key */
+  }
+
+  if (focused_window &&
+      (!focused_window->visible || !gui_window_in_stack(focused_window))) {
+    focused_window = NULL;
   }
 
   /* Route key to focused window */
