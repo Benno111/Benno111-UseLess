@@ -11277,52 +11277,17 @@ static void render_wallpaper_cache(void) {
     uint32_t img_w = wallpaper_image.width;
     uint32_t img_h = wallpaper_image.height;
     uint32_t *pixels = wallpaper_image.pixels;
-    uint32_t scale_x_fp;
-    uint32_t scale_y_fp;
 
     if (img_w == 0 || img_h == 0)
       return;
 
-    scale_x_fp = width > 1 ? ((img_w - 1) << 16) / (uint32_t)(width - 1) : 0;
-    scale_y_fp =
-        height > 1 ? ((img_h - 1) << 16) / (uint32_t)(height - 1) : 0;
-
     for (int y = 0; y < height; y++) {
       uint32_t *line = cached_wallpaper + y * width;
-      uint32_t src_y_fp = (uint32_t)y * scale_y_fp;
-      uint32_t src_y = src_y_fp >> 16;
-      uint32_t frac_y = src_y_fp & 0xFFFF;
-      uint32_t src_y1 = src_y + 1 < img_h ? src_y + 1 : src_y;
-      uint32_t wy0 = 0x10000 - frac_y;
+      int src_y = wallpaper_stretch_coord(y, height, (int)img_h);
 
       for (int x = 0; x < width; x++) {
-        uint32_t src_x_fp = (uint32_t)x * scale_x_fp;
-        uint32_t src_x = src_x_fp >> 16;
-        uint32_t frac_x = src_x_fp & 0xFFFF;
-        uint32_t src_x1 = src_x + 1 < img_w ? src_x + 1 : src_x;
-        uint32_t wx0 = 0x10000 - frac_x;
-        uint32_t c00 = pixels[src_y * img_w + src_x];
-        uint32_t c10 = pixels[src_y * img_w + src_x1];
-        uint32_t c01 = pixels[src_y1 * img_w + src_x];
-        uint32_t c11 = pixels[src_y1 * img_w + src_x1];
-        uint32_t w00 = (wx0 >> 8) * (wy0 >> 8);
-        uint32_t w10 = (frac_x >> 8) * (wy0 >> 8);
-        uint32_t w01 = (wx0 >> 8) * (frac_y >> 8);
-        uint32_t w11 = (frac_x >> 8) * (frac_y >> 8);
-        uint32_t r = (((c00 >> 16) & 0xFF) * w00 +
-                      ((c10 >> 16) & 0xFF) * w10 +
-                      ((c01 >> 16) & 0xFF) * w01 +
-                      ((c11 >> 16) & 0xFF) * w11) >>
-                     16;
-        uint32_t g = ((((c00 >> 8) & 0xFF) * w00) +
-                      (((c10 >> 8) & 0xFF) * w10) +
-                      (((c01 >> 8) & 0xFF) * w01) +
-                      (((c11 >> 8) & 0xFF) * w11)) >>
-                     16;
-        uint32_t b = (((c00 & 0xFF) * w00) + ((c10 & 0xFF) * w10) +
-                      ((c01 & 0xFF) * w01) + ((c11 & 0xFF) * w11)) >>
-                     16;
-        line[x] = (r << 16) | (g << 8) | b;
+        int src_x = wallpaper_stretch_coord(x, width, (int)img_w);
+        line[x] = pixels[src_y * img_w + src_x];
       }
     }
   } else {
