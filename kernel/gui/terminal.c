@@ -115,7 +115,32 @@ static struct terminal *active_terminal = NULL;
 /* Terminal Buffer Operations */
 /* ===================================================================== */
 
+static int term_is_usable(const struct terminal *term) {
+  return term && term->chars && term->fg_colors && term->bg_colors &&
+         term->cols > 0 && term->rows > 0;
+}
+
+static void term_clamp_cursor(struct terminal *term) {
+  if (!term)
+    return;
+  if (term->cols <= 0 || term->rows <= 0) {
+    term->cursor_x = 0;
+    term->cursor_y = 0;
+    return;
+  }
+  if (term->cursor_x < 0)
+    term->cursor_x = 0;
+  if (term->cursor_x >= term->cols)
+    term->cursor_x = term->cols - 1;
+  if (term->cursor_y < 0)
+    term->cursor_y = 0;
+  if (term->cursor_y >= term->rows)
+    term->cursor_y = term->rows - 1;
+}
+
 static void term_clear_line(struct terminal *term, int row) {
+  if (!term_is_usable(term) || row < 0 || row >= term->rows)
+    return;
   for (int col = 0; col < term->cols; col++) {
     int idx = row * term->cols + col;
     term->chars[idx] = ' ';
@@ -125,6 +150,8 @@ static void term_clear_line(struct terminal *term, int row) {
 }
 
 static void term_scroll_up(struct terminal *term) {
+  if (!term_is_usable(term))
+    return;
   /* Move all lines up by one */
   for (int row = 0; row < term->rows - 1; row++) {
     for (int col = 0; col < term->cols; col++) {
@@ -141,6 +168,8 @@ static void term_scroll_up(struct terminal *term) {
 }
 
 static void term_newline(struct terminal *term) {
+  if (!term_is_usable(term))
+    return;
   term->cursor_x = 0;
   term->cursor_y++;
 
@@ -155,6 +184,8 @@ static void term_newline(struct terminal *term) {
 /* ===================================================================== */
 
 static void term_process_escape(struct terminal *term) {
+  if (!term_is_usable(term))
+    return;
   if (term->escape_len < 1)
     return;
 
@@ -265,6 +296,11 @@ static void term_process_escape(struct terminal *term) {
 /* ===================================================================== */
 
 void term_putc(struct terminal *term, char c) {
+  if (!term_is_usable(term))
+    return;
+
+  term_clamp_cursor(term);
+
   if (term->in_escape) {
     term->escape_buf[term->escape_len++] = c;
 
@@ -307,7 +343,11 @@ void term_putc(struct terminal *term, char c) {
 
   default:
     if (c >= 32 && c < 127) {
+      term_clamp_cursor(term);
       int idx = term->cursor_y * term->cols + term->cursor_x;
+      int max = term->cols * term->rows;
+      if (idx < 0 || idx >= max)
+        return;
       term->chars[idx] = c;
       term->fg_colors[idx] = term->current_fg;
       term->bg_colors[idx] = term->current_bg;
@@ -322,6 +362,8 @@ void term_putc(struct terminal *term, char c) {
 }
 
 void term_puts(struct terminal *term, const char *str) {
+  if (!term_is_usable(term) || !str)
+    return;
   while (*str) {
     term_putc(term, *str++);
   }
@@ -332,8 +374,10 @@ void term_puts(struct terminal *term, const char *str) {
 /* ===================================================================== */
 
 void term_render(struct terminal *term) {
-  if (!term)
+  if (!term_is_usable(term))
     return;
+
+  term_clamp_cursor(term);
 
   int base_x = term->content_x + TERM_PADDING;
   int base_y = term->content_y + TERM_PADDING;
@@ -1401,7 +1445,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
 /* ===================================================================== */
 
 void term_handle_key(struct terminal *term, int key) {
-  if (!term)
+  if (!term_is_usable(term))
     return;
 
   if (key == '\n' || key == '\r') {
@@ -1448,6 +1492,7 @@ void term_handle_key(struct terminal *term, int key) {
       if (term->cursor_y >= term->rows)
         term->cursor_y = term->rows > 0 ? term->rows - 1 : 0;
 
+      term_clamp_cursor(term);
       int idx = term->cursor_y * term->cols + term->cursor_x;
       int max = term->cols * term->rows;
       if (idx >= 0 && idx < max) {
@@ -1469,9 +1514,14 @@ void term_handle_key(struct terminal *term, int key) {
 /* ===================================================================== */
 
 struct terminal *term_create(int x, int y, int cols, int rows) {
-  struct terminal *term = kmalloc(sizeof(struct terminal));
+  struct terminal *term = kzalloc(sizeof(struct terminal), GFP_KERNEL);
   if (!term)
     return NULL;
+
+  if (cols <= 0 || rows <= 0) {
+    kfree(term);
+    return NULL;
+  }
 
   term->cols = cols;
   term->rows = rows;
@@ -1528,6 +1578,9 @@ struct terminal *term_create(int x, int y, int cols, int rows) {
 void term_destroy(struct terminal *term) {
   if (!term)
     return;
+
+  if (active_terminal == term)
+    active_terminal = NULL;
 
   if (term->chars)
     kfree(term->chars);

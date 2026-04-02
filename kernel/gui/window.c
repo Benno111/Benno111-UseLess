@@ -2529,6 +2529,13 @@ void gui_set_window_userdata(struct window *win, void *data) {
   }
 }
 
+static void gui_clear_focus(void) {
+  if (focused_window) {
+    focused_window->focused = false;
+    focused_window = NULL;
+  }
+}
+
 void gui_destroy_window(struct window *win) {
   if (!win || win->id == 0)
     return;
@@ -2555,9 +2562,8 @@ void gui_destroy_window(struct window *win) {
     win->content_buffer = NULL;
   }
 
-  if (focused_window == win) {
-    focused_window = NULL;
-  }
+  if (focused_window == win)
+    gui_clear_focus();
 
   win->visible = false;
   win->focused = false;
@@ -11879,7 +11885,7 @@ void gui_handle_key_event(int key) {
 
   if (focused_window &&
       (!focused_window->visible || !gui_window_in_stack(focused_window))) {
-    focused_window = NULL;
+    gui_clear_focus();
   }
 
   /* Route key to focused window */
@@ -11962,7 +11968,11 @@ void gui_handle_key_event(int key) {
     if (focused_window->on_key) {
       focused_window->on_key(focused_window, key);
     }
+    return;
   }
+
+  if ((key >= 32 && key < 127) || key == '\b' || key == 127)
+    return;
 }
 
 /* ===================================================================== */
@@ -12437,6 +12447,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     if (!on_window && y > MENU_BAR_HEIGHT &&
         y < (int)primary_display.height - dock_reserved_height()) {
+      gui_clear_focus();
+
       /* Track double-click */
       int dx = x - last_click_x;
       int dy = y - last_click_y;
