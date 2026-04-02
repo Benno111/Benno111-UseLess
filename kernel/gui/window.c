@@ -12001,6 +12001,10 @@ static int resize_start_win_x = 0, resize_start_win_y = 0;
 #define MIN_WINDOW_HEIGHT 100
 
 void gui_handle_mouse_event(int x, int y, int buttons) {
+  if (buttons < 0)
+    buttons = 0;
+  buttons &= 0x1F;
+
   int old_buttons = prev_buttons;
   mouse_x = x;
   mouse_y = y;

@@ -1364,6 +1364,16 @@ static void start_init_process(void) {
     int mx, my;
     mouse_get_position(&mx, &my);
     int mbuttons = mouse_get_buttons();
+    static int warned_bad_mouse_buttons = 0;
+    if (mbuttons < 0) {
+      if (!warned_bad_mouse_buttons) {
+        printk(KERN_WARNING "INPUT: Ignoring invalid mouse buttons value %d\n",
+               mbuttons);
+        warned_bad_mouse_buttons = 1;
+      }
+      mbuttons = 0;
+    }
+    mbuttons &= 0x1F;
 
     /* Check if mouse changed */
     if (mx != last_mx || my != last_my || mbuttons != last_buttons) {
