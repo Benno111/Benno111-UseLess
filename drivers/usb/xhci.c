@@ -635,9 +635,15 @@ int xhci_init(phys_addr_t mmio_base) {
     return -1;
   }
 
-  /* Start controller */
+  /*
+   * Start controller in polling-safe mode.
+   *
+   * We currently do not program interrupter state (ERST/ERDP/IMAN/IMOD), so
+   * enabling host interrupts here can trigger faults as soon as USB input
+   * events arrive. Keep INTE cleared until full interrupt plumbing lands.
+   */
   uint32_t cmd = xhci_op_read32(XHCI_USBCMD);
-  xhci_op_write32(XHCI_USBCMD, cmd | XHCI_CMD_RUN | XHCI_CMD_INTE);
+  xhci_op_write32(XHCI_USBCMD, (cmd | XHCI_CMD_RUN) & ~XHCI_CMD_INTE);
   if (xhci_wait_for_mask(XHCI_USBSTS, XHCI_STS_HCH, 0, 100) < 0) {
     printk(KERN_ERR "XHCI: Controller failed to start\n");
     return -1;
