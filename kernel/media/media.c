@@ -343,8 +343,8 @@ static int media_bytes_starts_with(const uint8_t *data, size_t size,
   return 1;
 }
 
-static int media_find_bytes(const uint8_t *data, size_t size, const char *needle,
-                            size_t *out_pos) {
+static int media_find_bytes_from(const uint8_t *data, size_t size, size_t start,
+                                 const char *needle, size_t *out_pos) {
   size_t needle_len = 0;
   if (!data || !needle || !out_pos)
     return -EINVAL;
@@ -354,7 +354,10 @@ static int media_find_bytes(const uint8_t *data, size_t size, const char *needle
   if (needle_len == 0 || needle_len > size)
     return -EINVAL;
 
-  for (size_t i = 0; i + needle_len <= size; i++) {
+  if (start >= size)
+    return -ENOENT;
+
+  for (size_t i = start; i + needle_len <= size; i++) {
     if (media_bytes_starts_with(data, size, i, needle)) {
       *out_pos = i;
       return 0;
@@ -434,57 +437,80 @@ int media_decode_svg(const uint8_t *data, size_t size, media_image_t *out) {
   static const char *k_svg_png = "data:image/png;base64,";
   static const char *k_svg_jpg = "data:image/jpeg;base64,";
   static const char *k_svg_jpg_alt = "data:image/jpg;base64,";
-  const char *uri = NULL;
-  size_t uri_pos = 0;
-  size_t base64_start = 0;
-  size_t base64_end = 0;
-  uint8_t *decoded = NULL;
-  size_t decoded_len = 0;
-  int ret;
+  const char *uris[3] = {k_svg_png, k_svg_jpg, k_svg_jpg_alt};
+  media_image_t best = {0, 0, NULL};
+  int found_any = 0;
 
   if (!data || !size || !out)
     return -EINVAL;
 
-  if (media_find_bytes(data, size, k_svg_png, &uri_pos) == 0) {
-    uri = k_svg_png;
-  } else if (media_find_bytes(data, size, k_svg_jpg, &uri_pos) == 0) {
-    uri = k_svg_jpg;
-  } else if (media_find_bytes(data, size, k_svg_jpg_alt, &uri_pos) == 0) {
-    uri = k_svg_jpg_alt;
-  } else {
+  for (int u = 0; u < 3; u++) {
+    const char *uri = uris[u];
+    size_t pos = 0;
+    size_t uri_len = 0;
+
+    while (uri[uri_len])
+      uri_len++;
+
+    while (media_find_bytes_from(data, size, pos, uri, &pos) == 0) {
+      size_t base64_start = pos + uri_len;
+      size_t base64_end = base64_start;
+      uint8_t *decoded = NULL;
+      size_t decoded_len = 0;
+      media_image_t candidate = {0, 0, NULL};
+      int ret;
+
+      if (base64_start >= size)
+        break;
+
+      while (base64_end < size) {
+        uint8_t ch = data[base64_end];
+        if (ch == '"' || ch == '\'' || ch == '<' || ch == '>')
+          break;
+        base64_end++;
+      }
+
+      if (base64_end > base64_start) {
+        ret = media_decode_base64(data + base64_start, base64_end - base64_start,
+                                  &decoded, &decoded_len);
+        if (ret == 0) {
+          if (uri == k_svg_png)
+            ret = media_decode_png(decoded, decoded_len, &candidate);
+          else
+            ret = media_decode_jpeg(decoded, decoded_len, &candidate);
+        }
+      } else {
+        ret = -EINVAL;
+      }
+
+      if (decoded)
+        kfree(decoded);
+
+      if (ret == 0 && candidate.pixels && candidate.width && candidate.height) {
+        uint64_t cand_px = (uint64_t)candidate.width * (uint64_t)candidate.height;
+        uint64_t best_px = (uint64_t)best.width * (uint64_t)best.height;
+        found_any = 1;
+        if (cand_px > best_px) {
+          media_free_image(&best);
+          best = candidate;
+        } else {
+          media_free_image(&candidate);
+        }
+      } else {
+        media_free_image(&candidate);
+      }
+
+      pos++;
+      if (pos >= size)
+        break;
+    }
+  }
+
+  if (!found_any || !best.pixels)
     return -ENOENT;
-  }
 
-  while (uri[base64_start])
-    base64_start++;
-  base64_start += uri_pos;
-  if (base64_start >= size)
-    return -EINVAL;
-
-  base64_end = base64_start;
-  while (base64_end < size) {
-    uint8_t ch = data[base64_end];
-    if (ch == '"' || ch == '\'' || ch == '<' || ch == '>' || ch == ' ')
-      break;
-    base64_end++;
-  }
-
-  if (base64_end <= base64_start)
-    return -EINVAL;
-
-  ret = media_decode_base64(data + base64_start, base64_end - base64_start,
-                            &decoded, &decoded_len);
-  if (ret != 0)
-    return ret;
-
-  if (uri == k_svg_png) {
-    ret = media_decode_png(decoded, decoded_len, out);
-  } else {
-    ret = media_decode_jpeg(decoded, decoded_len, out);
-  }
-
-  kfree(decoded);
-  return ret;
+  *out = best;
+  return 0;
 }
 
 /* --------------------------------------------------------------------- */
