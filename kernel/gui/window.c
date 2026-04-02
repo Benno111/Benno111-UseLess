@@ -298,6 +298,44 @@ static int wallpaper_image_heap_allocated = 0;
 static media_image_t thumbnail_cache[NUM_WALLPAPERS] = {{0}};
 static int thumbnails_loaded = 0;
 
+#define WALLPAPER_BUFFER_MAX_PIXELS (2048 * 2048)
+#define WALLPAPER_THUMBNAIL_W 96
+#define WALLPAPER_THUMBNAIL_H 64
+
+static int wallpaper_build_thumbnail(media_image_t *dest,
+                                     const media_image_t *src) {
+  size_t thumb_pixels =
+      (size_t)WALLPAPER_THUMBNAIL_W * (size_t)WALLPAPER_THUMBNAIL_H;
+  uint32_t *pixels;
+
+  if (!dest || !src || !src->pixels || !src->width || !src->height)
+    return -1;
+
+  pixels = (uint32_t *)kmalloc(thumb_pixels * sizeof(uint32_t), GFP_KERNEL);
+  if (!pixels)
+    return -ENOMEM;
+
+  for (int y = 0; y < WALLPAPER_THUMBNAIL_H; y++) {
+    uint32_t src_y = ((uint32_t)y * src->height) / WALLPAPER_THUMBNAIL_H;
+    if (src_y >= src->height)
+      src_y = src->height - 1;
+
+    for (int x = 0; x < WALLPAPER_THUMBNAIL_W; x++) {
+      uint32_t src_x = ((uint32_t)x * src->width) / WALLPAPER_THUMBNAIL_W;
+      if (src_x >= src->width)
+        src_x = src->width - 1;
+
+      pixels[y * WALLPAPER_THUMBNAIL_W + x] =
+          src->pixels[src_y * src->width + src_x];
+    }
+  }
+
+  dest->width = WALLPAPER_THUMBNAIL_W;
+  dest->height = WALLPAPER_THUMBNAIL_H;
+  dest->pixels = pixels;
+  return 0;
+}
+
 /* Load all thumbnails once */
 static void load_thumbnails(void) {
   if (thumbnails_loaded)
@@ -308,11 +346,24 @@ static void load_thumbnails(void) {
       uint8_t *data = NULL;
       size_t size = 0;
       if (media_load_file(wallpapers[i].path, &data, &size) == 0) {
+        media_image_t decoded = {0, 0, NULL};
+        int decode_ok;
+
         if (size >= 4 && data[0] == 0x89 && data[1] == 'P' &&
             data[2] == 'N' && data[3] == 'G') {
-          media_decode_png(data, size, &thumbnail_cache[i]);
+          decode_ok = media_decode_png(data, size, &decoded);
         } else {
-          media_decode_jpeg(data, size, &thumbnail_cache[i]);
+          decode_ok = media_decode_jpeg(data, size, &decoded);
+        }
+
+        if (decode_ok == 0) {
+          if (wallpaper_build_thumbnail(&thumbnail_cache[i], &decoded) != 0) {
+            thumbnail_cache[i] = decoded;
+            decoded.pixels = NULL;
+            decoded.width = 0;
+            decoded.height = 0;
+          }
+          media_free_image(&decoded);
         }
         media_free_file(data);
       }
@@ -320,9 +371,8 @@ static void load_thumbnails(void) {
   }
   thumbnails_loaded = 1;
 }
-/* Static buffer for wallpaper to avoid heap fragmentation (4MB for 1024x1024)
- */
-static uint32_t wallpaper_buffer[1024 * 1024];
+/* Keep common desktop wallpapers off the heap during early rendering. */
+static uint32_t wallpaper_buffer[WALLPAPER_BUFFER_MAX_PIXELS];
 
 /* Load wallpaper image if needed */
 static void wallpaper_ensure_loaded(void) {
