@@ -276,6 +276,18 @@ For x86_64 bring-up and installer work:
 3. Watch the serial log for storage detection, setup payload staging, and installer status
 4. Reboot into the installed target and compare behavior against the live seeded environment
 
+### xHCI Bring-up Toggle (x86_64)
+
+On the current x86/x86_64 bring-up path, xHCI probing is disabled by default for
+stability. To opt in during testing, add this kernel cmdline flag in Limine:
+
+```text
+xhci=on
+```
+
+Without that flag, the kernel keeps xHCI off on x86 and relies on the other
+input paths.
+
 ## Known Reality Of The Project
 
 This repository is not a polished distribution or a production OS.

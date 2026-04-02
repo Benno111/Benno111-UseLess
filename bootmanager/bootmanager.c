@@ -38,6 +38,7 @@ static struct boot_config boot_cfg = {
 static bool boot_from_usb = false;
 static bool boot_live_media = false;
 static bool boot_installer_mode = false;
+static bool boot_xhci_enabled = false;
 static struct boot_entry boot_entries[MAX_BOOT_ENTRIES];
 static int num_boot_entries = 0;
 static progress_callback_t boot_progress_cb = NULL;
@@ -190,6 +191,7 @@ void boot_parse_cmdline(const char *cmdline) {
   boot_from_usb = false;
   boot_live_media = false;
   boot_installer_mode = false;
+  boot_xhci_enabled = false;
   if (str_contains_token(cmdline, "boot=usb") ||
       str_contains_token(cmdline, "usbboot") ||
       str_contains_token(cmdline, "root=/dev/sd") ||
@@ -209,6 +211,16 @@ void boot_parse_cmdline(const char *cmdline) {
       str_contains_token(cmdline, "mode=installer")) {
     boot_installer_mode = true;
   }
+  if (str_contains_token(cmdline, "xhci=on") ||
+      str_contains_token(cmdline, "xhci=1") ||
+      str_contains_token(cmdline, "usb.xhci=on")) {
+    boot_xhci_enabled = true;
+  }
+  if (str_contains_token(cmdline, "xhci=off") ||
+      str_contains_token(cmdline, "xhci=0") ||
+      str_contains_token(cmdline, "usb.xhci=off")) {
+    boot_xhci_enabled = false;
+  }
 
   p = cmdline;
   while (*p) {
@@ -221,10 +233,11 @@ void boot_parse_cmdline(const char *cmdline) {
     p++;
   }
 
-  printk(KERN_INFO
-         "BOOT: Cmdline parsed - verbose=%d debug=%d splash=%d usb=%d installer=%d\n",
-         boot_cfg.verbose_boot, boot_cfg.debug_mode, boot_cfg.show_splash,
-         boot_from_usb, boot_installer_mode);
+  printk(
+      KERN_INFO
+      "BOOT: Cmdline parsed - verbose=%d debug=%d splash=%d usb=%d installer=%d xhci=%d\n",
+      boot_cfg.verbose_boot, boot_cfg.debug_mode, boot_cfg.show_splash,
+      boot_from_usb, boot_installer_mode, boot_xhci_enabled);
 }
 
 int boot_is_usb_boot(void) { return boot_from_usb ? 1 : 0; }
@@ -232,6 +245,8 @@ int boot_is_usb_boot(void) { return boot_from_usb ? 1 : 0; }
 int boot_is_live_media(void) { return boot_live_media ? 1 : 0; }
 
 int boot_is_installer_mode(void) { return boot_installer_mode ? 1 : 0; }
+
+int boot_allow_xhci(void) { return boot_xhci_enabled ? 1 : 0; }
 
 int boot_should_show_splash(void) { return boot_cfg.show_splash ? 1 : 0; }
 

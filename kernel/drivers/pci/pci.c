@@ -9,6 +9,7 @@
 #include "drivers/storage.h"
 #include "drivers/intel_hda.h"
 #include "drivers/usb/usb.h"
+#include "bootmanager.h"
 #include "arch/arch.h"
 #include "printk.h"
 #include "types.h"
@@ -209,8 +210,10 @@ static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {
            func);
 
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
-    printk("PCI: xHCI disabled on x86 bring-up path (temporary safety guard)\n");
-    return;
+    if (!boot_allow_xhci()) {
+      printk("PCI: xHCI disabled on x86 bring-up path (set cmdline: xhci=on to enable)\n");
+      return;
+    }
 #endif
 
     pci_enable_device(pci_dev);

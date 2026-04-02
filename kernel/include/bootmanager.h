@@ -33,6 +33,7 @@ void boot_parse_cmdline(const char *cmdline);
 int boot_is_usb_boot(void);
 int boot_is_live_media(void);
 int boot_is_installer_mode(void);
+int boot_allow_xhci(void);
 int boot_should_show_splash(void);
 void boot_force_verbose_console(void);
 
