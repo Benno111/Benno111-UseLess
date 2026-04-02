@@ -327,6 +327,167 @@ void media_free_image(media_image_t *image) {
 }
 
 /* --------------------------------------------------------------------- */
+/* SVG decode (embedded data URI image extraction)                        */
+/* --------------------------------------------------------------------- */
+
+static int media_bytes_starts_with(const uint8_t *data, size_t size,
+                                   size_t at, const char *needle) {
+  size_t n = 0;
+  if (!data || !needle || at >= size)
+    return 0;
+  while (needle[n]) {
+    if (at + n >= size || data[at + n] != (uint8_t)needle[n])
+      return 0;
+    n++;
+  }
+  return 1;
+}
+
+static int media_find_bytes(const uint8_t *data, size_t size, const char *needle,
+                            size_t *out_pos) {
+  size_t needle_len = 0;
+  if (!data || !needle || !out_pos)
+    return -EINVAL;
+
+  while (needle[needle_len])
+    needle_len++;
+  if (needle_len == 0 || needle_len > size)
+    return -EINVAL;
+
+  for (size_t i = 0; i + needle_len <= size; i++) {
+    if (media_bytes_starts_with(data, size, i, needle)) {
+      *out_pos = i;
+      return 0;
+    }
+  }
+  return -ENOENT;
+}
+
+static int media_base64_value(uint8_t ch) {
+  if (ch >= 'A' && ch <= 'Z')
+    return (int)(ch - 'A');
+  if (ch >= 'a' && ch <= 'z')
+    return (int)(ch - 'a') + 26;
+  if (ch >= '0' && ch <= '9')
+    return (int)(ch - '0') + 52;
+  if (ch == '+')
+    return 62;
+  if (ch == '/')
+    return 63;
+  return -1;
+}
+
+static int media_decode_base64(const uint8_t *src, size_t src_len, uint8_t **out,
+                               size_t *out_len) {
+  uint8_t *dst;
+  size_t cap;
+  size_t wr = 0;
+  uint32_t acc = 0;
+  int acc_bits = 0;
+  int saw_padding = 0;
+
+  if (!src || !out || !out_len)
+    return -EINVAL;
+
+  cap = (src_len / 4) * 3 + 3;
+  dst = (uint8_t *)kmalloc(cap, GFP_KERNEL);
+  if (!dst)
+    return -ENOMEM;
+
+  for (size_t i = 0; i < src_len; i++) {
+    uint8_t ch = src[i];
+    int val;
+
+    if (ch == '=')
+      saw_padding = 1;
+    if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ')
+      continue;
+    if (ch == '=') {
+      break;
+    }
+
+    val = media_base64_value(ch);
+    if (val < 0 || saw_padding) {
+      kfree(dst);
+      return -EINVAL;
+    }
+
+    acc = (acc << 6) | (uint32_t)val;
+    acc_bits += 6;
+
+    while (acc_bits >= 8) {
+      acc_bits -= 8;
+      if (wr >= cap) {
+        kfree(dst);
+        return -EOVERFLOW;
+      }
+      dst[wr++] = (uint8_t)((acc >> acc_bits) & 0xFF);
+    }
+  }
+
+  *out = dst;
+  *out_len = wr;
+  return 0;
+}
+
+int media_decode_svg(const uint8_t *data, size_t size, media_image_t *out) {
+  static const char *k_svg_png = "data:image/png;base64,";
+  static const char *k_svg_jpg = "data:image/jpeg;base64,";
+  static const char *k_svg_jpg_alt = "data:image/jpg;base64,";
+  const char *uri = NULL;
+  size_t uri_pos = 0;
+  size_t base64_start = 0;
+  size_t base64_end = 0;
+  uint8_t *decoded = NULL;
+  size_t decoded_len = 0;
+  int ret;
+
+  if (!data || !size || !out)
+    return -EINVAL;
+
+  if (media_find_bytes(data, size, k_svg_png, &uri_pos) == 0) {
+    uri = k_svg_png;
+  } else if (media_find_bytes(data, size, k_svg_jpg, &uri_pos) == 0) {
+    uri = k_svg_jpg;
+  } else if (media_find_bytes(data, size, k_svg_jpg_alt, &uri_pos) == 0) {
+    uri = k_svg_jpg_alt;
+  } else {
+    return -ENOENT;
+  }
+
+  while (uri[base64_start])
+    base64_start++;
+  base64_start += uri_pos;
+  if (base64_start >= size)
+    return -EINVAL;
+
+  base64_end = base64_start;
+  while (base64_end < size) {
+    uint8_t ch = data[base64_end];
+    if (ch == '"' || ch == '\'' || ch == '<' || ch == '>' || ch == ' ')
+      break;
+    base64_end++;
+  }
+
+  if (base64_end <= base64_start)
+    return -EINVAL;
+
+  ret = media_decode_base64(data + base64_start, base64_end - base64_start,
+                            &decoded, &decoded_len);
+  if (ret != 0)
+    return ret;
+
+  if (uri == k_svg_png) {
+    ret = media_decode_png(decoded, decoded_len, out);
+  } else {
+    ret = media_decode_jpeg(decoded, decoded_len, out);
+  }
+
+  kfree(decoded);
+  return ret;
+}
+
+/* --------------------------------------------------------------------- */
 /* MP3 decoding (minimp3)                                                 */
 /* --------------------------------------------------------------------- */
 

@@ -352,8 +352,10 @@ static void load_thumbnails(void) {
         if (size >= 4 && data[0] == 0x89 && data[1] == 'P' &&
             data[2] == 'N' && data[3] == 'G') {
           decode_ok = media_decode_png(data, size, &decoded);
-        } else {
+        } else if (size >= 2 && data[0] == 0xFF && data[1] == 0xD8) {
           decode_ok = media_decode_jpeg(data, size, &decoded);
+        } else {
+          decode_ok = media_decode_svg(data, size, &decoded);
         }
 
         if (decode_ok == 0) {
@@ -405,7 +407,7 @@ static void wallpaper_ensure_loaded(void) {
       decode_ok = media_decode_png(data, size, &wallpaper_image);
       if (decode_ok == 0)
         wallpaper_image_heap_allocated = 1;
-    } else {
+    } else if (size >= 2 && data[0] == 0xFF && data[1] == 0xD8) {
       decode_ok = media_decode_jpeg_buffer(data, size, &wallpaper_image,
                                            wallpaper_buffer,
                                            sizeof(wallpaper_buffer));
@@ -416,6 +418,9 @@ static void wallpaper_ensure_loaded(void) {
             wallpaper_image.pixels != wallpaper_buffer;
       else
         wallpaper_image_heap_allocated = 0;
+    } else {
+      decode_ok = media_decode_svg(data, size, &wallpaper_image);
+      wallpaper_image_heap_allocated = (decode_ok == 0);
     }
     if (decode_ok == 0) {
       wallpaper_loaded = current_wallpaper;
