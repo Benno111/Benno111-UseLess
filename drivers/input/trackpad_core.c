@@ -76,7 +76,11 @@ void trackpad_get_position(int *x, int *y) {
     *y = trackpad_y;
 }
 
-int trackpad_get_buttons(void) { return trackpad_buttons; }
+int trackpad_get_buttons(void) {
+  if (trackpad_buttons < 0)
+    return 0;
+  return trackpad_buttons & 0x1F;
+}
 
 void trackpad_submit_report(const trackpad_report_t *report) {
   int max_x = (trackpad_bounds_w > 0) ? trackpad_bounds_w - 1 : 0;
@@ -95,7 +99,7 @@ void trackpad_submit_report(const trackpad_report_t *report) {
         tp_clamp(trackpad_y + report->dy * trackpad_scale, 0, max_y);
   }
 
-  trackpad_buttons = report->buttons;
+  trackpad_buttons = report->buttons & 0x1F;
 
   /* Basic two-finger scroll fallback until a wheel path exists in the GUI. */
   if (report->fingers >= 2 && report->scroll_y != 0) {

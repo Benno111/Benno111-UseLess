@@ -1337,15 +1337,26 @@ static void start_init_process(void) {
   uint32_t frame = 0;
   int last_mx = 0, last_my = 0;
   int last_buttons = 0;
-  int needs_redraw = 1; /* Initial draw */
+  int needs_redraw = 0; /* Initial render already completed */
   int cursor_only = 0;  /* Only cursor needs updating */
 
   /* Timer for periodic auto-refresh (33ms = 30 FPS for responsive UI) */
   uint64_t last_refresh = arch_timer_get_ms();
   const uint64_t REFRESH_MS = 33; /* 30 FPS - responsive mouse */
 
+  {
+    extern void mouse_get_position(int *x, int *y);
+    extern int mouse_get_buttons(void);
+
+    mouse_get_position(&last_mx, &last_my);
+    last_buttons = mouse_get_buttons();
+    if (last_buttons < 0)
+      last_buttons = 0;
+    last_buttons &= 0x1F;
+  }
+
   while (1) {
-    /* Poll virtio input devices (keyboard/mouse) - MUST call this! */
+    /* Poll input devices once per iteration. */
     input_poll();
 
     /* Poll for keyboard input from UART as well */
@@ -1357,10 +1368,6 @@ static void start_init_process(void) {
       gui_handle_key_event(c);
       needs_redraw = 1;
     }
-
-    /* Poll input system (Keyboard & Mouse) */
-    extern void input_poll(void);
-    input_poll();
 
     /* Get mouse state (updated by input_poll) */
     extern void mouse_get_position(int *x, int *y);

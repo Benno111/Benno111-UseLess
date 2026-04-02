@@ -581,6 +581,14 @@ void mouse_get_position(int *x, int *y) {
     trackpad_get_position(x, y);
     return;
   }
+  if (mouse_x < 0)
+    mouse_x = 0;
+  if (mouse_y < 0)
+    mouse_y = 0;
+  if (mouse_max_x > 0 && mouse_x >= mouse_max_x)
+    mouse_x = mouse_max_x - 1;
+  if (mouse_max_y > 0 && mouse_y >= mouse_max_y)
+    mouse_y = mouse_max_y - 1;
   if (x)
     *x = mouse_x;
   if (y)
@@ -588,9 +596,16 @@ void mouse_get_position(int *x, int *y) {
 }
 
 int mouse_get_buttons(void) {
+  int buttons;
+
   if (trackpad_has_pointer())
-    return trackpad_get_buttons();
-  return mouse_buttons;
+    buttons = trackpad_get_buttons();
+  else
+    buttons = mouse_buttons;
+
+  if (buttons < 0)
+    return 0;
+  return buttons & 0x1F;
 }
 
 #endif
