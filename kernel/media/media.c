@@ -419,7 +419,7 @@ static int media_decode_base64(const uint8_t *src, size_t src_len, uint8_t **out
       acc_bits -= 8;
       if (wr >= cap) {
         kfree(dst);
-        return -EOVERFLOW;
+        return -EFBIG;
       }
       dst[wr++] = (uint8_t)((acc >> acc_bits) & 0xFF);
     }
