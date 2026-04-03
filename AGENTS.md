@@ -7,13 +7,14 @@ Repository guidance for coding agents working in this repo.
 ## Default Workflow
 
 1. Make the requested changes.
-2. Run the most relevant verification available for the changed area.
-3. If verification passes, create a git commit.
+2. Run the most relevant verification available for the changed area when local tooling is available.
+3. Create a git commit for the requested changes.
 4. Push the commit to `origin` on the current branch.
 
 ## Push Policy
 
-- After a successful change, agents should push to `origin` by default.
+- After a successful change, agents should push to `origin` by default, even when local verification is unavailable.
+- Repository-side GitHub Actions, code scanning, and other remote checks are the primary verification backstop when local verification cannot be run.
 - Use a normal non-interactive flow:
   - `git add ...`
   - `git commit -m "<clear message>"`
@@ -23,7 +24,8 @@ Repository guidance for coding agents working in this repo.
 
 ## Safety Rules
 
-- Do not push if verification clearly failed.
+- Do not push if local verification clearly failed for the changed area and indicates the change is broken.
+- If local verification is unavailable, note that clearly and still push unless the user says otherwise.
 - Do not revert unrelated user changes.
 - Do not amend existing commits unless the user explicitly asks.
 - If credentials, branch protections, or remote permissions block the push, report the blocker clearly.
