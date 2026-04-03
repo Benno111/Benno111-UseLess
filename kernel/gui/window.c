@@ -8600,6 +8600,21 @@ static void draw_window(struct window *win) {
     /* Base translucent tint */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
                         win->focused ? 0x4A4E6A8A : 0x3F3D4A5D);
+    /* Reintroduce a subtle vertical gradient for a richer titlebar. */
+    for (int row = 0; row < TITLEBAR_HEIGHT; row++) {
+      int progress = (row * 256) / TITLEBAR_HEIGHT;
+      uint8_t alpha = (uint8_t)(win->focused ? (44 - (progress * 18) / 256)
+                                             : (34 - (progress * 12) / 256));
+      uint8_t red = (uint8_t)(win->focused ? (90 - (progress * 18) / 256)
+                                           : (74 - (progress * 14) / 256));
+      uint8_t green = (uint8_t)(win->focused ? (122 - (progress * 24) / 256)
+                                             : (87 - (progress * 16) / 256));
+      uint8_t blue = (uint8_t)(win->focused ? (168 - (progress * 26) / 256)
+                                            : (107 - (progress * 18) / 256));
+      gui_fill_rect_alpha(title_x0, title_y0 + row, title_w, 1,
+                          ((uint32_t)alpha << 24) | ((uint32_t)red << 16) |
+                              ((uint32_t)green << 8) | (uint32_t)blue);
+    }
     /* Secondary glass veil to keep transparency visible over bright content */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
                         win->focused ? 0x18324860 : 0x142A3442);
