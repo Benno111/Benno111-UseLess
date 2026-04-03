@@ -9146,10 +9146,20 @@ static void draw_window(struct window *win) {
   /* About window */
   else if (win->title[0] == 'A' && win->title[1] == 'b' &&
            win->title[2] == 'o') {
-    int yy = content_y + 20;
-    int center_x = content_x + content_w / 2;
     char resolution[32];
     char windows_info[32];
+    const char *gpu_status;
+    const char *blur_status;
+    int hero_x = content_x + 18;
+    int hero_y = content_y + 18;
+    int hero_w = content_w - 36;
+    int hero_h = 96;
+    int left_col_x = content_x + 18;
+    int right_col_x = content_x + content_w / 2 + 6;
+    int col_y = hero_y + hero_h + 14;
+    int col_w = (content_w - 48) / 2;
+    int info_h = 132;
+    int footer_y = col_y + info_h + 14;
 #ifdef ARCH_X86_64
     const char *arch_info = "Architecture:  x86_64";
 #elif defined(ARCH_X86)
@@ -9161,40 +9171,69 @@ static void draw_window(struct window *win) {
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
+    if (gui_is_gpu_rendering_enabled()) {
+      gpu_status = "GPU rendering active";
+    } else if (str_cmp(g_gpu_backend_name, "bochs-vbe") == 0) {
+      gpu_status = "Bochs/QEMU display backend active";
+    } else if (str_cmp(g_gpu_backend_name, "framebuffer") == 0) {
+      gpu_status = "Framebuffer display backend active";
+    } else {
+      gpu_status = "Software rendering active";
+    }
+    if (gui_are_blur_effects_enabled()) {
+      blur_status = "Blur enabled";
+    } else if (gui_blur_effects_requested()) {
+      blur_status = "Blur requested but auto-disabled";
+    } else {
+      blur_status = "Blur disabled";
+    }
 
-    /* OS Logo */
-    gui_draw_os_logo(center_x - 21, yy, 3, 0xCDD6F4, 0x89B4FA, THEME_BG);
-    yy += 52;
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0xEEF2F7);
+    gui_draw_rect(hero_x, hero_y, hero_w, hero_h, 0x1F2937);
+    gui_draw_rect(hero_x, hero_y, 6, hero_h, 0x2563EB);
+    gui_draw_os_logo(hero_x + 18, hero_y + 18, 3, 0xE2E8F0, 0x93C5FD, 0x1F2937);
+    gui_draw_string(hero_x + 78, hero_y + 18, "OS8", 0xFFFFFF, 0x1F2937);
+    gui_draw_string(hero_x + 78, hero_y + 40, "Version 8.0.0", 0xBFDBFE,
+                    0x1F2937);
+    gui_draw_string(hero_x + 78, hero_y + 62,
+                    "Desktop compositor build with wallpapers, settings, and apps.",
+                    0xCBD5E1, 0x1F2937);
+    gui_draw_rect(hero_x + hero_w - 150, hero_y + 18, 118, 26, 0x2563EB);
+    gui_draw_string(hero_x + hero_w - 128, hero_y + 27, "System About", 0xFFFFFF,
+                    0x2563EB);
+    gui_draw_string(hero_x + hero_w - 136, hero_y + 58, windows_info, 0xA5B4FC,
+                    0x1F2937);
 
-    /* OS Name - large and centered */
-    gui_draw_string(center_x - 58, yy, "OS8", 0xFFFFFF, THEME_BG);
-    yy += 24;
+    gui_draw_rect(left_col_x, col_y, col_w, info_h, 0xFFFFFF);
+    gui_draw_rect(left_col_x, col_y, col_w, 3, 0x111827);
+    gui_draw_string(left_col_x + 14, col_y + 14, "Platform", 0x111827, 0xFFFFFF);
+    gui_draw_string(left_col_x + 14, col_y + 38, arch_info, 0x374151, 0xFFFFFF);
+    gui_draw_string(left_col_x + 14, col_y + 58, "Kernel: OS8 v8.0.0", 0x374151,
+                    0xFFFFFF);
+    gui_draw_string(left_col_x + 14, col_y + 78, "Desktop: Window compositor active",
+                    0x374151, 0xFFFFFF);
+    gui_draw_string(left_col_x + 14, col_y + 98, "Graphics:", 0x6B7280, 0xFFFFFF);
+    gui_draw_string(left_col_x + 90, col_y + 98, gpu_status, 0x1D4ED8, 0xFFFFFF);
 
-    /* Version */
-    gui_draw_string(center_x - 68, yy, "Version 8.0.0", 0xA6ADC8, THEME_BG);
-    yy += 28;
+    gui_draw_rect(right_col_x, col_y, col_w, info_h, 0xFFFFFF);
+    gui_draw_rect(right_col_x, col_y, col_w, 3, 0x2563EB);
+    gui_draw_string(right_col_x + 14, col_y + 14, "Session", 0x111827, 0xFFFFFF);
+    gui_draw_string(right_col_x + 14, col_y + 38, "Display:", 0x6B7280, 0xFFFFFF);
+    gui_draw_string(right_col_x + 82, col_y + 38, resolution, 0x374151, 0xFFFFFF);
+    gui_draw_string(right_col_x + 14, col_y + 58, "Backend:", 0x6B7280, 0xFFFFFF);
+    gui_draw_string(right_col_x + 82, col_y + 58, g_gpu_backend_name, 0x374151,
+                    0xFFFFFF);
+    gui_draw_string(right_col_x + 14, col_y + 78, "Effects:", 0x6B7280, 0xFFFFFF);
+    gui_draw_string(right_col_x + 82, col_y + 78, blur_status, 0x7C3AED, 0xFFFFFF);
+    gui_draw_string(right_col_x + 14, col_y + 98, "Desktop:", 0x6B7280, 0xFFFFFF);
+    gui_draw_string(right_col_x + 82, col_y + 98, "Wallpaper + dock environment",
+                    0x374151, 0xFFFFFF);
 
-    /* System info box */
-    gui_draw_rect(content_x + 20, yy, content_w - 40, 80, 0x252535);
-    yy += 10;
-    gui_draw_string(content_x + 30, yy, arch_info, 0xCDD6F4, 0x252535);
-    yy += 18;
-    gui_draw_string(content_x + 30, yy, "Kernel:        OS8 v8.0.0",
-                    0xCDD6F4, 0x252535);
-    yy += 18;
-    gui_draw_string(content_x + 30, yy, "Desktop:       Window compositor active",
-                    0xCDD6F4, 0x252535);
-    yy += 18;
-    gui_draw_string(content_x + 30, yy, "Display:       ", 0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + 142, yy, resolution, 0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + 250, yy, windows_info, 0x89B4FA, 0x252535);
-    yy += 28;
-    gui_draw_string(content_x + 30, yy, BUILD_UUID, 0x6C7086, THEME_BG);
-    yy += 20;
-
-    /* Copyright */
-    gui_draw_string(content_x + 30, yy, "(c) 2027 Benno111", 0x6C7086,
-                    THEME_BG);
+    gui_draw_rect(hero_x, footer_y, hero_w, 52, 0xE5E7EB);
+    gui_draw_string(hero_x + 14, footer_y + 10, "Build UUID", 0x374151, 0xE5E7EB);
+    gui_draw_string(hero_x + 14, footer_y + 28, BUILD_UUID, 0x6B7280, 0xE5E7EB);
+    gui_draw_string(hero_x + hero_w - 160, footer_y + 28, "(c) 2027 Benno111",
+                    0x6B7280, 0xE5E7EB);
   }
   /* Settings window */
   else if (win->title[0] == 'S' && win->title[1] == 'e' &&
@@ -10839,7 +10878,7 @@ static void draw_main_menu_panel(void) {
 static int main_menu_activate(int item_index) {
   switch (item_index) {
   case MAIN_MENU_ITEM_ABOUT:
-    gui_create_window("About", 280, 180, 420, 260);
+    gui_create_window("About", 210, 140, 560, 360);
     break;
   case MAIN_MENU_ITEM_TERMINAL:
     gui_launch_app_by_id("terminal");
@@ -12883,7 +12922,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (x >= panel_x + 328 && x < panel_x + 412 && y >= row_y &&
               y < row_y + 30) {
-            gui_create_window("About", 280, 180, 420, 260);
+            gui_create_window("About", 210, 140, 560, 360);
             str_copy_safe(settings_status, "Opened about window.",
                           sizeof(settings_status));
             break;
@@ -13020,7 +13059,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (x >= panel_x && x < panel_x + 110 && y >= row2_y &&
               y < row2_y + 30) {
-            gui_create_window("About", 280, 180, 420, 260);
+            gui_create_window("About", 210, 140, 560, 360);
             str_copy_safe(settings_status, "Opened about window.",
                           sizeof(settings_status));
             break;
@@ -13133,7 +13172,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         } else if (settings_active_tab == 9) {
           if (x >= panel_x + 18 && x < panel_x + 106 && y >= panel_y + 146 &&
               y < panel_y + 176) {
-            gui_create_window("About", 280, 180, 420, 260);
+            gui_create_window("About", 210, 140, 560, 360);
             str_copy_safe(settings_status, "Opened about window.",
                           sizeof(settings_status));
             break;
