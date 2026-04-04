@@ -10263,6 +10263,7 @@ static void draw_window(struct window *win) {
     int preview_y = card_y + 44;
     int preview_w = sidebar_w - 20;
     int preview_h = 78;
+    const char *blur_picker_status;
     const char *wallpaper_kind =
         wallpapers[current_wallpaper].type == 1 ? "Photo-based scene"
                                                 : "Gradient theme";
@@ -10270,6 +10271,14 @@ static void draw_window(struct window *win) {
         wallpapers[current_wallpaper].type == 1
             ? "Scaled to cover the desktop surface."
             : "Gradient colors render directly on the framebuffer.";
+
+    if (gui_are_blur_effects_enabled()) {
+      blur_picker_status = "Blur: On";
+    } else if (gui_blur_effects_requested()) {
+      blur_picker_status = "Blur: Auto-disabled on this GPU";
+    } else {
+      blur_picker_status = "Blur: Off";
+    }
 
     gui_draw_rect(content_x, content_y, content_w, content_h, 0x5E616A);
     gui_draw_rect(content_x, content_y, content_w, header_h, 0x27272A);
@@ -10389,7 +10398,7 @@ static void draw_window(struct window *win) {
                     wallpapers[current_wallpaper].name, 0x111827, 0xF5F5F7);
     gui_draw_string(sidebar_x + 10, preview_y + preview_h + 34, wallpaper_kind,
                     0x4B5563, 0xF5F5F7);
-    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 54, blur_status,
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 54, blur_picker_status,
                     0x6366F1, 0xF5F5F7);
     gui_draw_string(sidebar_x + 10, preview_y + preview_h + 74, picker_hint,
                     0x6B7280, 0xF5F5F7);
