@@ -1693,43 +1693,51 @@ struct display {
 
 static struct display primary_display = {0};
 
-/* Map a destination coordinate to source image space for full stretch-to-fit. */
-static inline int wallpaper_stretch_coord(int dst, int dst_size, int src_size) {
-  if (dst_size <= 1 || src_size <= 1)
-    return 0;
-
-  return (int)(((uint64_t)dst * (uint64_t)(src_size - 1)) /
-               (uint64_t)(dst_size - 1));
-}
-
 /*
  * Map a destination coordinate into source image space using a centered
- * cover scale so photo wallpapers reach every screen edge and corner.
+ * cover scale so photo wallpapers fill the screen without distortion.
  */
 static inline int wallpaper_cover_coord(int dst, int dst_size, int src_size,
-                                        int other_dst_size,
-                                        int other_src_size) {
-  if (dst_size <= 0 || src_size <= 0 || other_dst_size <= 0 || other_src_size <= 0)
+                                        int screen_w, int screen_h,
+                                        int image_w, int image_h) {
+  uint64_t scale_num;
+  uint64_t scale_den;
+  uint64_t scaled_size;
+  uint64_t crop;
+  uint64_t pos;
+  int src_coord;
+
+  if (dst_size <= 0 || src_size <= 0 || screen_w <= 0 || screen_h <= 0 ||
+      image_w <= 0 || image_h <= 0)
     return 0;
 
-  uint64_t lhs = (uint64_t)src_size * (uint64_t)other_dst_size;
-  uint64_t rhs = (uint64_t)other_src_size * (uint64_t)dst_size;
-
-  if (lhs == rhs) {
-    return wallpaper_stretch_coord(dst, dst_size, src_size);
+  if ((uint64_t)screen_w * (uint64_t)image_h >=
+      (uint64_t)screen_h * (uint64_t)image_w) {
+    scale_num = (uint64_t)screen_w;
+    scale_den = (uint64_t)image_w;
+  } else {
+    scale_num = (uint64_t)screen_h;
+    scale_den = (uint64_t)image_h;
   }
 
-  if (lhs > rhs) {
-    uint64_t scaled_src = lhs / (uint64_t)other_src_size;
-    uint64_t crop = scaled_src > (uint64_t)dst_size ? (scaled_src - (uint64_t)dst_size) / 2
-                                                    : 0;
-    uint64_t pos = (uint64_t)dst + crop;
-    if (scaled_src <= 1 || src_size <= 1)
-      return 0;
-    return (int)((pos * (uint64_t)(src_size - 1)) / (scaled_src - 1));
-  }
+  scaled_size =
+      ((uint64_t)src_size * scale_num + scale_den - 1) / scale_den;
+  if (scaled_size == 0)
+    return 0;
 
-  return wallpaper_stretch_coord(dst, dst_size, src_size);
+  crop = scaled_size > (uint64_t)dst_size
+             ? (scaled_size - (uint64_t)dst_size) / 2
+             : 0;
+  pos = (uint64_t)dst + crop;
+  if (pos >= scaled_size)
+    pos = scaled_size - 1;
+
+  src_coord = (int)((pos * (uint64_t)src_size) / scaled_size);
+  if (src_coord < 0)
+    src_coord = 0;
+  if (src_coord >= src_size)
+    src_coord = src_size - 1;
+  return src_coord;
 }
 
 /* Get wallpaper pixel color at position */
@@ -1740,9 +1748,13 @@ static uint32_t wallpaper_get_pixel(int x, int y, int height) {
   if (wallpapers[idx].type == 1 && wallpaper_image.pixels && width > 0 &&
       height > 0) {
     int img_x = wallpaper_cover_coord(x, width, (int)wallpaper_image.width,
-                                      height, (int)wallpaper_image.height);
+                                      width, height,
+                                      (int)wallpaper_image.width,
+                                      (int)wallpaper_image.height);
     int img_y = wallpaper_cover_coord(y, height, (int)wallpaper_image.height,
-                                      width, (int)wallpaper_image.width);
+                                      width, height,
+                                      (int)wallpaper_image.width,
+                                      (int)wallpaper_image.height);
     if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
         img_y < (int)wallpaper_image.height) {
       return wallpaper_image.pixels[img_y * wallpaper_image.width + img_x];
@@ -11999,11 +12011,13 @@ static void render_wallpaper_cache(void) {
     for (int y = 0; y < height; y++) {
       uint32_t *line = cached_wallpaper + y * width;
       int src_y =
-          wallpaper_cover_coord(y, height, (int)img_h, width, (int)img_w);
+          wallpaper_cover_coord(y, height, (int)img_h, width, height,
+                                (int)img_w, (int)img_h);
 
       for (int x = 0; x < width; x++) {
         int src_x =
-            wallpaper_cover_coord(x, width, (int)img_w, height, (int)img_h);
+            wallpaper_cover_coord(x, width, (int)img_w, width, height,
+                                  (int)img_w, (int)img_h);
         line[x] = pixels[src_y * img_w + src_x];
       }
     }
