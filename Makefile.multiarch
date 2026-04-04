@@ -272,12 +272,41 @@ assets: $(BUILD_DIR)
 	fi
 	@if [ -d "$(KERNEL_DIR)/media/bootstrap_images" ]; then \
 		mkdir -p "$(BUILD_ASSETS_DIR)/wallpapers"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/landscape.png" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.png"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/nature.jpg"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/city.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/city.jpg"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/portrait.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/portrait.jpg"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/square.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/square.jpg"; \
-		cp "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/wallpaper.jpg"; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/landscape.png" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/landscape.png" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.png"; \
+		elif [ -f "$(KERNEL_DIR)/media/bootstrap_images/Landscape.png" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/Landscape.png" "$(BUILD_ASSETS_DIR)/wallpapers/landscape.png"; \
+		else \
+			echo "[ASSETS] Missing landscape wallpaper source"; \
+		fi; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/nature.jpg"; \
+		else \
+			echo "[ASSETS] Missing nature wallpaper source"; \
+		fi; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/city.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/city.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/city.jpg"; \
+		else \
+			echo "[ASSETS] Missing city wallpaper source"; \
+		fi; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/portrait.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/portrait.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/portrait.jpg"; \
+		else \
+			echo "[ASSETS] Missing portrait wallpaper source"; \
+		fi; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/square.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/square.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/square.jpg"; \
+		else \
+			echo "[ASSETS] Missing square wallpaper source"; \
+		fi; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/wallpaper.jpg"; \
+		elif [ -f "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/nature.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/wallpaper.jpg"; \
+			echo "[ASSETS] wallpaper.jpg missing, using nature.jpg fallback"; \
+		else \
+			echo "[ASSETS] Missing wallpaper.jpg source and no fallback available"; \
+		fi; \
 	else \
 		echo "[ASSETS] No bootstrap wallpaper source directory found"; \
 	fi
