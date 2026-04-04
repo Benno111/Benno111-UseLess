@@ -2298,6 +2298,12 @@ typedef enum {
   WINDOW_FULLSCREEN
 } window_state_t;
 
+typedef enum {
+  WINDOW_ANIM_NONE = 0,
+  WINDOW_ANIM_OPEN,
+  WINDOW_ANIM_CLOSE
+} window_animation_t;
+
 struct window {
   int id;
   char title[64];
@@ -2310,6 +2316,9 @@ struct window {
   bool resizable;
   uint32_t *content_buffer;
   void *userdata;
+  window_animation_t animation;
+  int anim_frame;
+  int anim_total_frames;
 
   /* Saved position for restore from maximize */
   int saved_x, saved_y;
@@ -2329,6 +2338,104 @@ static struct window *window_stack = NULL; /* Z-order, top is focused */
 static struct window *focused_window = NULL;
 static int startup_window_opening = 0;
 static int next_window_id = 1;
+
+static void window_get_draw_rect(const struct window *win, int *x, int *y, int *w,
+                                 int *h) {
+  int draw_x;
+  int draw_y;
+  int draw_w;
+  int draw_h;
+  if (!win) {
+    if (x)
+      *x = 0;
+    if (y)
+      *y = 0;
+    if (w)
+      *w = 0;
+    if (h)
+      *h = 0;
+    return;
+  }
+
+  draw_x = win->x;
+  draw_y = win->y;
+  draw_w = win->width;
+  draw_h = win->height;
+
+  if (win->animation != WINDOW_ANIM_NONE && win->anim_total_frames > 0) {
+    int progress = (win->anim_frame * 256) / win->anim_total_frames;
+    int scale;
+    int travel_y;
+    if (progress < 0)
+      progress = 0;
+    if (progress > 256)
+      progress = 256;
+
+    if (win->animation == WINDOW_ANIM_OPEN) {
+      scale = 224 + (progress * 32) / 256;
+      travel_y = ((256 - progress) * 14) / 256;
+    } else {
+      scale = 256 - (progress * 32) / 256;
+      travel_y = (progress * 14) / 256;
+    }
+
+    draw_w = (win->width * scale) / 256;
+    draw_h = (win->height * scale) / 256;
+    if (draw_w < 80)
+      draw_w = 80;
+    if (draw_h < 56)
+      draw_h = 56;
+    draw_x = win->x + (win->width - draw_w) / 2;
+    draw_y = win->y + (win->height - draw_h) / 2 + travel_y;
+  }
+
+  if (x)
+    *x = draw_x;
+  if (y)
+    *y = draw_y;
+  if (w)
+    *w = draw_w;
+  if (h)
+    *h = draw_h;
+}
+
+static void gui_destroy_window_immediate(struct window *win);
+
+static void gui_begin_window_close(struct window *win) {
+  if (!win || win->id == 0)
+    return;
+  if (win->animation == WINDOW_ANIM_CLOSE)
+    return;
+  win->animation = WINDOW_ANIM_CLOSE;
+  win->anim_frame = 0;
+  win->anim_total_frames = 8;
+  compositor_mark_full_redraw();
+}
+
+static void gui_update_window_animations(void) {
+  int any_active = 0;
+  struct window *win = window_stack;
+  while (win) {
+    struct window *next = win->next;
+    if (win->animation != WINDOW_ANIM_NONE) {
+      any_active = 1;
+      if (win->anim_frame < win->anim_total_frames)
+        win->anim_frame++;
+      if (win->anim_frame >= win->anim_total_frames) {
+        if (win->animation == WINDOW_ANIM_CLOSE) {
+          gui_destroy_window_immediate(win);
+        } else {
+          win->animation = WINDOW_ANIM_NONE;
+          win->anim_frame = 0;
+          win->anim_total_frames = 0;
+        }
+      }
+    }
+    win = next;
+  }
+  if (any_active)
+    compositor_mark_full_redraw();
+}
 
 static void gui_clamp_windows_to_display(void) {
   int max_y = (int)primary_display.height - dock_reserved_height() - 12;
@@ -2698,6 +2805,9 @@ struct window *gui_create_window(const char *title, int x, int y, int w,
   win->focused = false;
   win->has_titlebar = true;
   win->resizable = true;
+  win->animation = WINDOW_ANIM_OPEN;
+  win->anim_frame = 0;
+  win->anim_total_frames = 8;
 
   /* Reset all callbacks and userdata - critical to prevent stale pointers */
   win->on_draw = NULL;
@@ -2716,6 +2826,7 @@ struct window *gui_create_window(const char *title, int x, int y, int w,
   window_stack = win;
 
   printk(KERN_INFO "GUI: Created window '%s' (%dx%d)\n", title, w, h);
+  compositor_mark_full_redraw();
 
   return win;
 }
@@ -2733,7 +2844,7 @@ static void gui_clear_focus(void) {
   }
 }
 
-void gui_destroy_window(struct window *win) {
+static void gui_destroy_window_immediate(struct window *win) {
   if (!win || win->id == 0)
     return;
 
@@ -2764,6 +2875,9 @@ void gui_destroy_window(struct window *win) {
 
   win->visible = false;
   win->focused = false;
+  win->animation = WINDOW_ANIM_NONE;
+  win->anim_frame = 0;
+  win->anim_total_frames = 0;
   win->on_draw = NULL;
   win->on_key = NULL;
   win->on_mouse = NULL;
@@ -2771,6 +2885,13 @@ void gui_destroy_window(struct window *win) {
   win->userdata = NULL;
   win->next = NULL;
   win->id = 0;
+  compositor_mark_full_redraw();
+}
+
+void gui_destroy_window(struct window *win) {
+  if (!win || win->id == 0)
+    return;
+  gui_begin_window_close(win);
 }
 
 void gui_focus_window(struct window *win) {
@@ -8904,8 +9025,8 @@ static void draw_window(struct window *win) {
     return;
 
   const gui_theme_palette_t *theme = gui_theme_palette();
-  int x = win->x, y = win->y;
-  int w = win->width, h = win->height;
+  int x, y, w, h;
+  window_get_draw_rect(win, &x, &y, &w, &h);
   struct gui_clip_state prev_clip = gui_set_clip_rect(x, y, w, h);
 
   gui_draw_glass_panel(x, y, w, h,
@@ -12228,6 +12349,8 @@ void gui_compose(void) {
     bowling_update();
   }
 
+  gui_update_window_animations();
+
   /* Draw windows from bottom to top (reverse order) */
   struct window *draw_order[MAX_WINDOWS];
   int count = 0;
@@ -13082,22 +13205,27 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   }
 
   for (struct window *win = window_stack; win; win = win->next) {
+    int draw_x, draw_y, draw_w, draw_h;
     if (!win->visible)
       continue;
+    window_get_draw_rect(win, &draw_x, &draw_y, &draw_w, &draw_h);
 
-    if (x >= win->x && x < win->x + win->width && y >= win->y &&
-        y < win->y + win->height) {
+    if (x >= draw_x && x < draw_x + draw_w && y >= draw_y &&
+        y < draw_y + draw_h) {
 
       gui_focus_window(win);
 
+      if (win->animation != WINDOW_ANIM_NONE)
+        return;
+
       /* Check for resize edges FIRST (on any visible window) */
       {
-        int at_left = (x >= win->x && x < win->x + RESIZE_BORDER);
-        int at_right = (x >= win->x + win->width - RESIZE_BORDER &&
-                        x < win->x + win->width);
-        int at_top = (y >= win->y && y < win->y + RESIZE_BORDER);
-        int at_bottom = (y >= win->y + win->height - RESIZE_BORDER &&
-                         y < win->y + win->height);
+        int at_left = (x >= draw_x && x < draw_x + RESIZE_BORDER);
+        int at_right = (x >= draw_x + draw_w - RESIZE_BORDER &&
+                        x < draw_x + draw_w);
+        int at_top = (y >= draw_y && y < draw_y + RESIZE_BORDER);
+        int at_bottom = (y >= draw_y + draw_h - RESIZE_BORDER &&
+                         y < draw_y + draw_h);
 
         /* Determine which edge/corner */
         int edge = RESIZE_NONE;
@@ -13133,11 +13261,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
       /* Check for traffic light buttons (on LEFT side now) */
       if (win->has_titlebar) {
-        int btn_cy = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT / 2;
+        int btn_cy = draw_y + BORDER_WIDTH + TITLEBAR_HEIGHT / 2;
         int btn_r = 8; /* Click radius slightly larger than visual */
 
         /* Close button (first) */
-        int close_cx = win->x + BORDER_WIDTH + 18;
+        int close_cx = draw_x + BORDER_WIDTH + 18;
         if ((x - close_cx) * (x - close_cx) + (y - btn_cy) * (y - btn_cy) <=
             btn_r * btn_r) {
           if (!window_close_disabled(win))
