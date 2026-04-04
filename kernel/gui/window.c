@@ -239,10 +239,10 @@ static const gui_theme_palette_t g_theme_light = {
     0x1EFFFFFF, 0x10FFFFFF, 0xCDE8EEF7, 0x88FFFFFF, 0x4CC9D7E6, 0x6094A3B5,
     0xD7E5F3, 0xE5EEF8, 0xC5DDFB, 0x8FB7E8, 0xCFE4F6, 0x54FFFFFF, 0x90B7C8DA,
     0xC3D9EE, 0xECF3FA, 0xF7FAFD, 0xD7E2EF, 0xF7F9FC, 0xFFFFFF, 0xC8D3E0,
-    0x1B2430, 0x1B2430, 0x627084, 0x1B2430, 0xFFFFFF, 0xE7EEF7, 0x1B2430,
-    0x627084, 0xF5F8FC, 0xE7F0FB, 0xFFFFFF, 0x18212E, 0x66758A, 0xDEE6F0,
-    0xEEF3F9, 0xE2EAF3, 0xEEF3F9, 0xF7FAFD, 0xFFFFFF, 0xEEF3F9, 0xE3EBF5,
-    0xFFFFFF, 0xF7FAFD, 0xDCE8F8, 0x18212E, 0x6B7A90};
+    0x1B2430, 0x1B2430, 0x627084, 0x1B2430, 0xFFFFFF, 0x1B2430, 0x627084,
+    0xF5F8FC, 0xE7F0FB, 0xFFFFFF, 0x18212E, 0x66758A, 0xDEE6F0, 0xEEF3F9,
+    0xE2EAF3, 0xEEF3F9, 0xF7FAFD, 0xFFFFFF, 0xEEF3F9, 0xE3EBF5, 0xFFFFFF,
+    0xF7FAFD, 0xDCE8F8, 0x18212E, 0x6B7A90};
 
 static gui_theme_mode_t g_theme_mode = GUI_THEME_DARK;
 
@@ -8342,8 +8342,8 @@ static void draw_partition_manager_window(int content_x, int content_y,
                   theme->card);
   for (int i = 0; i < installer_disk_count && i < 6; i++) {
     int row_y = content_y + 96 + i * 28;
-    uint32_t row_bg =
-        i == installer_selected_disk ? theme->selection : theme->surface_alt;
+    uint32_t row_bg = i == installer_selected_disk ? theme->file_row_selected
+                                                   : theme->surface_alt;
     gui_draw_rect(content_x + 24, row_y, content_w - 48, 24, row_bg);
     gui_draw_string(content_x + 36, row_y + 5, installer_disk_labels[i],
                     theme->app_fg, row_bg);
@@ -8362,8 +8362,9 @@ static void draw_partition_manager_window(int content_x, int content_y,
                   theme->card);
   for (int i = 0; i < partition_manager_partition_count && i < 4; i++) {
     int row_y = content_y + 196 + i * 22;
-    uint32_t row_bg =
-        i == partition_manager_selected_partition ? theme->selection : theme->surface;
+    uint32_t row_bg = i == partition_manager_selected_partition
+                          ? theme->file_row_selected
+                          : theme->surface;
     gui_draw_rect(content_x + 24, row_y, content_w - 48, 18, row_bg);
     gui_draw_string(content_x + 34, row_y + 4, partition_manager_labels[i],
                     theme->app_fg, row_bg);
@@ -10114,7 +10115,7 @@ static void draw_window(struct window *win) {
                     theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28,
                     intel_hda_is_playing() ? "Playing" : "Idle",
-                    intel_hda_is_playing() ? 0xA6E3A1 : theme->app_subtle,
+                    intel_hda_is_playing() ? 0xA6E3A1 : theme->app_muted,
                     theme->card);
     yy += 62;
 
@@ -10128,7 +10129,7 @@ static void draw_window(struct window *win) {
                     theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28,
                     virtio_net_is_ready() ? "eth0 / NAT" : "Unavailable",
-                    virtio_net_is_ready() ? 0xA6E3A1 : theme->app_subtle,
+                    virtio_net_is_ready() ? 0xA6E3A1 : theme->app_muted,
                     theme->card);
     yy += 62;
 
@@ -10140,22 +10141,22 @@ static void draw_window(struct window *win) {
                                     : "xHCI controller unavailable",
                     xhci_is_ready() ? theme->app_muted : 0xF38BA8, theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28, usb_ports,
-                    xhci_is_ready() ? 0xA6E3A1 : theme->app_subtle, theme->card);
+                    xhci_is_ready() ? 0xA6E3A1 : theme->app_muted, theme->card);
     if (!xhci_is_ready()) {
       gui_draw_string(content_x + 20, yy + 48, "No USB enumeration available",
-                      theme->app_subtle, theme->card);
+                      theme->app_muted, theme->card);
     } else if (usb_count <= 0) {
       gui_draw_string(content_x + 20, yy + 48, "No USB devices enumerated",
-                      theme->app_subtle, theme->card);
+                      theme->app_muted, theme->card);
     } else {
       gui_draw_string(content_x + 20, yy + 48, usb_name0, theme->app_muted,
                       theme->card);
       if (usb_count > 1) {
-        gui_draw_string(content_x + 20, yy + 64, usb_name1, theme->app_subtle,
+        gui_draw_string(content_x + 20, yy + 64, usb_name1, theme->app_muted,
                         theme->card);
       } else {
         gui_draw_string(content_x + 20, yy + 64, "1 device detected",
-                        theme->app_subtle, theme->card);
+                        theme->app_muted, theme->card);
       }
     }
   }
@@ -10617,10 +10618,10 @@ static void draw_window(struct window *win) {
                       THEME_BG);
       gui_draw_string(content_x + content_w / 2 - 60,
                       content_y + content_h - 14, "Press R to restart",
-                      theme->app_subtle, THEME_BG);
+                      theme->app_muted, THEME_BG);
     } else {
       gui_draw_string(content_x + 10, content_y + content_h - 14,
-                      "Arrow keys to move", theme->app_subtle, THEME_BG);
+                      "Arrow keys to move", theme->app_muted, THEME_BG);
     }
   }
   /* Clock */

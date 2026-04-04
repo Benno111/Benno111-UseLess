@@ -886,8 +886,20 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     format_uptime_string(uptime_buf, sizeof(uptime_buf));
     build_neofetch_memory_string(memory_buf, sizeof(memory_buf));
     arch_cpu_info(cpu_buf, sizeof(cpu_buf));
-    if (!cpu_buf[0])
-      snprintf(cpu_buf, sizeof(cpu_buf), "Unknown CPU");
+    if (!cpu_buf[0]) {
+      cpu_buf[0] = 'U';
+      cpu_buf[1] = 'n';
+      cpu_buf[2] = 'k';
+      cpu_buf[3] = 'n';
+      cpu_buf[4] = 'o';
+      cpu_buf[5] = 'w';
+      cpu_buf[6] = 'n';
+      cpu_buf[7] = ' ';
+      cpu_buf[8] = 'C';
+      cpu_buf[9] = 'P';
+      cpu_buf[10] = 'U';
+      cpu_buf[11] = '\0';
+    }
     build_neofetch_gpu_string(gpu_buf, sizeof(gpu_buf));
 
     term_puts(term, "\033[33mOS:\033[0m      OS8 8.0.0\n");
