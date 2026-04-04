@@ -88,6 +88,7 @@ static const char scancode_to_ascii_shift[128] = {
 #define KEY_RIGHT 0x103
 #define KEY_WINDOW_SWITCHER 0x110
 #define KEY_CTRL_ALT_DEL 0x111
+#define KEY_MAIN_MENU_TOGGLE 0x112
 
 static void ps2_wait_input(void) {
   int timeout = 100000;
@@ -447,6 +448,10 @@ static void handle_keyboard_byte(uint8_t scancode) {
     break;
   default:
     if (scancode < 128) {
+      if (scancode == 0x01 && ctrl_pressed) {
+        key = KEY_MAIN_MENU_TOGGLE;
+        break;
+      }
       if (scancode == 0x0F && alt_pressed) {
         key = KEY_WINDOW_SWITCHER;
         break;

@@ -285,6 +285,7 @@ static void gui_set_theme_mode(gui_theme_mode_t mode) {
 
 #define KEY_WINDOW_SWITCHER 0x110
 #define KEY_CTRL_ALT_DEL 0x111
+#define KEY_MAIN_MENU_TOGGLE 0x112
 #define KEY_UP 0x100
 #define KEY_DOWN 0x101
 #define KEY_LEFT 0x102
@@ -12535,6 +12536,13 @@ void gui_handle_key_event(int key) {
 
   if (key == KEY_CTRL_ALT_DEL) {
     open_secure_attention();
+    return;
+  }
+
+  if (key == KEY_MAIN_MENU_TOGGLE) {
+    menu_open = menu_open ? 0 : 1;
+    main_menu_power_open = 0;
+    compositor_mark_full_redraw();
     return;
   }
 
