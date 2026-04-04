@@ -1369,6 +1369,8 @@ static void bowling_reset_pins(void) {
   }
 }
 
+static void bowling_request_redraw(void) { compositor_mark_full_redraw(); }
+
 static int bowling_count_standing_pins(void) {
   int count = 0;
   for (int i = 0; i < BOWLING_PIN_COUNT; i++) {
@@ -1396,6 +1398,7 @@ static void bowling_advance_frame(void) {
   } else {
     bowling_frame++;
   }
+  bowling_request_redraw();
 }
 
 static void bowling_init(void) {
@@ -1407,6 +1410,7 @@ static void bowling_init(void) {
   bowling_game_over = 0;
   bowling_reset_pins();
   bowling_prepare_next_roll();
+  bowling_request_redraw();
 }
 
 static void bowling_resolve_roll(void) {
@@ -1444,6 +1448,7 @@ static void bowling_resolve_roll(void) {
     }
     bowling_roll = 2;
     bowling_prepare_next_roll();
+    bowling_request_redraw();
     return;
   }
 
@@ -1455,6 +1460,7 @@ static void bowling_update(void) {
     return;
 
   bowling_ball_progress += bowling_ball_power + 2;
+  bowling_request_redraw();
   if (bowling_ball_progress >= BOWLING_LANE_PROGRESS_MAX) {
     bowling_ball_progress = BOWLING_LANE_PROGRESS_MAX;
     bowling_ball_rolling = 0;
@@ -1493,6 +1499,7 @@ static void bowling_key(int key) {
     bowling_ball_rolling = 1;
     bowling_ball_progress = 0;
   }
+  bowling_request_redraw();
 }
 
 static void notepad_key(int key) {
