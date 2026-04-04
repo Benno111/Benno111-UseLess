@@ -1332,6 +1332,7 @@ static void draw_clock_hands(int cx, int cy, int radius, int hours24,
 
 static void draw_clock_widget(int content_x, int content_y, int content_w,
                               int content_h, uint32_t panel_bg) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   int hours24, minutes, seconds;
   char time_str[9];
   int cx = content_x + content_w / 2;
@@ -1345,10 +1346,13 @@ static void draw_clock_widget(int content_x, int content_y, int content_w,
   clock_get_time(&hours24, &minutes, &seconds);
   clock_format_time(time_str, hours24, minutes, seconds);
 
-  draw_clock_face(cx, cy, radius, 0xF8FAFC, 0x3B82F6, 0x334155);
+  draw_clock_face(cx, cy, radius,
+                  g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0xF8FAFC,
+                  theme->accent,
+                  g_theme_mode == GUI_THEME_LIGHT ? 0x94A3B8 : 0x334155);
   draw_clock_hands(cx, cy, radius, hours24, minutes, seconds);
 
-  gui_draw_string(cx - 32, cy + radius + 10, time_str, 0xFFFFFF, panel_bg);
+  gui_draw_string(cx - 32, cy + radius + 10, time_str, theme->app_fg, panel_bg);
 }
 
 /* Initialize snake game */
@@ -6158,15 +6162,17 @@ static int gui_focus_or_launch_app_by_id(const char *app_id) {
 
 static void draw_app_store(int content_x, int content_y, int content_w,
                            int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   load_system_app_catalog();
   int y = content_y + 12;
   (void)content_h;
 
-  gui_draw_string(content_x + 12, y, "App Store", 0xFFFFFF, THEME_BG);
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
+  gui_draw_string(content_x + 12, y, "App Store", theme->app_fg, THEME_BG);
   y += 18;
   gui_draw_string(content_x + 12, y,
                   "Install apps to create shortcuts and pin them to the dock.",
-                  0xA6ADC8, THEME_BG);
+                  theme->app_muted, THEME_BG);
   y += 24;
 
   for (int i = 0; i < app_catalog_count; i++) {
@@ -6174,7 +6180,7 @@ static void draw_app_store(int content_x, int content_y, int content_w,
     if (!app->visible_in_store)
       continue;
 
-    uint32_t row_bg = 0x252535;
+    uint32_t row_bg = theme->card;
     int installed = app_is_installed(app);
     int button_w = installed ? 72 : 88;
     int button_x = content_x + content_w - button_w - 18;
@@ -6185,10 +6191,10 @@ static void draw_app_store(int content_x, int content_y, int content_w,
 
     draw_system_app_icon_kind(app->kind, content_x + 29, y + 15, 24);
 
-    gui_draw_string(content_x + 70, y + 11, app->label, 0xFFFFFF, row_bg);
+    gui_draw_string(content_x + 70, y + 11, app->label, theme->app_fg, row_bg);
     gui_draw_string(content_x + 70, y + 29,
                     installed ? "Installed" : "Available to install",
-                    installed ? 0xA6E3A1 : 0xA6ADC8, row_bg);
+                    installed ? 0xA6E3A1 : theme->app_muted, row_bg);
 
     gui_draw_rect(button_x, y + 13, button_w, 28,
                   installed ? 0x3B82F6 : 0x22C55E);
@@ -7132,6 +7138,7 @@ static void installer_process_background_install(void) {
 
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   installer_refresh_disk_inventory();
   if (installer_show_restart_screen)
     installer_page = INSTALLER_PAGE_COMPLETE;
@@ -7177,17 +7184,20 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
       installer_append_to_buf(progress_label, sizeof(progress_label), "%");
     }
 
-    gui_draw_rect(panel_x, panel_y, panel_w, panel_h, 0x111827);
-    gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x334155, 1);
+    gui_draw_rect(panel_x, panel_y, panel_w, panel_h, theme->surface_alt);
+    gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, theme->border, 1);
 
-    gui_draw_rect(rail_x, rail_y, rail_w, panel_h, 0x0F172A);
-    gui_draw_string(rail_x + 20, rail_y + 24, "OS8 Installer", 0xFFFFFF, 0x0F172A);
+    gui_draw_rect(rail_x, rail_y, rail_w, panel_h, theme->surface);
+    gui_draw_string(rail_x + 20, rail_y + 24, "OS8 Installer", theme->app_fg,
+                    theme->surface);
     gui_draw_string(rail_x + 20, rail_y + 48, "Dedicated setup pages", 0x93C5FD,
-                    0x0F172A);
+                    theme->surface);
 
     for (int i = 0; i < 5; i++) {
       int step_y = rail_y + 96 + i * 54;
-      uint32_t bg = i == installer_page ? 0x1D4ED8 : (i < installer_page ? 0x15324F : 0x172033);
+      uint32_t bg = i == installer_page
+                        ? theme->accent
+                        : (i < installer_page ? 0x15324F : theme->surface_alt);
       char step_label[24] = "";
       int idx = 0;
       step_label[idx++] = '1' + i;
@@ -7203,11 +7213,12 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
     gui_draw_string(rail_x + 20, rail_y + panel_h - 98, "Current Target",
                     0x93C5FD, 0x0F172A);
     gui_draw_string(rail_x + 20, rail_y + panel_h - 72, selected_disk, 0xE5E7EB,
-                    0x0F172A);
+                    theme->surface);
     gui_draw_string(rail_x + 20, rail_y + panel_h - 44, installer_progress_stage,
-                    0x94A3B8, 0x0F172A);
+                    theme->app_muted, theme->surface);
 
-    gui_draw_string(body_x, body_y, installer_page_title(), 0x93C5FD, 0x111827);
+    gui_draw_string(body_x, body_y, installer_page_title(), 0x93C5FD,
+                    theme->surface_alt);
 
     if (installer_page == INSTALLER_PAGE_WELCOME) {
       gui_draw_string(body_x, body_y + 30, "Install OS8 in guided steps",
@@ -8306,33 +8317,36 @@ static void open_partition_manager_window(int x, int y) {
 
 static void draw_partition_manager_window(int content_x, int content_y,
                                           int content_w, int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   extern int storage_disk_supports_partition_writes(int disk_index);
   int selected_disk_index = installer_selected_disk_index();
   installer_refresh_disk_inventory();
   partition_manager_refresh_partitions();
 
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
   gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, content_h - 24,
-                0x232337);
+                theme->card);
   gui_draw_string(content_x + 24, content_y + 22, "Partition Manager",
-                  0xFFFFFF, 0x232337);
+                  theme->app_fg, theme->card);
   gui_draw_string(content_x + 24, content_y + 44,
                   "Create, edit, delete, and auto-layout partitions.",
-                  0xCDD6F4, 0x232337);
+                  theme->app_muted, theme->card);
   gui_draw_string(content_x + 24, content_y + 58,
                   (selected_disk_index >= 0 &&
                    storage_disk_supports_partition_writes(selected_disk_index))
                       ? "Selected disk supports on-disk partition writes."
                       : "Selected disk has no real partition-write backend yet.",
-                  0xF9E2AF, 0x232337);
+                  0xF9E2AF, theme->card);
 
   gui_draw_string(content_x + 24, content_y + 76, "Detected disks", 0x89B4FA,
-                  0x232337);
+                  theme->card);
   for (int i = 0; i < installer_disk_count && i < 6; i++) {
     int row_y = content_y + 96 + i * 28;
-    uint32_t row_bg = i == installer_selected_disk ? 0x334155 : 0x1B1B2B;
+    uint32_t row_bg =
+        i == installer_selected_disk ? theme->selection : theme->surface_alt;
     gui_draw_rect(content_x + 24, row_y, content_w - 48, 24, row_bg);
     gui_draw_string(content_x + 36, row_y + 5, installer_disk_labels[i],
-                    0xFFFFFF, row_bg);
+                    theme->app_fg, row_bg);
     if (i == installer_selected_disk) {
       gui_draw_string(content_x + content_w - 170, row_y + 5,
                       "Installer Target", 0xA6E3A1, row_bg);
@@ -8340,19 +8354,19 @@ static void draw_partition_manager_window(int content_x, int content_y,
   }
 
   gui_draw_string(content_x + 24, content_y + 274, "Selected target:",
-                  0x89B4FA, 0x232337);
+                  0x89B4FA, theme->card);
   gui_draw_string(content_x + 150, content_y + 274,
-                  installer_selected_disk_label(), 0xFFFFFF, 0x232337);
+                  installer_selected_disk_label(), theme->app_fg, theme->card);
 
   gui_draw_string(content_x + 24, content_y + 176, "Partitions", 0x89B4FA,
-                  0x232337);
+                  theme->card);
   for (int i = 0; i < partition_manager_partition_count && i < 4; i++) {
     int row_y = content_y + 196 + i * 22;
     uint32_t row_bg =
-        i == partition_manager_selected_partition ? 0x3B304A : 0x181826;
+        i == partition_manager_selected_partition ? theme->selection : theme->surface;
     gui_draw_rect(content_x + 24, row_y, content_w - 48, 18, row_bg);
     gui_draw_string(content_x + 34, row_y + 4, partition_manager_labels[i],
-                    0xFFFFFF, row_bg);
+                    theme->app_fg, row_bg);
   }
 
   gui_draw_rect(content_x + 24, content_y + 298, 120, 30, 0x2563EB);
@@ -8385,7 +8399,7 @@ static void draw_partition_manager_window(int content_x, int content_y,
                   0x4B5563);
 
   gui_draw_string(content_x + 24, content_y + content_h - 52,
-                  partition_manager_status, 0xCDD6F4, 0x232337);
+                  partition_manager_status, theme->app_muted, theme->card);
 }
 
 struct image_viewer_state {
@@ -8619,11 +8633,14 @@ static void image_viewer_on_close(struct window *win) {
 
 static void draw_image_viewer(struct window *win, int content_x, int content_y,
                               int content_w, int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   if (!win || !win->userdata)
     return;
   struct image_viewer_state *st = (struct image_viewer_state *)win->userdata;
   if (!st->image.pixels || st->image.width == 0 || st->image.height == 0)
     return;
+
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
 
   int img_w = (int)st->image.width;
   int img_h = (int)st->image.height;
@@ -8643,6 +8660,10 @@ static void draw_image_viewer(struct window *win, int content_x, int content_y,
 
   int offset_x = content_x + (content_w - draw_w) / 2;
   int offset_y = content_y + (content_h - draw_h) / 2;
+
+  gui_draw_rect(offset_x - 6, offset_y - 6, draw_w + 12, draw_h + 12, theme->card);
+  gui_draw_rect_outline(offset_x - 6, offset_y - 6, draw_w + 12, draw_h + 12,
+                        theme->border, 1);
 
   for (int y = 0; y < draw_h; y++) {
     int src_y = (y * img_h) / draw_h;
@@ -8923,14 +8944,19 @@ static void draw_window(struct window *win) {
   /* Draw window-specific content based on title */
   /* Calculator - Modern Design */
   if (win->title[0] == 'C' && win->title[1] == 'a' && win->title[2] == 'l') {
-    /* Modern dark background */
-    gui_draw_rect(content_x, content_y, content_w, content_h, 0x1C1C1E);
+    uint32_t calc_bg = g_theme_mode == GUI_THEME_LIGHT ? 0xEEF3F9 : 0x1C1C1E;
+    uint32_t calc_display_bg =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x2C2C2E;
+    uint32_t calc_display_top =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xD7E2EF : 0x3C3C3E;
+    gui_draw_rect(content_x, content_y, content_w, content_h, calc_bg);
 
     /* Display area - gradient effect (dark to slightly lighter) */
     int disp_h = 70;
     gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, disp_h,
-                  0x2C2C2E);
-    gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, 2, 0x3C3C3E);
+                  calc_display_bg);
+    gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, 2,
+                  calc_display_top);
 
     /* Display value - large right-aligned */
     char display[16];
@@ -8960,8 +8986,10 @@ static void draw_window(struct window *win) {
     /* Draw display value with simulated large font (double-draw) */
     int text_x = content_x + content_w - 20 - idx * 12;
     int text_y = content_y + 40;
-    gui_draw_string(text_x, text_y, display, 0xFFFFFF, 0x2C2C2E);
-    gui_draw_string(text_x + 1, text_y, display, 0xFFFFFF, 0x2C2C2E);
+    gui_draw_string(text_x, text_y, display, theme->settings_text,
+                    calc_display_bg);
+    gui_draw_string(text_x + 1, text_y, display, theme->settings_text,
+                    calc_display_bg);
 
     /* Button grid - 4x5 layout with proper spacing */
     static const char *btns[5][4] = {{"C", "+/-", "%", "/"},
@@ -9005,14 +9033,14 @@ static void draw_window(struct window *win) {
           fg = 0xFFFFFF;
         } else if (btn_char == 'C' || btn_char == '+' || btn_char == '%') {
           /* Light gray function buttons */
-          bg = 0xA5A5A5;
-          mg = 0xB5B5B5; /* Slightly lighter for top edge */
-          fg = 0x000000;
+          bg = g_theme_mode == GUI_THEME_LIGHT ? 0xD6DEE8 : 0xA5A5A5;
+          mg = g_theme_mode == GUI_THEME_LIGHT ? 0xE4EBF3 : 0xB5B5B5;
+          fg = g_theme_mode == GUI_THEME_LIGHT ? 0x172033 : 0x000000;
         } else {
           /* Dark gray number buttons */
-          bg = 0x333333;
-          mg = 0x444444; /* Slightly lighter for top edge */
-          fg = 0xFFFFFF;
+          bg = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x333333;
+          mg = g_theme_mode == GUI_THEME_LIGHT ? 0xE2E8F0 : 0x444444;
+          fg = g_theme_mode == GUI_THEME_LIGHT ? 0x172033 : 0xFFFFFF;
         }
 
         /* Draw button with rounded effect (lighter top edge) */
@@ -9287,9 +9315,10 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'P' && win->title[1] == 'a' &&
            win->title[2] == 'i') {
     /* Toolbar */
-    gui_draw_rect(content_x, content_y, content_w, 32, 0x404040);
+    gui_draw_rect(content_x, content_y, content_w, 32, theme->surface_alt);
     gui_draw_string(content_x + 8, content_y + 8,
-                    "Brush [O]  Line [/]  Color:", 0xFFFFFF, 0x404040);
+                    "Brush [O]  Line [/]  Color:", theme->app_fg,
+                    theme->surface_alt);
     /* Color palette */
     gui_draw_rect(content_x + 200, content_y + 4, 20, 20, 0xFF0000);
     gui_draw_rect(content_x + 224, content_y + 4, 20, 20, 0x00FF00);
@@ -9297,54 +9326,61 @@ static void draw_window(struct window *win) {
     gui_draw_rect(content_x + 272, content_y + 4, 20, 20, 0x000000);
     /* Canvas */
     gui_draw_rect(content_x + 4, content_y + 36, content_w - 8, content_h - 44,
-                  0xFFFFFF);
+                  theme->card);
   }
   /* Browser */
   else if (win->title[0] == 'B' && win->title[1] == 'r' &&
            win->title[2] == 'o') {
+    uint32_t browser_toolbar =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xE7EEF7 : 0x1F2937;
+    uint32_t browser_card = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x0F172A;
+    uint32_t browser_text =
+        g_theme_mode == GUI_THEME_LIGHT ? 0x172033 : 0xE5E7EB;
+    uint32_t browser_muted =
+        g_theme_mode == GUI_THEME_LIGHT ? 0x627084 : 0x94A3B8;
     /* Toolbar Background */
-    gui_draw_rect(content_x, content_y, content_w, 40, 0xDDDDDD);
+    gui_draw_rect(content_x, content_y, content_w, 40, browser_toolbar);
 
     /* Address Bar */
-    gui_draw_rect(content_x + 80, content_y + 8, content_w - 96, 24, 0xFFFFFF);
+    gui_draw_rect(content_x + 80, content_y + 8, content_w - 96, 24, browser_card);
     gui_draw_rect_outline(content_x + 80, content_y + 8, content_w - 96, 24,
-                          0xA0A0A0, 1);
+                          theme->border, 1);
     gui_draw_string(content_x + 88, content_y + 12, "http://os.de",
-                    0x333333, 0xFFFFFF);
+                    browser_text, browser_card);
 
     /* Navigation Buttons */
-    gui_draw_string(content_x + 12, content_y + 12, "<", 0x555555, 0xDDDDDD);
-    gui_draw_string(content_x + 35, content_y + 12, ">", 0x555555, 0xDDDDDD);
-    gui_draw_string(content_x + 58, content_y + 12, "@", 0x555555,
-                    0xDDDDDD); /* Refresh */
+    gui_draw_string(content_x + 12, content_y + 12, "<", browser_muted, browser_toolbar);
+    gui_draw_string(content_x + 35, content_y + 12, ">", browser_muted, browser_toolbar);
+    gui_draw_string(content_x + 58, content_y + 12, "@", browser_muted,
+                    browser_toolbar); /* Refresh */
 
     /* Web Content Area */
     gui_draw_rect(content_x, content_y + 40, content_w, content_h - 40,
-                  0xFFFFFF);
+                  browser_card);
 
     /* Mock Page Content */
     gui_draw_string(content_x + 20, content_y + 60, "Welcome to Browser",
-                    0x000000, 0xFFFFFF);
+                    browser_text, browser_card);
     gui_draw_rect(content_x + 20, content_y + 78, 200, 2,
                   0x007AFF); /* Underline */
 
-    gui_draw_string(content_x + 20, content_y + 90, "Status:", 0x555555,
-                    0xFFFFFF);
+    gui_draw_string(content_x + 20, content_y + 90, "Status:", browser_muted,
+                    browser_card);
     gui_draw_string(content_x + 80, content_y + 90, "Networking Enabled",
-                    0x00AA00, 0xFFFFFF);
+                    0x16A34A, browser_card);
 
-    gui_draw_string(content_x + 20, content_y + 110, "IP Addr:", 0x555555,
-                    0xFFFFFF);
+    gui_draw_string(content_x + 20, content_y + 110, "IP Addr:", browser_muted,
+                    browser_card);
     gui_draw_string(content_x + 80, content_y + 110, "10.0.2.15 (DHCP)",
-                    0x333333, 0xFFFFFF);
+                    browser_text, browser_card);
 
     /* Fake links */
     gui_draw_string(content_x + 20, content_y + 150, "- Latest News", 0x007AFF,
                     0xFFFFFF);
     gui_draw_string(content_x + 20, content_y + 170, "- Documentation",
-                    0x007AFF, 0xFFFFFF);
+                    0x007AFF, browser_card);
     gui_draw_string(content_x + 20, content_y + 190, "- Source Code", 0x007AFF,
-                    0xFFFFFF);
+                    browser_card);
   }
   /* App Store */
   else if (win->title[0] == 'A' && win->title[1] == 'p' &&
@@ -9379,6 +9415,7 @@ static void draw_window(struct window *win) {
   }
   /* Help */
   else if (win->title[0] == 'H' && win->title[1] == 'e') {
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
     int yy = content_y + 10;
     gui_draw_string(content_x + 10, yy, "OS8 Help", 0x89B4FA, THEME_BG);
     yy += 24;
@@ -10030,88 +10067,95 @@ static void draw_window(struct window *win) {
       storage_line1[0] = '\0';
     }
 
-    gui_draw_string(content_x + 12, yy, "Device Manager", 0xFFFFFF, THEME_BG);
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
+    gui_draw_string(content_x + 12, yy, "Device Manager", theme->app_fg, THEME_BG);
     yy += 28;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "Display Adapter", 0x89B4FA,
-                    0x252535);
+                    theme->card);
     gui_draw_string(content_x + 20, yy + 28, "Framebuffer compositor active",
-                    0xCDD6F4, 0x252535);
-    gui_draw_string(content_x + content_w - 150, yy + 28, resolution, 0xCDD6F4,
-                    0x252535);
+                    theme->app_muted, theme->card);
+    gui_draw_string(content_x + content_w - 150, yy + 28, resolution,
+                    theme->app_muted, theme->card);
     yy += 62;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 68, 0x252535);
-    gui_draw_string(content_x + 20, yy + 8, "Storage", 0x89B4FA, 0x252535);
-    gui_draw_string(content_x + 20, yy + 26, storage_overview, 0xCDD6F4,
-                    0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 68, theme->card);
+    gui_draw_string(content_x + 20, yy + 8, "Storage", 0x89B4FA, theme->card);
+    gui_draw_string(content_x + 20, yy + 26, storage_overview, theme->app_muted,
+                    theme->card);
     gui_draw_string(content_x + content_w - 170, yy + 26, disk_overview,
-                    0xA6E3A1, 0x252535);
-    gui_draw_string(content_x + 20, yy + 42, storage_line0, 0xCDD6F4,
-                    0x252535);
+                    0xA6E3A1, theme->card);
+    gui_draw_string(content_x + 20, yy + 42, storage_line0, theme->app_muted,
+                    theme->card);
     if (storage_line1[0]) {
-      gui_draw_string(content_x + 20, yy + 56, storage_line1, 0xCDD6F4,
-                      0x252535);
+      gui_draw_string(content_x + 20, yy + 56, storage_line1, theme->app_muted,
+                      theme->card);
     }
     yy += 78;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "Input Devices", 0x89B4FA,
-                    0x252535);
+                    theme->card);
     gui_draw_string(content_x + 20, yy + 28,
-                    "Keyboard + pointer input subsystem online", 0xCDD6F4,
-                    0x252535);
+                    "Keyboard + pointer input subsystem online",
+                    theme->app_muted, theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28, windows_info,
-                    0xA6E3A1, 0x252535);
+                    0xA6E3A1, theme->card);
     yy += 62;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "Audio Controller", 0x89B4FA,
-                    0x252535);
+                    theme->card);
     gui_draw_string(content_x + 20, yy + 28,
                     intel_hda_is_ready() ? "Intel HDA controller present"
                                          : "Intel HDA controller not detected",
-                    intel_hda_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+                    intel_hda_is_ready() ? theme->app_muted : 0xF38BA8,
+                    theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28,
                     intel_hda_is_playing() ? "Playing" : "Idle",
-                    intel_hda_is_playing() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+                    intel_hda_is_playing() ? 0xA6E3A1 : theme->app_subtle,
+                    theme->card);
     yy += 62;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 52, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "Network Adapter", 0x89B4FA,
-                    0x252535);
+                    theme->card);
     gui_draw_string(content_x + 20, yy + 28,
                     virtio_net_is_ready() ? "virtio-net interface ready"
                                           : "virtio-net interface offline",
-                    virtio_net_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+                    virtio_net_is_ready() ? theme->app_muted : 0xF38BA8,
+                    theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28,
                     virtio_net_is_ready() ? "eth0 / NAT" : "Unavailable",
-                    virtio_net_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+                    virtio_net_is_ready() ? 0xA6E3A1 : theme->app_subtle,
+                    theme->card);
     yy += 62;
 
-    gui_draw_rect(content_x + 10, yy, content_w - 20, 84, 0x252535);
+    gui_draw_rect(content_x + 10, yy, content_w - 20, 84, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "USB Host Controller", 0x89B4FA,
-                    0x252535);
+                    theme->card);
     gui_draw_string(content_x + 20, yy + 28,
                     xhci_is_ready() ? "xHCI controller initialized"
                                     : "xHCI controller unavailable",
-                    xhci_is_ready() ? 0xCDD6F4 : 0xF38BA8, 0x252535);
+                    xhci_is_ready() ? theme->app_muted : 0xF38BA8, theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28, usb_ports,
-                    xhci_is_ready() ? 0xA6E3A1 : 0x6C7086, 0x252535);
+                    xhci_is_ready() ? 0xA6E3A1 : theme->app_subtle, theme->card);
     if (!xhci_is_ready()) {
       gui_draw_string(content_x + 20, yy + 48, "No USB enumeration available",
-                      0x6C7086, 0x252535);
+                      theme->app_subtle, theme->card);
     } else if (usb_count <= 0) {
       gui_draw_string(content_x + 20, yy + 48, "No USB devices enumerated",
-                      0x6C7086, 0x252535);
+                      theme->app_subtle, theme->card);
     } else {
-      gui_draw_string(content_x + 20, yy + 48, usb_name0, 0xCDD6F4, 0x252535);
+      gui_draw_string(content_x + 20, yy + 48, usb_name0, theme->app_muted,
+                      theme->card);
       if (usb_count > 1) {
-        gui_draw_string(content_x + 20, yy + 64, usb_name1, 0x94A3B8, 0x252535);
+        gui_draw_string(content_x + 20, yy + 64, usb_name1, theme->app_subtle,
+                        theme->card);
       } else {
         gui_draw_string(content_x + 20, yy + 64, "1 device detected",
-                        0x6C7086, 0x252535);
+                        theme->app_subtle, theme->card);
       }
     }
   }
@@ -10124,8 +10168,10 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'G' && win->title[1] == 'a' &&
            win->title[2] == 'm') {
     int yy = content_y + 15;
+    uint32_t game_panel = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x101018;
 
     /* Header */
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
     if (snake_game_over) {
       gui_draw_string(content_x + 12, yy, "GAME OVER! Press any key", 0xEF4444,
                       THEME_BG);
@@ -10140,8 +10186,8 @@ static void draw_window(struct window *win) {
     int game_h = 180;
     int game_x = content_x + 12;
     int game_y = yy;
-    gui_draw_rect_outline(game_x, game_y, game_w, game_h, 0x3B82F6, 2);
-    gui_draw_rect(game_x + 2, game_y + 2, game_w - 4, game_h - 4, 0x101018);
+    gui_draw_rect_outline(game_x, game_y, game_w, game_h, theme->accent, 2);
+    gui_draw_rect(game_x + 2, game_y + 2, game_w - 4, game_h - 4, game_panel);
 
     /* Calculate cell size */
     int cell_w = (game_w - 4) / SNAKE_GRID_W;
@@ -10219,10 +10265,21 @@ static void draw_window(struct window *win) {
             win->title[2] == 't') ||
            (win->title[0] == 'R' && win->title[1] == 'e' &&
             win->title[2] == 'n')) {
+    uint32_t editor_toolbar =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xE6EDF6 : 0x2D2D30;
+    uint32_t editor_button =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xD7E2EF : 0x3E3E42;
+    uint32_t editor_button_top =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xF4F7FB : 0x505054;
+    uint32_t editor_bg = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x1E1E1E;
+    uint32_t editor_gutter =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xEEF3F9 : 0x252526;
+    uint32_t editor_border =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xD7E2EF : 0x3C3C3C;
 
     /* Modern dark toolbar */
     int toolbar_h = 62;
-    gui_draw_rect(content_x, content_y, content_w, toolbar_h, 0x2D2D30);
+    gui_draw_rect(content_x, content_y, content_w, toolbar_h, editor_toolbar);
 
     /* Toolbar buttons with modern styling */
     int btn_y = content_y + 6;
@@ -10232,15 +10289,15 @@ static void draw_window(struct window *win) {
 
     /* File operations group */
     /* New button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 50, 1, 0x505054);
-    gui_draw_string(bx + 13, btn_y + 5, "New", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
+    gui_draw_string(bx + 13, btn_y + 5, "New", theme->settings_text, editor_button);
     bx += 50 + btn_spacing;
 
     /* Open button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 50, 1, 0x505054);
-    gui_draw_string(bx + 10, btn_y + 5, "Open", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
+    gui_draw_string(bx + 10, btn_y + 5, "Open", theme->settings_text, editor_button);
     bx += 50 + btn_spacing;
 
     /* Save button - highlighted */
@@ -10250,40 +10307,40 @@ static void draw_window(struct window *win) {
     bx += 50 + btn_spacing;
 
     /* Save As button */
-    gui_draw_rect(bx, btn_y, 64, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 64, 1, 0x505054);
-    gui_draw_string(bx + 8, btn_y + 5, "Save As", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 64, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 64, 1, editor_button_top);
+    gui_draw_string(bx + 8, btn_y + 5, "Save As", theme->settings_text, editor_button);
     bx += 64 + btn_spacing;
 
     /* Separator */
     bx += 8;
-    gui_draw_rect(bx, btn_y + 2, 1, btn_h - 4, 0x505054);
+    gui_draw_rect(bx, btn_y + 2, 1, btn_h - 4, editor_button_top);
     bx += 12;
 
     /* Edit operations group */
     /* Cut button */
-    gui_draw_rect(bx, btn_y, 42, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 42, 1, 0x505054);
-    gui_draw_string(bx + 10, btn_y + 5, "Cut", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 42, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 42, 1, editor_button_top);
+    gui_draw_string(bx + 10, btn_y + 5, "Cut", theme->settings_text, editor_button);
     bx += 42 + btn_spacing;
 
     /* Copy button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 50, 1, 0x505054);
-    gui_draw_string(bx + 10, btn_y + 5, "Copy", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
+    gui_draw_string(bx + 10, btn_y + 5, "Copy", theme->settings_text, editor_button);
     bx += 50 + btn_spacing;
 
     /* Paste button */
-    gui_draw_rect(bx, btn_y, 55, btn_h, 0x3E3E42);
-    gui_draw_rect(bx, btn_y, 55, 1, 0x505054);
-    gui_draw_string(bx + 8, btn_y + 5, "Paste", 0xCCCCCC, 0x3E3E42);
+    gui_draw_rect(bx, btn_y, 55, btn_h, editor_button);
+    gui_draw_rect(bx, btn_y, 55, 1, editor_button_top);
+    gui_draw_string(bx + 8, btn_y + 5, "Paste", theme->settings_text, editor_button);
 
     if (win->title[0] == 'N') {
       gui_draw_string(content_x + 10, content_y + 40,
                       notepad_filepath[0] ? notepad_filepath : "Untitled document",
-                      0xA9B7C6, 0x2D2D30);
+                      theme->settings_subtext, editor_toolbar);
       gui_draw_string(content_x + content_w - 170, content_y + 40,
-                      notepad_dirty ? "Modified" : "Saved", 0xD7BA7D, 0x2D2D30);
+                      notepad_dirty ? "Modified" : "Saved", 0xD7BA7D, editor_toolbar);
     }
 
     /* Text editing area with modern styling */
@@ -10293,14 +10350,14 @@ static void draw_window(struct window *win) {
 
     /* Text area background with subtle border */
     gui_draw_rect(content_x + 4, text_area_y, content_w - 8, text_area_h,
-                  0x1E1E1E);
-    gui_draw_rect(content_x + 4, text_area_y, content_w - 8, 1, 0x3C3C3C);
-    gui_draw_rect(content_x + 4, text_area_y, 1, text_area_h, 0x3C3C3C);
+                  editor_bg);
+    gui_draw_rect(content_x + 4, text_area_y, content_w - 8, 1, editor_border);
+    gui_draw_rect(content_x + 4, text_area_y, 1, text_area_h, editor_border);
 
     /* Line number gutter */
     int gutter_w = 40;
     gui_draw_rect(content_x + 5, text_area_y + 1, gutter_w - 2, text_area_h - 2,
-                  0x252526);
+                  editor_gutter);
 
     /* Draw line numbers */
     int line_num = 1;
@@ -10495,6 +10552,7 @@ static void draw_window(struct window *win) {
   /* Snake Game */
   else if (win->title[0] == 'S' && win->title[1] == 'n' &&
            win->title[2] == 'a') {
+    uint32_t snake_panel = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x1E1E2E;
     /* Calculate cell size based on content area */
     int cell_w = (content_w - 20) / SNAKE_GRID_W;
     int cell_h = (content_h - 40) / SNAKE_GRID_H;
@@ -10505,6 +10563,8 @@ static void draw_window(struct window *win) {
 
     int grid_x = content_x + (content_w - cell_w * SNAKE_GRID_W) / 2;
     int grid_y = content_y + 30;
+
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
 
     /* Draw score */
     char score_str[32];
@@ -10535,7 +10595,7 @@ static void draw_window(struct window *win) {
 
     /* Draw grid background */
     gui_draw_rect(grid_x - 2, grid_y - 2, cell_w * SNAKE_GRID_W + 4,
-                  cell_h * SNAKE_GRID_H + 4, 0x1E1E2E);
+                  cell_h * SNAKE_GRID_H + 4, snake_panel);
 
     /* Draw snake body */
     for (int i = 0; i < snake_len; i++) {
@@ -10557,10 +10617,10 @@ static void draw_window(struct window *win) {
                       THEME_BG);
       gui_draw_string(content_x + content_w / 2 - 60,
                       content_y + content_h - 14, "Press R to restart",
-                      0x6C7086, THEME_BG);
+                      theme->app_subtle, THEME_BG);
     } else {
       gui_draw_string(content_x + 10, content_y + content_h - 14,
-                      "Arrow keys to move", 0x6C7086, THEME_BG);
+                      "Arrow keys to move", theme->app_subtle, THEME_BG);
     }
   }
   /* Clock */
