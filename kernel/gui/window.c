@@ -632,18 +632,26 @@ static char term_history[TERM_HISTORY_LINES][80];
 static int term_history_count = 0;
 static int term_scroll = 0;
 
-/* Snake game state */
-#define SNAKE_MAX_LEN 100
-#define SNAKE_GRID_W 20
-#define SNAKE_GRID_H 12
-static int snake_x[SNAKE_MAX_LEN];
-static int snake_y[SNAKE_MAX_LEN];
-static int snake_len = 4;
-static int snake_dir = 1; /* 0=up, 1=right, 2=down, 3=left */
-static int snake_food_x = 10;
-static int snake_food_y = 6;
-static int snake_score = 0;
-static int snake_game_over = 0;
+/* Bowling game state */
+#define BOWLING_LANE_COLUMNS 7
+#define BOWLING_PIN_COUNT 10
+#define BOWLING_LANE_PROGRESS_MAX 100
+static const int bowling_pin_layout_x[BOWLING_PIN_COUNT] = {3, 2, 4, 1, 3,
+                                                            5, 0, 2, 4, 6};
+static const int bowling_pin_layout_y[BOWLING_PIN_COUNT] = {0, 1, 1, 2, 2,
+                                                            2, 3, 3, 3, 3};
+static int bowling_pin_standing[BOWLING_PIN_COUNT];
+static int bowling_ball_column = 3;
+static int bowling_ball_progress = 0;
+static int bowling_ball_rolling = 0;
+static int bowling_ball_spin = 0;
+static int bowling_ball_power = 3;
+static int bowling_total_score = 0;
+static int bowling_last_knocked = 0;
+static int bowling_frame = 1;
+static int bowling_roll = 1;
+static int bowling_first_roll_pins = 0;
+static int bowling_game_over = 0;
 
 /* Mouse state (global for hover effects) */
 static int mouse_x = 512, mouse_y = 384;
@@ -1355,112 +1363,136 @@ static void draw_clock_widget(int content_x, int content_y, int content_w,
   gui_draw_string(cx - 32, cy + radius + 10, time_str, theme->app_fg, panel_bg);
 }
 
-/* Initialize snake game */
-static void snake_init(void) {
-  snake_len = 4;
-  snake_dir = 1;
-  snake_score = 0;
-  snake_game_over = 0;
-  /* Start in middle */
-  for (int i = 0; i < snake_len; i++) {
-    snake_x[i] = 5 - i;
-    snake_y[i] = 6;
+static void bowling_reset_pins(void) {
+  for (int i = 0; i < BOWLING_PIN_COUNT; i++) {
+    bowling_pin_standing[i] = 1;
   }
-  snake_food_x = 15;
-  snake_food_y = 6;
 }
 
-/* Move snake one step */
-static void snake_move(void) {
-  if (snake_game_over)
-    return;
+static int bowling_count_standing_pins(void) {
+  int count = 0;
+  for (int i = 0; i < BOWLING_PIN_COUNT; i++) {
+    if (bowling_pin_standing[i])
+      count++;
+  }
+  return count;
+}
 
-  /* Calculate new head position */
-  int new_x = snake_x[0];
-  int new_y = snake_y[0];
+static void bowling_prepare_next_roll(void) {
+  bowling_ball_column = 3;
+  bowling_ball_progress = 0;
+  bowling_ball_rolling = 0;
+  bowling_ball_spin = 0;
+  bowling_ball_power = 3;
+}
 
-  switch (snake_dir) {
-  case 0:
-    new_y--;
-    break; /* up */
-  case 1:
-    new_x++;
-    break; /* right */
-  case 2:
-    new_y++;
-    break; /* down */
-  case 3:
-    new_x--;
-    break; /* left */
+static void bowling_advance_frame(void) {
+  bowling_roll = 1;
+  bowling_first_roll_pins = 0;
+  bowling_prepare_next_roll();
+  bowling_reset_pins();
+  if (bowling_frame >= 10) {
+    bowling_game_over = 1;
+  } else {
+    bowling_frame++;
+  }
+}
+
+static void bowling_init(void) {
+  bowling_total_score = 0;
+  bowling_last_knocked = 0;
+  bowling_frame = 1;
+  bowling_roll = 1;
+  bowling_first_roll_pins = 0;
+  bowling_game_over = 0;
+  bowling_reset_pins();
+  bowling_prepare_next_roll();
+}
+
+static void bowling_resolve_roll(void) {
+  int impact_x = bowling_ball_column + bowling_ball_spin;
+  int knocked = 0;
+
+  if (impact_x < 0)
+    impact_x = 0;
+  if (impact_x >= BOWLING_LANE_COLUMNS)
+    impact_x = BOWLING_LANE_COLUMNS - 1;
+
+  for (int i = 0; i < BOWLING_PIN_COUNT; i++) {
+    int dx;
+    int metric;
+    if (!bowling_pin_standing[i])
+      continue;
+    dx = bowling_pin_layout_x[i] - impact_x;
+    if (dx < 0)
+      dx = -dx;
+    metric = dx * 2 + bowling_pin_layout_y[i];
+    if (metric <= bowling_ball_power + 1) {
+      bowling_pin_standing[i] = 0;
+      knocked++;
+    }
   }
 
-  /* Wrap around */
-  if (new_x < 0)
-    new_x = SNAKE_GRID_W - 1;
-  if (new_x >= SNAKE_GRID_W)
-    new_x = 0;
-  if (new_y < 0)
-    new_y = SNAKE_GRID_H - 1;
-  if (new_y >= SNAKE_GRID_H)
-    new_y = 0;
+  bowling_last_knocked = knocked;
+  bowling_total_score += knocked;
 
-  /* Check self-collision */
-  for (int i = 0; i < snake_len; i++) {
-    if (snake_x[i] == new_x && snake_y[i] == new_y) {
-      snake_game_over = 1;
+  if (bowling_roll == 1) {
+    bowling_first_roll_pins = knocked;
+    if (knocked == 10) {
+      bowling_advance_frame();
       return;
     }
+    bowling_roll = 2;
+    bowling_prepare_next_roll();
+    return;
   }
 
-  /* Check food collision */
-  int ate_food = (new_x == snake_food_x && new_y == snake_food_y);
-  if (ate_food) {
-    snake_score += 10;
-    if (snake_len < SNAKE_MAX_LEN - 1) {
-      snake_len++;
-    }
-    /* New food position (simple pseudo-random) */
-    snake_food_x = (snake_food_x * 7 + 3) % SNAKE_GRID_W;
-    snake_food_y = (snake_food_y * 5 + 7) % SNAKE_GRID_H;
-  }
-
-  /* Move body */
-  for (int i = snake_len - 1; i > 0; i--) {
-    snake_x[i] = snake_x[i - 1];
-    snake_y[i] = snake_y[i - 1];
-  }
-  snake_x[0] = new_x;
-  snake_y[0] = new_y;
+  bowling_advance_frame();
 }
 
-/* Snake key handler */
-static void snake_key(int key) {
-  if (snake_game_over) {
-    /* Any key restarts */
-    snake_init();
+static void bowling_update(void) {
+  if (!bowling_ball_rolling || bowling_game_over)
+    return;
+
+  bowling_ball_progress += bowling_ball_power + 2;
+  if (bowling_ball_progress >= BOWLING_LANE_PROGRESS_MAX) {
+    bowling_ball_progress = BOWLING_LANE_PROGRESS_MAX;
+    bowling_ball_rolling = 0;
+    bowling_resolve_roll();
+  }
+}
+
+static void bowling_key(int key) {
+  if (key == 'r' || key == 'R') {
+    bowling_init();
     return;
   }
 
-  int new_dir = snake_dir;
-
-  /* Arrow keys (special codes from virtio keyboard) */
-  if (key == 0x100 || key == 'w' || key == 'W')
-    new_dir = 0; /* Up */
-  else if (key == 0x103 || key == 'd' || key == 'D')
-    new_dir = 1; /* Right */
-  else if (key == 0x101 || key == 's' || key == 'S')
-    new_dir = 2; /* Down */
-  else if (key == 0x102 || key == 'a' || key == 'A')
-    new_dir = 3; /* Left */
-
-  /* Prevent 180-degree turns */
-  if ((snake_dir == 0 && new_dir == 2) || (snake_dir == 2 && new_dir == 0) ||
-      (snake_dir == 1 && new_dir == 3) || (snake_dir == 3 && new_dir == 1)) {
+  if (bowling_game_over || bowling_ball_rolling)
     return;
-  }
 
-  snake_dir = new_dir;
-  snake_move(); /* Move immediately on key press */
+  if (key == 0x102 || key == 'a' || key == 'A') {
+    if (bowling_ball_column > 0)
+      bowling_ball_column--;
+  } else if (key == 0x103 || key == 'd' || key == 'D') {
+    if (bowling_ball_column < BOWLING_LANE_COLUMNS - 1)
+      bowling_ball_column++;
+  } else if (key == 0x100 || key == 'w' || key == 'W') {
+    if (bowling_ball_power < 5)
+      bowling_ball_power++;
+  } else if (key == 0x101 || key == 's' || key == 'S') {
+    if (bowling_ball_power > 2)
+      bowling_ball_power--;
+  } else if (key == 'q' || key == 'Q') {
+    bowling_ball_spin = -1;
+  } else if (key == 'e' || key == 'E') {
+    bowling_ball_spin = 1;
+  } else if (key == 'x' || key == 'X') {
+    bowling_ball_spin = 0;
+  } else if (key == ' ' || key == '\n' || key == '\r') {
+    bowling_ball_rolling = 1;
+    bowling_ball_progress = 0;
+  }
 }
 
 static void notepad_key(int key) {
@@ -2979,6 +3011,33 @@ static int str_cmp(const char *s1, const char *s2) {
   return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
 
+static void append_uint_to_buf(char *buf, int max, int value) {
+  char tmp[16];
+  int idx = 0;
+  int len = 0;
+  if (!buf || max <= 0)
+    return;
+  if (value < 0)
+    value = 0;
+  while (len < max && buf[len])
+    len++;
+  if (len >= max - 1)
+    return;
+  if (value == 0) {
+    buf[len++] = '0';
+    buf[len] = '\0';
+    return;
+  }
+  while (value > 0 && idx < (int)sizeof(tmp)) {
+    tmp[idx++] = (char)('0' + (value % 10));
+    value /= 10;
+  }
+  while (idx > 0 && len < max - 1) {
+    buf[len++] = tmp[--idx];
+  }
+  buf[len] = '\0';
+}
+
 static char to_lower(char c) {
   if (c >= 'A' && c <= 'Z')
     return (char)(c + 32);
@@ -3055,8 +3114,8 @@ static int window_matches_app_kind(const struct window *win,
     return win->title[0] == 'C' && win->title[1] == 'l' &&
            win->title[2] == 'o';
   case GUI_APP_SNAKE:
-    return win->title[0] == 'S' && win->title[1] == 'n' &&
-           win->title[2] == 'a';
+    return win->title[0] == 'B' && win->title[1] == 'o' &&
+           win->title[2] == 'w';
   case GUI_APP_HELP:
     return win->title[0] == 'H' && win->title[1] == 'e';
   case GUI_APP_BROWSER:
@@ -3137,7 +3196,7 @@ static const system_app_seed_t app_catalog_seed[] = {
     {"notes", "Notes", "Notes.app", GUI_APP_NOTES, 1, 1},
     {"settings", "Settings", "Settings.app", GUI_APP_SETTINGS, 0, 1},
     {"clock", "Clock", "Clock.app", GUI_APP_CLOCK, 0, 1},
-    {"snake", "Snake", "Snake.app", GUI_APP_SNAKE, 0, 1},
+    {"snake", "Bowling", "Bowling.app", GUI_APP_SNAKE, 0, 1},
     {"help", "Help", "Help.app", GUI_APP_HELP, 0, 1},
     {"browser", "Browser", "Browser.app", GUI_APP_BROWSER, 0, 1},
     {"appstore", "App Store", "App Store.app", GUI_APP_APPSTORE, 1, 0},
@@ -3269,7 +3328,7 @@ static uint32_t icon_color_for_kind(gui_app_kind_t kind) {
   case GUI_APP_CLOCK:
     return 0x000000;
   case GUI_APP_SNAKE:
-    return 0x34D399;
+    return 0xDC2626;
   case GUI_APP_HELP:
     return 0x3B82F6;
   case GUI_APP_BROWSER:
@@ -3298,7 +3357,7 @@ static const char *kind_to_string(gui_app_kind_t kind) {
   case GUI_APP_CLOCK:
     return "clock";
   case GUI_APP_SNAKE:
-    return "snake";
+    return "bowling";
   case GUI_APP_HELP:
     return "help";
   case GUI_APP_BROWSER:
@@ -3322,7 +3381,7 @@ static gui_app_kind_t kind_from_string(const char *kind) {
     return GUI_APP_SETTINGS;
   if (str_cmp(kind, "clock") == 0)
     return GUI_APP_CLOCK;
-  if (str_cmp(kind, "snake") == 0)
+  if (str_cmp(kind, "snake") == 0 || str_cmp(kind, "bowling") == 0)
     return GUI_APP_SNAKE;
   if (str_cmp(kind, "help") == 0)
     return GUI_APP_HELP;
@@ -6122,8 +6181,8 @@ int gui_launch_app_by_id(const char *app_id) {
     gui_create_window("Clock", spawn_x + 50, spawn_y + 40, 260, 200);
     break;
   case GUI_APP_SNAKE:
-    snake_init();
-    gui_create_window("Snake", spawn_x + 70, spawn_y + 50, 340, 280);
+    bowling_init();
+    gui_create_window("Bowling", spawn_x + 70, spawn_y + 50, 420, 320);
     break;
   case GUI_APP_HELP:
     gui_create_window("Help", spawn_x + 120, spawn_y + 80, 350, 280);
@@ -10168,79 +10227,12 @@ static void draw_window(struct window *win) {
   /* Game window */
   else if (win->title[0] == 'G' && win->title[1] == 'a' &&
            win->title[2] == 'm') {
-    int yy = content_y + 15;
-    uint32_t game_panel = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x101018;
-
-    /* Header */
     gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
-    if (snake_game_over) {
-      gui_draw_string(content_x + 12, yy, "GAME OVER! Press any key", 0xEF4444,
-                      THEME_BG);
-    } else {
-      gui_draw_string(content_x + 12, yy, "Snake Game - WASD to move", 0x89B4FA,
-                      THEME_BG);
-    }
-    yy += 28;
-
-    /* Game area with border */
-    int game_w = content_w - 24;
-    int game_h = 180;
-    int game_x = content_x + 12;
-    int game_y = yy;
-    gui_draw_rect_outline(game_x, game_y, game_w, game_h, theme->accent, 2);
-    gui_draw_rect(game_x + 2, game_y + 2, game_w - 4, game_h - 4, game_panel);
-
-    /* Calculate cell size */
-    int cell_w = (game_w - 4) / SNAKE_GRID_W;
-    int cell_h = (game_h - 4) / SNAKE_GRID_H;
-
-    /* Draw food */
-    int fx = game_x + 2 + snake_food_x * cell_w + 2;
-    int fy = game_y + 2 + snake_food_y * cell_h + 2;
-    gui_draw_rect(fx, fy, cell_w - 4, cell_h - 4, 0xEF4444);
-
-    /* Draw snake */
-    for (int i = 0; i < snake_len; i++) {
-      int sx = game_x + 2 + snake_x[i] * cell_w + 1;
-      int sy = game_y + 2 + snake_y[i] * cell_h + 1;
-      uint32_t color = (i == 0) ? 0x22C55E : 0x16A34A; /* Head is brighter */
-      if (i == snake_len - 1)
-        color = 0x15803D; /* Tail is darker */
-      gui_draw_rect(sx, sy, cell_w - 2, cell_h - 2, color);
-    }
-
-    /* Score display */
-    char score_str[32];
-    score_str[0] = 'S';
-    score_str[1] = 'c';
-    score_str[2] = 'o';
-    score_str[3] = 'r';
-    score_str[4] = 'e';
-    score_str[5] = ':';
-    score_str[6] = ' ';
-    /* Convert score to string */
-    int s = snake_score;
-    int pos = 7;
-    if (s == 0) {
-      score_str[pos++] = '0';
-    } else {
-      int temp[10], ti = 0;
-      while (s > 0) {
-        temp[ti++] = s % 10;
-        s /= 10;
-      }
-      while (ti > 0) {
-        score_str[pos++] = '0' + temp[--ti];
-      }
-    }
-    score_str[pos] = '\0';
-
-    yy += game_h + 8;
-    gui_draw_string(game_x + 8, yy - 16, score_str, 0xFFFFFF, 0x101018);
-
-    /* Controls hint */
-    gui_draw_string(content_x + 12, yy, "WASD or Arrow keys", 0x6C7086,
+    gui_draw_string(content_x + 14, content_y + 12, "Games", 0x89B4FA,
                     THEME_BG);
+    gui_draw_string(content_x + 14, content_y + 36,
+                    "Launch Bowling from the dock or app list.",
+                    theme->app_muted, THEME_BG);
   }
   /* Terminal - use term_render from terminal.c for proper output display */
   else if (win->title[0] == 'T' && win->title[1] == 'e' &&
@@ -10550,79 +10542,119 @@ static void draw_window(struct window *win) {
                       0xFFFFFF, 0x0E639C);
     }
   }
-  /* Snake Game */
-  else if (win->title[0] == 'S' && win->title[1] == 'n' &&
-           win->title[2] == 'a') {
-    uint32_t snake_panel = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x1E1E2E;
-    /* Calculate cell size based on content area */
-    int cell_w = (content_w - 20) / SNAKE_GRID_W;
-    int cell_h = (content_h - 40) / SNAKE_GRID_H;
-    if (cell_w > cell_h)
-      cell_w = cell_h;
-    else
-      cell_h = cell_w;
+  /* Bowling Game */
+  else if ((win->title[0] == 'B' && win->title[1] == 'o' &&
+            win->title[2] == 'w') ||
+           (win->title[0] == 'S' && win->title[1] == 'n' &&
+            win->title[2] == 'a')) {
+    int lane_x = content_x + 14;
+    int lane_y = content_y + 40;
+    int lane_w = content_w - 160;
+    int lane_h = content_h - 54;
+    int board_x = lane_x + lane_w + 12;
+    int board_w = content_x + content_w - board_x - 12;
+    int board_y = lane_y;
+    int board_h = lane_h;
+    int pin_base_y = lane_y + 42;
+    int standing = bowling_count_standing_pins();
+    int aim_x = lane_x + 18 +
+                bowling_ball_column * ((lane_w - 36) / (BOWLING_LANE_COLUMNS - 1));
+    int ball_y = lane_y + lane_h - 32 -
+                 (bowling_ball_progress * (lane_h - 86)) / BOWLING_LANE_PROGRESS_MAX;
+    char frame_str[32] = "Frame ";
+    char roll_str[32] = "Roll ";
+    char score_str[32] = "Total ";
+    char knock_str[32] = "Last ";
+    char remain_str[32] = "Pins ";
+    char framepins_str[32] = "Frame pins ";
+    uint32_t lane_outer =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xD8C19A : 0x2C2118;
+    uint32_t lane_inner =
+        g_theme_mode == GUI_THEME_LIGHT ? 0xF4DFC0 : 0x6B4F30;
 
-    int grid_x = content_x + (content_w - cell_w * SNAKE_GRID_W) / 2;
-    int grid_y = content_y + 30;
+    append_uint_to_buf(frame_str, sizeof(frame_str), bowling_frame);
+    append_uint_to_buf(roll_str, sizeof(roll_str), bowling_roll);
+    append_uint_to_buf(score_str, sizeof(score_str), bowling_total_score);
+    append_uint_to_buf(knock_str, sizeof(knock_str), bowling_last_knocked);
+    append_uint_to_buf(remain_str, sizeof(remain_str), standing);
+    append_uint_to_buf(framepins_str, sizeof(framepins_str),
+                       bowling_first_roll_pins);
 
     gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
-
-    /* Draw score */
-    char score_str[32];
-    int si = 0;
-    score_str[si++] = 'S';
-    score_str[si++] = 'c';
-    score_str[si++] = 'o';
-    score_str[si++] = 'r';
-    score_str[si++] = 'e';
-    score_str[si++] = ':';
-    score_str[si++] = ' ';
-    int s = snake_score;
-    if (s == 0)
-      score_str[si++] = '0';
-    else {
-      char tmp[8];
-      int ti = 0;
-      while (s > 0) {
-        tmp[ti++] = '0' + (s % 10);
-        s /= 10;
-      }
-      while (ti > 0)
-        score_str[si++] = tmp[--ti];
-    }
-    score_str[si] = '\0';
-    gui_draw_string(content_x + 10, content_y + 8, score_str, 0xF9E2AF,
+    gui_draw_string(content_x + 12, content_y + 10, "Bowling", 0x89B4FA,
                     THEME_BG);
+    gui_draw_string(content_x + 92, content_y + 10,
+                    bowling_game_over ? "Game complete - press R to restart"
+                                      : "A/D aim  W/S power  Q/E curve  Space bowl",
+                    theme->app_muted, THEME_BG);
 
-    /* Draw grid background */
-    gui_draw_rect(grid_x - 2, grid_y - 2, cell_w * SNAKE_GRID_W + 4,
-                  cell_h * SNAKE_GRID_H + 4, snake_panel);
+    gui_draw_rect(lane_x, lane_y, lane_w, lane_h, lane_outer);
+    gui_draw_rect(lane_x + 6, lane_y + 6, lane_w - 12, lane_h - 12, lane_inner);
+    gui_draw_rect(lane_x + 8, lane_y + 8, 8, lane_h - 16,
+                  g_theme_mode == GUI_THEME_LIGHT ? 0xBF9A67 : 0x4A3520);
+    gui_draw_rect(lane_x + lane_w - 16, lane_y + 8, 8, lane_h - 16,
+                  g_theme_mode == GUI_THEME_LIGHT ? 0xBF9A67 : 0x4A3520);
 
-    /* Draw snake body */
-    for (int i = 0; i < snake_len; i++) {
-      int sx = grid_x + snake_x[i] * cell_w + 1;
-      int sy = grid_y + snake_y[i] * cell_h + 1;
-      uint32_t color = (i == 0) ? 0x94E2D5 : 0xA6E3A1; /* Head vs body */
-      gui_draw_rect(sx, sy, cell_w - 2, cell_h - 2, color);
+    for (int i = 0; i < BOWLING_PIN_COUNT; i++) {
+      int px;
+      int py;
+      if (!bowling_pin_standing[i])
+        continue;
+      px = lane_x + 28 +
+           bowling_pin_layout_x[i] * ((lane_w - 56) / (BOWLING_LANE_COLUMNS - 1));
+      py = pin_base_y + bowling_pin_layout_y[i] * 18;
+      gui_draw_rect(px - 4, py - 2, 8, 13, 0xFFFFFF);
+      gui_draw_rect(px - 6, py + 9, 12, 4, 0xFFFFFF);
+      gui_draw_rect(px - 5, py + 2, 10, 2, 0x2563EB);
     }
 
-    /* Draw food */
-    int fx = grid_x + snake_food_x * cell_w + 1;
-    int fy = grid_y + snake_food_y * cell_h + 1;
-    gui_draw_rect(fx, fy, cell_w - 2, cell_h - 2, 0xF38BA8);
+    draw_filled_circle(aim_x, ball_y, 10, 0xDC2626);
+    draw_filled_circle(aim_x - 3, ball_y - 2, 1, 0x7F1D1D);
+    draw_filled_circle(aim_x + 1, ball_y - 4, 1, 0x7F1D1D);
+    draw_filled_circle(aim_x + 3, ball_y + 1, 1, 0x7F1D1D);
 
-    /* Game over message */
-    if (snake_game_over) {
-      gui_draw_string(content_x + content_w / 2 - 40,
-                      content_y + content_h - 30, "GAME OVER!", 0xF38BA8,
-                      THEME_BG);
-      gui_draw_string(content_x + content_w / 2 - 60,
-                      content_y + content_h - 14, "Press R to restart",
-                      theme->app_muted, THEME_BG);
+    gui_draw_rect(board_x, board_y, board_w, board_h, theme->card);
+    gui_draw_rect_outline(board_x, board_y, board_w, board_h, theme->border, 1);
+    gui_draw_string(board_x + 12, board_y + 12, frame_str, theme->app_fg,
+                    theme->card);
+    gui_draw_string(board_x + 12, board_y + 32, roll_str, theme->app_muted,
+                    theme->card);
+    gui_draw_string(board_x + 12, board_y + 58, score_str, 0xA6E3A1,
+                    theme->card);
+    gui_draw_string(board_x + 12, board_y + 78, knock_str, 0xF9E2AF,
+                    theme->card);
+    gui_draw_string(board_x + 12, board_y + 98, remain_str, theme->app_fg,
+                    theme->card);
+    gui_draw_string(board_x + 12, board_y + 118, framepins_str, theme->app_muted,
+                    theme->card);
+
+    gui_draw_string(board_x + 12, board_y + 146, "Power", 0x89B4FA, theme->card);
+    for (int i = 0; i < 5; i++) {
+      uint32_t bar_color = i < bowling_ball_power ? theme->accent : theme->surface_alt;
+      gui_draw_rect(board_x + 12 + i * 18, board_y + 164, 14, 16, bar_color);
+    }
+
+    gui_draw_string(board_x + 12, board_y + 198, "Curve", 0x89B4FA, theme->card);
+    if (bowling_ball_spin < 0) {
+      gui_draw_string(board_x + 12, board_y + 216, "Left hook", theme->app_fg,
+                      theme->card);
+    } else if (bowling_ball_spin > 0) {
+      gui_draw_string(board_x + 12, board_y + 216, "Right hook", theme->app_fg,
+                      theme->card);
     } else {
-      gui_draw_string(content_x + 10, content_y + content_h - 14,
-                      "Arrow keys to move", theme->app_muted, THEME_BG);
+      gui_draw_string(board_x + 12, board_y + 216, "Straight", theme->app_fg,
+                      theme->card);
     }
+
+    gui_draw_string(board_x + 12, board_y + board_h - 48,
+                    bowling_roll == 1 ? "Strike clears the frame." :
+                                        "Second roll on remaining pins.",
+                    theme->app_muted, theme->card);
+    gui_draw_string(board_x + 12, board_y + board_h - 28,
+                    bowling_ball_rolling ? "Ball is rolling..." :
+                    (bowling_game_over ? "Press R to start over." :
+                                         "Line it up and press Space."),
+                    theme->app_fg, theme->card);
   }
   /* Clock */
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
@@ -11450,17 +11482,22 @@ static void draw_icon_clock(int x, int y, int size) {
   draw_filled_circle(cx, cy, 2, 0xEF4444);
 }
 
-/* Draw Snake icon */
-static void draw_icon_snake(int x, int y, int size) {
-  int body = size / 7;
-  draw_filled_circle(x + size / 4, y + size * 2 / 3, body, 0xA7F3D0);
-  draw_filled_circle(x + size / 2, y + size / 2, body + 1, 0x6EE7B7);
-  draw_filled_circle(x + size * 3 / 4 - 2, y + size / 3, body + 2, 0x22C55E);
-  gui_draw_line(x + size / 4, y + size * 2 / 3, x + size / 2, y + size / 2,
-                0x22C55E);
-  gui_draw_line(x + size / 2, y + size / 2, x + size * 3 / 4 - 2, y + size / 3,
-                0x22C55E);
-  draw_filled_circle(x + size * 3 / 4 + 1, y + size / 3 - 2, 1, 0x111827);
+/* Draw Bowling icon */
+static void draw_icon_bowling(int x, int y, int size) {
+  int ball_r = size / 5;
+  int pin_w = size / 8;
+  int pin_h = size / 3;
+  draw_filled_circle(x + size / 3, y + size * 2 / 3, ball_r + 1, 0xDC2626);
+  draw_filled_circle(x + size / 3, y + size * 2 / 3, ball_r, 0xEF4444);
+  draw_filled_circle(x + size / 3 - 3, y + size * 2 / 3 - 2, 1, 0x991B1B);
+  draw_filled_circle(x + size / 3 + 2, y + size * 2 / 3 - 4, 1, 0x991B1B);
+  draw_filled_circle(x + size / 3 + 4, y + size * 2 / 3 + 1, 1, 0x991B1B);
+  gui_draw_rect(x + size * 2 / 3 - pin_w / 2, y + size / 4, pin_w, pin_h,
+                0xFFFFFF);
+  gui_draw_rect(x + size * 2 / 3 - pin_w / 2 - 2, y + size / 4 + pin_h - 4,
+                pin_w + 4, 4, 0xFFFFFF);
+  gui_draw_rect(x + size * 2 / 3 - pin_w / 2 - 1, y + size / 4 + 5, pin_w + 2,
+                3, 0x2563EB);
 }
 
 /* Draw Help icon */
@@ -11529,7 +11566,7 @@ static void draw_system_app_icon_kind(gui_app_kind_t kind, int x, int y,
     draw_icon_clock(x, y, size);
     break;
   case GUI_APP_SNAKE:
-    draw_icon_snake(x, y, size);
+    draw_icon_bowling(x, y, size);
     break;
   case GUI_APP_HELP:
     draw_icon_help(x, y, size);
@@ -12177,11 +12214,11 @@ void gui_compose(void) {
   /* Draw desktop and taskbar */
   draw_desktop();
 
-  /* Update Snake game state (throttled) */
-  static int snake_tick = 0;
-  if (++snake_tick >= 10) { /* Update every 10 frames */
-    snake_tick = 0;
-    snake_move();
+  /* Update Bowling game state (throttled) */
+  static int bowling_tick = 0;
+  if (++bowling_tick >= 2) {
+    bowling_tick = 0;
+    bowling_update();
   }
 
   /* Draw windows from bottom to top (reverse order) */
@@ -12452,11 +12489,14 @@ void gui_handle_key_event(int key) {
              focused_window->title[2] == 'n') {
       rename_key(key);
     }
-    /* Check if it's a Game window */
-    else if (focused_window->title[0] == 'S' &&
-             focused_window->title[1] == 'n' &&
-             focused_window->title[2] == 'a') {
-      snake_key(key);
+    /* Check if it's a Bowling window */
+    else if ((focused_window->title[0] == 'B' &&
+              focused_window->title[1] == 'o' &&
+              focused_window->title[2] == 'w') ||
+             (focused_window->title[0] == 'S' &&
+              focused_window->title[1] == 'n' &&
+              focused_window->title[2] == 'a')) {
+      bowling_key(key);
     }
     /* Check if it's an Image Viewer window */
     else if (focused_window->title[0] == 'I' &&
