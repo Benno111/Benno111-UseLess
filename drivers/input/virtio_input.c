@@ -153,7 +153,6 @@ static int boot_verbose_requested = 0;
 
 #define KEY_WINDOW_SWITCHER 0x110
 #define KEY_CTRL_ALT_DEL 0x111
-#define KEY_MAIN_MENU_TOGGLE 0x112
 
 /* Linux keycode to ASCII mapping (not PS/2 scancodes!) */
 /* virtio-keyboard sends Linux KEY_* codes, not PS/2 scancodes */
@@ -734,7 +733,7 @@ static void keyboard_poll(void) {
           else if (ev->code == 42 || ev->code == 54)
             processed = 1;
           else if (ev->code == 125 || ev->code == 126)
-            vibe_key = KEY_MAIN_MENU_TOGGLE;
+            vibe_key = ev->code;
           else if (ev->code == 28)
             vibe_key = '\n';
           else if (ev->code == 57)
