@@ -569,8 +569,8 @@ static void populate_seed_tree_at(const char *prefix) {
                    bootstrap_portrait_jpg, bootstrap_portrait_jpg_len);
   seed_write_bytes(prefix, "assets/wallpapers/square.jpg", 0644,
                    bootstrap_square_jpg, bootstrap_square_jpg_len);
-  seed_write_bytes(prefix, "assets/wallpapers/wallpaper.jpg", 0644,
-                   bootstrap_wallpaper_jpg, bootstrap_wallpaper_jpg_len);
+  seed_write_bytes(prefix, "assets/wallpapers/default.png", 0644,
+                   bootstrap_default_png, bootstrap_default_png_len);
   seed_write_bytes(prefix, "Pictures/test.png", 0644, bootstrap_test_png,
                    bootstrap_test_png_len);
 

@@ -391,7 +391,7 @@ static struct {
     {1, 26, 92, 82, 9, 37, 48, "Nature", "/assets/wallpapers/nature.jpg"},
     {1, 84, 108, 148, 26, 33, 52, "City", "/assets/wallpapers/city.jpg"},
     {1, 124, 82, 126, 48, 28, 64, "Portrait", "/assets/wallpapers/portrait.jpg"},
-    {1, 58, 88, 118, 22, 28, 46, "Wallpaper", "/assets/wallpapers/wallpaper.jpg"},
+    {1, 58, 88, 118, 22, 28, 46, "Default", "/assets/wallpapers/default.png"},
     {0, 30, 27, 75, 15, 27, 62, "Indigo Night", NULL},
     {0, 20, 60, 100, 10, 30, 60, "Ocean Blue", NULL},
     {0, 60, 20, 60, 30, 15, 45, "Purple Haze", NULL},
@@ -14535,7 +14535,7 @@ static const char *get_bootstrap_image_path(int index) {
       "/assets/wallpapers/city.jpg",
       "/assets/wallpapers/portrait.jpg",
       "/assets/wallpapers/square.jpg",
-      "/assets/wallpapers/wallpaper.jpg",
+      "/assets/wallpapers/default.png",
   };
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
     return paths[index];
@@ -14544,7 +14544,7 @@ static const char *get_bootstrap_image_path(int index) {
 
 static const char *get_bootstrap_image_name(int index) {
   static const char *names[] = {"Landscape", "Nature", "City",
-                                "Portrait",  "Square", "Wallpaper"};
+                                "Portrait",  "Square", "Default"};
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
     return names[index];
   return "Unknown";
