@@ -299,13 +299,11 @@ assets: $(BUILD_DIR)
 		else \
 			echo "[ASSETS] Missing square wallpaper source"; \
 		fi; \
-		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/Deafult.png" ]; then \
-			cp "$(KERNEL_DIR)/media/bootstrap_images/Deafult.png" "$(BUILD_ASSETS_DIR)/wallpapers/default.png"; \
-		elif [ -f "$(KERNEL_DIR)/media/bootstrap_images/default.png" ]; then \
-			cp "$(KERNEL_DIR)/media/bootstrap_images/default.png" "$(BUILD_ASSETS_DIR)/wallpapers/default.png"; \
+		if [ -f "$(KERNEL_DIR)/media/bootstrap_images/default.jpg" ]; then \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/default.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/default.jpg"; \
 		elif [ -f "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" ]; then \
-			cp "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/default.png"; \
-			echo "[ASSETS] Deafult.png missing, using wallpaper.jpg fallback"; \
+			cp "$(KERNEL_DIR)/media/bootstrap_images/wallpaper.jpg" "$(BUILD_ASSETS_DIR)/wallpapers/default.jpg"; \
+			echo "[ASSETS] default.jpg missing, using wallpaper.jpg fallback"; \
 		else \
 			echo "[ASSETS] Missing default wallpaper source and no fallback available"; \
 		fi; \

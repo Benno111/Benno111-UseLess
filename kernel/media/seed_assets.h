@@ -22,8 +22,8 @@ extern const unsigned int bootstrap_portrait_jpg_len;
 extern const unsigned char bootstrap_square_jpg[];
 extern const unsigned int bootstrap_square_jpg_len;
 
-extern const unsigned char bootstrap_default_png[];
-extern const unsigned int bootstrap_default_png_len;
+extern const unsigned char bootstrap_default_jpg[];
+extern const unsigned int bootstrap_default_jpg_len;
 
 /* Real photos from the internet */
 extern const unsigned char bootstrap_nature_jpg[];
