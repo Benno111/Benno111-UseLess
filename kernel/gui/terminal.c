@@ -887,7 +887,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     build_neofetch_memory_string(memory_buf, sizeof(memory_buf));
     arch_cpu_info(cpu_buf, sizeof(cpu_buf));
     if (!cpu_buf[0])
-      strcpy(cpu_buf, "Unknown CPU");
+      snprintf(cpu_buf, sizeof(cpu_buf), "Unknown CPU");
     build_neofetch_gpu_string(gpu_buf, sizeof(gpu_buf));
 
     term_puts(term, "\033[33mOS:\033[0m      OS8 8.0.0\n");

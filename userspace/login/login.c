@@ -159,7 +159,7 @@ static int load_system_account_by_name(const char *requested_user,
     return -1;
 
   memset(cred, 0, sizeof(*cred));
-  strcpy(cred->shell, "/bin/sh");
+  snprintf(cred->shell, sizeof(cred->shell), "/bin/sh");
 
   if (requested_user && requested_user[0] &&
       account_manifest_path(requested_user, account_path,
