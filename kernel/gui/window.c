@@ -16,6 +16,7 @@
 #include "media/media.h"
 #include "media/seed_assets.h"
 #include "mm/kmalloc.h"
+#include "mm/pmm.h"
 #include "printk.h"
 #include "../../shared/password_hash.h"
 #include "toolbar_icons.h" /* Toolbar icons for image viewer */
@@ -1695,6 +1696,139 @@ struct display {
 };
 
 static struct display primary_display = {0};
+
+static uint64_t ui_bytes_to_mib(size_t bytes) {
+  return ((uint64_t)bytes) / (1024 * 1024);
+}
+
+static int ui_append_char(char *buf, int buf_size, int idx, char c) {
+  if (!buf || buf_size <= 0)
+    return idx;
+  if (idx < buf_size - 1)
+    buf[idx++] = c;
+  buf[idx < buf_size ? idx : buf_size - 1] = '\0';
+  return idx;
+}
+
+static int ui_append_str(char *buf, int buf_size, int idx, const char *str) {
+  if (!buf || buf_size <= 0 || !str)
+    return idx;
+  while (*str && idx < buf_size - 1)
+    buf[idx++] = *str++;
+  buf[idx] = '\0';
+  return idx;
+}
+
+static int ui_append_u64(char *buf, int buf_size, int idx, uint64_t value) {
+  char tmp[24];
+  int ti = 0;
+
+  do {
+    tmp[ti++] = (char)('0' + (value % 10));
+    value /= 10;
+  } while (value > 0 && ti < (int)sizeof(tmp));
+
+  while (ti > 0 && idx < buf_size - 1)
+    buf[idx++] = tmp[--ti];
+  if (idx < buf_size)
+    buf[idx] = '\0';
+  return idx;
+}
+
+static void ui_format_uptime_string(char *buf, int buf_size) {
+  uint64_t total_seconds;
+  uint64_t total_minutes;
+  uint64_t days;
+  uint64_t hours;
+  uint64_t minutes;
+  int idx = 0;
+  char tmp[24];
+  int ti;
+
+  if (!buf || buf_size <= 0)
+    return;
+
+  total_seconds = arch_timer_get_ms() / 1000;
+  total_minutes = total_seconds / 60;
+  days = total_minutes / (24 * 60);
+  hours = (total_minutes / 60) % 24;
+  minutes = total_minutes % 60;
+  buf[0] = '\0';
+
+  if (days > 0) {
+    ti = 0;
+    do {
+      tmp[ti++] = (char)('0' + (days % 10));
+      days /= 10;
+    } while (days > 0 && ti < (int)sizeof(tmp) - 1);
+    while (ti > 0 && idx < buf_size - 1)
+      buf[idx++] = tmp[--ti];
+    idx = ui_append_str(buf, buf_size, idx, " d");
+    if (hours > 0 || minutes > 0)
+      idx = ui_append_str(buf, buf_size, idx, "  ");
+  }
+
+  if (hours > 0) {
+    ti = 0;
+    do {
+      tmp[ti++] = (char)('0' + (hours % 10));
+      hours /= 10;
+    } while (hours > 0 && ti < (int)sizeof(tmp) - 1);
+    while (ti > 0 && idx < buf_size - 1)
+      buf[idx++] = tmp[--ti];
+    idx = ui_append_str(buf, buf_size, idx, " h");
+    if (minutes > 0)
+      idx = ui_append_str(buf, buf_size, idx, "  ");
+  }
+
+  ti = 0;
+  do {
+    tmp[ti++] = (char)('0' + (minutes % 10));
+    minutes /= 10;
+  } while (minutes > 0 && ti < (int)sizeof(tmp) - 1);
+  while (ti > 0 && idx < buf_size - 1)
+    buf[idx++] = tmp[--ti];
+  idx = ui_append_str(buf, buf_size, idx, " m");
+}
+
+static void ui_build_memory_strings(char *phys_buf, int phys_buf_size,
+                                    char *heap_buf, int heap_buf_size) {
+  size_t phys_total = pmm_get_total_memory();
+  size_t phys_free = pmm_get_free_memory();
+  size_t heap_total = 0;
+  size_t heap_used = 0;
+  size_t heap_free = 0;
+  uint64_t phys_used_mib;
+  uint64_t phys_total_mib;
+  uint64_t heap_used_mib;
+  uint64_t heap_total_mib;
+  int idx = 0;
+
+  kmalloc_get_stats(&heap_total, &heap_used, &heap_free);
+  (void)heap_free;
+
+  phys_used_mib =
+      ui_bytes_to_mib(phys_total > phys_free ? phys_total - phys_free : 0);
+  phys_total_mib = ui_bytes_to_mib(phys_total);
+  heap_used_mib = ui_bytes_to_mib(heap_used);
+  heap_total_mib = ui_bytes_to_mib(heap_total);
+
+  if (phys_buf && phys_buf_size > 0) {
+    phys_buf[0] = '\0';
+    idx = ui_append_u64(phys_buf, phys_buf_size, 0, phys_used_mib);
+    idx = ui_append_str(phys_buf, phys_buf_size, idx, " MiB / ");
+    idx = ui_append_u64(phys_buf, phys_buf_size, idx, phys_total_mib);
+    ui_append_str(phys_buf, phys_buf_size, idx, " MiB physical");
+  }
+
+  if (heap_buf && heap_buf_size > 0) {
+    heap_buf[0] = '\0';
+    idx = ui_append_u64(heap_buf, heap_buf_size, 0, heap_used_mib);
+    idx = ui_append_str(heap_buf, heap_buf_size, idx, " MiB / ");
+    idx = ui_append_u64(heap_buf, heap_buf_size, idx, heap_total_mib);
+    ui_append_str(heap_buf, heap_buf_size, idx, " MiB heap");
+  }
+}
 
 static inline int wallpaper_stretch_coord(int dst, int dst_size, int src_size) {
   if (dst_size <= 1 || src_size <= 1)
@@ -9666,6 +9800,9 @@ static void draw_window(struct window *win) {
     const gui_theme_palette_t *theme = gui_theme_palette();
     char resolution[32];
     char windows_info[32];
+    char uptime_info[32];
+    char phys_mem_info[48];
+    char heap_mem_info[40];
     const char *gpu_status;
     const char *blur_status;
     int hero_x = content_x + 18;
@@ -9676,7 +9813,7 @@ static void draw_window(struct window *win) {
     int right_col_x = content_x + content_w / 2 + 6;
     int col_y = hero_y + hero_h + 14;
     int col_w = (content_w - 48) / 2;
-    int info_h = 132;
+    int info_h = 172;
     int footer_y = col_y + info_h + 14;
 #ifdef ARCH_X86_64
     const char *arch_info = "Architecture:  x86_64";
@@ -9689,6 +9826,9 @@ static void draw_window(struct window *win) {
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
+    ui_format_uptime_string(uptime_info, sizeof(uptime_info));
+    ui_build_memory_strings(phys_mem_info, sizeof(phys_mem_info), heap_mem_info,
+                            sizeof(heap_mem_info));
     if (gui_is_gpu_rendering_enabled()) {
       gpu_status = "GPU rendering active";
     } else if (str_cmp(g_gpu_backend_name, "bochs-vbe") == 0) {
@@ -9754,9 +9894,17 @@ static void draw_window(struct window *win) {
                     theme->about_card);
     gui_draw_string(right_col_x + 82, col_y + 78, blur_status, theme->accent_soft,
                     theme->about_card);
-    gui_draw_string(right_col_x + 14, col_y + 98, "Desktop:", theme->about_subtext,
+    gui_draw_string(right_col_x + 14, col_y + 98, "Runtime:", theme->about_subtext,
                     theme->about_card);
-    gui_draw_string(right_col_x + 82, col_y + 98, "Wallpaper + dock environment",
+    gui_draw_string(right_col_x + 82, col_y + 98, uptime_info, theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 118, "Memory:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 82, col_y + 118, phys_mem_info,
+                    theme->about_subtext, theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 138, "Heap:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 82, col_y + 138, heap_mem_info,
                     theme->about_subtext, theme->about_card);
 
     gui_draw_rect(hero_x, footer_y, hero_w, 52, theme->about_footer);
@@ -9773,6 +9921,9 @@ static void draw_window(struct window *win) {
     const gui_theme_palette_t *theme = gui_theme_palette();
     char resolution[32];
     char windows_info[32];
+    char uptime_info[32];
+    char phys_mem_info[48];
+    char heap_mem_info[40];
     const char *blur_status;
     const char *gpu_status;
     const char *theme_status =
@@ -9794,6 +9945,9 @@ static void draw_window(struct window *win) {
     build_resolution_string(resolution, primary_display.width,
                             primary_display.height);
     build_windows_string(windows_info);
+    ui_format_uptime_string(uptime_info, sizeof(uptime_info));
+    ui_build_memory_strings(phys_mem_info, sizeof(phys_mem_info), heap_mem_info,
+                            sizeof(heap_mem_info));
     load_dock_config();
     for (int i = 0; i < app_catalog_count; i++) {
       if (app_is_installed(&app_catalog[i]))
@@ -9874,6 +10028,20 @@ static void draw_window(struct window *win) {
                       intel_hda_is_playing() ? 0xA6E3A1 : 0xFFFFFF, 0x252535);
       gui_draw_string(panel_x + card_w + 28, card_y + 50,
                       "virtio-net online with user-mode NAT", 0xCBD5E1, 0x252535);
+
+      card_y += 88;
+      gui_draw_rect(panel_x, card_y, card_w, 74, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 12, "Runtime", 0x89B4FA, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 32, uptime_info, 0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + 16, card_y + 50, phys_mem_info, 0xCBD5E1, 0x252535);
+
+      gui_draw_rect(panel_x + card_w + 12, card_y, card_w, 74, 0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 12, "Memory", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 32, heap_mem_info,
+                      0xFFFFFF, 0x252535);
+      gui_draw_string(panel_x + card_w + 28, card_y + 50,
+                      "Live heap usage tracking", 0xCBD5E1, 0x252535);
 
       card_y += 88;
       gui_draw_rect(panel_x, card_y, 108, 30, 0x1D4ED8);
