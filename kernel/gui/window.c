@@ -7836,10 +7836,6 @@ static void draw_startup_auth_window(struct window *win, int content_x,
   int startup_login_extra_y = 0;
   uint32_t user_bg = startup_active_field == 0 ? 0x31314A : 0x232337;
   uint32_t pass_bg = startup_active_field == 1 ? 0x31314A : 0x232337;
-  uint32_t button_bg =
-      (!startup_setup_account_active() && !startup_account_system_ready())
-          ? 0x4B5563
-          : 0x2563EB;
   const char *title =
       startup_flow == STARTUP_FLOW_SETUP_ACCOUNT ? "Setup Account"
                                                   : "Sign In";
@@ -8081,19 +8077,16 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                   masked_password[0] ? masked_password : "enter password",
                   masked_password[0] ? 0xFFFFFF : 0x6C7086, pass_bg);
 
-  gui_draw_rect(content_x + 20, content_y + 204 + startup_login_extra_y, 170, 34,
-                button_bg);
-  gui_draw_string(content_x + 34, content_y + 216 + startup_login_extra_y,
-                  button_label, 0xFFFFFF, button_bg);
+  gui_draw_system_button(
+      content_x + 20, content_y + 204 + startup_login_extra_y, 170, 34,
+      button_label, GUI_BUTTON_PRIMARY,
+      (!startup_setup_account_active() && !startup_account_system_ready()) ? 0 : 1,
+      0);
   if (startup_flow == STARTUP_FLOW_LOGIN) {
-    gui_draw_rect(content_x + 200, content_y + 204 + startup_login_extra_y, 96, 34,
-                  0x475569);
-    gui_draw_string(content_x + 224, content_y + 216 + startup_login_extra_y,
-                    "Restart", 0xFFFFFF, 0x475569);
-    gui_draw_rect(content_x + 306, content_y + 204 + startup_login_extra_y, 108, 34,
-                  0x7F1D1D);
-    gui_draw_string(content_x + 326, content_y + 216 + startup_login_extra_y,
-                    "Shut Down", 0xFFFFFF, 0x7F1D1D);
+    gui_draw_system_button(content_x + 200, content_y + 204 + startup_login_extra_y,
+                           96, 34, "Restart", GUI_BUTTON_NEUTRAL, 1, 0);
+    gui_draw_system_button(content_x + 306, content_y + 204 + startup_login_extra_y,
+                           108, 34, "Shut Down", GUI_BUTTON_DANGER, 1, 0);
     gui_draw_string(content_x + 20, content_y + 252 + startup_login_extra_y,
                     "Power options are available before sign-in.",
                     0x94A3B8, THEME_BG);
@@ -10272,38 +10265,30 @@ static void draw_window(struct window *win) {
 
       for (int i = 0; i < SETTINGS_RESOLUTION_OPTION_COUNT; i++) {
         int bx, by, bw, bh;
-        uint32_t bg;
-        uint32_t fg;
         settings_resolution_button_bounds(panel_x, panel_y, i, &bx, &by, &bw, &bh);
-        bg = i == settings_resolution_pending_idx
-                 ? 0x2563EB
-                 : (i == settings_resolution_current_idx ? 0x374151 : 0x1E293B);
-        fg = i == settings_resolution_pending_idx ? 0xFFFFFF : 0xCBD5E1;
-        gui_draw_rect(bx, by, bw, bh, bg);
-        gui_draw_string(bx + 8, by + 7, settings_resolution_options[i].label, fg, bg);
+        gui_draw_system_button(
+            bx, by, bw, bh, settings_resolution_options[i].label,
+            i == settings_resolution_pending_idx ? GUI_BUTTON_PRIMARY
+                                                 : GUI_BUTTON_NEUTRAL,
+            1, i == settings_resolution_current_idx);
       }
 
-      gui_draw_rect(panel_x + 8, resolution_card_y + 66, 90, 24, 0x1D4ED8);
-      gui_draw_string(panel_x + 18, resolution_card_y + 74, "Wallpapers", 0xFFFFFF,
-                      0x1D4ED8);
-      gui_draw_rect(panel_x + 106, resolution_card_y + 66, 90, 24,
-                    gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-      gui_draw_string(panel_x + 126, resolution_card_y + 74,
-                      gui_blur_effects_requested() ? "Blur On" : "Blur Off",
-                      0xFFFFFF,
-                      gui_blur_effects_requested() ? 0x7C3AED : 0x4B5563);
-      gui_draw_rect(panel_x + 204, resolution_card_y + 66, 90, 24,
-                    gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
-      gui_draw_string(panel_x + 228, resolution_card_y + 74,
-                      gui_is_gpu_rendering_enabled() ? "GPU On" : "GPU Off",
-                      0xFFFFFF,
-                      gui_is_gpu_rendering_enabled() ? 0x0F766E : 0x475569);
-      gui_draw_rect(panel_x + 302, resolution_card_y + 66, 90, 24, 0x4B5563);
-      gui_draw_string(panel_x + 330, resolution_card_y + 74, "Apply",
-                      0xFFFFFF, 0x4B5563);
-      gui_draw_rect(panel_x + 400, resolution_card_y + 66, 96, 24, 0x374151);
-      gui_draw_string(panel_x + 418, resolution_card_y + 74, "On Reboot",
-                      0xFFFFFF, 0x374151);
+      gui_draw_system_button(panel_x + 8, resolution_card_y + 66, 90, 24,
+                             "Wallpapers", GUI_BUTTON_PRIMARY, 1, 0);
+      gui_draw_system_button(panel_x + 106, resolution_card_y + 66, 90, 24,
+                             gui_blur_effects_requested() ? "Blur On" : "Blur Off",
+                             gui_blur_effects_requested() ? GUI_BUTTON_PRIMARY
+                                                          : GUI_BUTTON_NEUTRAL,
+                             1, gui_blur_effects_requested());
+      gui_draw_system_button(panel_x + 204, resolution_card_y + 66, 90, 24,
+                             gui_is_gpu_rendering_enabled() ? "GPU On" : "GPU Off",
+                             gui_is_gpu_rendering_enabled() ? GUI_BUTTON_SUCCESS
+                                                            : GUI_BUTTON_NEUTRAL,
+                             1, gui_is_gpu_rendering_enabled());
+      gui_draw_system_button(panel_x + 302, resolution_card_y + 66, 90, 24,
+                             "Apply", GUI_BUTTON_NEUTRAL, 1, 0);
+      gui_draw_system_button(panel_x + 400, resolution_card_y + 66, 96, 24,
+                             "On Reboot", GUI_BUTTON_NEUTRAL, 1, 0);
     } else if (settings_active_tab == 4) {
       gui_draw_string(panel_x + 18, panel_y + 72, "Backup tools are not implemented yet.",
                       0x111111, 0xF8F8F8);
@@ -10680,10 +10665,6 @@ static void draw_window(struct window *win) {
             win->title[2] == 'n')) {
     uint32_t editor_toolbar =
         g_theme_mode == GUI_THEME_LIGHT ? 0xE6EDF6 : 0x2D2D30;
-    uint32_t editor_button =
-        g_theme_mode == GUI_THEME_LIGHT ? 0xD7E2EF : 0x3E3E42;
-    uint32_t editor_button_top =
-        g_theme_mode == GUI_THEME_LIGHT ? 0xF4F7FB : 0x505054;
     uint32_t editor_bg = g_theme_mode == GUI_THEME_LIGHT ? 0xFFFFFF : 0x1E1E1E;
     uint32_t editor_gutter =
         g_theme_mode == GUI_THEME_LIGHT ? 0xEEF3F9 : 0x252526;
@@ -10702,51 +10683,41 @@ static void draw_window(struct window *win) {
 
     /* File operations group */
     /* New button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
-    gui_draw_string(bx + 13, btn_y + 5, "New", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 50, btn_h, "New", GUI_BUTTON_NEUTRAL, 1, 0);
     bx += 50 + btn_spacing;
 
     /* Open button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
-    gui_draw_string(bx + 10, btn_y + 5, "Open", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 50, btn_h, "Open", GUI_BUTTON_NEUTRAL, 1, 0);
     bx += 50 + btn_spacing;
 
     /* Save button - highlighted */
-    gui_draw_rect(bx, btn_y, 50, btn_h, 0x0E639C);
-    gui_draw_rect(bx, btn_y, 50, 1, 0x1E7BB8);
-    gui_draw_string(bx + 10, btn_y + 5, "Save", 0xFFFFFF, 0x0E639C);
+    gui_draw_system_button(bx, btn_y, 50, btn_h, "Save", GUI_BUTTON_PRIMARY, 1,
+                           0);
     bx += 50 + btn_spacing;
 
     /* Save As button */
-    gui_draw_rect(bx, btn_y, 64, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 64, 1, editor_button_top);
-    gui_draw_string(bx + 8, btn_y + 5, "Save As", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 64, btn_h, "Save As", GUI_BUTTON_NEUTRAL,
+                           1, 0);
     bx += 64 + btn_spacing;
 
     /* Separator */
     bx += 8;
-    gui_draw_rect(bx, btn_y + 2, 1, btn_h - 4, editor_button_top);
+    gui_draw_rect(bx, btn_y + 2, 1, btn_h - 4, editor_border);
     bx += 12;
 
     /* Edit operations group */
     /* Cut button */
-    gui_draw_rect(bx, btn_y, 42, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 42, 1, editor_button_top);
-    gui_draw_string(bx + 10, btn_y + 5, "Cut", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 42, btn_h, "Cut", GUI_BUTTON_NEUTRAL, 1, 0);
     bx += 42 + btn_spacing;
 
     /* Copy button */
-    gui_draw_rect(bx, btn_y, 50, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 50, 1, editor_button_top);
-    gui_draw_string(bx + 10, btn_y + 5, "Copy", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 50, btn_h, "Copy", GUI_BUTTON_NEUTRAL, 1,
+                           0);
     bx += 50 + btn_spacing;
 
     /* Paste button */
-    gui_draw_rect(bx, btn_y, 55, btn_h, editor_button);
-    gui_draw_rect(bx, btn_y, 55, 1, editor_button_top);
-    gui_draw_string(bx + 8, btn_y + 5, "Paste", theme->settings_text, editor_button);
+    gui_draw_system_button(bx, btn_y, 55, btn_h, "Paste", GUI_BUTTON_NEUTRAL, 1,
+                           0);
 
     if (win->title[0] == 'N') {
       gui_draw_string(content_x + 10, content_y + 40,
