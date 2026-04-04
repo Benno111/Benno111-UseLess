@@ -7565,6 +7565,7 @@ struct fm_state {
 struct fm_item {
   char name[64];
   unsigned type;
+  uint64_t size_bytes;
 };
 
 struct fm_collect_ctx {
@@ -7749,8 +7750,33 @@ static int fm_collect_callback(void *ctx, const char *name, int len, loff_t off,
     collect->items[insert_at].name[i] = name[i];
   collect->items[insert_at].name[copy_len] = '\0';
   collect->items[insert_at].type = type;
+  collect->items[insert_at].size_bytes = 0;
   collect->count++;
   return 0;
+}
+
+static uint64_t fm_item_size_bytes(const char *dir_path, const char *name,
+                                   unsigned type) {
+  char full_path[512];
+  char resolved_path[512];
+  const char *open_path;
+  struct file *f;
+  uint64_t size = 0;
+
+  if (!dir_path || !name || type == 4)
+    return 0;
+
+  fm_join_path(dir_path, name, full_path, sizeof(full_path));
+  open_path =
+      resolve_user_storage_path(full_path, resolved_path, sizeof(resolved_path));
+  f = vfs_open(open_path, O_RDONLY, 0);
+  if (!f)
+    return 0;
+
+  if (f->f_dentry && f->f_dentry->d_inode && f->f_dentry->d_inode->i_size > 0)
+    size = (uint64_t)f->f_dentry->d_inode->i_size;
+  vfs_close(f);
+  return size;
 }
 
 static int fm_collect_items(const char *path, struct fm_item *items,
@@ -7768,6 +7794,9 @@ static int fm_collect_items(const char *path, struct fm_item *items,
   ctx.max_items = max_items;
   vfs_readdir(dir, &ctx, fm_collect_callback);
   vfs_close(dir);
+  for (int i = 0; i < ctx.count; i++) {
+    items[i].size_bytes = fm_item_size_bytes(path, items[i].name, items[i].type);
+  }
   return ctx.count;
 }
 
@@ -7922,6 +7951,109 @@ static void fm_truncate_label(const char *src, char *dst, int max_chars) {
   dst[i++] = '.';
   dst[i++] = '.';
   dst[i] = '\0';
+}
+
+static void fm_truncate_label_px(const char *src, char *dst, int dst_max,
+                                 int max_px) {
+  int max_chars;
+
+  if (!dst || dst_max <= 0) {
+    return;
+  }
+  dst[0] = '\0';
+  if (!src) {
+    return;
+  }
+
+  if (max_px <= 0) {
+    str_copy_safe(dst, "...", dst_max);
+    return;
+  }
+
+  max_chars = max_px / 8;
+  if (max_chars <= 0) {
+    str_copy_safe(dst, "...", dst_max);
+    return;
+  }
+
+  fm_truncate_label(src, dst, max_chars);
+}
+
+static void fm_format_size(uint64_t size_bytes, unsigned type, char *dst,
+                           int dst_max) {
+  const char *suffix = " B";
+  uint64_t whole = size_bytes;
+  uint64_t tenths = 0;
+
+  if (!dst || dst_max <= 0)
+    return;
+  dst[0] = '\0';
+
+  if (type == 4) {
+    str_copy_safe(dst, "--", dst_max);
+    return;
+  }
+
+  if (size_bytes >= (uint64_t)1024 * 1024 * 1024) {
+    suffix = " GB";
+    whole = size_bytes / ((uint64_t)1024 * 1024 * 1024);
+    tenths = (size_bytes % ((uint64_t)1024 * 1024 * 1024)) * 10 /
+             ((uint64_t)1024 * 1024 * 1024);
+  } else if (size_bytes >= (uint64_t)1024 * 1024) {
+    suffix = " MB";
+    whole = size_bytes / ((uint64_t)1024 * 1024);
+    tenths = (size_bytes % ((uint64_t)1024 * 1024)) * 10 /
+             ((uint64_t)1024 * 1024);
+  } else if (size_bytes >= 1024) {
+    suffix = " KB";
+    whole = size_bytes / 1024;
+    tenths = (size_bytes % 1024) * 10 / 1024;
+  }
+
+  if (suffix[1] == 'B' && suffix[0] == ' ') {
+    char digits[32];
+    int count = 0;
+    int out = 0;
+    if (whole == 0) {
+      digits[count++] = '0';
+    } else {
+      while (whole > 0 && count < (int)sizeof(digits)) {
+        digits[count++] = (char)('0' + (whole % 10));
+        whole /= 10;
+      }
+    }
+    while (count > 0 && out < dst_max - 1)
+      dst[out++] = digits[--count];
+    if (out < dst_max - 1)
+      dst[out++] = ' ';
+    if (out < dst_max - 1)
+      dst[out++] = 'B';
+    dst[out] = '\0';
+    return;
+  }
+
+  {
+    char digits[32];
+    int count = 0;
+    int out = 0;
+    if (whole == 0) {
+      digits[count++] = '0';
+    } else {
+      while (whole > 0 && count < (int)sizeof(digits)) {
+        digits[count++] = (char)('0' + (whole % 10));
+        whole /= 10;
+      }
+    }
+    while (count > 0 && out < dst_max - 1)
+      dst[out++] = digits[--count];
+    if (tenths > 0 && out < dst_max - 3) {
+      dst[out++] = '.';
+      dst[out++] = (char)('0' + tenths);
+    }
+    for (int i = 0; suffix[i] && out < dst_max - 1; i++)
+      dst[out++] = suffix[i];
+    dst[out] = '\0';
+  }
 }
 
 static void installer_refresh_disk_inventory(void) {
@@ -8829,6 +8961,10 @@ static void draw_window(struct window *win) {
     int list_y = content_y + toolbar_h + info_h + 8;
     int list_w = content_w - sidebar_w - details_w - 24;
     int row_h = 44;
+    int size_col_x = list_x + list_w - 150;
+    int type_col_x = list_x + list_w - 74;
+    int name_text_x = list_x + 48;
+    int name_max_px = size_col_x - name_text_x - 12;
 
     gui_draw_rect(content_x, content_y, content_w, content_h, 0x171A24);
 
@@ -8888,7 +9024,9 @@ static void draw_window(struct window *win) {
 
     gui_draw_rect(list_x + 8, content_y + toolbar_h + 18, list_w - 16, 24, 0x172033);
     gui_draw_string(list_x + 18, content_y + toolbar_h + 24, "Name", 0x93C5FD, 0x172033);
-    gui_draw_string(list_x + list_w - 74, content_y + toolbar_h + 24, "Type",
+    gui_draw_string(size_col_x, content_y + toolbar_h + 24, "Size",
+                    0x93C5FD, 0x172033);
+    gui_draw_string(type_col_x, content_y + toolbar_h + 24, "Type",
                     0x93C5FD, 0x172033);
 
     if (item_count < 0) {
@@ -8921,14 +9059,20 @@ static void draw_window(struct window *win) {
         uint32_t icon_color = 0xFFFFFF;
         const unsigned char *icon =
             fm_icon_for_item(items[i].name, items[i].type, &icon_color);
-        char short_name[22];
+        char short_name[64];
+        char size_buf[24];
         const char *type_label = fm_type_label(items[i].name, items[i].type);
 
-        fm_truncate_label(items[i].name, short_name, 18);
+        fm_truncate_label_px(items[i].name, short_name, sizeof(short_name),
+                             name_max_px);
+        fm_format_size(items[i].size_bytes, items[i].type, size_buf,
+                       sizeof(size_buf));
         gui_draw_rect(list_x + 8, row_y, list_w - 16, row_h - 4, row_bg);
         draw_icon(list_x + 14, row_y + 6, 24, icon, icon_color, row_bg);
-        gui_draw_string(list_x + 48, row_y + 14, short_name, 0xFFFFFF, row_bg);
-        gui_draw_string(list_x + list_w - 78, row_y + 14, type_label,
+        gui_draw_string(name_text_x, row_y + 14, short_name, 0xFFFFFF, row_bg);
+        gui_draw_string(size_col_x, row_y + 14, size_buf,
+                        is_selected ? 0xDBEAFE : 0xCBD5E1, row_bg);
+        gui_draw_string(type_col_x, row_y + 14, type_label,
                         is_selected ? 0xDBEAFE : 0x94A3B8, row_bg);
         displayed++;
       }
@@ -8951,8 +9095,12 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 78,
                     "Selected", 0x93C5FD, 0x111827);
     if (selected_index >= 0) {
-      char selected_short[18];
-      fm_truncate_label(items[selected_index].name, selected_short, 14);
+      char selected_short[32];
+      char selected_size[24];
+      fm_truncate_label_px(items[selected_index].name, selected_short,
+                           sizeof(selected_short), details_w - 24);
+      fm_format_size(items[selected_index].size_bytes, items[selected_index].type,
+                     selected_size, sizeof(selected_size));
       gui_draw_string(content_x + content_w - details_w + 8,
                       content_y + toolbar_h + 100, selected_short, 0xFFFFFF,
                       0x111827);
@@ -8962,7 +9110,10 @@ static void draw_window(struct window *win) {
                                     items[selected_index].type),
                       0xA5B4FC, 0x111827);
       gui_draw_string(content_x + content_w - details_w + 8,
-                      content_y + toolbar_h + 148,
+                      content_y + toolbar_h + 148, selected_size, 0xCBD5E1,
+                      0x111827);
+      gui_draw_string(content_x + content_w - details_w + 8,
+                      content_y + toolbar_h + 172,
                       items[selected_index].type == 4 ? "Open: click twice"
                                                      : "Open: click twice",
                       0x94A3B8, 0x111827);
