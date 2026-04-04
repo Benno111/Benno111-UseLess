@@ -29,6 +29,7 @@ void gui_open_notepad(const char *path);
 int gui_launch_app_by_id(const char *app_id);
 extern int bochs_init(uint32_t width, uint32_t height);
 extern void bochs_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
+extern void input_set_mouse_bounds(int width, int height);
 
 /* Forward declarations for drawing helpers used before their definitions. */
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
@@ -2521,6 +2522,7 @@ static int gui_apply_resolution(uint32_t width, uint32_t height) {
   wallpaper_cached = 0;
   wallpaper_cached_idx = -1;
 
+  input_set_mouse_bounds((int)new_width, (int)new_height);
   mouse_x = (int)new_width / 2;
   mouse_y = (int)new_height / 2;
   gui_clamp_windows_to_display();
@@ -14056,6 +14058,9 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   primary_display.height = height;
   primary_display.pitch = pitch;
   primary_display.bpp = 32;
+  input_set_mouse_bounds((int)width, (int)height);
+  mouse_x = (int)width / 2;
+  mouse_y = (int)height / 2;
 
   /* ============================================= */
   /* LOADING SCREEN - Show during initialization  */
