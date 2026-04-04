@@ -2085,11 +2085,31 @@ static void gui_apply_backdrop_blur(int x, int y, int w, int h, int stride) {
   }
 }
 
+static int gui_adjust_blur_stride_for_area(int w, int h, int stride) {
+  uint64_t area;
+
+  if (stride < 1)
+    stride = 1;
+  if (w <= 0 || h <= 0)
+    return stride;
+
+  area = (uint64_t)w * (uint64_t)h;
+  if (area >= 320000)
+    return 0;
+  if (area >= 180000 && stride < 4)
+    return 4;
+  if (area >= 90000 && stride < 3)
+    return 3;
+  return stride;
+}
+
 static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride) {
   if (g_blur_effects_enabled) {
-    gui_apply_backdrop_blur(x, y, w, h, blur_stride);
+    blur_stride = gui_adjust_blur_stride_for_area(w, h, blur_stride);
+    if (blur_stride > 0)
+      gui_apply_backdrop_blur(x, y, w, h, blur_stride);
   }
   gui_fill_rect_alpha(x, y, w, h, tint);
   gui_fill_rect_alpha(x, y, w, 1, glow);
@@ -9214,8 +9234,13 @@ static void draw_window(struct window *win) {
      * 1) backdrop blur (when requested)
      * 2) translucent glass tint layered on top
      */
-    if (g_blur_effects_requested || g_blur_effects_enabled) {
-      gui_apply_backdrop_blur(title_x0, title_y0, title_w, TITLEBAR_HEIGHT, 2);
+    if (g_blur_effects_enabled) {
+      int title_blur_stride =
+          gui_adjust_blur_stride_for_area(title_w, TITLEBAR_HEIGHT, 2);
+      if (title_blur_stride > 0) {
+        gui_apply_backdrop_blur(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
+                                title_blur_stride);
+      }
     }
     /* Base translucent tint */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
