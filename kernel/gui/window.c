@@ -2118,6 +2118,75 @@ static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
   gui_fill_rect_alpha(x + w - 1, y, 1, h, border);
 }
 
+typedef enum {
+  GUI_BUTTON_NEUTRAL = 0,
+  GUI_BUTTON_PRIMARY = 1,
+  GUI_BUTTON_SUCCESS = 2,
+  GUI_BUTTON_DANGER = 3
+} gui_button_variant_t;
+
+static uint32_t gui_argb(uint8_t alpha, uint32_t rgb) {
+  return ((uint32_t)alpha << 24) | (rgb & 0xFFFFFF);
+}
+
+static void gui_draw_system_button(int x, int y, int w, int h,
+                                   const char *label,
+                                   gui_button_variant_t variant, int enabled,
+                                   int active) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
+  uint32_t base = theme->surface_alt;
+  uint32_t tint;
+  uint32_t glow;
+  uint32_t border;
+  uint32_t text = enabled ? 0xFFFFFF : theme->app_muted;
+  int label_len = 0;
+  int label_x;
+  int label_y;
+
+  if (!label || w <= 0 || h <= 0)
+    return;
+
+  switch (variant) {
+  case GUI_BUTTON_PRIMARY:
+    base = theme->accent;
+    break;
+  case GUI_BUTTON_SUCCESS:
+    base = 0x16A34A;
+    break;
+  case GUI_BUTTON_DANGER:
+    base = 0xB42318;
+    break;
+  case GUI_BUTTON_NEUTRAL:
+  default:
+    base = theme->surface_alt;
+    text = enabled ? theme->settings_text : theme->app_muted;
+    break;
+  }
+
+  if (!enabled) {
+    tint = gui_argb(0xB8, theme->surface_alt);
+    glow = gui_argb(0x22, 0xFFFFFF);
+    border = gui_argb(0x70, theme->border);
+  } else if (variant == GUI_BUTTON_NEUTRAL) {
+    tint = gui_argb(active ? 0xD2 : 0xBA, base);
+    glow = gui_argb(active ? 0x3E : 0x24, 0xFFFFFF);
+    border = gui_argb(active ? 0xB4 : 0x8A, theme->border);
+  } else {
+    tint = gui_argb(active ? 0xDE : 0xCA, base);
+    glow = gui_argb(active ? 0x40 : 0x28, 0xFFFFFF);
+    border = gui_argb(active ? 0xC8 : 0x96, base);
+  }
+
+  gui_draw_glass_panel(x, y, w, h, tint, glow, border, 2);
+  gui_fill_rect_alpha(x + 1, y + 1, w - 2, h / 2, gui_argb(0x18, 0xFFFFFF));
+
+  while (label[label_len])
+    label_len++;
+  label_x = x + (w - label_len * 8) / 2;
+  label_y = y + (h - 16) / 2;
+  gui_draw_string(label_x, label_y, label, text, 0x00000000);
+}
+
 void gui_draw_rect(int x, int y, int w, int h, uint32_t color) {
   for (int row = y; row < y + h; row++) {
     for (int col = x; col < x + w; col++) {
@@ -3287,11 +3356,13 @@ static void draw_secure_attention_overlay(void) {
 
   for (int i = 0; i < 3; i++) {
     int bx = start_x + i * (button_w + button_gap);
-    uint32_t fill = (i == secure_attention_selection) ? 0xB04E6DA0 : 0x70404A5E;
-    uint32_t border = (i == secure_attention_selection) ? 0xC4D8E7FF : 0x8E7A8BA4;
-    gui_draw_glass_panel(bx, button_y, button_w, button_h, fill, 0x26FFFFFF,
-                         border, 1);
-    gui_draw_string(bx + 18, button_y + 10, labels[i], 0xFFFFFF, 0x00000000);
+    gui_button_variant_t variant = GUI_BUTTON_NEUTRAL;
+    if (i == SECURE_ACTION_RESTART)
+      variant = GUI_BUTTON_PRIMARY;
+    else if (i == SECURE_ACTION_SHUTDOWN)
+      variant = GUI_BUTTON_DANGER;
+    gui_draw_system_button(bx, button_y, button_w, button_h, labels[i], variant,
+                           1, i == secure_attention_selection);
   }
 }
 
@@ -6571,11 +6642,11 @@ static void draw_app_store(int content_x, int content_y, int content_w,
                     installed ? "Installed" : "Available to install",
                     installed ? 0xA6E3A1 : theme->app_muted, row_bg);
 
-    gui_draw_rect(button_x, y + 13, button_w, 28,
-                  installed ? 0x3B82F6 : 0x22C55E);
-    gui_draw_string(button_x + (installed ? 16 : 14), y + 19,
-                    installed ? "Open" : "Install", 0xFFFFFF,
-                    installed ? 0x3B82F6 : 0x22C55E);
+    gui_draw_system_button(button_x, y + 13, button_w, 28,
+                           installed ? "Open" : "Install",
+                           installed ? GUI_BUTTON_PRIMARY
+                                     : GUI_BUTTON_SUCCESS,
+                           1, 0);
 
     y += APP_STORE_CARD_HEIGHT + 8;
   }
@@ -7728,34 +7799,29 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
     if (installer_page != INSTALLER_PAGE_PROGRESS &&
         installer_page != INSTALLER_PAGE_COMPLETE) {
       if (installer_page > INSTALLER_PAGE_WELCOME) {
-        gui_draw_rect(primary_x, footer_y + 12, button_w, button_h, 0x374151);
-        gui_draw_string(primary_x + 52, footer_y + 22, "Back", 0xFFFFFF,
-                        0x374151);
+        gui_draw_system_button(primary_x, footer_y + 12, button_w, button_h,
+                               "Back", GUI_BUTTON_NEUTRAL, 1, 0);
       }
 
       if (installer_page == INSTALLER_PAGE_REVIEW) {
-        gui_draw_rect(secondary_x, footer_y + 12, button_w, button_h,
-                      installer_active ? 0x4B5563 : 0x16A34A);
-        gui_draw_string(secondary_x + 28, footer_y + 22, "Install System Image",
-                        0xFFFFFF, installer_active ? 0x4B5563 : 0x16A34A);
+        gui_draw_system_button(secondary_x, footer_y + 12, button_w, button_h,
+                               "Install System Image", GUI_BUTTON_SUCCESS,
+                               installer_active ? 0 : 1, 0);
       } else {
-        gui_draw_rect(secondary_x, footer_y + 12, button_w, button_h, 0x2563EB);
-        gui_draw_string(secondary_x + 52, footer_y + 22, "Next", 0xFFFFFF,
-                        0x2563EB);
+        gui_draw_system_button(secondary_x, footer_y + 12, button_w, button_h,
+                               "Next", GUI_BUTTON_PRIMARY, 1, 0);
       }
     }
 
     if (installer_page == INSTALLER_PAGE_TARGET ||
         installer_page == INSTALLER_PAGE_REVIEW) {
-      gui_draw_rect(utility_x, footer_y + 12, 150, button_h, 0x2563EB);
-      gui_draw_string(utility_x + 18, footer_y + 22, "Partition Manager",
-                      0xFFFFFF, 0x2563EB);
+      gui_draw_system_button(utility_x, footer_y + 12, 150, button_h,
+                             "Partition Manager", GUI_BUTTON_PRIMARY, 1, 0);
     }
 
     if (installer_page == INSTALLER_PAGE_COMPLETE) {
-      gui_draw_rect(primary_x, footer_y + 12, button_w, button_h, 0x16A34A);
-      gui_draw_string(primary_x + 34, footer_y + 22, "Restart Now", 0xFFFFFF,
-                      0x16A34A);
+      gui_draw_system_button(primary_x, footer_y + 12, button_w, button_h,
+                             "Restart Now", GUI_BUTTON_SUCCESS, 1, 0);
     }
   }
 }
@@ -7899,9 +7965,8 @@ static void draw_startup_auth_window(struct window *win, int content_x,
                       masked_password[0] ? 0xFFFFFF : 0x64748B, pass_bg);
     }
 
-    gui_draw_rect(button_x, button_y, button_w, button_h, 0x2563EB);
-    gui_draw_string(button_x + 22, button_y + 14, button_text, 0xFFFFFF,
-                    0x2563EB);
+    gui_draw_system_button(button_x, button_y, button_w, button_h, button_text,
+                           GUI_BUTTON_PRIMARY, 1, 0);
     gui_draw_string(button_x + button_w + 18, button_y + 14, startup_status,
                     0xCBD5E1, 0x111827);
     settings_account_list_free(&startup_accounts);
@@ -10069,14 +10134,14 @@ static void draw_window(struct window *win) {
                       "Live heap usage tracking", 0xCBD5E1, 0x252535);
 
       card_y += 88;
-      gui_draw_rect(panel_x, card_y, 108, 30, 0x1D4ED8);
-      gui_draw_string(panel_x + 18, card_y + 9, "Backgrounds", 0xFFFFFF, 0x1D4ED8);
-      gui_draw_rect(panel_x + 118, card_y, 98, 30, 0x2563EB);
-      gui_draw_string(panel_x + 138, card_y + 9, "App Store", 0xFFFFFF, 0x2563EB);
-      gui_draw_rect(panel_x + 226, card_y, 92, 30, 0x3B82F6);
-      gui_draw_string(panel_x + 248, card_y + 9, "Devices", 0xFFFFFF, 0x3B82F6);
-      gui_draw_rect(panel_x + 328, card_y, 84, 30, 0x4B5563);
-      gui_draw_string(panel_x + 354, card_y + 9, "About", 0xFFFFFF, 0x4B5563);
+      gui_draw_system_button(panel_x, card_y, 108, 30, "Backgrounds",
+                             GUI_BUTTON_PRIMARY, 1, 0);
+      gui_draw_system_button(panel_x + 118, card_y, 98, 30, "App Store",
+                             GUI_BUTTON_PRIMARY, 1, 0);
+      gui_draw_system_button(panel_x + 226, card_y, 92, 30, "Devices",
+                             GUI_BUTTON_PRIMARY, 1, 0);
+      gui_draw_system_button(panel_x + 328, card_y, 84, 30, "About",
+                             GUI_BUTTON_NEUTRAL, 1, 0);
     } else if (settings_active_tab == 1) {
       gui_draw_string(panel_x + 18, panel_y + 72, "virtio-net online with user-mode NAT",
                       0x111111, 0xF8F8F8);
