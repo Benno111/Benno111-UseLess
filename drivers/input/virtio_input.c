@@ -733,12 +733,14 @@ static void keyboard_poll(void) {
             processed = 1;
           else if (ev->code == 42 || ev->code == 54)
             processed = 1;
+          else if (ev->code == 125 || ev->code == 126)
+            vibe_key = KEY_MAIN_MENU_TOGGLE;
           else if (ev->code == 28)
             vibe_key = '\n';
           else if (ev->code == 57)
             vibe_key = ' ';
           else if (ev->code == 1)
-            vibe_key = ctrl_held ? KEY_MAIN_MENU_TOGGLE : 27;
+            vibe_key = 27;
           else if (ev->code == 15 && alt_held)
             vibe_key = KEY_WINDOW_SWITCHER;
           else if (ev->code == 111 && ctrl_held && alt_held)

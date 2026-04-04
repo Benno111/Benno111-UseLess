@@ -408,6 +408,10 @@ static void handle_keyboard_byte(uint8_t scancode) {
     case 0x1C:
       key = '\n';
       break;
+    case 0x5B:
+    case 0x5C:
+      key = KEY_MAIN_MENU_TOGGLE;
+      break;
     default:
       return;
     }
@@ -448,10 +452,6 @@ static void handle_keyboard_byte(uint8_t scancode) {
     break;
   default:
     if (scancode < 128) {
-      if (scancode == 0x01 && ctrl_pressed) {
-        key = KEY_MAIN_MENU_TOGGLE;
-        break;
-      }
       if (scancode == 0x0F && alt_pressed) {
         key = KEY_WINDOW_SWITCHER;
         break;
