@@ -148,16 +148,123 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define COLOR_DARK_GRAY 0x404040
 #define COLOR_LIGHT_GRAY 0xC0C0C0
 
-/* UI Theme Colors - Modern Premium Design */
-#define THEME_BG 0x1A1A2E       /* Deep dark background */
-#define THEME_FG 0xE4E4E7       /* Crisp light text */
-#define THEME_ACCENT 0x6366F1   /* Indigo accent (modern) */
-#define THEME_ACCENT2 0xEC4899  /* Pink accent */
-#define THEME_TITLEBAR 0x27272A /* Dark zinc titlebar */
-#define THEME_TITLEBAR_INACTIVE 0x3F3F46
-#define THEME_BORDER 0x52525B       /* Zinc border */
-#define THEME_BUTTON 0x3F3F46       /* Modern button background */
-#define THEME_BUTTON_HOVER 0x525258 /* Button hover */
+typedef enum {
+  GUI_THEME_DARK = 0,
+  GUI_THEME_LIGHT = 1
+} gui_theme_mode_t;
+
+typedef struct {
+  uint32_t app_bg;
+  uint32_t app_fg;
+  uint32_t app_muted;
+  uint32_t accent;
+  uint32_t accent_soft;
+  uint32_t surface;
+  uint32_t surface_alt;
+  uint32_t card;
+  uint32_t border;
+  uint32_t title_text;
+  uint32_t title_glow;
+  uint32_t title_tint_focused;
+  uint32_t title_tint_inactive;
+  uint32_t title_veil_focused;
+  uint32_t title_veil_inactive;
+  uint32_t title_line_top;
+  uint32_t title_line_bottom;
+  uint32_t window_glass_focused;
+  uint32_t window_glass_inactive;
+  uint32_t window_glow_focused;
+  uint32_t window_glow_inactive;
+  uint32_t dock_fill;
+  uint32_t dock_top_line;
+  uint32_t dock_top_shadow;
+  uint32_t dock_bottom_line;
+  uint32_t dock_launcher;
+  uint32_t dock_launcher_hover;
+  uint32_t dock_launcher_active;
+  uint32_t dock_launcher_border;
+  uint32_t menu_tint;
+  uint32_t menu_glow;
+  uint32_t menu_border;
+  uint32_t menu_title;
+  uint32_t menu_left;
+  uint32_t menu_right;
+  uint32_t menu_divider;
+  uint32_t settings_bg;
+  uint32_t settings_panel;
+  uint32_t settings_border;
+  uint32_t settings_text;
+  uint32_t settings_subtext;
+  uint32_t settings_tab_active;
+  uint32_t settings_tab_inactive;
+  uint32_t settings_card;
+  uint32_t settings_card_text;
+  uint32_t settings_card_subtext;
+  uint32_t about_bg;
+  uint32_t about_hero;
+  uint32_t about_card;
+  uint32_t about_text;
+  uint32_t about_subtext;
+  uint32_t about_footer;
+  uint32_t file_bg;
+  uint32_t file_toolbar;
+  uint32_t file_path;
+  uint32_t file_sidebar;
+  uint32_t file_list;
+  uint32_t file_details;
+  uint32_t file_header;
+  uint32_t file_row_even;
+  uint32_t file_row_odd;
+  uint32_t file_row_selected;
+  uint32_t file_text;
+  uint32_t file_subtext;
+} gui_theme_palette_t;
+
+static const gui_theme_palette_t g_theme_dark = {
+    0x1A1A2E, 0xE4E4E7, 0xA1A1AA, 0x6366F1, 0xEC4899, 0x27272A, 0x1F2937,
+    0x252535, 0x52525B, 0xFFFDFEFF, 0x90FFFFFF, 0x4A4E6A8A, 0x3F3D4A5D,
+    0x18324860, 0x142A3442, 0x34FFFFFF, 0x50313C4E, 0x5A34383F, 0x50323338,
+    0x26FFFFFF, 0x16FFFFFF, 0xA118202C, 0x72FFFFFF, 0x28495D78, 0x64060A10,
+    0x2437455B, 0x36566F92, 0x5A78A9DA, 0x7EA7D8, 0x6A2C3446, 0x42FFFFFF,
+    0x8C75839A, 0x344D6488, 0x141824, 0x1F2937, 0x30566C86, 0xF2F2F2, 0xF8F8F8,
+    0x111111, 0x111111, 0x4A4A4A, 0x111111, 0xF2F2F2, 0x252535, 0xFFFFFF,
+    0xCBD5E1, 0xEEF2F7, 0x1F2937, 0xFFFFFF, 0x111827, 0x6B7280, 0xE5E7EB,
+    0x171A24, 0x111827, 0x1F2937, 0x111827, 0x0F172A, 0x111827, 0x172033,
+    0x0F172A, 0x111827, 0x1D4ED8, 0xFFFFFF, 0x94A3B8};
+
+static const gui_theme_palette_t g_theme_light = {
+    0xF4F7FB, 0x172033, 0x5F6E82, 0x2563EB, 0xDB2777, 0xE9EEF5, 0xF6F9FC,
+    0xFFFFFF, 0xC9D4E5, 0x1A2535, 0x70486A8C, 0xD9E7F4FA, 0xC8D8E7F1,
+    0x60FFFFFF, 0x4CEAF1F7, 0x88FFFFFF, 0x708BA0B5, 0x3CE7EDF6, 0x30D7DFEA,
+    0x1EFFFFFF, 0x10FFFFFF, 0xCDE8EEF7, 0x88FFFFFF, 0x4CC9D7E6, 0x6094A3B5,
+    0xD7E5F3, 0xE5EEF8, 0xC5DDFB, 0x8FB7E8, 0xCFE4F6, 0x54FFFFFF, 0x90B7C8DA,
+    0xC3D9EE, 0xECF3FA, 0xF7FAFD, 0xD7E2EF, 0xF7F9FC, 0xFFFFFF, 0xC8D3E0,
+    0x1B2430, 0x1B2430, 0x627084, 0x1B2430, 0xFFFFFF, 0xE7EEF7, 0x1B2430,
+    0x627084, 0xF5F8FC, 0xE7F0FB, 0xFFFFFF, 0x18212E, 0x66758A, 0xDEE6F0,
+    0xEEF3F9, 0xE2EAF3, 0xEEF3F9, 0xF7FAFD, 0xFFFFFF, 0xEEF3F9, 0xE3EBF5,
+    0xFFFFFF, 0xF7FAFD, 0xDCE8F8, 0x18212E, 0x6B7A90};
+
+static gui_theme_mode_t g_theme_mode = GUI_THEME_DARK;
+
+static const gui_theme_palette_t *gui_theme_palette(void) {
+  return g_theme_mode == GUI_THEME_LIGHT ? &g_theme_light : &g_theme_dark;
+}
+
+static void gui_set_theme_mode(gui_theme_mode_t mode) {
+  g_theme_mode = mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT : GUI_THEME_DARK;
+  compositor_mark_full_redraw();
+}
+
+/* UI Theme Colors - mapped through current palette */
+#define THEME_BG (gui_theme_palette()->app_bg)
+#define THEME_FG (gui_theme_palette()->app_fg)
+#define THEME_ACCENT (gui_theme_palette()->accent)
+#define THEME_ACCENT2 (gui_theme_palette()->accent_soft)
+#define THEME_TITLEBAR (gui_theme_palette()->surface)
+#define THEME_TITLEBAR_INACTIVE (gui_theme_palette()->surface_alt)
+#define THEME_BORDER (gui_theme_palette()->border)
+#define THEME_BUTTON (gui_theme_palette()->surface_alt)
+#define THEME_BUTTON_HOVER (gui_theme_palette()->surface)
 
 /* macOS Traffic Light Colors - Slightly desaturated for premium look */
 #define COLOR_BTN_CLOSE 0xEF4444    /* Red */
@@ -165,14 +272,14 @@ extern void term_set_content_pos(struct terminal *t, int x, int y);
 #define COLOR_BTN_ZOOM 0x22C55E     /* Green */
 
 /* Menu Bar - Frosted glass effect */
-#define COLOR_MENU_BG 0x18181B   /* Very dark */
-#define COLOR_MENU_TEXT 0xFAFAFA /* White text */
+#define COLOR_MENU_BG (gui_theme_palette()->menu_right)
+#define COLOR_MENU_TEXT (gui_theme_palette()->app_fg)
 #define MENU_BAR_HEIGHT 0
 
 /* Dock - Modern glass dock */
-#define COLOR_DOCK_BG 0x1F1F23     /* Dark dock */
-#define COLOR_DOCK_BORDER 0x3F3F46 /* Subtle border */
-#define COLOR_DOCK_GLASS 0x2A2A30  /* Glass effect layer */
+#define COLOR_DOCK_BG (gui_theme_palette()->dock_fill)
+#define COLOR_DOCK_BORDER (gui_theme_palette()->border)
+#define COLOR_DOCK_GLASS (gui_theme_palette()->surface)
 #define DOCK_HEIGHT 70
 
 #define KEY_WINDOW_SWITCHER 0x110
@@ -8708,13 +8815,17 @@ static void draw_window(struct window *win) {
   if (!win->visible)
     return;
 
+  const gui_theme_palette_t *theme = gui_theme_palette();
   int x = win->x, y = win->y;
   int w = win->width, h = win->height;
   struct gui_clip_state prev_clip = gui_set_clip_rect(x, y, w, h);
 
   gui_draw_glass_panel(x, y, w, h,
-                       win->focused ? 0x5A34383F : 0x50323338,
-                       win->focused ? 0x26FFFFFF : 0x16FFFFFF, 0x00000000, 2);
+                       win->focused ? theme->window_glass_focused
+                                    : theme->window_glass_inactive,
+                       win->focused ? theme->window_glow_focused
+                                    : theme->window_glow_inactive,
+                       0x00000000, 2);
 
   if (win->has_titlebar) {
     int title_x0 = x + BORDER_WIDTH;
@@ -8731,28 +8842,15 @@ static void draw_window(struct window *win) {
     }
     /* Base translucent tint */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
-                        win->focused ? 0x4A4E6A8A : 0x3F3D4A5D);
-    /* Reintroduce a subtle vertical gradient for a richer titlebar. */
-    for (int row = 0; row < TITLEBAR_HEIGHT; row++) {
-      int progress = (row * 256) / TITLEBAR_HEIGHT;
-      uint8_t alpha = (uint8_t)(win->focused ? (44 - (progress * 18) / 256)
-                                             : (34 - (progress * 12) / 256));
-      uint8_t red = (uint8_t)(win->focused ? (90 - (progress * 18) / 256)
-                                           : (74 - (progress * 14) / 256));
-      uint8_t green = (uint8_t)(win->focused ? (122 - (progress * 24) / 256)
-                                             : (87 - (progress * 16) / 256));
-      uint8_t blue = (uint8_t)(win->focused ? (168 - (progress * 26) / 256)
-                                            : (107 - (progress * 18) / 256));
-      gui_fill_rect_alpha(title_x0, title_y0 + row, title_w, 1,
-                          ((uint32_t)alpha << 24) | ((uint32_t)red << 16) |
-                              ((uint32_t)green << 8) | (uint32_t)blue);
-    }
+                        win->focused ? theme->title_tint_focused
+                                     : theme->title_tint_inactive);
     /* Secondary glass veil to keep transparency visible over bright content */
     gui_fill_rect_alpha(title_x0, title_y0, title_w, TITLEBAR_HEIGHT,
-                        win->focused ? 0x18324860 : 0x142A3442);
-    gui_fill_rect_alpha(title_x0, title_y0, title_w, 1, 0x34FFFFFF);
+                        win->focused ? theme->title_veil_focused
+                                     : theme->title_veil_inactive);
+    gui_fill_rect_alpha(title_x0, title_y0, title_w, 1, theme->title_line_top);
     gui_fill_rect_alpha(title_x0, title_y0 + TITLEBAR_HEIGHT - 1, title_w, 1,
-                        0x50313C4E);
+                        theme->title_line_bottom);
 
     /* Traffic light buttons on LEFT side - Modern rounded */
     int btn_cx = x + BORDER_WIDTH + 16; /* First circle center X */
@@ -8803,8 +8901,8 @@ static void draw_window(struct window *win) {
       title_len++;
     int title_x = x + (w - title_len * 8) / 2;
     int title_y = y + BORDER_WIDTH + 7;
-    uint32_t title_glow = win->focused ? 0x90FFFFFF : 0x70FFFFFF;
-    uint32_t title_fg = win->focused ? 0xFFFDFEFF : 0xFFE9EEF5;
+    uint32_t title_glow = theme->title_glow;
+    uint32_t title_fg = theme->title_text;
     gui_draw_string(title_x - 1, title_y, win->title, title_glow, 0x00000000);
     gui_draw_string(title_x + 1, title_y, win->title, title_glow, 0x00000000);
     gui_draw_string(title_x, title_y - 1, win->title, title_glow, 0x00000000);
@@ -8935,6 +9033,7 @@ static void draw_window(struct window *win) {
   /* File Manager */
   else if (win->title[0] == 'F' && win->title[1] == 'i' &&
            win->title[2] == 'l') {
+    const gui_theme_palette_t *theme = gui_theme_palette();
     struct fm_state *st = (struct fm_state *)win->userdata;
     const char *path = st ? st->path : "/";
     struct fm_item items[FM_MAX_ITEMS];
@@ -8966,9 +9065,9 @@ static void draw_window(struct window *win) {
     int name_text_x = list_x + 48;
     int name_max_px = size_col_x - name_text_x - 12;
 
-    gui_draw_rect(content_x, content_y, content_w, content_h, 0x171A24);
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->file_bg);
 
-    gui_draw_rect(content_x, content_y, content_w, toolbar_h, 0x111827);
+    gui_draw_rect(content_x, content_y, content_w, toolbar_h, theme->file_toolbar);
     gui_draw_rect(content_x + 10, content_y + 10, 64, 30, 0x334155);
     gui_draw_string(content_x + 28, content_y + 19, "Back", 0xFFFFFF, 0x334155);
     gui_draw_rect(content_x + 82, content_y + 10, 84, 30, 0x1D4ED8);
@@ -8981,13 +9080,13 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 356, content_y + 19, "Disks", 0xFFFFFF, 0x2563EB);
 
     gui_draw_rect(content_x + 8, content_y + toolbar_h + 4, content_w - 16, 42,
-                  0x1F2937);
+                  theme->file_path);
     gui_draw_string(content_x + 18, content_y + toolbar_h + 10, "Location",
-                    0x93C5FD, 0x1F2937);
-    gui_draw_string(content_x + 90, content_y + toolbar_h + 10, path, 0xFFFFFF,
-                    0x1F2937);
+                    0x93C5FD, theme->file_path);
+    gui_draw_string(content_x + 90, content_y + toolbar_h + 10, path,
+                    theme->file_text, theme->file_path);
     gui_draw_string(content_x + content_w - 130, content_y + toolbar_h + 10,
-                    "Folders", 0x9CA3AF, 0x1F2937);
+                    "Folders", theme->file_subtext, theme->file_path);
 
     char count_buf[16];
     count_buf[0] = '\0';
@@ -8997,11 +9096,12 @@ static void draw_window(struct window *win) {
     count_buf[count_idx++] = (char)('0' + (folder_count % 10));
     count_buf[count_idx] = '\0';
     gui_draw_string(content_x + content_w - 74, content_y + toolbar_h + 10,
-                    count_buf, 0xFFFFFF, 0x1F2937);
+                    count_buf, theme->file_text, theme->file_path);
 
     gui_draw_rect(sidebar_x, sidebar_y, sidebar_w - 16, content_h - toolbar_h - 16,
-                  0x111827);
-    gui_draw_string(sidebar_x + 12, sidebar_y + 14, "Places", 0xFFFFFF, 0x111827);
+                  theme->file_sidebar);
+    gui_draw_string(sidebar_x + 12, sidebar_y + 14, "Places", theme->file_text,
+                    theme->file_sidebar);
 
     const char *places[] = {"/", "/Desktop", "/Documents", "/Pictures", "/Music",
                             "/Users", "/External", GUI_SYSTEM_APPS_FOLDER};
@@ -9009,32 +9109,35 @@ static void draw_window(struct window *win) {
                             "Users", "External", "System Apps"};
     for (int i = 0; i < 8; i++) {
       int row_y = sidebar_y + 34 + i * 30;
-      uint32_t row_bg = (st && str_cmp(st->path, places[i]) == 0) ? 0x1D4ED8 : 0x1F2937;
+      uint32_t row_bg = (st && str_cmp(st->path, places[i]) == 0) ? theme->accent
+                                                                  : theme->file_path;
       gui_draw_rect(sidebar_x + 8, row_y, sidebar_w - 32, 24, row_bg);
       gui_draw_string(sidebar_x + 16, row_y + 6, labels[i], 0xFFFFFF, row_bg);
     }
 
     gui_draw_rect(list_x, content_y + toolbar_h + 8, list_w, content_h - toolbar_h - 16,
-                  0x0F172A);
+                  theme->file_list);
     gui_draw_rect(details_w > 0 ? content_x + content_w - details_w - 8 : content_x,
                   content_y + toolbar_h + 8, details_w, content_h - toolbar_h - 16,
-                  0x111827);
+                  theme->file_details);
     gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 22,
-                    "Details", 0xFFFFFF, 0x111827);
+                    "Details", theme->file_text, theme->file_details);
 
-    gui_draw_rect(list_x + 8, content_y + toolbar_h + 18, list_w - 16, 24, 0x172033);
-    gui_draw_string(list_x + 18, content_y + toolbar_h + 24, "Name", 0x93C5FD, 0x172033);
+    gui_draw_rect(list_x + 8, content_y + toolbar_h + 18, list_w - 16, 24,
+                  theme->file_header);
+    gui_draw_string(list_x + 18, content_y + toolbar_h + 24, "Name", 0x93C5FD,
+                    theme->file_header);
     gui_draw_string(size_col_x, content_y + toolbar_h + 24, "Size",
-                    0x93C5FD, 0x172033);
+                    0x93C5FD, theme->file_header);
     gui_draw_string(type_col_x, content_y + toolbar_h + 24, "Type",
-                    0x93C5FD, 0x172033);
+                    0x93C5FD, theme->file_header);
 
     if (item_count < 0) {
       gui_draw_string(list_x + 16, list_y + 10, "Failed to open directory",
-                      0xFCA5A5, 0x0F172A);
+                      0xFCA5A5, theme->file_list);
     } else if (item_count == 0) {
       gui_draw_string(list_x + 16, list_y + 10, "This folder is empty.",
-                      0xCBD5E1, 0x0F172A);
+                      theme->file_subtext, theme->file_list);
     } else {
       // Dedup tracking
       char seen[256][256];
@@ -9055,7 +9158,9 @@ static void draw_window(struct window *win) {
         str_copy_safe(seen[seen_count++], items[i].name, 256);
         int row_y = list_y + displayed * row_h;
         int is_selected = (selected_index == i);
-        uint32_t row_bg = is_selected ? 0x1D4ED8 : (displayed % 2 ? 0x111827 : 0x0F172A);
+        uint32_t row_bg = is_selected ? theme->file_row_selected
+                                      : (displayed % 2 ? theme->file_row_odd
+                                                       : theme->file_row_even);
         uint32_t icon_color = 0xFFFFFF;
         const unsigned char *icon =
             fm_icon_for_item(items[i].name, items[i].type, &icon_color);
@@ -9069,17 +9174,18 @@ static void draw_window(struct window *win) {
                        sizeof(size_buf));
         gui_draw_rect(list_x + 8, row_y, list_w - 16, row_h - 4, row_bg);
         draw_icon(list_x + 14, row_y + 6, 24, icon, icon_color, row_bg);
-        gui_draw_string(name_text_x, row_y + 14, short_name, 0xFFFFFF, row_bg);
+        gui_draw_string(name_text_x, row_y + 14, short_name, theme->file_text,
+                        row_bg);
         gui_draw_string(size_col_x, row_y + 14, size_buf,
-                        is_selected ? 0xDBEAFE : 0xCBD5E1, row_bg);
+                        is_selected ? 0xDBEAFE : theme->file_subtext, row_bg);
         gui_draw_string(type_col_x, row_y + 14, type_label,
-                        is_selected ? 0xDBEAFE : 0x94A3B8, row_bg);
+                        is_selected ? 0xDBEAFE : theme->file_subtext, row_bg);
         displayed++;
       }
     }
 
     gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 54,
-                    "Items", 0x93C5FD, 0x111827);
+                    "Items", 0x93C5FD, theme->file_details);
     char items_buf[16];
     items_buf[0] = '\0';
     int items_idx = 0;
@@ -9090,10 +9196,10 @@ static void draw_window(struct window *win) {
     items_buf[items_idx++] = (char)('0' + (item_count % 10));
     items_buf[items_idx] = '\0';
     gui_draw_string(content_x + content_w - details_w + 58, content_y + toolbar_h + 54,
-                    items_buf, 0xFFFFFF, 0x111827);
+                    items_buf, theme->file_text, theme->file_details);
 
     gui_draw_string(content_x + content_w - details_w + 8, content_y + toolbar_h + 78,
-                    "Selected", 0x93C5FD, 0x111827);
+                    "Selected", 0x93C5FD, theme->file_details);
     if (selected_index >= 0) {
       char selected_short[32];
       char selected_size[24];
@@ -9102,32 +9208,33 @@ static void draw_window(struct window *win) {
       fm_format_size(items[selected_index].size_bytes, items[selected_index].type,
                      selected_size, sizeof(selected_size));
       gui_draw_string(content_x + content_w - details_w + 8,
-                      content_y + toolbar_h + 100, selected_short, 0xFFFFFF,
-                      0x111827);
+                      content_y + toolbar_h + 100, selected_short,
+                      theme->file_text, theme->file_details);
       gui_draw_string(content_x + content_w - details_w + 8,
                       content_y + toolbar_h + 124,
                       fm_type_label(items[selected_index].name,
                                     items[selected_index].type),
-                      0xA5B4FC, 0x111827);
+                      0xA5B4FC, theme->file_details);
       gui_draw_string(content_x + content_w - details_w + 8,
-                      content_y + toolbar_h + 148, selected_size, 0xCBD5E1,
-                      0x111827);
+                      content_y + toolbar_h + 148, selected_size,
+                      theme->file_subtext, theme->file_details);
       gui_draw_string(content_x + content_w - details_w + 8,
                       content_y + toolbar_h + 172,
                       items[selected_index].type == 4 ? "Open: click twice"
                                                      : "Open: click twice",
-                      0x94A3B8, 0x111827);
+                      theme->file_subtext, theme->file_details);
     } else {
       gui_draw_string(content_x + content_w - details_w + 8,
                       content_y + toolbar_h + 100, "Nothing selected",
-                      0x94A3B8, 0x111827);
+                      theme->file_subtext, theme->file_details);
     }
 
     gui_draw_string(content_x + content_w - details_w + 8,
-                    content_y + content_h - 40, "Quick access", 0x93C5FD, 0x111827);
+                    content_y + content_h - 40, "Quick access", 0x93C5FD,
+                    theme->file_details);
     gui_draw_string(content_x + content_w - details_w + 8,
                     content_y + content_h - 22, "Root Desktop Docs",
-                    0xCBD5E1, 0x111827);
+                    theme->file_subtext, theme->file_details);
 
     if (st && st->context_menu_visible) {
       int menu_x = win->x + st->context_menu_x;
@@ -9297,6 +9404,7 @@ static void draw_window(struct window *win) {
   /* About window */
   else if (win->title[0] == 'A' && win->title[1] == 'b' &&
            win->title[2] == 'o') {
+    const gui_theme_palette_t *theme = gui_theme_palette();
     char resolution[32];
     char windows_info[32];
     const char *gpu_status;
@@ -9339,60 +9447,78 @@ static void draw_window(struct window *win) {
       blur_status = "Blur disabled";
     }
 
-    gui_draw_rect(content_x, content_y, content_w, content_h, 0xEEF2F7);
-    gui_draw_rect(hero_x, hero_y, hero_w, hero_h, 0x1F2937);
-    gui_draw_rect(hero_x, hero_y, 6, hero_h, 0x2563EB);
-    gui_draw_os_logo(hero_x + 18, hero_y + 18, 3, 0xE2E8F0, 0x93C5FD, 0x1F2937);
-    gui_draw_string(hero_x + 78, hero_y + 18, "OS8", 0xFFFFFF, 0x1F2937);
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->about_bg);
+    gui_draw_rect(hero_x, hero_y, hero_w, hero_h, theme->about_hero);
+    gui_draw_rect(hero_x, hero_y, 6, hero_h, theme->accent);
+    gui_draw_os_logo(hero_x + 18, hero_y + 18, 3, 0xE2E8F0, 0x93C5FD,
+                     theme->about_hero);
+    gui_draw_string(hero_x + 78, hero_y + 18, "OS8", 0xFFFFFF, theme->about_hero);
     gui_draw_string(hero_x + 78, hero_y + 40, "Version 8.0.0", 0xBFDBFE,
-                    0x1F2937);
+                    theme->about_hero);
     gui_draw_string(hero_x + 78, hero_y + 62,
                     "Desktop compositor build with wallpapers, settings, and apps.",
-                    0xCBD5E1, 0x1F2937);
-    gui_draw_rect(hero_x + hero_w - 150, hero_y + 18, 118, 26, 0x2563EB);
+                    0xCBD5E1, theme->about_hero);
+    gui_draw_rect(hero_x + hero_w - 150, hero_y + 18, 118, 26, theme->accent);
     gui_draw_string(hero_x + hero_w - 128, hero_y + 27, "System About", 0xFFFFFF,
-                    0x2563EB);
+                    theme->accent);
     gui_draw_string(hero_x + hero_w - 136, hero_y + 58, windows_info, 0xA5B4FC,
-                    0x1F2937);
+                    theme->about_hero);
 
-    gui_draw_rect(left_col_x, col_y, col_w, info_h, 0xFFFFFF);
-    gui_draw_rect(left_col_x, col_y, col_w, 3, 0x111827);
-    gui_draw_string(left_col_x + 14, col_y + 14, "Platform", 0x111827, 0xFFFFFF);
-    gui_draw_string(left_col_x + 14, col_y + 38, arch_info, 0x374151, 0xFFFFFF);
-    gui_draw_string(left_col_x + 14, col_y + 58, "Kernel: OS8 v8.0.0", 0x374151,
-                    0xFFFFFF);
+    gui_draw_rect(left_col_x, col_y, col_w, info_h, theme->about_card);
+    gui_draw_rect(left_col_x, col_y, col_w, 3, theme->settings_border);
+    gui_draw_string(left_col_x + 14, col_y + 14, "Platform", theme->about_text,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 38, arch_info, theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 58, "Kernel: OS8 v8.0.0",
+                    theme->about_subtext, theme->about_card);
     gui_draw_string(left_col_x + 14, col_y + 78, "Desktop: Window compositor active",
-                    0x374151, 0xFFFFFF);
-    gui_draw_string(left_col_x + 14, col_y + 98, "Graphics:", 0x6B7280, 0xFFFFFF);
-    gui_draw_string(left_col_x + 90, col_y + 98, gpu_status, 0x1D4ED8, 0xFFFFFF);
+                    theme->about_subtext, theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 98, "Graphics:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 90, col_y + 98, gpu_status, theme->accent,
+                    theme->about_card);
 
-    gui_draw_rect(right_col_x, col_y, col_w, info_h, 0xFFFFFF);
-    gui_draw_rect(right_col_x, col_y, col_w, 3, 0x2563EB);
-    gui_draw_string(right_col_x + 14, col_y + 14, "Session", 0x111827, 0xFFFFFF);
-    gui_draw_string(right_col_x + 14, col_y + 38, "Display:", 0x6B7280, 0xFFFFFF);
-    gui_draw_string(right_col_x + 82, col_y + 38, resolution, 0x374151, 0xFFFFFF);
-    gui_draw_string(right_col_x + 14, col_y + 58, "Backend:", 0x6B7280, 0xFFFFFF);
-    gui_draw_string(right_col_x + 82, col_y + 58, g_gpu_backend_name, 0x374151,
-                    0xFFFFFF);
-    gui_draw_string(right_col_x + 14, col_y + 78, "Effects:", 0x6B7280, 0xFFFFFF);
-    gui_draw_string(right_col_x + 82, col_y + 78, blur_status, 0x7C3AED, 0xFFFFFF);
-    gui_draw_string(right_col_x + 14, col_y + 98, "Desktop:", 0x6B7280, 0xFFFFFF);
+    gui_draw_rect(right_col_x, col_y, col_w, info_h, theme->about_card);
+    gui_draw_rect(right_col_x, col_y, col_w, 3, theme->accent);
+    gui_draw_string(right_col_x + 14, col_y + 14, "Session", theme->about_text,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 38, "Display:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 82, col_y + 38, resolution, theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 58, "Backend:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 82, col_y + 58, g_gpu_backend_name,
+                    theme->about_subtext, theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 78, "Effects:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 82, col_y + 78, blur_status, theme->accent_soft,
+                    theme->about_card);
+    gui_draw_string(right_col_x + 14, col_y + 98, "Desktop:", theme->about_subtext,
+                    theme->about_card);
     gui_draw_string(right_col_x + 82, col_y + 98, "Wallpaper + dock environment",
-                    0x374151, 0xFFFFFF);
+                    theme->about_subtext, theme->about_card);
 
-    gui_draw_rect(hero_x, footer_y, hero_w, 52, 0xE5E7EB);
-    gui_draw_string(hero_x + 14, footer_y + 10, "Build UUID", 0x374151, 0xE5E7EB);
-    gui_draw_string(hero_x + 14, footer_y + 28, BUILD_UUID, 0x6B7280, 0xE5E7EB);
+    gui_draw_rect(hero_x, footer_y, hero_w, 52, theme->about_footer);
+    gui_draw_string(hero_x + 14, footer_y + 10, "Build UUID", theme->about_text,
+                    theme->about_footer);
+    gui_draw_string(hero_x + 14, footer_y + 28, BUILD_UUID, theme->about_subtext,
+                    theme->about_footer);
     gui_draw_string(hero_x + hero_w - 160, footer_y + 28, "(c) 2027 Benno111",
-                    0x6B7280, 0xE5E7EB);
+                    theme->about_subtext, theme->about_footer);
   }
   /* Settings window */
   else if (win->title[0] == 'S' && win->title[1] == 'e' &&
            win->title[2] == 't') {
+    const gui_theme_palette_t *theme = gui_theme_palette();
     char resolution[32];
     char windows_info[32];
     const char *blur_status;
     const char *gpu_status;
+    const char *theme_status =
+        g_theme_mode == GUI_THEME_LIGHT ? "Theme: Light mode active"
+                                        : "Theme: Dark mode active";
     extern int intel_hda_is_playing(void);
     int sidebar_w = 104;
     int divider_x = content_x + sidebar_w;
@@ -9439,28 +9565,31 @@ static void draw_window(struct window *win) {
     append_decimal(installed_buf, &dock_count_buf_idx, installed_apps);
     notepad_append_to_buf(installed_buf, sizeof(installed_buf), " installed");
 
-    gui_draw_rect(content_x, content_y, content_w, content_h, 0xF2F2F2);
-    gui_draw_rect(content_x, content_y, content_w, 3, 0x111111);
-    gui_draw_rect(content_x, content_y + 39, content_w, 3, 0x111111);
-    gui_draw_rect(divider_x, content_y + 39, 3, content_h - 39, 0x111111);
-    gui_draw_string(content_x + 18, content_y + 15, "OS SETTINGS", 0x111111,
-                    0xF2F2F2);
+    gui_draw_rect(content_x, content_y, content_w, content_h, theme->settings_bg);
+    gui_draw_rect(content_x, content_y, content_w, 3, theme->settings_border);
+    gui_draw_rect(content_x, content_y + 39, content_w, 3, theme->settings_border);
+    gui_draw_rect(divider_x, content_y + 39, 3, content_h - 39,
+                  theme->settings_border);
+    gui_draw_string(content_x + 18, content_y + 15, "OS SETTINGS",
+                    theme->settings_text, theme->settings_bg);
 
     for (int i = 0; i < SETTINGS_MENU_COUNT; i++) {
       int tab_y = content_y + 56 + i * 28;
-      uint32_t tab_bg = i == settings_active_tab ? 0x111111 : 0xF2F2F2;
-      uint32_t tab_fg = i == settings_active_tab ? 0xF2F2F2 : 0x111111;
+      uint32_t tab_bg = i == settings_active_tab ? theme->settings_tab_active
+                                                 : theme->settings_tab_inactive;
+      uint32_t tab_fg = i == settings_active_tab ? theme->settings_bg
+                                                 : theme->settings_text;
       gui_draw_rect(content_x + 10, tab_y, sidebar_w - 20, 18, tab_bg);
       gui_draw_string(content_x + 16, tab_y + 5, settings_menu_labels[i], tab_fg,
                       tab_bg);
     }
 
-    gui_draw_rect(panel_x, panel_y, panel_w - 3, panel_h - 3, 0xF8F8F8);
+    gui_draw_rect(panel_x, panel_y, panel_w - 3, panel_h - 3, theme->settings_panel);
     gui_draw_string(panel_x + 18, panel_y + 16,
-                    settings_page_heading(settings_active_tab), 0x111111,
-                    0xF8F8F8);
-    gui_draw_string(panel_x + 18, panel_y + 34, settings_status, 0x4A4A4A,
-                    0xF8F8F8);
+                    settings_page_heading(settings_active_tab), theme->settings_text,
+                    theme->settings_panel);
+    gui_draw_string(panel_x + 18, panel_y + 34, settings_status,
+                    theme->settings_subtext, theme->settings_panel);
 
     if (settings_active_tab == 0) {
       int card_y = panel_y + 72;
@@ -9577,7 +9706,7 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 210, preview_y + 72, blur_status, 0xA5B4FC, 0x252535);
 
       preview_y += 104;
-      gui_draw_rect(panel_x, preview_y, panel_w, 72, 0x252535);
+      gui_draw_rect(panel_x, preview_y, panel_w, 104, 0x252535);
       gui_draw_string(panel_x + 16, preview_y + 12, "Visual effects", 0x89B4FA,
                       0x252535);
       gui_draw_string(panel_x + 16, preview_y + 30, gpu_status, 0xFFFFFF, 0x252535);
@@ -9585,12 +9714,22 @@ static void draw_window(struct window *win) {
                       0x252535);
       gui_draw_string(panel_x + 200, preview_y + 30, blur_status, 0xA5B4FC,
                       0x252535);
-      gui_draw_string(panel_x + 200, preview_y + 46,
+      gui_draw_string(panel_x + 200, preview_y + 46, theme_status, 0xF9A8D4,
+                      0x252535);
+      gui_draw_string(panel_x + 200, preview_y + 62,
                       dock_is_visible() ? "Dock is visible on this boot mode"
                                         : "Dock hidden in current mode",
                       0xCBD5E1, 0x252535);
+      gui_draw_rect(panel_x + 16, preview_y + 72, 110, 22,
+                    g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+      gui_draw_string(panel_x + 44, preview_y + 79, "Light Mode", 0xFFFFFF,
+                      g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+      gui_draw_rect(panel_x + 136, preview_y + 72, 110, 22,
+                    g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+      gui_draw_string(panel_x + 170, preview_y + 79, "Dark Mode", 0xFFFFFF,
+                      g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
 
-      resolution_card_y = preview_y + 84;
+      resolution_card_y = preview_y + 116;
       gui_draw_rect(panel_x, resolution_card_y, panel_w, 96, 0x252535);
       gui_draw_string(panel_x + 16, resolution_card_y + 12, "Display resolution",
                       0x89B4FA, 0x252535);
@@ -10955,6 +11094,7 @@ static void draw_main_menu_power_dropdown(void) {
 }
 
 static void draw_main_menu_panel(void) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   int panel_x, panel_y, panel_w, panel_h;
   int launcher_x, launcher_y, launcher_w, launcher_h;
   int connector_x;
@@ -10976,25 +11116,27 @@ static void draw_main_menu_panel(void) {
   gui_fill_rect_alpha(connector_x + 4, panel_y + panel_h - 2, 20, 16,
                       0x24050910);
 
-  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0x6A2C3446,
-                       0x42FFFFFF, 0x8C75839A, 2);
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, theme->menu_tint,
+                       theme->menu_glow, theme->menu_border, 2);
   gui_fill_rect_alpha(panel_x + BORDER_WIDTH, panel_y + BORDER_WIDTH,
-                      panel_w - BORDER_WIDTH * 2, TITLEBAR_HEIGHT, 0x344D6488);
+                      panel_w - BORDER_WIDTH * 2, TITLEBAR_HEIGHT,
+                      theme->menu_title);
   gui_fill_rect_alpha(panel_x + BORDER_WIDTH,
                       panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT - 1,
-                      panel_w - BORDER_WIDTH * 2, 1, 0x48DCE8F5);
+                      panel_w - BORDER_WIDTH * 2, 1, theme->title_line_top);
 
   gui_draw_string(panel_x + 21, panel_y + 8, "OS 8", 0xFFF7FBFF,
                   0x00000000);
   gui_fill_rect_alpha(panel_x + BORDER_WIDTH, panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT,
                       MAIN_MENU_LEFT_W - BORDER_WIDTH, panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,
-                      0x141824);
+                      theme->menu_left);
   gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W, panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT,
                       panel_w - MAIN_MENU_LEFT_W - BORDER_WIDTH, panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,
-                      0x1F2937);
+                      theme->menu_right);
   gui_fill_rect_alpha(panel_x + MAIN_MENU_LEFT_W - 1,
                       panel_y + BORDER_WIDTH + TITLEBAR_HEIGHT, 1,
-                      panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2, 0x30566C86);
+                      panel_h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2,
+                      theme->menu_divider);
 
   gui_fill_rect_alpha(panel_x + 14, panel_y + 40, 42, 42, 0x40556F92);
   draw_filled_circle(panel_x + 35, panel_y + 61, 16, 0xFFFFFFFF);
@@ -11381,6 +11523,7 @@ static void draw_dock_status_indicators(int dock_y, int dock_h) {
 }
 
 static void draw_dock(void) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
   if (!dock_is_visible())
     return;
   if (!gui_is_installer_mode()) {
@@ -11418,11 +11561,14 @@ static void draw_dock(void) {
     }
   }
 
-  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, dock_h, 0xA118202C);
-  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, 1, 0x72FFFFFF);
-  gui_fill_rect_alpha(dock_x, dock_y + 1, primary_display.width, 1, 0x28495D78);
+  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, dock_h,
+                      theme->dock_fill);
+  gui_fill_rect_alpha(dock_x, dock_y, primary_display.width, 1,
+                      theme->dock_top_line);
+  gui_fill_rect_alpha(dock_x, dock_y + 1, primary_display.width, 1,
+                      theme->dock_top_shadow);
   gui_fill_rect_alpha(dock_x, dock_y + dock_h - 1, primary_display.width, 1,
-                      0x64060A10);
+                      theme->dock_bottom_line);
 
   draw_main_menu_panel();
 
@@ -11433,13 +11579,13 @@ static void draw_dock(void) {
 
   gui_fill_rect_alpha(launcher_btn_x, launcher_btn_y, launcher_btn_w,
                       launcher_btn_h,
-                      menu_open ? 0x5A78A9DA
-                                : (hovered_launcher ? 0x36566F92
-                                                    : 0x2437455B));
+                      menu_open ? theme->dock_launcher_active
+                                : (hovered_launcher ? theme->dock_launcher_hover
+                                                    : theme->dock_launcher));
   gui_draw_rect_outline(launcher_btn_x, launcher_btn_y, launcher_btn_w,
                         launcher_btn_h,
-                        menu_open ? 0xB8E8FFFF
-                                  : (hovered_launcher ? 0x7EA7D8 : 0x506A87A8),
+                        menu_open ? theme->title_line_top
+                                  : theme->dock_launcher_border,
                         1);
   if (gui_draw_embedded_logo(launcher_btn_x + 8, launcher_btn_y + 7, 28, 28) != 0) {
     gui_draw_os_logo(launcher_btn_x + 10, launcher_btn_y + 9, 2, 0xFFFFFF,
@@ -13096,7 +13242,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             break;
           }
         } else if (settings_active_tab == 3) {
-          int resolution_card_y = panel_y + 72 + 104 + 84;
+          int theme_button_y = panel_y + 72 + 104 + 72;
+          int resolution_card_y = panel_y + 72 + 104 + 116;
           int button_y = resolution_card_y + 66;
           int picked_resolution = 0;
 
@@ -13115,6 +13262,21 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (picked_resolution)
             break;
+
+          if (x >= panel_x + 16 && x < panel_x + 126 && y >= theme_button_y &&
+              y < theme_button_y + 22) {
+            gui_set_theme_mode(GUI_THEME_LIGHT);
+            str_copy_safe(settings_status, "Light mode applied.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 136 && x < panel_x + 246 && y >= theme_button_y &&
+              y < theme_button_y + 22) {
+            gui_set_theme_mode(GUI_THEME_DARK);
+            str_copy_safe(settings_status, "Dark mode applied.",
+                          sizeof(settings_status));
+            break;
+          }
 
           if (x >= panel_x + 8 && x < panel_x + 98 && y >= button_y &&
               y < button_y + 24) {
