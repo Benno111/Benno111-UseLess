@@ -380,23 +380,26 @@ static int current_wallpaper = DEFAULT_WALLPAPER_INDEX;
 
 /* Wallpaper types: 0 = gradient, 1 = image */
 /* Wallpaper types: 0 = gradient, 1 = image */
+#define WALLPAPER_FIT_COVER 0
+#define WALLPAPER_FIT_STRETCH 1
 static struct {
   int type;           /* 0 = gradient, 1 = JPEG image */
   uint8_t tr, tg, tb; /* Gradient: Top color */
   uint8_t br, bg, bb; /* Gradient: Bottom color */
+  int fit_mode;       /* Image fit mode */
   const char *name;   /* Display name */
   const char *path;   /* Image path (for type=1) */
 } wallpapers[NUM_WALLPAPERS] = {
-    {1, 38, 72, 120, 16, 30, 58, "Landscape", "/assets/wallpapers/landscape.png"},
-    {1, 26, 92, 82, 9, 37, 48, "Nature", "/assets/wallpapers/nature.jpg"},
-    {1, 84, 108, 148, 26, 33, 52, "City", "/assets/wallpapers/city.jpg"},
-    {1, 124, 82, 126, 48, 28, 64, "Portrait", "/assets/wallpapers/portrait.jpg"},
-    {1, 58, 88, 118, 22, 28, 46, "Default", "/assets/wallpapers/default.jpg"},
-    {0, 30, 27, 75, 15, 27, 62, "Indigo Night", NULL},
-    {0, 20, 60, 100, 10, 30, 60, "Ocean Blue", NULL},
-    {0, 60, 20, 60, 30, 15, 45, "Purple Haze", NULL},
-    {0, 20, 20, 20, 5, 5, 10, "Midnight", NULL},
-    {0, 80, 60, 30, 40, 30, 20, "Golden Hour", NULL},
+    {1, 38, 72, 120, 16, 30, 58, WALLPAPER_FIT_COVER, "Landscape", "/assets/wallpapers/landscape.png"},
+    {1, 26, 92, 82, 9, 37, 48, WALLPAPER_FIT_COVER, "Nature", "/assets/wallpapers/nature.jpg"},
+    {1, 84, 108, 148, 26, 33, 52, WALLPAPER_FIT_COVER, "City", "/assets/wallpapers/city.jpg"},
+    {1, 124, 82, 126, 48, 28, 64, WALLPAPER_FIT_COVER, "Portrait", "/assets/wallpapers/portrait.jpg"},
+    {1, 58, 88, 118, 22, 28, 46, WALLPAPER_FIT_STRETCH, "Default", "/assets/wallpapers/default.jpg"},
+    {0, 30, 27, 75, 15, 27, 62, WALLPAPER_FIT_COVER, "Indigo Night", NULL},
+    {0, 20, 60, 100, 10, 30, 60, WALLPAPER_FIT_COVER, "Ocean Blue", NULL},
+    {0, 60, 20, 60, 30, 15, 45, WALLPAPER_FIT_COVER, "Purple Haze", NULL},
+    {0, 20, 20, 20, 5, 5, 10, WALLPAPER_FIT_COVER, "Midnight", NULL},
+    {0, 80, 60, 30, 40, 30, 20, WALLPAPER_FIT_COVER, "Golden Hour", NULL},
 };
 
 /* Cached wallpaper image for desktop background */
@@ -1693,6 +1696,14 @@ struct display {
 
 static struct display primary_display = {0};
 
+static inline int wallpaper_stretch_coord(int dst, int dst_size, int src_size) {
+  if (dst_size <= 1 || src_size <= 1)
+    return 0;
+
+  return (int)(((uint64_t)dst * (uint64_t)(src_size - 1)) /
+               (uint64_t)(dst_size - 1));
+}
+
 /*
  * Map a destination coordinate into source image space using a centered
  * cover scale so photo wallpapers fill the screen without distortion.
@@ -1747,14 +1758,21 @@ static uint32_t wallpaper_get_pixel(int x, int y, int height) {
 
   if (wallpapers[idx].type == 1 && wallpaper_image.pixels && width > 0 &&
       height > 0) {
-    int img_x = wallpaper_cover_coord(x, width, (int)wallpaper_image.width,
-                                      width, height,
-                                      (int)wallpaper_image.width,
-                                      (int)wallpaper_image.height);
-    int img_y = wallpaper_cover_coord(y, height, (int)wallpaper_image.height,
-                                      width, height,
-                                      (int)wallpaper_image.width,
-                                      (int)wallpaper_image.height);
+    int img_x;
+    int img_y;
+    if (wallpapers[idx].fit_mode == WALLPAPER_FIT_STRETCH) {
+      img_x = wallpaper_stretch_coord(x, width, (int)wallpaper_image.width);
+      img_y = wallpaper_stretch_coord(y, height, (int)wallpaper_image.height);
+    } else {
+      img_x = wallpaper_cover_coord(x, width, (int)wallpaper_image.width,
+                                    width, height,
+                                    (int)wallpaper_image.width,
+                                    (int)wallpaper_image.height);
+      img_y = wallpaper_cover_coord(y, height, (int)wallpaper_image.height,
+                                    width, height,
+                                    (int)wallpaper_image.width,
+                                    (int)wallpaper_image.height);
+    }
     if (img_x >= 0 && img_x < (int)wallpaper_image.width && img_y >= 0 &&
         img_y < (int)wallpaper_image.height) {
       return wallpaper_image.pixels[img_y * wallpaper_image.width + img_x];
@@ -10833,10 +10851,12 @@ static void draw_window(struct window *win) {
     const char *wallpaper_kind =
         wallpapers[current_wallpaper].type == 1 ? "Photo-based scene"
                                                 : "Gradient theme";
-    const char *picker_hint =
-        wallpapers[current_wallpaper].type == 1
-            ? "Scaled to cover the desktop surface."
-            : "Gradient colors render directly on the framebuffer.";
+    const char *picker_hint = wallpapers[current_wallpaper].type == 1
+                                  ? (wallpapers[current_wallpaper].fit_mode ==
+                                             WALLPAPER_FIT_STRETCH
+                                         ? "Stretched to fill the desktop."
+                                         : "Scaled to cover the desktop surface.")
+                                  : "Gradient colors render directly on the framebuffer.";
 
     if (gui_are_blur_effects_enabled()) {
       blur_picker_status = "Blur: On";
@@ -12010,14 +12030,17 @@ static void render_wallpaper_cache(void) {
 
     for (int y = 0; y < height; y++) {
       uint32_t *line = cached_wallpaper + y * width;
-      int src_y =
-          wallpaper_cover_coord(y, height, (int)img_h, width, height,
-                                (int)img_w, (int)img_h);
+      int src_y = wallpapers[current_wallpaper].fit_mode == WALLPAPER_FIT_STRETCH
+                      ? wallpaper_stretch_coord(y, height, (int)img_h)
+                      : wallpaper_cover_coord(y, height, (int)img_h, width,
+                                              height, (int)img_w, (int)img_h);
 
       for (int x = 0; x < width; x++) {
         int src_x =
-            wallpaper_cover_coord(x, width, (int)img_w, width, height,
-                                  (int)img_w, (int)img_h);
+            wallpapers[current_wallpaper].fit_mode == WALLPAPER_FIT_STRETCH
+                ? wallpaper_stretch_coord(x, width, (int)img_w)
+                : wallpaper_cover_coord(x, width, (int)img_w, width, height,
+                                        (int)img_w, (int)img_h);
         line[x] = pixels[src_y * img_w + src_x];
       }
     }
