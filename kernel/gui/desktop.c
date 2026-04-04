@@ -1657,7 +1657,7 @@ static void menu_action_change_background(void *ctx) {
   /* Open Background Settings window */
   extern struct window *gui_create_window(const char *title, int x, int y,
                                           int w, int h);
-  gui_create_window("Background Settings", 150, 100, 400, 350);
+  gui_create_window("Background Settings", 150, 100, 460, 360);
 }
 
 /* ===================================================================== */

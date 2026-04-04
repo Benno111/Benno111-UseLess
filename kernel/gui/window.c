@@ -10243,23 +10243,51 @@ static void draw_window(struct window *win) {
   /* Background Settings Window */
   else if (win->title[0] == 'B' && win->title[1] == 'a' &&
            win->title[2] == 'c') {
-    /* Header */
-    gui_draw_rect(content_x, content_y, content_w, 40, 0x27272A);
+    int header_h = 42;
+    int body_y = content_y + header_h;
+    int body_h = content_h - header_h;
+    int card_x = content_x + 12;
+    int card_y = body_y + 12;
+    int card_w = content_w - 24;
+    int card_h = body_h - 24;
+    int grid_x = card_x + 14;
+    int grid_y = card_y + 40;
+    int thumb_w = 60;
+    int thumb_h = 40;
+    int gap_x = 10;
+    int gap_y = 18;
+    int columns = 3;
+    int sidebar_x = card_x + 218;
+    int sidebar_w = card_w - (sidebar_x - card_x) - 14;
+    int preview_x = sidebar_x + 10;
+    int preview_y = card_y + 44;
+    int preview_w = sidebar_w - 20;
+    int preview_h = 78;
+    const char *wallpaper_kind =
+        wallpapers[current_wallpaper].type == 1 ? "Photo-based scene"
+                                                : "Gradient theme";
+    const char *picker_hint =
+        wallpapers[current_wallpaper].type == 1
+            ? "Scaled to cover the desktop surface."
+            : "Gradient colors render directly on the framebuffer.";
+
+    gui_draw_rect(content_x, content_y, content_w, content_h, 0x5E616A);
+    gui_draw_rect(content_x, content_y, content_w, header_h, 0x27272A);
     gui_draw_string(content_x + 15, content_y + 12, "Choose Wallpaper",
                     0xFAFAFA, 0x27272A);
-
-    /* Wallpaper grid - 5 columns, 2 rows */
-    int grid_x = content_x + 15;
-    int grid_y = content_y + 55;
-    int thumb_w = 65;
-    int thumb_h = 45;
-    int gap = 10;
+    gui_draw_rect(card_x, card_y, card_w, card_h, 0xF5F5F7);
+    gui_draw_rect(card_x, card_y, card_w, 3, 0x1F2937);
+    gui_draw_string(card_x + 14, card_y + 14, "Wallpaper Library", 0x111827,
+                    0xF5F5F7);
+    gui_draw_string(card_x + 14, card_y + 28, "Pick a new wallpaper for this account.",
+                    0x6B7280, 0xF5F5F7);
+    gui_draw_rect(sidebar_x, card_y + 12, 2, card_h - 24, 0xD4D4D8);
 
     for (int i = 0; i < NUM_WALLPAPERS; i++) {
-      int col = i % 5;
-      int row = i / 5;
-      int tx = grid_x + col * (thumb_w + gap);
-      int ty = grid_y + row * (thumb_h + gap + 20);
+      int col = i % columns;
+      int row = i / columns;
+      int tx = grid_x + col * (thumb_w + gap_x);
+      int ty = grid_y + row * (thumb_h + gap_y + 18);
 
       /* Draw preview based on type */
       if (wallpapers[i].type == 1) {
@@ -10303,20 +10331,74 @@ static void draw_window(struct window *win) {
       }
 
       /* Border - highlight if selected */
-      uint32_t border_color = (i == current_wallpaper) ? 0x6366F1 : 0x52525B;
+      uint32_t border_color = (i == current_wallpaper) ? 0x2563EB : 0x52525B;
       gui_draw_rect(tx - 2, ty - 2, thumb_w + 4, 2, border_color);
       gui_draw_rect(tx - 2, ty + thumb_h, thumb_w + 4, 2, border_color);
       gui_draw_rect(tx - 2, ty - 2, 2, thumb_h + 4, border_color);
       gui_draw_rect(tx + thumb_w, ty - 2, 2, thumb_h + 4, border_color);
+      if (i == current_wallpaper) {
+        gui_draw_rect(tx - 2, ty + thumb_h + 18, thumb_w + 4, 3, 0x2563EB);
+      }
 
       /* Label */
-      gui_draw_string(tx, ty + thumb_h + 4, wallpapers[i].name, 0xA1A1AA,
-                      THEME_BG);
+      gui_draw_string(tx, ty + thumb_h + 4, wallpapers[i].name,
+                      i == current_wallpaper ? 0x1D4ED8 : 0x52525B, 0xF5F5F7);
     }
 
-    /* Current selection text */
-    gui_draw_string(content_x + 15, content_y + content_h - 30,
-                    "Click to select wallpaper", 0x71717A, THEME_BG);
+    gui_draw_rect(sidebar_x + 10, preview_y, preview_w, preview_h, 0x252535);
+    load_thumbnails();
+    if (wallpapers[current_wallpaper].type == 1 &&
+        thumbnail_cache[current_wallpaper].pixels) {
+      media_image_t *thumb_img = &thumbnail_cache[current_wallpaper];
+      for (int py = 0; py < preview_h - 16; py++) {
+        for (int px = 0; px < preview_w - 16; px++) {
+          int src_x = (px * thumb_img->width) / (preview_w - 16);
+          int src_y = (py * thumb_img->height) / (preview_h - 16);
+          if (src_x < (int)thumb_img->width && src_y < (int)thumb_img->height) {
+            draw_image_pixel(preview_x + 8 + px, preview_y + 8 + py,
+                             thumb_img->pixels[src_y * thumb_img->width + src_x]);
+          }
+        }
+      }
+    } else {
+      for (int py = 0; py < preview_h - 16; py++) {
+        int progress = (py * 256) / (preview_h - 16);
+        uint8_t pr = wallpapers[current_wallpaper].tr +
+                     ((wallpapers[current_wallpaper].br -
+                       wallpapers[current_wallpaper].tr) *
+                      progress) /
+                         256;
+        uint8_t pg = wallpapers[current_wallpaper].tg +
+                     ((wallpapers[current_wallpaper].bg -
+                       wallpapers[current_wallpaper].tg) *
+                      progress) /
+                         256;
+        uint8_t pb = wallpapers[current_wallpaper].tb +
+                     ((wallpapers[current_wallpaper].bb -
+                       wallpapers[current_wallpaper].tb) *
+                      progress) /
+                         256;
+        gui_draw_rect(preview_x + 8, preview_y + 8 + py, preview_w - 16, 1,
+                      (pr << 16) | (pg << 8) | pb);
+      }
+    }
+
+    gui_draw_string(sidebar_x + 10, card_y + 18, "Current wallpaper", 0x93C5FD,
+                    0xF5F5F7);
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 14,
+                    wallpapers[current_wallpaper].name, 0x111827, 0xF5F5F7);
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 34, wallpaper_kind,
+                    0x4B5563, 0xF5F5F7);
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 54, blur_status,
+                    0x6366F1, 0xF5F5F7);
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 74, picker_hint,
+                    0x6B7280, 0xF5F5F7);
+    gui_draw_string(sidebar_x + 10, preview_y + preview_h + 94, g_gpu_backend_name,
+                    0x6B7280, 0xF5F5F7);
+    gui_draw_rect(sidebar_x + 10, card_y + card_h - 42, sidebar_w - 20, 26,
+                  0x1D4ED8);
+    gui_draw_string(sidebar_x + 28, card_y + card_h - 33, "Click a tile to apply",
+                    0xFFFFFF, 0x1D4ED8);
   }
 
   /* Call window's draw callback if set */
@@ -12716,19 +12798,25 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
 
         /* Wallpaper grid layout (matching render) */
-        int grid_x = content_x + 15;
-        int grid_y = content_y + 55;
-        int thumb_w = 65;
-        int thumb_h = 45;
-        int gap = 10;
+        int header_h = 42;
+        int card_x = content_x + 12;
+        int card_y = content_y + header_h + 12;
+        int grid_x = card_x + 14;
+        int grid_y = card_y + 40;
+        int thumb_w = 60;
+        int thumb_h = 40;
+        int gap_x = 10;
+        int gap_y = 18;
+        int columns = 3;
 
         for (int i = 0; i < NUM_WALLPAPERS; i++) {
-          int col = i % 5;
-          int row = i / 5;
-          int tx = grid_x + col * (thumb_w + gap);
-          int ty = grid_y + row * (thumb_h + gap + 20);
+          int col = i % columns;
+          int row = i / columns;
+          int tx = grid_x + col * (thumb_w + gap_x);
+          int ty = grid_y + row * (thumb_h + gap_y + 18);
 
-          if (x >= tx && x < tx + thumb_w && y >= ty && y < ty + thumb_h) {
+          if (x >= tx - 2 && x < tx + thumb_w + 2 && y >= ty - 2 &&
+              y < ty + thumb_h + 20) {
             apply_account_wallpaper(i);
             account_wallpaper = current_wallpaper;
             if (account_username[0] && account_password[0])
@@ -12763,8 +12851,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         if (settings_active_tab == 0) {
           int row_y = panel_y + 72 + 84 + 88;
           if (x >= panel_x && x < panel_x + 108 && y >= row_y && y < row_y + 30) {
-            gui_create_window("Background Settings", win->x + 18, win->y + 18, 400,
-                              350);
+            gui_create_window("Background Settings", win->x + 18, win->y + 18, 460,
+                              360);
             str_copy_safe(settings_status, "Opened background settings.",
                           sizeof(settings_status));
             break;
@@ -12831,8 +12919,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
           if (x >= panel_x + 8 && x < panel_x + 98 && y >= button_y &&
               y < button_y + 24) {
-            gui_create_window("Background Settings", win->x + 18, win->y + 18, 400,
-                              350);
+            gui_create_window("Background Settings", win->x + 18, win->y + 18, 460,
+                              360);
             str_copy_safe(settings_status, "Pick a new wallpaper.",
                           sizeof(settings_status));
             break;
