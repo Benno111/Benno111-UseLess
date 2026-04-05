@@ -31,6 +31,21 @@ int intel_hda_is_device_supported(const pci_device_t *pci_dev) {
   return pci_dev->device_id == HDA_DEVICE_ID;
 }
 
+static int intel_hda_should_init_mmio(const pci_device_t *pci_dev) {
+  if (!pci_dev)
+    return 0;
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  /*
+   * Real Intel HDA controllers on x86 hardware are still sensitive during
+   * bring-up. Keep the legacy/QEMU-safe ID enabled there, but defer the newer
+   * class-matched hardware until a safer native init path exists.
+   */
+  if (pci_dev->device_id != HDA_DEVICE_ID)
+    return 0;
+#endif
+  return 1;
+}
+
 /* Reg Access Helpers */
 static uint32_t hda_read32(uint32_t offset) { return hda_regs[offset / 4]; }
 
@@ -128,6 +143,10 @@ static uint16_t hda_build_format(uint32_t sample_rate, uint8_t channels,
 void intel_hda_init(pci_device_t *pci_dev) {
   if (!intel_hda_is_device_supported(pci_dev)) {
     printk("HDA: Unsupported PCI function for Intel HDA bring-up\n");
+    return;
+  }
+  if (!intel_hda_should_init_mmio(pci_dev)) {
+    printk("HDA: Deferring MMIO init for Intel HD Audio on x86 bring-up path\n");
     return;
   }
   printk("HDA: Initializing...\n");
