@@ -1302,8 +1302,19 @@ static void init_subsystems(void *dtb) {
   /* ================================================================= */
 
   printk(KERN_INFO "[INIT] Enabling interrupts...\n");
+#ifdef ARCH_X86_64
+  /*
+   * Real hardware x86_64 bring-up is still using a conservative polling path.
+   * Enabling IRQs here can reset the machine immediately after the first
+   * desktop frame, so leave interrupts disabled until the legacy IRQ path is
+   * stabilized on real systems.
+   */
+  printk(KERN_WARNING
+         "x86_64: leaving interrupts disabled on the desktop bring-up path\n");
+#else
   /* Enable interrupts */
   arch_irq_enable();
+#endif
   //printk(KERN_INFO
    //      "[INIT] Waiting 1 second after disk initialization before continuing boot...\n");
   //pit_sleep(1000);
