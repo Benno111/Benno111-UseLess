@@ -13299,8 +13299,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       dragging_window->y =
           primary_display.height - dock_reserved_height() - TITLEBAR_HEIGHT -
           WINDOW_BOTTOM_CLEARANCE;
-    if (dragging_window->x < 0)
-      dragging_window->x = 0;
     if (dragging_window->x > (int)primary_display.width - 100)
       dragging_window->x = primary_display.width - 100;
   }
