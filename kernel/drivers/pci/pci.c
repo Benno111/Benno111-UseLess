@@ -22,6 +22,41 @@ static pci_device_t *device_list = NULL;
 /* MMIO allocation for unassigned BARs */
 static uint64_t next_mmio_base = 0x10000000;
 
+static int pci_is_xhci_controller(const pci_device_t *pci_dev) {
+  if (!pci_dev)
+    return 0;
+  return pci_dev->class_code == 0x0C && pci_dev->subclass == 0x03 &&
+         pci_dev->prog_if == 0x30;
+}
+
+static void pci_try_init_xhci_controller(pci_device_t *pci_dev,
+                                         int allow_on_x86) {
+  if (!pci_is_xhci_controller(pci_dev))
+    return;
+
+  printk("PCI: Found xHCI USB controller at %02x:%02x.%x\n", pci_dev->bus,
+         pci_dev->slot, pci_dev->func);
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  if (!allow_on_x86) {
+    printk("PCI: xHCI deferred on x86 bring-up path\n");
+    return;
+  }
+#endif
+
+  pci_enable_device(pci_dev);
+
+  if (pci_dev->bar0) {
+    printk("PCI: xHCI BAR0=0x%llx, IRQ=%d\n", pci_dev->bar0, pci_dev->irq);
+    if (xhci_init(pci_dev->bar0) != 0) {
+      printk("PCI: xHCI initialization failed for %02x:%02x.%x\n",
+             pci_dev->bus, pci_dev->slot, pci_dev->func);
+    }
+  } else {
+    printk("PCI: xHCI controller missing MMIO BAR0, skipping\n");
+  }
+}
+
 /* Helper to calculate ECAM address */
 /* Bus 8 bits, Device 5 bits, Function 3 bits, Offset 12 bits */
 static volatile uint32_t *pci_ecam_addr(uint8_t bus, uint8_t slot, uint8_t func,
@@ -186,8 +221,8 @@ static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {
 
   storage_register_pci_controller(pci_dev);
 
-  if (vendor == HDA_VENDOR_ID && device == HDA_DEVICE_ID) {
-    printk("PCI: Found Inteal HDA Audio Controller!\n");
+  if (intel_hda_is_device_supported(pci_dev)) {
+    printk("PCI: Found Intel HDA Audio Controller!\n");
     printk("PCI: HDA BAR0=0x%llx, IRQ=%d\n", pci_dev->bar0, pci_dev->irq);
     intel_hda_init(pci_dev);
   }
@@ -204,33 +239,14 @@ static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {
     printk("PCI: virtio-gpu BAR0=0x%llx\n", pci_dev->bar0);
   }
 
-  if (pci_dev->class_code == 0x0C && pci_dev->subclass == 0x03 &&
-      pci_dev->prog_if == 0x30) {
-    printk("PCI: Found xHCI USB controller at %02x:%02x.%x\n", bus, slot,
-           func);
-
-#if defined(ARCH_X86_64) || defined(ARCH_X86)
-    if (!boot_allow_xhci()) {
-      printk("PCI: xHCI disabled on x86 bring-up path (set cmdline: xhci=on to enable)\n");
-      return;
-    }
-#endif
-
-    pci_enable_device(pci_dev);
-
-    if (pci_dev->bar0) {
-      printk("PCI: xHCI BAR0=0x%llx, IRQ=%d\n", pci_dev->bar0, pci_dev->irq);
-      if (xhci_init(pci_dev->bar0) != 0) {
-        printk("PCI: xHCI initialization failed for %02x:%02x.%x\n", bus, slot,
-               func);
-      }
-    } else {
-      printk("PCI: xHCI controller missing MMIO BAR0, skipping\n");
-    }
-  }
+  pci_try_init_xhci_controller(pci_dev, 0);
 }
 
 void pci_init(void) {
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  int allow_xhci_after_scan = 0;
+  extern int intel_gfx_is_supported_device(void);
+#endif
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   printk("PCI: Initializing x86 config-space scan...\n");
 #else
@@ -257,6 +273,21 @@ void pci_init(void) {
       }
     }
   }
+
+#if defined(ARCH_X86_64) || defined(ARCH_X86)
+  allow_xhci_after_scan = boot_allow_xhci() || intel_gfx_is_supported_device();
+  if (allow_xhci_after_scan) {
+    printk("PCI: Enabling xHCI bring-up after full PCI scan (%s)\n",
+           boot_allow_xhci() ? "cmdline override"
+                             : "supported Intel 2012-2013 platform");
+    for (pci_device_t *dev = device_list; dev; dev = dev->next) {
+      pci_try_init_xhci_controller(dev, 1);
+    }
+  } else {
+    printk("PCI: xHCI remains disabled on x86 bring-up path "
+           "(set cmdline: xhci=on to enable)\n");
+  }
+#endif
 
   printk("PCI: Scan complete (%d devices found).\n", device_count);
 }

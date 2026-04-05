@@ -21,6 +21,16 @@ static uint64_t *rirb_buffer = 0;
 static uint8_t hda_stream_tag = 1;
 static uint32_t stream_base = 0;
 
+int intel_hda_is_device_supported(const pci_device_t *pci_dev) {
+  if (!pci_dev)
+    return 0;
+  if (pci_dev->vendor_id != HDA_VENDOR_ID)
+    return 0;
+  if (pci_dev->class_code == 0x04 && pci_dev->subclass == 0x03)
+    return 1;
+  return pci_dev->device_id == HDA_DEVICE_ID;
+}
+
 /* Reg Access Helpers */
 static uint32_t hda_read32(uint32_t offset) { return hda_regs[offset / 4]; }
 
@@ -116,6 +126,10 @@ static uint16_t hda_build_format(uint32_t sample_rate, uint8_t channels,
 }
 
 void intel_hda_init(pci_device_t *pci_dev) {
+  if (!intel_hda_is_device_supported(pci_dev)) {
+    printk("HDA: Unsupported PCI function for Intel HDA bring-up\n");
+    return;
+  }
   printk("HDA: Initializing...\n");
 
   /* Map BAR0 (Using identity map for now) */

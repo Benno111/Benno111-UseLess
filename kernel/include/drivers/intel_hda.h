@@ -75,6 +75,7 @@ typedef struct {
 #define HDA_DEVICE_ID   0x2668  /* ICH6 */
 
 void intel_hda_init(pci_device_t *pci_dev);
+int intel_hda_is_device_supported(const pci_device_t *pci_dev);
 int intel_hda_play_pcm(const void *data, uint32_t samples, uint8_t channels, uint32_t sample_rate);
 int intel_hda_is_ready(void);
 int intel_hda_is_playing(void);
