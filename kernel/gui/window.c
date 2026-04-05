@@ -12876,6 +12876,10 @@ static int gui_backend_supports_blur_effects(void) {
   return 0;
 }
 
+static int gui_backend_prefers_coalesced_blits(void) {
+  return str_cmp(g_gpu_backend_name, "intel-gfx") == 0;
+}
+
 static void gui_refresh_blur_effects_policy(void) {
   int next = g_blur_effects_requested && g_gpu_rendering_enabled &&
              gui_backend_supports_blur_effects();
@@ -12949,6 +12953,28 @@ void gui_refresh_hardware_acceleration_policy(void) {
 
 /* Optimized memcpy for scanlines */
 static inline void fast_memcpy_line(uint32_t *dst, uint32_t *src, int width) {
+#if defined(ARCH_X86_64)
+  if (width > 8 && gui_backend_prefers_coalesced_blits()) {
+    size_t bytes = (size_t)width * sizeof(uint32_t);
+    size_t qwords = bytes / sizeof(uint64_t);
+    size_t tail = bytes & (sizeof(uint64_t) - 1);
+    void *dst_ptr = dst;
+    const void *src_ptr = src;
+
+    asm volatile("cld; rep movsq"
+                 : "+D"(dst_ptr), "+S"(src_ptr), "+c"(qwords)
+                 :
+                 : "memory");
+
+    if (tail) {
+      uint8_t *d8 = (uint8_t *)dst_ptr;
+      const uint8_t *s8 = (const uint8_t *)src_ptr;
+      for (size_t i = 0; i < tail; i++)
+        d8[i] = s8[i];
+    }
+    return;
+  }
+#endif
   /* Use 64-bit copies for better performance */
   uint64_t *d64 = (uint64_t *)dst;
   uint64_t *s64 = (uint64_t *)src;
@@ -12962,6 +12988,109 @@ static inline void fast_memcpy_line(uint32_t *dst, uint32_t *src, int width) {
   if (width & 1) {
     dst[width - 1] = src[width - 1];
   }
+}
+
+static inline void fast_copy_framebuffer(uint32_t *dst, uint32_t *src,
+                                         size_t pixels) {
+#if defined(ARCH_X86_64)
+  if (pixels > 128 && gui_backend_prefers_coalesced_blits()) {
+    size_t qwords = (pixels * sizeof(uint32_t)) / sizeof(uint64_t);
+    void *dst_ptr = dst;
+    const void *src_ptr = src;
+
+    asm volatile("cld; rep movsq"
+                 : "+D"(dst_ptr), "+S"(src_ptr), "+c"(qwords)
+                 :
+                 : "memory");
+    return;
+  }
+#endif
+
+  {
+    uint64_t *src64 = (uint64_t *)src;
+    uint64_t *dst64 = (uint64_t *)dst;
+    size_t count64 = pixels / 2;
+    size_t i = 0;
+    size_t fast_count = count64 & ~7UL;
+
+    for (; i < fast_count; i += 8) {
+      dst64[i] = src64[i];
+      dst64[i + 1] = src64[i + 1];
+      dst64[i + 2] = src64[i + 2];
+      dst64[i + 3] = src64[i + 3];
+      dst64[i + 4] = src64[i + 4];
+      dst64[i + 5] = src64[i + 5];
+      dst64[i + 6] = src64[i + 6];
+      dst64[i + 7] = src64[i + 7];
+    }
+    for (; i < count64; i++) {
+      dst64[i] = src64[i];
+    }
+    if (pixels & 1) {
+      dst[pixels - 1] = src[pixels - 1];
+    }
+  }
+}
+
+static int compositor_build_coalesced_dirty_rect(int *x, int *y, int *w, int *h) {
+  int union_x1 = 0;
+  int union_y1 = 0;
+  int union_x2 = 0;
+  int union_y2 = 0;
+  int have_rect = 0;
+  uint64_t sum_area = 0;
+  uint64_t union_area;
+
+  if (!gui_backend_prefers_coalesced_blits() || g_dirty_count <= 1)
+    return 0;
+
+  for (int i = 0; i < g_dirty_count; i++) {
+    int rx1;
+    int ry1;
+    int rx2;
+    int ry2;
+
+    if (!g_dirty_regions[i].valid || g_dirty_regions[i].w <= 0 ||
+        g_dirty_regions[i].h <= 0)
+      continue;
+
+    rx1 = g_dirty_regions[i].x;
+    ry1 = g_dirty_regions[i].y;
+    rx2 = rx1 + g_dirty_regions[i].w;
+    ry2 = ry1 + g_dirty_regions[i].h;
+
+    if (!have_rect) {
+      union_x1 = rx1;
+      union_y1 = ry1;
+      union_x2 = rx2;
+      union_y2 = ry2;
+      have_rect = 1;
+    } else {
+      if (rx1 < union_x1)
+        union_x1 = rx1;
+      if (ry1 < union_y1)
+        union_y1 = ry1;
+      if (rx2 > union_x2)
+        union_x2 = rx2;
+      if (ry2 > union_y2)
+        union_y2 = ry2;
+    }
+
+    sum_area += (uint64_t)g_dirty_regions[i].w * (uint64_t)g_dirty_regions[i].h;
+  }
+
+  if (!have_rect)
+    return 0;
+
+  union_area = (uint64_t)(union_x2 - union_x1) * (uint64_t)(union_y2 - union_y1);
+  if (g_dirty_count < 4 && union_area > sum_area + (sum_area / 2))
+    return 0;
+
+  *x = union_x1;
+  *y = union_y1;
+  *w = union_x2 - union_x1;
+  *h = union_y2 - union_y1;
+  return 1;
 }
 
 /* Copy a specific region from backbuffer to framebuffer */
@@ -13044,35 +13173,28 @@ void gui_compose(void) {
   /* Smart frame buffer update */
   if (primary_display.backbuffer && primary_display.framebuffer) {
     if (g_full_redraw || g_dirty_count == 0) {
-      /* Full frame update - use ultra-fast unrolled copy */
-      uint64_t *src = (uint64_t *)primary_display.backbuffer;
-      uint64_t *dst = (uint64_t *)primary_display.framebuffer;
-      size_t count64 = (primary_display.pitch * primary_display.height) / 8;
-      size_t i = 0;
-
-      /* Unrolled copy - 8 qwords (64 bytes / 16 pixels) per iteration */
-      size_t fast_count = count64 & ~7UL;
-      for (; i < fast_count; i += 8) {
-        dst[i] = src[i];
-        dst[i + 1] = src[i + 1];
-        dst[i + 2] = src[i + 2];
-        dst[i + 3] = src[i + 3];
-        dst[i + 4] = src[i + 4];
-        dst[i + 5] = src[i + 5];
-        dst[i + 6] = src[i + 6];
-        dst[i + 7] = src[i + 7];
-      }
-      for (; i < count64; i++) {
-        dst[i] = src[i];
-      }
-
+      size_t pixel_count =
+          ((size_t)primary_display.pitch * (size_t)primary_display.height) /
+          sizeof(uint32_t);
+      fast_copy_framebuffer(primary_display.framebuffer,
+                            primary_display.backbuffer, pixel_count);
       g_full_redraw = 0;
     } else {
       /* Partial update - only copy dirty regions */
-      for (int d = 0; d < g_dirty_count; d++) {
-        if (g_dirty_regions[d].valid) {
-          blit_region(g_dirty_regions[d].x, g_dirty_regions[d].y,
-                      g_dirty_regions[d].w, g_dirty_regions[d].h);
+      int merged_x;
+      int merged_y;
+      int merged_w;
+      int merged_h;
+
+      if (compositor_build_coalesced_dirty_rect(&merged_x, &merged_y, &merged_w,
+                                                &merged_h)) {
+        blit_region(merged_x, merged_y, merged_w, merged_h);
+      } else {
+        for (int d = 0; d < g_dirty_count; d++) {
+          if (g_dirty_regions[d].valid) {
+            blit_region(g_dirty_regions[d].x, g_dirty_regions[d].y,
+                        g_dirty_regions[d].w, g_dirty_regions[d].h);
+          }
         }
       }
     }
