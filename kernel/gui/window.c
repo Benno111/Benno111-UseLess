@@ -10183,9 +10183,9 @@ static void draw_window(struct window *win) {
       gui_draw_system_button(panel_x, button_y, 88, 28, "Scan",
                              GUI_BUTTON_PRIMARY, 1, 0);
       gui_draw_system_button(panel_x + 98, button_y, 102, 28, "Connect",
-                             GUI_BUTTON_SUCCESS, wifi_has_supported_adapter(), 0);
+                             GUI_BUTTON_SUCCESS, wifi_get_network_count() > 0, 0);
       gui_draw_system_button(panel_x + 210, button_y, 118, 28, "Disconnect",
-                             GUI_BUTTON_DANGER, wifi_has_supported_adapter(), 0);
+                             GUI_BUTTON_DANGER, wifi_is_connected(), 0);
 
       gui_draw_string(panel_x + 340, button_y + 8,
                       wifi_is_connected() ? wifi_get_connected_ssid()
@@ -10202,6 +10202,17 @@ static void draw_window(struct window *win) {
                         0xCBD5E1, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 56,
                         "bring-up is still deferred to keep boot safe.",
+                        0xCBD5E1, 0x252535);
+      } else if (network_count <= 0) {
+        gui_draw_rect(panel_x, list_y, panel_w - 18, 82, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 18,
+                        "No Wi-Fi networks are listed yet.",
+                        0xFFFFFF, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 40,
+                        "Run Scan to refresh nearby SSIDs and signal levels.",
+                        0xCBD5E1, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 56,
+                        "Connect becomes available once results are visible.",
                         0xCBD5E1, 0x252535);
       } else {
         int i;
@@ -10223,8 +10234,13 @@ static void draw_window(struct window *win) {
           gui_draw_string(panel_x + 12, row_y + 8, wifi_get_network_ssid(i),
                           0xFFFFFF, row_bg);
           gui_draw_string(panel_x + 192, row_y + 8,
-                          wifi_get_network_secure(i) ? "Secured" : "Open",
-                          wifi_get_network_secure(i) ? 0xA6E3A1 : 0xF9E2AF,
+                          wifi_is_network_connected(i)
+                              ? "Connected"
+                              : (wifi_get_network_secure(i) ? "Secured" : "Open"),
+                          wifi_is_network_connected(i)
+                              ? 0x89B4FA
+                              : (wifi_get_network_secure(i) ? 0xA6E3A1
+                                                            : 0xF9E2AF),
                           row_bg);
           gui_draw_string(panel_x + 272, row_y + 8, signal_buf, 0xCBD5E1,
                           row_bg);
@@ -12227,9 +12243,9 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
   gui_draw_system_button(panel_x + 14, button_y, 70, 24, "Scan",
                          GUI_BUTTON_PRIMARY, 1, 0);
   gui_draw_system_button(panel_x + 92, button_y, 72, 24, "Connect",
-                         GUI_BUTTON_SUCCESS, wifi_has_supported_adapter(), 0);
+                         GUI_BUTTON_SUCCESS, wifi_get_network_count() > 0, 0);
   gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
-                         GUI_BUTTON_DANGER, wifi_has_supported_adapter(), 0);
+                         GUI_BUTTON_DANGER, wifi_is_connected(), 0);
 
   gui_draw_string(panel_x + 14, panel_y + 92, wifi_get_status_text(),
                   0xE2E8F0, 0x00000000);
@@ -12244,17 +12260,32 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
     return;
   }
 
+  if (network_count <= 0) {
+    gui_draw_string(panel_x + 14, panel_y + 122,
+                    "No scan results yet. Press Scan to list nearby networks.",
+                    0xCBD5E1, 0x00000000);
+    gui_draw_string(panel_x + 14, panel_y + 140,
+                    "The connect button unlocks after a scan finds entries.",
+                    0xCBD5E1, 0x00000000);
+    return;
+  }
+
   for (int i = 0; i < network_count && i < 3; i++) {
     int row_y = panel_y + 118 + i * 24;
     uint32_t fg = i == wifi_get_selected_network() ? 0xFFFFFF : 0xD7E3F2;
-    uint32_t accent = wifi_get_network_secure(i) ? 0xA6E3A1 : 0xF9E2AF;
+    uint32_t accent = wifi_is_network_connected(i)
+                          ? 0x89B4FA
+                          : (wifi_get_network_secure(i) ? 0xA6E3A1 : 0xF9E2AF);
 
     if (i == wifi_get_selected_network())
       gui_fill_rect_alpha(panel_x + 10, row_y - 2, panel_w - 20, 20, 0x3048667D);
     gui_draw_string(panel_x + 14, row_y, wifi_get_network_ssid(i), fg,
                     0x00000000);
     gui_draw_string(panel_x + 128, row_y,
-                    wifi_get_network_secure(i) ? "Secured" : "Open", accent,
+                    wifi_is_network_connected(i)
+                        ? "Connected"
+                        : (wifi_get_network_secure(i) ? "Secured" : "Open"),
+                    accent,
                     0x00000000);
 
     {
