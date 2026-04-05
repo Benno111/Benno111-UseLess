@@ -1398,6 +1398,7 @@ static void start_init_process(void) {
   extern void input_set_gui_key_callback(void (*callback)(int key));
   extern void gui_compose(void);
   extern void gui_draw_cursor(void);
+  extern int gui_has_active_animations(void);
 
   input_init();
   g_gui_key_r = 0;
@@ -1418,11 +1419,14 @@ static void start_init_process(void) {
   int last_mx = 0, last_my = 0;
   int last_buttons = 0;
   int needs_redraw = 0; /* Initial render already completed */
-  int cursor_only = 0;  /* Only cursor needs updating */
-
-  /* Timer for periodic auto-refresh (33ms = 30 FPS for responsive UI) */
-  uint64_t last_refresh = arch_timer_get_ms();
-  const uint64_t REFRESH_MS = 33; /* 30 FPS - responsive mouse */
+  uint64_t last_activity_ms = arch_timer_get_ms();
+  uint64_t last_refresh = last_activity_ms;
+  uint64_t next_input_poll_ms = last_activity_ms;
+  const uint64_t ACTIVE_REFRESH_MS = 33;      /* 30 FPS while animating */
+  const uint64_t IDLE_REFRESH_MS = 250;       /* 4 FPS keepalive while idle */
+  const uint64_t ACTIVE_INPUT_POLL_MS = 4;    /* Responsive pointer/input */
+  const uint64_t IDLE_INPUT_POLL_MS = 12;     /* Lower idle polling cost */
+  const uint64_t IDLE_SETTLE_MS = 250;
 
   {
     extern void mouse_get_position(int *x, int *y);
@@ -1436,8 +1440,18 @@ static void start_init_process(void) {
   }
 
   while (1) {
-    /* Poll input devices once per iteration. */
-    input_poll();
+    uint64_t now = arch_timer_get_ms();
+    int has_active_animations = gui_has_active_animations();
+    uint64_t input_poll_interval =
+        has_active_animations ? ACTIVE_INPUT_POLL_MS : IDLE_INPUT_POLL_MS;
+    uint64_t refresh_interval =
+        has_active_animations ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS;
+    int did_work = 0;
+
+    if (now >= next_input_poll_ms) {
+      input_poll();
+      next_input_poll_ms = now + input_poll_interval;
+    }
 
     /* Poll for keyboard input from UART as well */
     extern int uart_getc_nonblock(void);
@@ -1447,6 +1461,8 @@ static void start_init_process(void) {
       /* Route to focused window */
       gui_handle_key_event(c);
       needs_redraw = 1;
+      last_activity_ms = now;
+      did_work = 1;
     }
 
     {
@@ -1454,6 +1470,8 @@ static void start_init_process(void) {
       while (gui_key_queue_pop(&queued_key)) {
         gui_handle_key_event(queued_key);
         needs_redraw = 1;
+        last_activity_ms = now;
+        did_work = 1;
       }
     }
 
@@ -1483,15 +1501,15 @@ static void start_init_process(void) {
 
       /* Always redraw on mouse move - cursor is now composited */
       needs_redraw = 1;
+      last_activity_ms = now;
+      did_work = 1;
 
       last_mx = mx;
       last_my = my;
       last_buttons = mbuttons;
     }
 
-    /* Periodic refresh for animations (5 FPS) */
-    uint64_t now = arch_timer_get_ms();
-    if (now - last_refresh >= REFRESH_MS) {
+    if (now - last_refresh >= refresh_interval) {
       last_refresh = now;
       needs_redraw = 1;
     }
@@ -1500,7 +1518,7 @@ static void start_init_process(void) {
     if (needs_redraw) {
       gui_compose(); /* Cursor is drawn inside compose, before blit */
       needs_redraw = 0;
-      cursor_only = 0;
+      did_work = 1;
     }
 
     frame++;
@@ -1509,11 +1527,12 @@ static void start_init_process(void) {
     /* Check if we should yield to let userspace run */
     /* If no input events processed, yield CPU */
     extern void process_schedule_from_irq(void); // Or just wait for IRQ?
-    // User processes run preemptively via timer IRQ, so we just loop here
-    // But we should yield to be nice if not rendering
+    // User processes run preemptively via timer IRQ. When idle, sleep until
+    // the next interrupt instead of burning CPU in a spin loop.
 
-    /* Short yield - allows input polling without slowing mouse */
-    for (volatile int i = 0; i < 500; i++) {
+    if (!did_work && !needs_redraw && (arch_timer_get_ms() - last_activity_ms) >=
+                                          IDLE_SETTLE_MS) {
+      arch_idle();
     }
   }
 }
