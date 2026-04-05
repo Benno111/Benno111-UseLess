@@ -581,6 +581,7 @@ void handle_irq(interrupt_frame_t *frame)
     if (irq == 0) {
         extern void pit_handler(void);
         pit_handler();
+        pic_send_eoi(irq);
         return;
     }
 
