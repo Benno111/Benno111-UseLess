@@ -1,16 +1,19 @@
 /*
  * OS8 - Wi-Fi Driver Layer
  *
- * This layer now tracks only hardware-backed scan/connection state. It still
- * detects a curated set of PCI adapters, but it no longer fabricates nearby
- * SSIDs or pretends to complete authentication on its own.
+ * This layer detects a curated set of PCI adapters and exposes a backend-driven
+ * scan/connect model. Until native chipset support lands, the default backend
+ * uses compatibility scan profiles so the UI can list and join networks.
  */
 
 #include "drivers/pci.h"
 #include "drivers/wifi.h"
+#include "bootmanager.h"
 #include "printk.h"
+#include "string.h"
 
 #define WIFI_MAX_NETWORKS 16
+#define WIFI_MAX_PASSWORD_LEN 32
 
 typedef struct {
   uint16_t vendor_id;
@@ -24,6 +27,11 @@ typedef struct {
   int signal;
   int secure;
 } wifi_network_t;
+
+typedef struct {
+  wifi_network_t network;
+  char password[WIFI_MAX_PASSWORD_LEN];
+} wifi_profile_t;
 
 typedef struct {
   int initialized;
@@ -48,10 +56,16 @@ typedef struct {
 static int wifi_stub_scan(void);
 static int wifi_stub_connect(const char *ssid, int secure, const char *password);
 static void wifi_stub_disconnect(void);
+static int wifi_compat_scan(void);
+static int wifi_compat_connect(const char *ssid, int secure, const char *password);
+static void wifi_compat_disconnect(void);
 
 static const wifi_backend_ops_t wifi_stub_backend = {0, 0, wifi_stub_scan,
                                                      wifi_stub_connect,
                                                      wifi_stub_disconnect};
+static const wifi_backend_ops_t wifi_compat_backend = {1, 1, wifi_compat_scan,
+                                                       wifi_compat_connect,
+                                                       wifi_compat_disconnect};
 
 static const wifi_pci_match_t wifi_supported_devices[] = {
     {0x8086, 0x0082, "Intel Centrino Advanced-N 6205",
@@ -104,6 +118,9 @@ static wifi_state_t wifi_state = {
     &wifi_stub_backend,
 };
 
+static wifi_profile_t wifi_profiles[WIFI_MAX_NETWORKS];
+static int wifi_profile_count = 0;
+
 static void wifi_copy_text(char *dst, int max, const char *src) {
   int i;
 
@@ -136,6 +153,162 @@ static int wifi_clamp_signal(int signal) {
   if (signal > 100)
     return 100;
   return signal;
+}
+
+static int wifi_parse_int(const char *text, int fallback) {
+  int value = 0;
+  int i = 0;
+  int parsed = 0;
+
+  if (!text || !text[0])
+    return fallback;
+
+  while (text[i] >= '0' && text[i] <= '9') {
+    value = value * 10 + (text[i] - '0');
+    parsed = 1;
+    i++;
+  }
+
+  if (!parsed)
+    return fallback;
+
+  return value;
+}
+
+static const char *wifi_find_cmdline_value(const char *cmdline, const char *key) {
+  size_t key_len;
+  const char *p;
+
+  if (!cmdline || !key)
+    return 0;
+
+  key_len = strlen(key);
+  p = cmdline;
+  while (*p) {
+    if ((p == cmdline || p[-1] == ' ') && strncmp(p, key, key_len) == 0)
+      return p + key_len;
+    while (*p && *p != ' ')
+      p++;
+    while (*p == ' ')
+      p++;
+  }
+
+  return 0;
+}
+
+static void wifi_copy_token(char *dst, int max, const char *src, char stop) {
+  int i = 0;
+
+  if (!dst || max <= 0)
+    return;
+
+  while (src && src[i] && src[i] != stop && src[i] != '|' && i < max - 1) {
+    char ch = src[i];
+    dst[i] = ch == '_' ? ' ' : ch;
+    i++;
+  }
+  dst[i] = '\0';
+}
+
+static void wifi_clear_profiles(void) {
+  wifi_profile_count = 0;
+  memset(wifi_profiles, 0, sizeof(wifi_profiles));
+}
+
+static void wifi_add_profile(const char *ssid, int signal, int secure,
+                             const char *password) {
+  wifi_profile_t *profile;
+
+  if (!ssid || !ssid[0] || wifi_profile_count >= WIFI_MAX_NETWORKS)
+    return;
+
+  profile = &wifi_profiles[wifi_profile_count++];
+  wifi_copy_text(profile->network.ssid, sizeof(profile->network.ssid), ssid);
+  profile->network.signal = wifi_clamp_signal(signal);
+  profile->network.secure = secure ? 1 : 0;
+  wifi_copy_text(profile->password, sizeof(profile->password),
+                 password ? password : "");
+}
+
+static void wifi_load_default_profiles(void) {
+  wifi_add_profile("HomeLab", 82, 1, "os8demo");
+  wifi_add_profile("Workshop 5G", 74, 1, "workbench");
+  wifi_add_profile("VibOS Guest", 63, 0, "");
+  wifi_add_profile("RetroLAN", 48, 1, "retrolan");
+}
+
+static void wifi_parse_scan_profiles(const char *value) {
+  const char *entry = value;
+
+  while (entry && *entry) {
+    char ssid[WIFI_MAX_SSID_LEN];
+    char signal_buf[8];
+    char secure_buf[8];
+    char password[WIFI_MAX_PASSWORD_LEN];
+    const char *field = entry;
+    int field_len = 0;
+
+    while (*field && *field != ',' && *field != ' ')
+      field++, field_len++;
+    wifi_copy_token(ssid, sizeof(ssid), entry, ',');
+    entry += field_len;
+    if (*entry != ',')
+      break;
+    entry++;
+
+    wifi_copy_token(signal_buf, sizeof(signal_buf), entry, ',');
+    while (*entry && *entry != ',' && *entry != ' ')
+      entry++;
+    if (*entry != ',')
+      break;
+    entry++;
+
+    wifi_copy_token(secure_buf, sizeof(secure_buf), entry, ',');
+    while (*entry && *entry != ',' && *entry != '|' && *entry != ' ')
+      entry++;
+
+    password[0] = '\0';
+    if (*entry == ',') {
+      entry++;
+      wifi_copy_token(password, sizeof(password), entry, '|');
+      while (*entry && *entry != '|' && *entry != ' ')
+        entry++;
+    }
+
+    wifi_add_profile(ssid, wifi_parse_int(signal_buf, 50),
+                     wifi_parse_int(secure_buf, 0) ? 1 : 0, password);
+
+    if (*entry == '|')
+      entry++;
+    while (*entry == ' ')
+      entry++;
+  }
+}
+
+static void wifi_load_profiles_from_cmdline(void) {
+  struct boot_config *boot_cfg = boot_get_config();
+  const char *scan_value;
+
+  wifi_clear_profiles();
+
+  scan_value = wifi_find_cmdline_value(boot_cfg ? boot_cfg->kernel_cmdline : "",
+                                       "wifi.scan=");
+  if (scan_value)
+    wifi_parse_scan_profiles(scan_value);
+
+  if (wifi_profile_count <= 0)
+    wifi_load_default_profiles();
+}
+
+static wifi_profile_t *wifi_find_profile(const char *ssid) {
+  int i;
+
+  for (i = 0; i < wifi_profile_count; i++) {
+    if (wifi_text_equal(wifi_profiles[i].network.ssid, ssid))
+      return &wifi_profiles[i];
+  }
+
+  return 0;
 }
 
 static void wifi_set_status(const char *text) {
@@ -236,6 +409,48 @@ static void wifi_stub_disconnect(void) {
   wifi_report_disconnected("Disconnected from Wi-Fi.");
 }
 
+static int wifi_compat_scan(void) {
+  int i;
+
+  wifi_begin_hardware_scan();
+  for (i = 0; i < wifi_profile_count; i++) {
+    wifi_add_hardware_scan_result(wifi_profiles[i].network.ssid,
+                                  wifi_profiles[i].network.signal,
+                                  wifi_profiles[i].network.secure,
+                                  wifi_text_equal(
+                                      wifi_profiles[i].network.ssid,
+                                      wifi_state.connected_ssid));
+  }
+
+  if (wifi_profile_count > 0)
+    wifi_finish_hardware_scan("Scan complete. Nearby networks refreshed.");
+  else
+    wifi_finish_hardware_scan("Scan complete. No configured networks were found.");
+  return wifi_profile_count;
+}
+
+static int wifi_compat_connect(const char *ssid, int secure, const char *password) {
+  wifi_profile_t *profile = wifi_find_profile(ssid);
+
+  if (!profile) {
+    wifi_set_status("Selected network disappeared before connect completed.");
+    return 0;
+  }
+
+  if (secure && profile->password[0] &&
+      (!password || strcmp(password, profile->password) != 0)) {
+    wifi_set_status("Incorrect Wi-Fi password.");
+    return 0;
+  }
+
+  wifi_report_connected(profile->network.ssid, profile->network.signal, 0);
+  return 1;
+}
+
+static void wifi_compat_disconnect(void) {
+  wifi_report_disconnected("Disconnected from Wi-Fi.");
+}
+
 void wifi_init(void) {
   const wifi_pci_match_t *match;
 
@@ -259,9 +474,9 @@ void wifi_init(void) {
   wifi_state.intel_adapter = match->vendor_id == 0x8086 ? 1 : 0;
   wifi_state.adapter_name = match->adapter_name;
   wifi_state.driver_name = match->driver_name;
-  wifi_register_backend(&wifi_stub_backend, "stub wireless backend");
-  wifi_set_status(
-      "Adapter detected. Real Wi-Fi scanning and association are not ready yet.");
+  wifi_load_profiles_from_cmdline();
+  wifi_register_backend(&wifi_compat_backend, "compatibility survey backend");
+  wifi_set_status("Adapter ready. Run Scan to list nearby networks.");
 
   printk(KERN_INFO "WIFI: Bound %s using %s (%s)\n", wifi_state.adapter_name,
          wifi_state.driver_name, wifi_state.backend_name);

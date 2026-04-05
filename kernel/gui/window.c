@@ -10244,10 +10244,10 @@ static void draw_window(struct window *win) {
                         "No nearby Wi-Fi networks were reported.",
                         0xFFFFFF, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 40,
-                        "Run Scan to ask the active driver for fresh results.",
+                        "Run Scan to refresh the active wireless survey list.",
                         0xCBD5E1, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 56,
-                        "Connect unlocks when the driver returns live entries.",
+                        "Connect unlocks when the backend returns entries.",
                         0xCBD5E1, 0x252535);
       } else {
         int i;
@@ -12326,7 +12326,7 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
                     "No nearby networks were reported by the driver.",
                     0xCBD5E1, 0x00000000);
     gui_draw_string(panel_x + 14, panel_y + 152,
-                    "Connect unlocks after a live scan returns entries.",
+                    "Connect unlocks after the scan backend returns entries.",
                     0xCBD5E1, 0x00000000);
     return;
   }
