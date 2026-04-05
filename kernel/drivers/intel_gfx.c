@@ -19,6 +19,7 @@ typedef struct {
   bool probe_attempted;
   bool init_failed;
   bool has_framebuffer;
+  bool supports_gpu_rendering;
   bool mmio_mapped;
   uint16_t device_id;
   uint64_t mmio_base;
@@ -42,8 +43,73 @@ static int intel_gfx_is_display_device(const pci_device_t *pci_dev) {
   return 1;
 }
 
+static int intel_gfx_is_ivybridge_device(uint16_t device_id) {
+  switch (device_id) {
+  case 0x0152:
+  case 0x0156:
+  case 0x015A:
+  case 0x0162:
+  case 0x0166:
+  case 0x016A:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+static int intel_gfx_is_haswell_device(uint16_t device_id) {
+  switch (device_id) {
+  case 0x0402:
+  case 0x0406:
+  case 0x040A:
+  case 0x0412:
+  case 0x0416:
+  case 0x041A:
+  case 0x0A02:
+  case 0x0A06:
+  case 0x0A0A:
+  case 0x0A12:
+  case 0x0A16:
+  case 0x0A1A:
+  case 0x0D22:
+  case 0x0D26:
+  case 0x0D2A:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+static int intel_gfx_is_2012_2013_supported(uint16_t device_id) {
+  return intel_gfx_is_ivybridge_device(device_id) ||
+         intel_gfx_is_haswell_device(device_id);
+}
+
 static const char *intel_gfx_detect_name(uint16_t device_id) {
   switch (device_id) {
+  case 0x0152:
+  case 0x0156:
+  case 0x015A:
+  case 0x0162:
+  case 0x0166:
+  case 0x016A:
+    return "Intel HD Graphics 4000";
+  case 0x0402:
+  case 0x0406:
+  case 0x040A:
+  case 0x0412:
+  case 0x0416:
+  case 0x041A:
+  case 0x0A02:
+  case 0x0A06:
+  case 0x0A0A:
+  case 0x0A12:
+  case 0x0A16:
+  case 0x0A1A:
+  case 0x0D22:
+  case 0x0D26:
+  case 0x0D2A:
+    return "Intel HD Graphics 4600";
   case 0x5916:
   case 0x591B:
   case 0x5912:
@@ -205,6 +271,8 @@ int intel_gfx_init(pci_device_t *pci_dev) {
     intel_gfx_state.height = height;
     intel_gfx_state.pitch = pitch;
     intel_gfx_state.has_framebuffer = true;
+    intel_gfx_state.supports_gpu_rendering =
+        intel_gfx_is_2012_2013_supported(pci_dev->device_id);
   } else if (fb || width || height || pitch) {
     printk(KERN_WARNING
            "IGFX: Ignoring invalid framebuffer handoff fb=%p %ux%u pitch=%u\n",
@@ -234,6 +302,13 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   if (intel_gfx_state.has_framebuffer) {
     printk(KERN_INFO "IGFX: Using boot framebuffer %ux%u pitch=%u\n",
            intel_gfx_state.width, intel_gfx_state.height, intel_gfx_state.pitch);
+    if (intel_gfx_state.supports_gpu_rendering) {
+      printk(KERN_INFO
+             "IGFX: Enabling compositor GPU rendering path for 2012-2013 Intel GPU\n");
+    } else {
+      printk(KERN_INFO
+             "IGFX: Leaving compositor in framebuffer mode for this Intel GPU generation\n");
+    }
   } else if (intel_gfx_state.mmio_base) {
     printk(KERN_INFO "IGFX: Running in conservative MMIO-only mode\n");
   } else {
@@ -247,6 +322,11 @@ int intel_gfx_is_ready(void) { return intel_gfx_state.initialized ? 1 : 0; }
 
 int intel_gfx_has_framebuffer(void) {
   return intel_gfx_state.initialized && intel_gfx_state.has_framebuffer;
+}
+
+int intel_gfx_supports_gpu_rendering(void) {
+  return intel_gfx_state.initialized && intel_gfx_state.has_framebuffer &&
+         intel_gfx_state.supports_gpu_rendering;
 }
 
 void intel_gfx_get_display_info(uint32_t *width, uint32_t *height,

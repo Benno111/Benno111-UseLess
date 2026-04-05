@@ -12563,6 +12563,7 @@ void gui_refresh_hardware_acceleration_policy(void) {
   const char *backend = "framebuffer";
   extern int intel_gfx_is_ready(void);
   extern int intel_gfx_has_framebuffer(void);
+  extern int intel_gfx_supports_gpu_rendering(void);
   extern bool virtio_gpu_is_available(void);
   extern bool virtio_gpu_has_3d(void);
 
@@ -12571,6 +12572,7 @@ void gui_refresh_hardware_acceleration_policy(void) {
     backend = "virtio-gpu";
   } else if (intel_gfx_is_ready() && intel_gfx_has_framebuffer()) {
     backend = "intel-gfx";
+    enable = intel_gfx_supports_gpu_rendering();
   } else if (pci_find_device(0x1234, 0x1111)) {
     backend = "bochs-vbe";
   }
