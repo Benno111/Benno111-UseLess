@@ -15,9 +15,11 @@ Repository guidance for coding agents working in this repo.
 
 - After a successful change, agents should push to `origin` by default, even when local verification is unavailable.
 - Repository-side GitHub Actions, code scanning, and other remote checks are the primary verification backstop when local verification cannot be run.
+- Name the commit based on what changed so the history is easy to scan.
+- When the work is for a release, include a short release-oriented description in the commit message or accompanying summary so the purpose of the release is clear.
 - Use a normal non-interactive flow:
   - `git add ...`
-  - `git commit -m "<clear message>"`
+  - `git commit -m "<what changed>: <short release description if applicable>"`
   - `git push origin HEAD`
 - If the push is rejected because the remote moved, stop and report it instead of force-pushing.
 - Never use `git push --force` or `git push --force-with-lease` unless the user explicitly asks for it.
