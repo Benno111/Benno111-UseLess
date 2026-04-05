@@ -11,6 +11,7 @@
 #include "drivers/storage.h"
 #include "drivers/pci.h"
 #include "drivers/uart.h"
+#include "drivers/vbox_net.h"
 #include "drivers/wifi.h"
 #include "fs/iso9660.h"
 #include "fs/vfs.h"
@@ -1275,8 +1276,10 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "  Loading Wi-Fi drivers...\n");
   extern void tcpip_init(void);
   extern int virtio_net_init(void);
+  extern int vbox_net_init(void);
   tcpip_init();
   virtio_net_init();
+  vbox_net_init();
   wifi_init();
   gui_notify_storage_ready();
 

@@ -6,9 +6,11 @@
 
 #include "media/media.h"
 #include "arch/arch.h"
+#include "drivers/vbox_net.h"
 #include "gui/gui.h"
 #include "mm/kmalloc.h"
 #include "mm/pmm.h"
+#include "net/net.h"
 #include "printk.h"
 #include "string.h"
 #include "types.h"
@@ -444,6 +446,162 @@ static int str_ends_with_ci(const char *str, const char *suffix) {
       return 0;
   }
   return 1;
+}
+
+static void term_put_uint(struct terminal *term, uint32_t value) {
+  char buf[16];
+  int i = 0;
+
+  if (value == 0) {
+    term_putc(term, '0');
+    return;
+  }
+
+  while (value > 0 && i < (int)sizeof(buf)) {
+    buf[i++] = (char)('0' + (value % 10));
+    value /= 10;
+  }
+  while (i > 0)
+    term_putc(term, buf[--i]);
+}
+
+static int parse_ipv4_string(const char *src, uint32_t *ip_out) {
+  uint32_t ip = 0;
+  int octet = 0;
+  int parts = 0;
+
+  if (!src || !*src || !ip_out)
+    return -1;
+
+  while (*src == ' ')
+    src++;
+
+  while (*src) {
+    if (*src >= '0' && *src <= '9') {
+      octet = octet * 10 + (*src - '0');
+      if (octet > 255)
+        return -1;
+    } else if (*src == '.') {
+      if (parts >= 3)
+        return -1;
+      ip = (ip << 8) | (uint32_t)octet;
+      octet = 0;
+      parts++;
+    } else if (*src == ' ' || *src == '\n' || *src == '\r') {
+      break;
+    } else {
+      return -1;
+    }
+    src++;
+  }
+
+  if (parts != 3)
+    return -1;
+
+  ip = (ip << 8) | (uint32_t)octet;
+  *ip_out = ip;
+  return 0;
+}
+
+static void format_ipv4_string(uint32_t ip, char *buf, int max) {
+  int idx = 0;
+  int shift = 24;
+
+  if (!buf || max <= 0)
+    return;
+  buf[0] = '\0';
+
+  for (int part = 0; part < 4; part++, shift -= 8) {
+    uint32_t octet = (ip >> shift) & 0xFF;
+    char tmp[4];
+    int len = 0;
+
+    if (octet >= 100)
+      tmp[len++] = (char)('0' + ((octet / 100) % 10));
+    if (octet >= 10)
+      tmp[len++] = (char)('0' + ((octet / 10) % 10));
+    tmp[len++] = (char)('0' + (octet % 10));
+
+    for (int i = 0; i < len && idx < max - 1; i++)
+      buf[idx++] = tmp[i];
+    if (part < 3 && idx < max - 1)
+      buf[idx++] = '.';
+  }
+  buf[idx] = '\0';
+}
+
+static void term_run_ping(struct terminal *term, const char *host) {
+  struct net_interface iface;
+  char ip_buf[20];
+  uint32_t ip;
+  int sent = 0;
+  extern int icmp_send_echo(uint32_t dest_ip, uint16_t id, uint16_t seq);
+  extern int virtio_net_is_ready(void);
+  extern void virtio_net_poll(void);
+
+  while (*host == ' ')
+    host++;
+
+  if (!*host) {
+    term_puts(term, "ping: missing host\n");
+    return;
+  }
+
+  if (parse_ipv4_string(host, &ip) != 0) {
+    term_puts(term, "ping: only dotted IPv4 addresses are supported right now\n");
+    return;
+  }
+
+  if (net_get_primary_interface_info(&iface) != 0) {
+    term_puts(term, "ping: no network interface is available\n");
+    return;
+  }
+
+  format_ipv4_string(ip, ip_buf, sizeof(ip_buf));
+  term_puts(term, "PING ");
+  term_puts(term, ip_buf);
+  term_puts(term, " (");
+  term_puts(term, ip_buf);
+  term_puts(term, "): 56 data bytes\n");
+
+  if (ip == 0x7F000001 || ip == iface.ip) {
+    for (int seq = 0; seq < 4; seq++) {
+      term_puts(term, "64 bytes from ");
+      term_puts(term, ip_buf);
+      term_puts(term, ": icmp_seq=");
+      term_put_uint(term, (uint32_t)seq);
+      term_puts(term, " ttl=64 time=0 ms\n");
+    }
+    term_puts(term, "\n--- ping statistics ---\n");
+    term_puts(term, "4 packets transmitted, 4 received, 0% packet loss\n");
+    term_puts(term, "rtt min/avg/max = 0/0/0 ms\n");
+    return;
+  }
+
+  for (int seq = 0; seq < 4; seq++) {
+    if (icmp_send_echo(ip, 1, (uint16_t)seq) == 0) {
+      term_puts(term, "Request queued for ");
+      term_puts(term, ip_buf);
+      term_puts(term, " seq=");
+      term_put_uint(term, (uint32_t)seq);
+      term_puts(term, "\n");
+      sent++;
+    } else {
+      term_puts(term, "ping: transmit failed for seq=");
+      term_put_uint(term, (uint32_t)seq);
+      term_puts(term, "\n");
+    }
+
+    if (virtio_net_is_ready())
+      virtio_net_poll();
+    if (vbox_net_is_ready())
+      vbox_net_poll();
+  }
+
+  term_puts(term, "\n--- ping statistics ---\n");
+  term_put_uint(term, (uint32_t)sent);
+  term_puts(term, " packets transmitted, 0 replies confirmed\n");
+  term_puts(term, "reply tracking is still limited on the current NIC drivers\n");
 }
 
 static void format_uptime_string(char *buf, int buf_size) {
@@ -1010,33 +1168,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
       term_puts(term, "Error: memory allocation failed\n");
     }
   } else if (str_starts_with(cmd, "ping ")) {
-    term_puts(term, "Pinging ");
-    term_puts(term, cmd + 5);
-    term_puts(term, "...\n");
-
-    char *ip_str = (char *)cmd + 5;
-    uint32_t ip = 0;
-    int octet = 0;
-    int shift = 24;
-
-    while (*ip_str) {
-      if (*ip_str == '.') {
-        ip |= (octet << shift);
-        shift -= 8;
-        octet = 0;
-      } else if (*ip_str >= '0' && *ip_str <= '9') {
-        octet = octet * 10 + (*ip_str - '0');
-      }
-      ip_str++;
-    }
-    ip |= (octet << shift);
-
-    /* 0x0A000202 */
-    // term_printf("IP: %08x\n", ip);
-
-    extern int icmp_send_echo(uint32_t dest_ip, uint16_t id, uint16_t seq);
-    icmp_send_echo(ip, 1, 1);
-    term_puts(term, "Packet sent.\n");
+    term_run_ping(term, cmd + 5);
   } else if (str_starts_with(cmd, "browser")) {
     term_puts(term, "Starting Browser...\n");
     gui_create_window("Browser", 150, 100, 600, 450);
@@ -1354,72 +1486,47 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   /* ===============================  */
   /* Network Commands                  */
   /* ===============================  */
-  else if (str_starts_with(cmd, "ping ")) {
-    const char *host = cmd + 5;
-    while (*host == ' ')
-      host++;
-
-    term_puts(term, "PING ");
-    term_puts(term, host);
-    term_puts(term, " (10.0.2.15): 56 data bytes\n");
-
-    /* Simulate 4 ping responses */
-    for (int i = 0; i < 4; i++) {
-      term_puts(term, "64 bytes from ");
-      term_puts(term, host);
-      char seq[32];
-      int s = 0;
-      seq[s++] = ':';
-      seq[s++] = ' ';
-      seq[s++] = 'i';
-      seq[s++] = 'c';
-      seq[s++] = 'm';
-      seq[s++] = 'p';
-      seq[s++] = '_';
-      seq[s++] = 's';
-      seq[s++] = 'e';
-      seq[s++] = 'q';
-      seq[s++] = '=';
-      seq[s++] = '0' + i;
-      seq[s++] = ' ';
-      seq[s++] = 't';
-      seq[s++] = 't';
-      seq[s++] = 'l';
-      seq[s++] = '=';
-      seq[s++] = '6';
-      seq[s++] = '4';
-      seq[s++] = ' ';
-      seq[s++] = 't';
-      seq[s++] = 'i';
-      seq[s++] = 'm';
-      seq[s++] = 'e';
-      seq[s++] = '=';
-      /* Random-ish time 10-50ms */
-      int time_ms = 15 + (i * 7) % 30;
-      seq[s++] = '0' + (time_ms / 10);
-      seq[s++] = '0' + (time_ms % 10);
-      seq[s++] = ' ';
-      seq[s++] = 'm';
-      seq[s++] = 's';
-      seq[s++] = '\n';
-      seq[s] = '\0';
-      term_puts(term, seq);
-    }
-    term_puts(term, "\n--- ping statistics ---\n");
-    term_puts(term, "4 packets transmitted, 4 received, 0% packet loss\n");
-    term_puts(term, "rtt min/avg/max = 15/28/42 ms\n");
   } else if (str_starts_with(cmd, "ifconfig") ||
              str_starts_with(cmd, "ip addr")) {
-    term_puts(term, "\033[1;32meth0:\033[0m "
-                    "flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n");
-    term_puts(term, "        inet \033[33m10.0.2.15\033[0m  netmask "
-                    "255.255.255.0  broadcast 10.0.2.255\n");
-    term_puts(term, "        inet6 fe80::5054:ff:fe12:3456  prefixlen 64  "
-                    "scopeid 0x20<link>\n");
-    term_puts(term,
-              "        ether 52:54:00:12:34:56  txqueuelen 1000  (Ethernet)\n");
-    term_puts(term, "        RX packets 1542  bytes 163840 (160.0 KiB)\n");
-    term_puts(term, "        TX packets 892   bytes 94208 (92.0 KiB)\n");
+    struct net_interface iface;
+    char ip_buf[20];
+    char mask_buf[20];
+    char gateway_buf[20];
+
+    if (net_get_primary_interface_info(&iface) == 0) {
+      format_ipv4_string(iface.ip, ip_buf, sizeof(ip_buf));
+      format_ipv4_string(iface.netmask, mask_buf, sizeof(mask_buf));
+      format_ipv4_string(iface.gateway, gateway_buf, sizeof(gateway_buf));
+      term_puts(term, "\033[1;32m");
+      term_puts(term, iface.name);
+      term_puts(term, ":\033[0m flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n");
+      term_puts(term, "        inet \033[33m");
+      term_puts(term, ip_buf);
+      term_puts(term, "\033[0m  netmask ");
+      term_puts(term, mask_buf);
+      term_puts(term, "  gateway ");
+      term_puts(term, gateway_buf);
+      term_puts(term, "\n");
+      term_puts(term, "        ether ");
+      for (int i = 0; i < ETH_ALEN; i++) {
+        uint8_t octet = iface.mac[i];
+        char hex[3];
+        hex[0] = "0123456789abcdef"[(octet >> 4) & 0xF];
+        hex[1] = "0123456789abcdef"[octet & 0xF];
+        hex[2] = '\0';
+        term_puts(term, hex);
+        if (i < ETH_ALEN - 1)
+          term_putc(term, ':');
+      }
+      term_puts(term, "  txqueuelen 1000  (Ethernet)\n");
+      term_puts(term, "        RX packets ");
+      term_put_uint(term, (uint32_t)iface.rx_packets);
+      term_puts(term, "  TX packets ");
+      term_put_uint(term, (uint32_t)iface.tx_packets);
+      term_puts(term, "\n");
+    } else {
+      term_puts(term, "ifconfig: no active network interface\n");
+    }
     term_puts(
         term,
         "\n\033[1;32mlo:\033[0m flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n");

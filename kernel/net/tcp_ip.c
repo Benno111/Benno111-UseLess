@@ -980,3 +980,20 @@ struct net_interface *net_add_interface(const char *name, uint8_t *mac, uint32_t
     
     return iface;
 }
+
+int net_get_primary_interface_info(struct net_interface *out)
+{
+    if (!out || num_interfaces == 0)
+        return -1;
+
+    for (int i = 0; i < num_interfaces; i++) {
+        if (!(interfaces[i].name[0] == 'l' && interfaces[i].name[1] == 'o' &&
+              interfaces[i].name[2] == '\0')) {
+            *out = interfaces[i];
+            return 0;
+        }
+    }
+
+    *out = interfaces[0];
+    return 0;
+}

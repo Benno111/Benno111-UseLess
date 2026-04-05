@@ -307,6 +307,7 @@ struct net_interface {
  */
 struct net_interface *net_add_interface(const char *name, uint8_t *mac, uint32_t ip, 
                       uint32_t netmask, uint32_t gateway);
+int net_get_primary_interface_info(struct net_interface *out);
 
 /**
  * net_rx - Receive a packet from a driver
