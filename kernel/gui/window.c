@@ -12907,7 +12907,7 @@ static int gui_backend_supports_blur_effects(void) {
 }
 
 static int gui_backend_prefers_coalesced_blits(void) {
-  return str_cmp(g_gpu_backend_name, "intel-gfx") == 0;
+  return str_cmp(g_gpu_backend_name, "virtio-gpu") == 0;
 }
 
 static void gui_refresh_blur_effects_policy(void) {
