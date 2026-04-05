@@ -85,6 +85,10 @@ static int intel_gfx_is_2012_2013_supported(uint16_t device_id) {
          intel_gfx_is_haswell_device(device_id);
 }
 
+static int intel_gfx_should_use_native_driver(uint16_t device_id) {
+  return intel_gfx_is_2012_2013_supported(device_id);
+}
+
 static const char *intel_gfx_detect_name(uint16_t device_id) {
   switch (device_id) {
   case 0x0152:
@@ -196,6 +200,28 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   if (!intel_gfx_is_supported_subclass(pci_dev)) {
     printk(KERN_WARNING "IGFX: Unsupported display subclass 0x%02x, skipping\n",
            pci_dev->subclass);
+    return -1;
+  }
+  if (!intel_gfx_should_use_native_driver(pci_dev->device_id)) {
+    extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
+    extern uint32_t fb_get_pitch(void);
+
+    fb_get_info(&fb, &width, &height);
+    pitch = fb_get_pitch();
+    safe_framebuffer = intel_gfx_framebuffer_is_sane(fb, width, height, pitch);
+
+    printk(KERN_INFO
+           "IGFX: %s (%04x:%04x) is not in the supported Intel GPU set; "
+           "keeping default framebuffer path\n",
+           intel_gfx_detect_name(pci_dev->device_id), pci_dev->vendor_id,
+           pci_dev->device_id);
+    if (safe_framebuffer) {
+      printk(KERN_INFO "IGFX: Boot framebuffer remains active at %ux%u pitch=%u\n",
+             width, height, pitch);
+    } else {
+      printk(KERN_WARNING
+             "IGFX: No safe boot framebuffer was reported; native Intel driver remains disabled\n");
+    }
     return -1;
   }
   if (intel_gfx_state.initialized)
