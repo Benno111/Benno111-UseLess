@@ -1482,10 +1482,6 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     } else {
       term_puts(term, "run: Unknown file type. Supported: .py, .nano\n");
     }
-  }
-  /* ===============================  */
-  /* Network Commands                  */
-  /* ===============================  */
   } else if (str_starts_with(cmd, "ifconfig") ||
              str_starts_with(cmd, "ip addr")) {
     struct net_interface iface;
