@@ -55,10 +55,6 @@ void pit_init(void)
     /* Send divisor */
     outb(PIT_CHANNEL0, divisor & 0xFF);
     outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);
-
-    /* Enable IRQ0 so idle wakeups and scheduler ticks can fire. */
-    extern void pic_clear_mask(uint8_t irq);
-    pic_clear_mask(0);
     
     printk(KERN_INFO "PIT: Initialized\n");
 }

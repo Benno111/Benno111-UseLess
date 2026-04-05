@@ -13156,25 +13156,6 @@ static void blit_region(int x, int y, int w, int h) {
 /* Forward declaration for cursor */
 void gui_draw_cursor(void);
 
-int gui_has_active_animations(void) {
-  if (window_switcher_frames > 0)
-    return 1;
-  if (bowling_ball_rolling)
-    return 1;
-  if (installer_active || installer_reboot_deadline_ms)
-    return 1;
-  if (main_menu_power_row_y_anim >= 0 &&
-      main_menu_power_row_y_anim != main_menu_power_row_y())
-    return 1;
-
-  for (struct window *win = window_stack; win; win = win->next) {
-    if (win->animation != WINDOW_ANIM_NONE)
-      return 1;
-  }
-
-  return 0;
-}
-
 void gui_compose(void) {
   g_frame_count++;
   if (!startup_setup_account_active())

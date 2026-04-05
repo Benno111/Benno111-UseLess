@@ -463,7 +463,7 @@ void arch_poweroff(void)
 
 void arch_idle(void)
 {
-    asm volatile("sti; hlt" ::: "memory");
+    asm volatile("hlt");
 }
 
 void arch_barrier(void)
@@ -581,7 +581,6 @@ void handle_irq(interrupt_frame_t *frame)
     if (irq == 0) {
         extern void pit_handler(void);
         pit_handler();
-        pic_send_eoi(irq);
         return;
     }
 
