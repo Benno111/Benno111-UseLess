@@ -245,7 +245,6 @@ static void pci_register_device(uint8_t bus, uint8_t slot, uint8_t func) {
 void pci_init(void) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   int allow_xhci_after_scan = 0;
-  extern int intel_gfx_is_supported_device(void);
 #endif
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   printk("PCI: Initializing x86 config-space scan...\n");
@@ -275,11 +274,10 @@ void pci_init(void) {
   }
 
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
-  allow_xhci_after_scan = boot_allow_xhci() || intel_gfx_is_supported_device();
+  allow_xhci_after_scan = boot_allow_xhci();
   if (allow_xhci_after_scan) {
     printk("PCI: Enabling xHCI bring-up after full PCI scan (%s)\n",
-           boot_allow_xhci() ? "cmdline override"
-                             : "supported Intel 2012-2013 platform");
+           "cmdline override");
     for (pci_device_t *dev = device_list; dev; dev = dev->next) {
       pci_try_init_xhci_controller(dev, 1);
     }
