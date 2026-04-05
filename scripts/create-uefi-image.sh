@@ -5,12 +5,13 @@ set -e
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
-IMAGE_NAME="${IMAGE_NAME:-vibos-x86_64.img}"
+IMAGE_NAME="${IMAGE_NAME:-os-x86_64.img}"
 IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-100}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86_64.elf"
-LIMINE_BIN_DIR="${ROOT_DIR}/vib-os-x86_64/limine/bin"
-LIMINE_SRC_DIR="${ROOT_DIR}/vib-os-x86_64/limine"
+KERNEL_PATH="${BUILD_DIR}/kernel/os-x86_64.elf"
+X86_64_BOOT_ASSET_DIR="${ROOT_DIR}/os-x86_64"
+LIMINE_BIN_DIR="${X86_64_BOOT_ASSET_DIR}/limine/bin"
+LIMINE_SRC_DIR="${X86_64_BOOT_ASSET_DIR}/limine"
 LIMINE_TOOL_PATH="${LIMINE_BIN_DIR}/limine"
 
 GREEN='\033[0;32m'

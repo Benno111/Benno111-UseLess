@@ -118,10 +118,13 @@ LDFLAGS_KERNEL := -nostdlib -static -T $(LINKER_SCRIPT) -e $(KERNEL_ENTRY)
 # Artifact Names
 # ============================================================================
 
-KERNEL_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).elf
-KERNEL_FLAT_BINARY := $(BUILD_DIR)/kernel/vibos-$(ARCH).bin
-ISO_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).iso
-RAW_IMAGE := $(IMAGE_DIR)/vibos-$(ARCH).img
+ARTIFACT_PREFIX := os
+X86_64_BOOT_ASSET_DIR := $(ROOT_DIR)/os-x86_64
+
+KERNEL_BINARY := $(BUILD_DIR)/kernel/$(ARTIFACT_PREFIX)-$(ARCH).elf
+KERNEL_FLAT_BINARY := $(BUILD_DIR)/kernel/$(ARTIFACT_PREFIX)-$(ARCH).bin
+ISO_IMAGE := $(IMAGE_DIR)/$(ARTIFACT_PREFIX)-$(ARCH).iso
+RAW_IMAGE := $(IMAGE_DIR)/$(ARTIFACT_PREFIX)-$(ARCH).img
 
 # ============================================================================
 # QEMU Configuration
@@ -421,7 +424,7 @@ installer-image: kernel $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine-installer.conf" INSTALL_LIMINE_CFG="$(ROOT_DIR)/vib-os-x86_64/limine.conf" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installer.conf" INSTALL_LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine.conf" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@cp "$(IMAGE_DIR)/os8-x86_64-system.img" "$(IMAGE_DIR)/os-x86_64-system.img"
 	@cp "$(IMAGE_DIR)/os8-x86_64-installer.iso" "$(IMAGE_DIR)/os-x86_64-installer.iso"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-installer.iso"

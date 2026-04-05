@@ -43,7 +43,7 @@ material in this repository.
 
 Known examples include, but may not be limited to:
 
-- `vib-os-x86_64/limine/`
+- `os-x86_64/limine/`
 - vendored or embedded media/codec/parser libraries carrying their own notices
 - generated assets that explicitly reference upstream third-party licenses
 

@@ -6,9 +6,9 @@ set -e
 
 BUILD_DIR="${1:-build/x86}"
 IMAGE_DIR="${2:-image}"
-IMAGE_NAME="vibos-x86.img"
+IMAGE_NAME="os-x86.img"
 IMAGE_SIZE="100M"
-KERNEL_PATH="${BUILD_DIR}/kernel/vibos-x86.bin"
+KERNEL_PATH="${BUILD_DIR}/kernel/os-x86.bin"
 
 # Colors
 GREEN='\033[0;32m'

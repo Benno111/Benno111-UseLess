@@ -55,7 +55,7 @@ libc/                 C library work
 runtimes/             Runtime/toolchain experiments
 scripts/              Image creation and helper scripts
 userspace/            Userspace programs and binaries used by seeding/builds
-vib-os-x86_64/        Limine config and x86_64 boot assets
+os-x86_64/            Limine config and x86_64 boot assets
 Makefile.multiarch    Main build entry point
 ```
 
@@ -114,7 +114,7 @@ Typical requirements:
 For x86_64 ISO creation, the current scripts also expect:
 
 - `xorriso`
-- Limine boot assets under `vib-os-x86_64/limine/bin`
+- Limine boot assets under `os-x86_64/limine/bin`
 
 Host assumptions in the current build system are best on Linux or macOS-style environments. Some helper scripts are shell-based and assume Unix tooling.
 
@@ -172,7 +172,7 @@ make ARCH=x86_64 image
 This produces:
 
 ```text
-image/vibos-x86_64.iso
+image/os-x86_64.iso
 ```
 
 ### ARM64 image
@@ -251,8 +251,8 @@ The generated installer image includes:
 
 The x86_64 build uses Limine configuration files from:
 
-- `vib-os-x86_64/limine.conf`
-- `vib-os-x86_64/limine-installer.conf`
+- `os-x86_64/limine.conf`
+- `os-x86_64/limine-installer.conf`
 
 ## Development Notes
 

@@ -3,11 +3,11 @@
 
 #include "types.h"
 
-extern const uint8_t vib_seed_mp3[];
-extern const unsigned int vib_seed_mp3_len;
+extern const uint8_t os_seed_mp3[];
+extern const unsigned int os_seed_mp3_len;
 
-extern const uint8_t vib_seed_jpg[];
-extern const unsigned int vib_seed_jpg_len;
+extern const uint8_t os_seed_jpg[];
+extern const unsigned int os_seed_jpg_len;
 
 extern const unsigned char bootstrap_logo_png[];
 extern const unsigned int bootstrap_logo_png_len;

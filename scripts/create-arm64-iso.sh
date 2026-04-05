@@ -4,7 +4,7 @@ set -euo pipefail
 BUILD_DIR="${1:?missing build dir}"
 IMAGE_DIR="${2:?missing image dir}"
 
-KERNEL_ELF="${BUILD_DIR}/kernel/vibos-arm64.elf"
+KERNEL_ELF="${BUILD_DIR}/kernel/os-arm64.elf"
 ISO_PATH="${IMAGE_DIR}/os-arm64.iso"
 
 STAGING_DIR="${BUILD_DIR}/arm64-iso"
@@ -40,7 +40,7 @@ if ! command -v xorriso >/dev/null 2>&1; then
 fi
 
 echo "[IMAGE] Staging ARM64 UEFI ISO tree..."
-cp "${KERNEL_ELF}" "${STAGING_DIR}/vibos-arm64.elf"
+cp "${KERNEL_ELF}" "${STAGING_DIR}/os-arm64.elf"
 
 echo "[IMAGE] Converting kernel ELF to BOOTAA64.EFI using ${OBJCOPY}..."
 "${OBJCOPY}" \
@@ -51,7 +51,7 @@ echo "[IMAGE] Converting kernel ELF to BOOTAA64.EFI using ${OBJCOPY}..."
 echo "[IMAGE] Creating ARM64 ISO: ${ISO_PATH}"
 xorriso -as mkisofs \
     -R -r -J \
-    -V "VIBOS_ARM64" \
+    -V "OS_ARM64" \
     -o "${ISO_PATH}" \
     -eltorito-alt-boot \
     -e EFI/BOOT/BOOTAA64.EFI \

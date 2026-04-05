@@ -58,7 +58,7 @@ for src in $DRIVER_SOURCES; do
 done
 
 echo "[LD] Linking kernel..."
-$LD $LDFLAGS -o build/limine/vibos-limine.elf $(find build/limine -name '*.o')
+$LD $LDFLAGS -o build/limine/os-limine.elf $(find build/limine -name '*.o')
 
-echo "[INFO] Kernel built: build/limine/vibos-limine.elf"
-ls -lh build/limine/vibos-limine.elf
+echo "[INFO] Kernel built: build/limine/os-limine.elf"
+ls -lh build/limine/os-limine.elf

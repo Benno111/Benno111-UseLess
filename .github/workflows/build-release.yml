@@ -49,28 +49,28 @@ jobs:
       - name: Package ARM64 release bundle
         run: |
           mkdir -p release/arm64
-          cp build/kernel/unixos.elf release/arm64/vibos-arm64.elf
-          if [ -f image/unixos.img ]; then
-            cp image/unixos.img release/arm64/vibos-arm64.img
+          cp build/arm64/kernel/os-arm64.elf release/arm64/os-arm64.elf
+          if [ -f image/os-arm64.img ]; then
+            cp image/os-arm64.img release/arm64/os-arm64.img
           fi
           cp boot/grub/grub.cfg release/arm64/grub.cfg
           cp BUILD_LINUX.md release/arm64/BUILD_LINUX.md
           cat > release/arm64/BOOTING.md << 'EOF'
           ARM64 boot files included in this bundle:
-          - vibos-arm64.elf: kernel binary
-          - vibos-arm64.img: bootable disk image, if present
+          - os-arm64.elf: kernel binary
+          - os-arm64.img: bootable disk image, if present
           - grub.cfg: boot menu configuration used by the project
 
           Recommended boot path:
-          1. Prefer vibos-arm64.img for QEMU, UTM, or raw flashing to media.
-          2. If you are debugging the kernel manually, use vibos-arm64.elf together with the included config as reference.
+          1. Prefer os-arm64.img for QEMU, UTM, or raw flashing to media.
+          2. If you are debugging the kernel manually, use os-arm64.elf together with the included config as reference.
           EOF
 
           cd release/arm64
           find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cd ../..
 
-          tar -czf vibos-arm64.tar.gz -C release/arm64 .
+          tar -czf os-arm64.tar.gz -C release/arm64 .
 
       - name: Build x86 kernel
         run: |
@@ -79,10 +79,10 @@ jobs:
       - name: Package x86 release bundle
         run: |
           mkdir -p release/x86
-          cp build/x86/kernel/vibos-x86.elf release/x86/vibos-x86.elf
+          cp build/x86/kernel/os-x86.elf release/x86/os-x86.elf
           cat > release/x86/BOOTING.md << 'EOF'
           x86 boot files included in this bundle:
-          - vibos-x86.elf: x86 kernel binary
+          - os-x86.elf: x86 kernel binary
 
           Recommended boot path:
           1. Use this kernel binary for emulator or bootloader integration work.
@@ -93,7 +93,7 @@ jobs:
           find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cd ../..
 
-          tar -czf vibos-x86.tar.gz -C release/x86 .
+          tar -czf os-x86.tar.gz -C release/x86 .
 
       - name: Build x86_64 ISO
         run: |
@@ -149,24 +149,24 @@ jobs:
       - name: Package x86_64 release bundle
         run: |
           mkdir -p release/x86_64/boot-support
-          cp build/x86_64/kernel/vibos-x86_64.elf release/x86_64/vibos-x86_64.elf
+          cp build/x86_64/kernel/os-x86_64.elf release/x86_64/os-x86_64.elf
           cp image/os8-x86_64.iso release/x86_64/os8-x86_64.iso
           cp image/os8-x86_64-installer.iso release/x86_64/os8-x86_64-installer.iso
           cp image/os8-x86_64-dos-installer.iso release/x86_64/os8-x86_64-dos-installer.iso
           cp /tmp/x86_64-iso-files.txt release/x86_64/ISO_CONTENTS.txt
           cp /tmp/x86_64-installer-iso-files.txt release/x86_64/INSTALLER_ISO_CONTENTS.txt
           cp /tmp/x86_64-dos-installer-iso-files.txt release/x86_64/DOS_INSTALLER_ISO_CONTENTS.txt
-          cp vib-os-x86_64/limine.conf release/x86_64/limine.conf
-          cp vib-os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
-          cp vib-os-x86_64/limine/bin/limine-bios.sys release/x86_64/boot-support/limine-bios.sys
-          cp vib-os-x86_64/limine/bin/limine-bios-cd.bin release/x86_64/boot-support/limine-bios-cd.bin
-          cp vib-os-x86_64/limine/bin/limine-uefi-cd.bin release/x86_64/boot-support/limine-uefi-cd.bin
+          cp os-x86_64/limine.conf release/x86_64/limine.conf
+          cp os-x86_64/limine/bin/BOOTX64.EFI release/x86_64/boot-support/BOOTX64.EFI
+          cp os-x86_64/limine/bin/limine-bios.sys release/x86_64/boot-support/limine-bios.sys
+          cp os-x86_64/limine/bin/limine-bios-cd.bin release/x86_64/boot-support/limine-bios-cd.bin
+          cp os-x86_64/limine/bin/limine-uefi-cd.bin release/x86_64/boot-support/limine-uefi-cd.bin
           cat > release/x86_64/BOOTING.md << 'EOF'
           x86_64 boot files included in this bundle:
           - os8-x86_64.iso: hybrid BIOS+UEFI ISO for VMs, Rufus, or direct USB writing
           - os8-x86_64-installer.iso: installer ISO with graphical and DOS rescue installer paths
           - os8-x86_64-dos-installer.iso: standalone BIOS-only ISO that boots directly into the DOS text installer
-          - vibos-x86_64.elf: kernel binary
+          - os-x86_64.elf: kernel binary
           - ISO_CONTENTS.txt: manifest of files verified inside the ISO
           - INSTALLER_ISO_CONTENTS.txt: manifest of files verified inside the installer ISO
           - DOS_INSTALLER_ISO_CONTENTS.txt: manifest of files verified inside the standalone DOS installer ISO
@@ -185,7 +185,7 @@ jobs:
           find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cd ../..
 
-          tar -czf vibos-x86_64.tar.gz -C release/x86_64 .
+          tar -czf os-x86_64.tar.gz -C release/x86_64 .
 
       - name: Package full OS files
         run: |
@@ -218,16 +218,16 @@ jobs:
           ## Downloads
 
           ### ARM64
-          - `vibos-arm64.tar.gz` - ARM64 kernel and boot bundle
-            - `vibos-arm64.elf` - Kernel binary
-            - `vibos-arm64.img` - Bootable SD card image (if available)
+          - `os-arm64.tar.gz` - ARM64 kernel and boot bundle
+            - `os-arm64.elf` - Kernel binary
+            - `os-arm64.img` - Bootable SD card image (if available)
             - `grub.cfg` - Boot menu configuration
             - `BOOTING.md` - Boot instructions for the bundle
             - `SHA256SUMS` - Checksums for verification
 
           ### x86_64
-          - `vibos-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
-            - `vibos-x86_64.elf` - Kernel binary
+          - `os-x86_64.tar.gz` - x86_64 BIOS+UEFI bundle
+            - `os-x86_64.elf` - Kernel binary
             - `os8-x86_64.iso` - Hybrid ISO for VMs, Rufus, and direct USB writing
             - `ISO_CONTENTS.txt` - Verified manifest of boot files inside the ISO
             - `limine.conf` - Boot menu configuration
@@ -236,8 +236,8 @@ jobs:
             - `SHA256SUMS` - Checksums for verification
 
           ### x86
-          - `vibos-x86.tar.gz` - x86 kernel bundle
-            - `vibos-x86.elf` - 32-bit x86 kernel binary
+          - `os-x86.tar.gz` - x86 kernel bundle
+            - `os-x86.elf` - 32-bit x86 kernel binary
             - `BOOTING.md` - Boot instructions for the bundle
             - `SHA256SUMS` - Checksums for verification
 
@@ -249,15 +249,15 @@ jobs:
 
           ### For ARM64 (Raspberry Pi 4/5)
           ```bash
-          tar -xzf vibos-arm64.tar.gz
-          sudo dd if=vibos-arm64.img of=/dev/sdX bs=4M status=progress
+          tar -xzf os-arm64.tar.gz
+          sudo dd if=os-arm64.img of=/dev/sdX bs=4M status=progress
           sync
           ```
 
           ### For Apple Silicon (UTM)
           1. Download UTM from https://mac.getutm.app/
           2. Create new ARM64 virtual machine
-          3. Use `vibos-arm64.img` as boot disk
+          3. Use `os-arm64.img` as boot disk
           4. Configure 2GB+ RAM and boot
 
           ## Features
@@ -297,9 +297,9 @@ jobs:
           draft: true
           prerelease: false
           files: |
-            vibos-arm64.tar.gz
-            vibos-x86_64.tar.gz
-            vibos-x86.tar.gz
+            os-arm64.tar.gz
+            os-x86_64.tar.gz
+            os-x86.tar.gz
             os-next-stage-files.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

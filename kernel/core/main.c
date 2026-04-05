@@ -1,5 +1,5 @@
 /*
- * UnixOS Kernel - Main Entry Point
+ * OS Kernel - Main Entry Point
  *
  * This is the C entry point called from boot.S after basic
  * hardware initialization is complete.
@@ -25,9 +25,9 @@
 #include "gui/font.h"
 
 /* Kernel version */
-#define VIBOS_VERSION_MAJOR 0
-#define VIBOS_VERSION_MINOR 5
-#define VIBOS_VERSION_PATCH 0
+#define OS_VERSION_MAJOR 0
+#define OS_VERSION_MINOR 5
+#define OS_VERSION_PATCH 0
 
 /* External symbols from linker script */
 extern char __kernel_start[];
@@ -443,12 +443,12 @@ static void print_banner(void) {
   printk("   \\_/ |_||_.__/    \\___/|____/ \n");
   printk("\n");
 #ifdef ARCH_X86_64
-  printk("OS8 v%d.%d.%d - x86_64 bring-up\n", VIBOS_VERSION_MAJOR,
-         VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
+  printk("OS8 v%d.%d.%d - x86_64 bring-up\n", OS_VERSION_MAJOR,
+         OS_VERSION_MINOR, OS_VERSION_PATCH);
   printk("A Unix-like operating system for x86_64\n");
 #else
-  printk("OS8 v%d.%d.%d - ARM64 with GUI\n", VIBOS_VERSION_MAJOR,
-         VIBOS_VERSION_MINOR, VIBOS_VERSION_PATCH);
+  printk("OS8 v%d.%d.%d - ARM64 with GUI\n", OS_VERSION_MAJOR,
+         OS_VERSION_MINOR, OS_VERSION_PATCH);
   printk("A Unix-like operating system for ARM64\n");
 #endif
   printk("Copyright (c) 2026 OS8 Project\n");
@@ -570,7 +570,7 @@ static void populate_seed_tree_at(const char *prefix) {
                   "Welcome to OS8!\nThis is a real file in RamFS.");
   seed_write_text(prefix, "todo.txt", 0644,
                   "- Implement Browser\n- Fix Bugs\n- Sleep");
-  seed_write_bytes(prefix, "sample.mp3", 0644, vib_seed_mp3, vib_seed_mp3_len);
+  seed_write_bytes(prefix, "sample.mp3", 0644, os_seed_mp3, os_seed_mp3_len);
   seed_write_bytes(prefix, "assets/logo.png", 0644, bootstrap_logo_png,
                    bootstrap_logo_png_len);
   seed_write_bytes(prefix, "assets/wallpapers/landscape.png", 0644,
