@@ -11,6 +11,7 @@
 #include "drivers/storage.h"
 #include "drivers/pci.h"
 #include "drivers/uart.h"
+#include "drivers/wifi.h"
 #include "fs/iso9660.h"
 #include "fs/vfs.h"
 #include "media/media.h"
@@ -1271,10 +1272,12 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "  Loading NVMe driver...\n");
   printk(KERN_INFO "  Loading USB driver...\n");
   printk(KERN_INFO "  Loading network driver...\n");
+  printk(KERN_INFO "  Loading Wi-Fi drivers...\n");
   extern void tcpip_init(void);
   extern int virtio_net_init(void);
   tcpip_init();
   virtio_net_init();
+  wifi_init();
   gui_notify_storage_ready();
 
   if (fb_buffer) {

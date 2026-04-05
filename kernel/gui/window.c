@@ -7,6 +7,7 @@
 #include "build_uuid.h"
 #include "arch/arch.h"
 #include "desktop.h"         /* Desktop manager */
+#include "drivers/wifi.h"
 #include "drivers/pci.h"
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
 #include "drivers/uart.h"
@@ -10137,7 +10138,9 @@ static void draw_window(struct window *win) {
                                              : "Audio backend standing by",
                       intel_hda_is_playing() ? 0xA6E3A1 : 0xFFFFFF, 0x252535);
       gui_draw_string(panel_x + card_w + 28, card_y + 50,
-                      "virtio-net online with user-mode NAT", 0xCBD5E1, 0x252535);
+                      wifi_has_supported_adapter() ? wifi_get_status_text()
+                                                   : "virtio-net online with user-mode NAT",
+                      0xCBD5E1, 0x252535);
 
       card_y += 88;
       gui_draw_rect(panel_x, card_y, card_w, 74, 0x252535);
@@ -10163,15 +10166,70 @@ static void draw_window(struct window *win) {
       gui_draw_system_button(panel_x + 328, card_y, 84, 30, "About",
                              GUI_BUTTON_NEUTRAL, 1, 0);
     } else if (settings_active_tab == 1) {
-      gui_draw_string(panel_x + 18, panel_y + 72, "virtio-net online with user-mode NAT",
-                      0x111111, 0xF8F8F8);
-      gui_draw_string(panel_x + 18, panel_y + 92,
-                      intel_hda_is_playing() ? "Audio playback is active."
-                                             : "Audio backend is standing by.",
-                      0x4A4A4A, 0xF8F8F8);
-      gui_draw_string(panel_x + 18, panel_y + 112,
-                      "This page mirrors the simpler network view from the new layout.",
-                      0x4A4A4A, 0xF8F8F8);
+      int info_y = panel_y + 72;
+      int button_y = panel_y + 118;
+      int list_y = panel_y + 164;
+      int network_count = wifi_get_network_count();
+
+      gui_draw_rect(panel_x, info_y, panel_w - 18, 76, 0x252535);
+      gui_draw_string(panel_x + 16, info_y + 12, "Wi-Fi Adapter", 0x89B4FA,
+                      0x252535);
+      gui_draw_string(panel_x + 16, info_y + 32, wifi_get_adapter_name(),
+                      wifi_has_supported_adapter() ? 0xFFFFFF : 0xF38BA8,
+                      0x252535);
+      gui_draw_string(panel_x + 16, info_y + 50, wifi_get_driver_name(),
+                      0xCBD5E1, 0x252535);
+
+      gui_draw_system_button(panel_x, button_y, 88, 28, "Scan",
+                             GUI_BUTTON_PRIMARY, 1, 0);
+      gui_draw_system_button(panel_x + 98, button_y, 102, 28, "Connect",
+                             GUI_BUTTON_SUCCESS, wifi_has_supported_adapter(), 0);
+      gui_draw_system_button(panel_x + 210, button_y, 118, 28, "Disconnect",
+                             GUI_BUTTON_DANGER, wifi_has_supported_adapter(), 0);
+
+      gui_draw_string(panel_x + 340, button_y + 8,
+                      wifi_is_connected() ? wifi_get_connected_ssid()
+                                          : "Not connected",
+                      wifi_is_connected() ? 0xA6E3A1 : 0x4A4A4A, 0xF8F8F8);
+
+      if (!wifi_has_supported_adapter()) {
+        gui_draw_rect(panel_x, list_y, panel_w - 18, 82, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 18,
+                        "No supported PCI Wi-Fi adapter was detected.",
+                        0xFFFFFF, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 40,
+                        "The wireless menu is ready, but native adapter",
+                        0xCBD5E1, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 56,
+                        "bring-up is still deferred to keep boot safe.",
+                        0xCBD5E1, 0x252535);
+      } else {
+        int i;
+
+        for (i = 0; i < network_count; i++) {
+          int row_y = list_y + i * 36;
+          uint32_t row_bg =
+              i == wifi_get_selected_network() ? 0x1F2937 : 0x252535;
+          uint32_t row_border = i == wifi_get_selected_network() ? 0x89B4FA
+                                                                 : 0x364152;
+          char signal_buf[32] = "";
+
+          gui_draw_rect(panel_x, row_y, panel_w - 18, 30, row_bg);
+          gui_draw_rect(panel_x, row_y, panel_w - 18, 1, row_border);
+          append_uint_to_buf(signal_buf, sizeof(signal_buf),
+                             wifi_get_network_signal(i));
+          notepad_append_to_buf(signal_buf, sizeof(signal_buf), "%");
+
+          gui_draw_string(panel_x + 12, row_y + 8, wifi_get_network_ssid(i),
+                          0xFFFFFF, row_bg);
+          gui_draw_string(panel_x + 192, row_y + 8,
+                          wifi_get_network_secure(i) ? "Secured" : "Open",
+                          wifi_get_network_secure(i) ? 0xA6E3A1 : 0xF9E2AF,
+                          row_bg);
+          gui_draw_string(panel_x + 272, row_y + 8, signal_buf, 0xCBD5E1,
+                          row_bg);
+        }
+      }
     } else if (settings_active_tab == 2) {
       gui_draw_string(panel_x + 18, panel_y + 72,
                       account_partition_label[0] ? account_partition_label
@@ -10634,13 +10692,22 @@ static void draw_window(struct window *win) {
     gui_draw_string(content_x + 20, yy + 8, "Network Adapter", 0x89B4FA,
                     theme->card);
     gui_draw_string(content_x + 20, yy + 28,
-                    virtio_net_is_ready() ? "virtio-net interface ready"
-                                          : "virtio-net interface offline",
-                    virtio_net_is_ready() ? theme->app_muted : 0xF38BA8,
+                    wifi_has_supported_adapter() ? wifi_get_status_text()
+                                                 : (virtio_net_is_ready()
+                                                        ? "virtio-net interface ready"
+                                                        : "virtio-net interface offline"),
+                    wifi_has_supported_adapter() || virtio_net_is_ready()
+                        ? theme->app_muted
+                        : 0xF38BA8,
                     theme->card);
     gui_draw_string(content_x + content_w - 150, yy + 28,
-                    virtio_net_is_ready() ? "eth0 / NAT" : "Unavailable",
-                    virtio_net_is_ready() ? 0xA6E3A1 : theme->app_muted,
+                    wifi_has_supported_adapter()
+                        ? (wifi_is_connected() ? wifi_get_connected_ssid()
+                                               : wifi_get_driver_name())
+                        : (virtio_net_is_ready() ? "eth0 / NAT" : "Unavailable"),
+                    wifi_has_supported_adapter() || virtio_net_is_ready()
+                        ? 0xA6E3A1
+                        : theme->app_muted,
                     theme->card);
     yy += 62;
 
@@ -13765,6 +13832,43 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
             str_copy_safe(settings_status, "Opened about window.",
                           sizeof(settings_status));
             break;
+          }
+        } else if (settings_active_tab == 1) {
+          int button_y = panel_y + 118;
+          int list_y = panel_y + 164;
+          int network_count = wifi_get_network_count();
+
+          if (x >= panel_x && x < panel_x + 88 && y >= button_y &&
+              y < button_y + 28) {
+            wifi_scan();
+            str_copy_safe(settings_status, wifi_get_status_text(),
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 98 && x < panel_x + 200 && y >= button_y &&
+              y < button_y + 28) {
+            wifi_connect_selected();
+            str_copy_safe(settings_status, wifi_get_status_text(),
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 210 && x < panel_x + 328 && y >= button_y &&
+              y < button_y + 28) {
+            wifi_disconnect();
+            str_copy_safe(settings_status, wifi_get_status_text(),
+                          sizeof(settings_status));
+            break;
+          }
+
+          for (int i = 0; i < network_count; i++) {
+            int row_y = list_y + i * 36;
+            if (x >= panel_x && x < panel_x + panel_w - 18 && y >= row_y &&
+                y < row_y + 30) {
+              wifi_select_network(i);
+              str_copy_safe(settings_status, wifi_get_status_text(),
+                            sizeof(settings_status));
+              break;
+            }
           }
         } else if (settings_active_tab == 2) {
           int row_y = panel_y + 126;
