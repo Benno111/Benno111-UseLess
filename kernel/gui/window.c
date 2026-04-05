@@ -13123,6 +13123,59 @@ static int compositor_build_coalesced_dirty_rect(int *x, int *y, int *w, int *h)
   return 1;
 }
 
+static int compositor_build_dirty_bounds(int *x, int *y, int *w, int *h) {
+  int min_x = 0;
+  int min_y = 0;
+  int max_x = 0;
+  int max_y = 0;
+  int have_rect = 0;
+
+  if (!x || !y || !w || !h || g_dirty_count <= 0)
+    return 0;
+
+  for (int i = 0; i < g_dirty_count; i++) {
+    int rx1;
+    int ry1;
+    int rx2;
+    int ry2;
+
+    if (!g_dirty_regions[i].valid || g_dirty_regions[i].w <= 0 ||
+        g_dirty_regions[i].h <= 0)
+      continue;
+
+    rx1 = g_dirty_regions[i].x;
+    ry1 = g_dirty_regions[i].y;
+    rx2 = rx1 + g_dirty_regions[i].w;
+    ry2 = ry1 + g_dirty_regions[i].h;
+
+    if (!have_rect) {
+      min_x = rx1;
+      min_y = ry1;
+      max_x = rx2;
+      max_y = ry2;
+      have_rect = 1;
+    } else {
+      if (rx1 < min_x)
+        min_x = rx1;
+      if (ry1 < min_y)
+        min_y = ry1;
+      if (rx2 > max_x)
+        max_x = rx2;
+      if (ry2 > max_y)
+        max_y = ry2;
+    }
+  }
+
+  if (!have_rect)
+    return 0;
+
+  *x = min_x;
+  *y = min_y;
+  *w = max_x - min_x;
+  *h = max_y - min_y;
+  return (*w > 0 && *h > 0);
+}
+
 /* Copy a specific region from backbuffer to framebuffer */
 static void blit_region(int x, int y, int w, int h) {
   if (!primary_display.backbuffer || !primary_display.framebuffer)
@@ -13157,10 +13210,23 @@ static void blit_region(int x, int y, int w, int h) {
 void gui_draw_cursor(void);
 
 void gui_compose(void) {
+  struct gui_clip_state prev_clip = g_clip;
+  int clip_active = 0;
+  int draw_x;
+  int draw_y;
+  int draw_w;
+  int draw_h;
+
   g_frame_count++;
   if (!startup_setup_account_active())
     installer_process_background_install();
   update_main_menu_power_animation();
+
+  if (!g_full_redraw && g_dirty_count > 0 &&
+      compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w, &draw_h)) {
+    prev_clip = gui_set_clip_rect(draw_x, draw_y, draw_w, draw_h);
+    clip_active = 1;
+  }
 
   /* Draw desktop and taskbar */
   draw_desktop();
@@ -13199,6 +13265,9 @@ void gui_compose(void) {
 
   /* Draw cursor to backbuffer BEFORE blit */
   gui_draw_cursor();
+
+  if (clip_active)
+    gui_restore_clip_rect(prev_clip);
 
   /* Smart frame buffer update */
   if (primary_display.backbuffer && primary_display.framebuffer) {
