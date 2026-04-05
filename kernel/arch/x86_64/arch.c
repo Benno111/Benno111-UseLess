@@ -489,22 +489,80 @@ typedef struct {
     uint64_t rip, cs, rflags, rsp, ss;
 } interrupt_frame_t;
 
+static void exception_append_text(char **dst, size_t *remaining,
+                                  const char *text)
+{
+    if (!dst || !*dst || !remaining || *remaining == 0 || !text)
+        return;
+
+    while (*text && *remaining > 1) {
+        **dst = *text++;
+        (*dst)++;
+        (*remaining)--;
+    }
+    **dst = '\0';
+}
+
+static void exception_append_hex(char **dst, size_t *remaining, uint64_t value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    int started = 0;
+
+    exception_append_text(dst, remaining, "0x");
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        uint8_t digit = (uint8_t)((value >> shift) & 0xF);
+        if (!started && digit == 0 && shift > 0)
+            continue;
+        started = 1;
+        if (*remaining <= 1)
+            break;
+        **dst = hex[digit];
+        (*dst)++;
+        (*remaining)--;
+        **dst = '\0';
+    }
+    if (!started && *remaining > 1) {
+        **dst = '0';
+        (*dst)++;
+        (*remaining)--;
+        **dst = '\0';
+    }
+}
+
 void handle_exception(interrupt_frame_t *frame)
 {
-    extern void x86_64_boot_emergency_exception(uint64_t int_no, uint64_t rip,
-                                                uint64_t err_code,
-                                                uint64_t cr2_valid,
-                                                uint64_t cr2);
+    char panic_msg[256];
+    char *dst = panic_msg;
+    size_t remaining = sizeof(panic_msg);
     uint64_t cr2 = 0;
     uint64_t cr2_valid = 0;
+    extern void panic_with_context(const char *msg, uintptr_t caller_hint,
+                                   uintptr_t stack_hint);
+
+    if (!frame) {
+        panic("x86_64 exception with null interrupt frame");
+    }
 
     if (frame->int_no == 14) {
         asm volatile("mov %%cr2, %0" : "=r"(cr2));
         cr2_valid = 1;
     }
 
-    x86_64_boot_emergency_exception(frame->int_no, frame->rip, frame->err_code,
-                                    cr2_valid, cr2);
+    panic_msg[0] = '\0';
+    exception_append_text(&dst, &remaining, "Unhandled x86_64 exception ");
+    exception_append_hex(&dst, &remaining, frame->int_no);
+    exception_append_text(&dst, &remaining, " at RIP=");
+    exception_append_hex(&dst, &remaining, frame->rip);
+    exception_append_text(&dst, &remaining, " ERR=");
+    exception_append_hex(&dst, &remaining, frame->err_code);
+    exception_append_text(&dst, &remaining, " RSP=");
+    exception_append_hex(&dst, &remaining, frame->rsp);
+    if (cr2_valid) {
+        exception_append_text(&dst, &remaining, " CR2=");
+        exception_append_hex(&dst, &remaining, cr2);
+    }
+
+    panic_with_context(panic_msg, (uintptr_t)frame->rip, (uintptr_t)frame->rsp);
 }
 
 void handle_irq(interrupt_frame_t *frame)

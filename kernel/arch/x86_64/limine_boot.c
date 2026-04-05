@@ -438,9 +438,53 @@ static void halt(void) {
     }
 }
 
+static void emergency_append_text(char **dst, uint64_t *remaining,
+                                  const char *text) {
+    if (!dst || !*dst || !remaining || *remaining == 0 || !text)
+        return;
+    while (*text && *remaining > 1) {
+        **dst = *text++;
+        (*dst)++;
+        (*remaining)--;
+    }
+    **dst = '\0';
+}
+
+static void emergency_append_hex(char **dst, uint64_t *remaining,
+                                 uint64_t value) {
+    static const char hex[] = "0123456789ABCDEF";
+    int started = 0;
+
+    emergency_append_text(dst, remaining, "0x");
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        uint8_t digit = (uint8_t)((value >> shift) & 0xF);
+        if (!started && digit == 0 && shift > 0)
+            continue;
+        started = 1;
+        if (*remaining <= 1)
+            break;
+        **dst = hex[digit];
+        (*dst)++;
+        (*remaining)--;
+        **dst = '\0';
+    }
+    if (!started && *remaining > 1) {
+        **dst = '0';
+        (*dst)++;
+        (*remaining)--;
+        **dst = '\0';
+    }
+}
+
 void x86_64_boot_emergency_exception(uint64_t int_no, uint64_t rip,
                                      uint64_t err_code, uint64_t cr2_valid,
                                      uint64_t cr2) {
+    char panic_msg[256];
+    char *dst = panic_msg;
+    uint64_t remaining = sizeof(panic_msg);
+    extern void panic_with_context(const char *msg, uintptr_t caller_hint,
+                                   uintptr_t stack_hint);
+
     serial_init();
     serial_puts("\nEARLY EXCEPTION ");
     serial_puthex(int_no);
@@ -453,6 +497,20 @@ void x86_64_boot_emergency_exception(uint64_t int_no, uint64_t rip,
         serial_puthex(cr2);
     }
     serial_puts("\n");
+
+    panic_msg[0] = '\0';
+    emergency_append_text(&dst, &remaining, "Early x86_64 exception ");
+    emergency_append_hex(&dst, &remaining, int_no);
+    emergency_append_text(&dst, &remaining, " at RIP=");
+    emergency_append_hex(&dst, &remaining, rip);
+    emergency_append_text(&dst, &remaining, " ERR=");
+    emergency_append_hex(&dst, &remaining, err_code);
+    if (cr2_valid) {
+        emergency_append_text(&dst, &remaining, " CR2=");
+        emergency_append_hex(&dst, &remaining, cr2);
+    }
+
+    panic_with_context(panic_msg, (uintptr_t)rip, (uintptr_t)0);
     halt();
 }
 

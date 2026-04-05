@@ -54,6 +54,8 @@ int vprintk(const char *fmt, __builtin_va_list args);
  * This function never returns.
  */
 void panic(const char *msg) __noreturn;
+void panic_with_context(const char *msg, uintptr_t caller_hint,
+                        uintptr_t stack_hint) __noreturn;
 
 /* ===================================================================== */
 /* Early boot console (before full driver init) */

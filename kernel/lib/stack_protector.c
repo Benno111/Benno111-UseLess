@@ -14,14 +14,5 @@ unsigned long __stack_chk_guard = 0xDEADBEEFCAFEBABEUL;
  * This function should never return.
  */
 void __stack_chk_fail(void) {
-  printk(KERN_EMERG "STACK SMASHING DETECTED! Halting.\n");
-
-  /* Halt the CPU */
-  for (;;) {
-#ifdef ARCH_ARM64
-    asm volatile("wfi");
-#elif defined(ARCH_X86_64) || defined(ARCH_X86)
-    asm volatile("cli; hlt");
-#endif
-  }
+  panic("STACK SMASHING DETECTED");
 }

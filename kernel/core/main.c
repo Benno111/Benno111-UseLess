@@ -1497,10 +1497,9 @@ static void start_init_process(void) {
  * panic - Halt the system with an error message
  * @msg: Error message to display
  */
-void panic(const char *msg) {
+void panic_with_context(const char *msg, uintptr_t caller_hint,
+                        uintptr_t stack_hint) {
   static int panic_in_progress = 0;
-  uintptr_t caller_hint = (uintptr_t)__builtin_return_address(0);
-  uintptr_t stack_hint = (uintptr_t)&msg;
 
   /* Disable interrupts */
   arch_irq_disable();
@@ -1534,4 +1533,10 @@ void panic(const char *msg) {
   printk(KERN_EMERG "System halted.\n");
 
   panic_halt_forever();
+}
+
+void panic(const char *msg) {
+  uintptr_t caller_hint = (uintptr_t)__builtin_return_address(0);
+  uintptr_t stack_hint = (uintptr_t)&msg;
+  panic_with_context(msg, caller_hint, stack_hint);
 }
