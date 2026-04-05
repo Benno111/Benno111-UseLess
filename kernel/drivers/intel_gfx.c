@@ -15,11 +15,14 @@
 #define INTEL_GFX_MMIO_MAP_SIZE 0x200000
 
 typedef struct {
+  bool detected;
   bool initialized;
   bool probe_attempted;
   bool init_failed;
   bool has_framebuffer;
+  bool supported_device;
   bool supports_gpu_rendering;
+  bool framebuffer_fallback_active;
   bool mmio_mapped;
   uint16_t device_id;
   uint64_t mmio_base;
@@ -197,6 +200,15 @@ int intel_gfx_init(pci_device_t *pci_dev) {
 
   if (!intel_gfx_is_display_device(pci_dev))
     return -1;
+  if (intel_gfx_state.initialized)
+    return 0;
+  if (!intel_gfx_state.detected) {
+    intel_gfx_state.detected = true;
+    intel_gfx_state.device_id = pci_dev->device_id;
+    intel_gfx_state.irq = pci_dev->irq;
+    intel_gfx_state.supported_device =
+        intel_gfx_should_use_native_driver(pci_dev->device_id);
+  }
   if (!intel_gfx_is_supported_subclass(pci_dev)) {
     printk(KERN_WARNING "IGFX: Unsupported display subclass 0x%02x, skipping\n",
            pci_dev->subclass);
@@ -209,6 +221,8 @@ int intel_gfx_init(pci_device_t *pci_dev) {
     fb_get_info(&fb, &width, &height);
     pitch = fb_get_pitch();
     safe_framebuffer = intel_gfx_framebuffer_is_sane(fb, width, height, pitch);
+    intel_gfx_state.framebuffer_fallback_active = safe_framebuffer;
+    intel_gfx_state.has_framebuffer = safe_framebuffer;
 
     printk(KERN_INFO
            "IGFX: %s (%04x:%04x) is not in the supported Intel GPU set; "
@@ -224,15 +238,20 @@ int intel_gfx_init(pci_device_t *pci_dev) {
     }
     return -1;
   }
-  if (intel_gfx_state.initialized)
-    return 0;
   if (intel_gfx_state.probe_attempted && intel_gfx_state.init_failed)
     return -1;
 
-  intel_gfx_state = (intel_gfx_state_t){0};
+  {
+    uint16_t detected_device_id = intel_gfx_state.device_id;
+    uint32_t detected_irq = intel_gfx_state.irq;
+    intel_gfx_state = (intel_gfx_state_t){0};
+    intel_gfx_state.detected = true;
+    intel_gfx_state.device_id = detected_device_id;
+    intel_gfx_state.irq = detected_irq;
+    intel_gfx_state.supported_device =
+        intel_gfx_should_use_native_driver(detected_device_id);
+  }
   intel_gfx_state.probe_attempted = true;
-  intel_gfx_state.device_id = pci_dev->device_id;
-  intel_gfx_state.irq = pci_dev->irq;
 
   /*
    * On x86 bring-up, touching Intel display PCI command/BAR state too early can
@@ -297,6 +316,7 @@ int intel_gfx_init(pci_device_t *pci_dev) {
     intel_gfx_state.height = height;
     intel_gfx_state.pitch = pitch;
     intel_gfx_state.has_framebuffer = true;
+    intel_gfx_state.framebuffer_fallback_active = true;
     intel_gfx_state.supports_gpu_rendering =
         intel_gfx_is_2012_2013_supported(pci_dev->device_id);
   } else if (fb || width || height || pitch) {
@@ -346,6 +366,12 @@ int intel_gfx_init(pci_device_t *pci_dev) {
 
 int intel_gfx_is_ready(void) { return intel_gfx_state.initialized ? 1 : 0; }
 
+int intel_gfx_detected(void) { return intel_gfx_state.detected ? 1 : 0; }
+
+int intel_gfx_is_supported_device(void) {
+  return intel_gfx_state.detected && intel_gfx_state.supported_device;
+}
+
 int intel_gfx_has_framebuffer(void) {
   return intel_gfx_state.initialized && intel_gfx_state.has_framebuffer;
 }
@@ -353,6 +379,12 @@ int intel_gfx_has_framebuffer(void) {
 int intel_gfx_supports_gpu_rendering(void) {
   return intel_gfx_state.initialized && intel_gfx_state.has_framebuffer &&
          intel_gfx_state.supports_gpu_rendering;
+}
+
+int intel_gfx_is_using_framebuffer_fallback(void) {
+  return intel_gfx_state.detected && intel_gfx_state.has_framebuffer &&
+         intel_gfx_state.framebuffer_fallback_active &&
+         !intel_gfx_supports_gpu_rendering();
 }
 
 void intel_gfx_get_display_info(uint32_t *width, uint32_t *height,

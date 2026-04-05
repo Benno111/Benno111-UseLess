@@ -625,6 +625,9 @@ static void build_neofetch_gpu_string(char *buf, int buf_size) {
   uint32_t fb_width = 0;
   uint32_t fb_height = 0;
   const char *gpu_name = NULL;
+  int intel_supported = 0;
+  int intel_fallback = 0;
+  int intel_accel = 0;
   int idx = 0;
 
   if (!buf || buf_size <= 0)
@@ -633,11 +636,18 @@ static void build_neofetch_gpu_string(char *buf, int buf_size) {
   fb_get_info(&fb, &fb_width, &fb_height);
 
 #ifdef ARCH_X86_64
-  extern int intel_gfx_is_ready(void);
+  extern int intel_gfx_detected(void);
+  extern int intel_gfx_is_supported_device(void);
+  extern int intel_gfx_supports_gpu_rendering(void);
+  extern int intel_gfx_is_using_framebuffer_fallback(void);
   extern const char *intel_gfx_get_name(void);
 
-  if (intel_gfx_is_ready())
+  if (intel_gfx_detected()) {
     gpu_name = intel_gfx_get_name();
+    intel_supported = intel_gfx_is_supported_device();
+    intel_accel = intel_gfx_supports_gpu_rendering();
+    intel_fallback = intel_gfx_is_using_framebuffer_fallback();
+  }
 #endif
 
   if (!gpu_name || !gpu_name[0]) {
@@ -647,6 +657,13 @@ static void build_neofetch_gpu_string(char *buf, int buf_size) {
 
   buf[0] = '\0';
   idx = append_str(buf, buf_size, idx, gpu_name);
+  if (intel_accel) {
+    idx = append_str(buf, buf_size, idx, " (full support)");
+  } else if (intel_fallback) {
+    idx = append_str(buf, buf_size, idx, " (framebuffer fallback)");
+  } else if (gpu_name && intel_supported) {
+    idx = append_str(buf, buf_size, idx, " (framebuffer mode)");
+  }
   if (fb && fb_width && fb_height) {
     idx = append_str(buf, buf_size, idx, " ");
     idx = append_u64(buf, buf_size, idx, fb_width);

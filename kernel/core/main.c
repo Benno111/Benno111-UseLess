@@ -1173,8 +1173,12 @@ static void init_subsystems(void *dtb) {
   extern void storage_init(void);
   extern void gui_notify_storage_ready(void);
   extern void pit_sleep(uint32_t ms);
+  extern int intel_gfx_detected(void);
   extern int intel_gfx_is_ready(void);
+  extern int intel_gfx_is_supported_device(void);
   extern int intel_gfx_has_framebuffer(void);
+  extern int intel_gfx_supports_gpu_rendering(void);
+  extern int intel_gfx_is_using_framebuffer_fallback(void);
   extern const char *intel_gfx_get_name(void);
   extern int virtio_gpu_init(pci_device_t * pci);
   extern pci_device_t *pci_find_device(uint16_t vendor, uint16_t device);
@@ -1188,8 +1192,20 @@ static void init_subsystems(void *dtb) {
 
   printk(KERN_INFO "  Initializing GPU driver...\n");
   if (intel_gfx_is_ready()) {
-    printk(KERN_INFO "  GPU: %s initialized%s\n", intel_gfx_get_name(),
-           intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "");
+    printk(KERN_INFO "  GPU: %s initialized%s%s\n", intel_gfx_get_name(),
+           intel_gfx_has_framebuffer() ? " with framebuffer handoff" : "",
+           intel_gfx_supports_gpu_rendering()
+               ? " and full compositor acceleration"
+               : "");
+  } else if (intel_gfx_detected()) {
+    printk(KERN_INFO "  GPU: %s detected%s\n", intel_gfx_get_name(),
+           intel_gfx_is_supported_device()
+               ? " but native Intel bring-up is not active"
+               : " in framebuffer compatibility mode");
+    if (intel_gfx_is_using_framebuffer_fallback()) {
+      printk(KERN_INFO
+             "  GPU: Default framebuffer fallback remains active for this Intel GPU\n");
+    }
   }
 
   pci_device_t *gpu = pci_find_device(0x1AF4, 0x1050); /* virtio-gpu */
@@ -1199,7 +1215,7 @@ static void init_subsystems(void *dtb) {
     } else {
       printk(KERN_INFO "  GPU: virtio-gpu init failed\n");
     }
-  } else if (!intel_gfx_is_ready()) {
+  } else if (!intel_gfx_detected()) {
     printk(KERN_INFO "  GPU: No virtio-gpu found (software rendering)\n");
   }
 

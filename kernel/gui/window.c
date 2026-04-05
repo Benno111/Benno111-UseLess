@@ -10525,6 +10525,11 @@ static void draw_window(struct window *win) {
     extern int intel_hda_is_ready(void);
     extern int intel_hda_is_playing(void);
     extern int virtio_net_is_ready(void);
+    extern int intel_gfx_detected(void);
+    extern int intel_gfx_is_supported_device(void);
+    extern int intel_gfx_supports_gpu_rendering(void);
+    extern int intel_gfx_is_using_framebuffer_fallback(void);
+    extern const char *intel_gfx_get_name(void);
     extern int xhci_is_ready(void);
     extern int xhci_get_port_count(void);
     extern int xhci_get_connected_count(void);
@@ -10566,8 +10571,23 @@ static void draw_window(struct window *win) {
     gui_draw_rect(content_x + 10, yy, content_w - 20, 52, theme->card);
     gui_draw_string(content_x + 20, yy + 8, "Display Adapter", 0x89B4FA,
                     theme->card);
-    gui_draw_string(content_x + 20, yy + 28, "Framebuffer compositor active",
-                    theme->app_muted, theme->card);
+    if (intel_gfx_detected()) {
+      gui_draw_string(content_x + 20, yy + 28, intel_gfx_get_name(),
+                      theme->app_muted, theme->card);
+      gui_draw_string(
+          content_x + 170, yy + 28,
+          intel_gfx_supports_gpu_rendering()
+              ? "full system support active"
+              : intel_gfx_is_using_framebuffer_fallback()
+                    ? "default framebuffer fallback active"
+              : intel_gfx_is_supported_device()
+                    ? "framebuffer compositor mode"
+                    : "compatibility framebuffer path",
+          theme->app_muted, theme->card);
+    } else {
+      gui_draw_string(content_x + 20, yy + 28, "Framebuffer compositor active",
+                      theme->app_muted, theme->card);
+    }
     gui_draw_string(content_x + content_w - 150, yy + 28, resolution,
                     theme->app_muted, theme->card);
     yy += 62;
