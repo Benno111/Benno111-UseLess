@@ -411,6 +411,7 @@ static int wallpaper_image_heap_allocated = 0;
 /* Cached thumbnails for Background Settings window */
 static media_image_t thumbnail_cache[NUM_WALLPAPERS] = {{0}};
 static int thumbnails_loaded = 0;
+static int background_settings_window_count = 0;
 
 #define WALLPAPER_BUFFER_MAX_PIXELS (2048 * 2048)
 #define WALLPAPER_THUMBNAIL_W 96
@@ -448,6 +449,27 @@ static int wallpaper_build_thumbnail(media_image_t *dest,
   dest->height = WALLPAPER_THUMBNAIL_H;
   dest->pixels = pixels;
   return 0;
+}
+
+static void free_thumbnails(void) {
+  for (int i = 0; i < NUM_WALLPAPERS; i++) {
+    if (thumbnail_cache[i].pixels) {
+      media_free_image(&thumbnail_cache[i]);
+      thumbnail_cache[i].pixels = NULL;
+      thumbnail_cache[i].width = 0;
+      thumbnail_cache[i].height = 0;
+    }
+  }
+  thumbnails_loaded = 0;
+}
+
+static void background_settings_window_on_close(struct window *win) {
+  (void)win;
+
+  if (background_settings_window_count > 0)
+    background_settings_window_count--;
+  if (background_settings_window_count == 0)
+    free_thumbnails();
 }
 
 /* Load all thumbnails once */
@@ -3072,6 +3094,11 @@ struct window *gui_create_window(const char *title, int x, int y, int w,
   win->on_key = NULL;
   win->on_close = NULL;
   win->userdata = NULL;
+
+  if (title[0] == 'B' && title[1] == 'a' && title[2] == 'c') {
+    win->on_close = background_settings_window_on_close;
+    background_settings_window_count++;
+  }
 
   /* Allocate content buffer */
   int content_h = h - TITLEBAR_HEIGHT - BORDER_WIDTH * 2;
