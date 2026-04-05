@@ -10192,9 +10192,13 @@ static void draw_window(struct window *win) {
                       0xCBD5E1, 0x252535);
 
       gui_draw_system_button(panel_x, button_y, 88, 28, "Scan",
-                             GUI_BUTTON_PRIMARY, 1, 0);
+                             GUI_BUTTON_PRIMARY,
+                             wifi_has_supported_adapter() &&
+                                 wifi_supports_real_scanning(),
+                             0);
       gui_draw_system_button(panel_x + 98, button_y, 102, 28, "Connect",
-                             GUI_BUTTON_SUCCESS, wifi_get_network_count() > 0, 0);
+                             GUI_BUTTON_SUCCESS,
+                             wifi_can_connect_selected(), 0);
       gui_draw_system_button(panel_x + 210, button_y, 118, 28, "Disconnect",
                              GUI_BUTTON_DANGER, wifi_is_connected(), 0);
 
@@ -10223,16 +10227,27 @@ static void draw_window(struct window *win) {
         gui_draw_string(panel_x + 16, list_y + 56,
                         "bring-up is still deferred to keep boot safe.",
                         0xCBD5E1, 0x252535);
+      } else if (!wifi_supports_real_scanning()) {
+        gui_draw_rect(panel_x, list_y, panel_w - 18, 82, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 18,
+                        "Adapter detected, but real scanning is not ready yet.",
+                        0xFFFFFF, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 40,
+                        "This build now waits for driver-fed scan results",
+                        0xCBD5E1, 0x252535);
+        gui_draw_string(panel_x + 16, list_y + 56,
+                        "instead of inventing nearby Wi-Fi networks.",
+                        0xCBD5E1, 0x252535);
       } else if (network_count <= 0) {
         gui_draw_rect(panel_x, list_y, panel_w - 18, 82, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 18,
-                        "No Wi-Fi networks are listed yet.",
+                        "No nearby Wi-Fi networks were reported.",
                         0xFFFFFF, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 40,
-                        "Run Scan to refresh nearby SSIDs and signal levels.",
+                        "Run Scan to ask the active driver for fresh results.",
                         0xCBD5E1, 0x252535);
         gui_draw_string(panel_x + 16, list_y + 56,
-                        "Connect becomes available once results are visible.",
+                        "Connect unlocks when the driver returns live entries.",
                         0xCBD5E1, 0x252535);
       } else {
         int i;
@@ -12261,10 +12276,13 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
                   0x00000000);
 
   gui_draw_system_button(panel_x + 14, button_y, 70, 24, "Scan",
-                         GUI_BUTTON_PRIMARY, 1, 0);
+                         GUI_BUTTON_PRIMARY,
+                         wifi_has_supported_adapter() &&
+                             wifi_supports_real_scanning(),
+                         0);
   gui_draw_system_button(panel_x + 92, button_y, 72, 24, "Connect",
-                         GUI_BUTTON_SUCCESS, wifi_get_network_count() > 0, 0);
-      gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
+                         GUI_BUTTON_SUCCESS, wifi_can_connect_selected(), 0);
+  gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
                          GUI_BUTTON_DANGER, wifi_is_connected(), 0);
 
   gui_draw_string(panel_x + 14, panel_y + 84, wifi_get_status_text(),
@@ -12293,12 +12311,22 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
     return;
   }
 
-  if (network_count <= 0) {
+  if (!wifi_supports_real_scanning()) {
     gui_draw_string(panel_x + 14, panel_y + 134,
-                    "No scan results yet. Press Scan to list nearby networks.",
+                    "Adapter found, but no real scan backend is loaded yet.",
                     0xCBD5E1, 0x00000000);
     gui_draw_string(panel_x + 14, panel_y + 152,
-                    "The connect button unlocks after a scan finds entries.",
+                    "The tray no longer invents nearby Wi-Fi networks.",
+                    0xCBD5E1, 0x00000000);
+    return;
+  }
+
+  if (network_count <= 0) {
+    gui_draw_string(panel_x + 14, panel_y + 134,
+                    "No nearby networks were reported by the driver.",
+                    0xCBD5E1, 0x00000000);
+    gui_draw_string(panel_x + 14, panel_y + 152,
+                    "Connect unlocks after a live scan returns entries.",
                     0xCBD5E1, 0x00000000);
     return;
   }
@@ -12766,13 +12794,15 @@ static int dock_handle_click(int x, int y) {
 
     if (x >= wifi_panel_x + 14 && x < wifi_panel_x + 84 && y >= button_y &&
         y < button_y + 24) {
-      wifi_scan();
+      if (wifi_has_supported_adapter() && wifi_supports_real_scanning())
+        wifi_scan();
       wifi_tray_password_active = 0;
       return 1;
     }
     if (x >= wifi_panel_x + 92 && x < wifi_panel_x + 164 && y >= button_y &&
         y < button_y + 24) {
-      wifi_connect_selected(wifi_password_draft);
+      if (wifi_can_connect_selected())
+        wifi_connect_selected(wifi_password_draft);
       wifi_tray_password_active = 0;
       return 1;
     }
@@ -13371,7 +13401,8 @@ void gui_handle_key_event(int key) {
       return;
     }
     if (key == '\r' || key == '\n') {
-      wifi_connect_selected(wifi_password_draft);
+      if (wifi_can_connect_selected())
+        wifi_connect_selected(wifi_password_draft);
       compositor_mark_full_redraw();
       return;
     }
@@ -13413,7 +13444,8 @@ void gui_handle_key_event(int key) {
         return;
       }
       if (key == '\r' || key == '\n') {
-        wifi_connect_selected(wifi_password_draft);
+        if (wifi_can_connect_selected())
+          wifi_connect_selected(wifi_password_draft);
         str_copy_safe(settings_status, wifi_get_status_text(),
                       sizeof(settings_status));
         compositor_mark_full_redraw();
@@ -14286,7 +14318,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
           if (x >= panel_x && x < panel_x + 88 && y >= button_y &&
               y < button_y + 28) {
-            wifi_scan();
+            if (wifi_has_supported_adapter() && wifi_supports_real_scanning())
+              wifi_scan();
             settings_wifi_password_active = 0;
             str_copy_safe(settings_status, wifi_get_status_text(),
                           sizeof(settings_status));
@@ -14294,7 +14327,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (x >= panel_x + 98 && x < panel_x + 200 && y >= button_y &&
               y < button_y + 28) {
-            wifi_connect_selected(wifi_password_draft);
+            if (wifi_can_connect_selected())
+              wifi_connect_selected(wifi_password_draft);
             settings_wifi_password_active = 0;
             str_copy_safe(settings_status, wifi_get_status_text(),
                           sizeof(settings_status));

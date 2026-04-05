@@ -1,15 +1,16 @@
 /*
  * OS8 - Wi-Fi Driver Layer
  *
- * This is a safe first-pass wireless subsystem. It detects a curated set of
- * PCI adapters, exposes them to the UI, and simulates scan/connect state
- * without touching adapter MMIO yet. That gives the OS a real Wi-Fi menu and
- * driver ownership model without introducing unstable hardware bring-up.
+ * This layer now tracks only hardware-backed scan/connection state. It still
+ * detects a curated set of PCI adapters, but it no longer fabricates nearby
+ * SSIDs or pretends to complete authentication on its own.
  */
 
 #include "drivers/pci.h"
 #include "drivers/wifi.h"
 #include "printk.h"
+
+#define WIFI_MAX_NETWORKS 16
 
 typedef struct {
   uint16_t vendor_id;
@@ -19,10 +20,38 @@ typedef struct {
 } wifi_pci_match_t;
 
 typedef struct {
-  const char *ssid;
+  char ssid[WIFI_MAX_SSID_LEN];
   int signal;
   int secure;
 } wifi_network_t;
+
+typedef struct {
+  int initialized;
+  int adapter_present;
+  int intel_adapter;
+  int connected;
+  int scan_ready;
+  int visible_count;
+  int selected_network;
+  int connected_signal;
+  int real_scan_supported;
+  int real_connect_supported;
+  const char *adapter_name;
+  const char *driver_name;
+  const char *backend_name;
+  char connected_ssid[WIFI_MAX_SSID_LEN];
+  char status_text[128];
+  wifi_network_t visible_networks[WIFI_MAX_NETWORKS];
+  const wifi_backend_ops_t *backend;
+} wifi_state_t;
+
+static int wifi_stub_scan(void);
+static int wifi_stub_connect(const char *ssid, int secure, const char *password);
+static void wifi_stub_disconnect(void);
+
+static const wifi_backend_ops_t wifi_stub_backend = {0, 0, wifi_stub_scan,
+                                                     wifi_stub_connect,
+                                                     wifi_stub_disconnect};
 
 static const wifi_pci_match_t wifi_supported_devices[] = {
     {0x8086, 0x0082, "Intel Centrino Advanced-N 6205",
@@ -55,34 +84,24 @@ static const wifi_pci_match_t wifi_supported_devices[] = {
     {0x10EC, 0x8178, "Realtek RTL8192CE", "rtl8192ce compatibility driver"},
 };
 
-static const wifi_network_t wifi_catalog[] = {
-    {"HomeLab", 82, 1},
-    {"Workshop-5G", 74, 1},
-    {"VibOS Guest", 63, 0},
-    {"RetroLAN", 48, 1},
-};
-
-static int wifi_signal_levels[] = {82, 74, 63, 48};
-static int wifi_visible_networks[4] = {-1, -1, -1, -1};
-
-typedef struct {
-  int initialized;
-  int adapter_present;
-  int intel_adapter;
-  int connected;
-  int scan_ready;
-  int visible_count;
-  int selected_network;
-  int connected_network;
-  int scan_generation;
-  const char *adapter_name;
-  const char *driver_name;
-  char status_text[96];
-} wifi_state_t;
-
 static wifi_state_t wifi_state = {
-    0, 0, 0, 0, 0, 0, -1, -1, 0, "No supported Wi-Fi adapter detected",
-    "No wireless driver bound", "Wireless drivers are standing by.",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    "No supported Wi-Fi adapter detected",
+    "No wireless driver bound",
+    "no backend",
+    "",
+    "Wireless drivers are standing by.",
+    {{0}},
+    &wifi_stub_backend,
 };
 
 static void wifi_copy_text(char *dst, int max, const char *src) {
@@ -94,6 +113,29 @@ static void wifi_copy_text(char *dst, int max, const char *src) {
   for (i = 0; src && src[i] && i < max - 1; i++)
     dst[i] = src[i];
   dst[i] = '\0';
+}
+
+static int wifi_text_equal(const char *left, const char *right) {
+  int i = 0;
+
+  if (!left || !right)
+    return 0;
+
+  while (left[i] || right[i]) {
+    if (left[i] != right[i])
+      return 0;
+    i++;
+  }
+
+  return 1;
+}
+
+static int wifi_clamp_signal(int signal) {
+  if (signal < 0)
+    return 0;
+  if (signal > 100)
+    return 100;
+  return signal;
 }
 
 static void wifi_set_status(const char *text) {
@@ -111,46 +153,54 @@ static void wifi_set_status_with_suffix(const char *prefix, const char *suffix) 
                  (int)(sizeof(wifi_state.status_text) - len), suffix);
 }
 
-static int wifi_catalog_count(void) {
-  return (int)(sizeof(wifi_catalog) / sizeof(wifi_catalog[0]));
-}
-
-static int wifi_visible_catalog_index(int index) {
-  if (index < 0 || index >= wifi_state.visible_count)
-    return -1;
-  return wifi_visible_networks[index];
-}
-
 static void wifi_sort_visible_networks(void) {
-  for (int i = 0; i < wifi_state.visible_count; i++) {
-    for (int j = i + 1; j < wifi_state.visible_count; j++) {
-      int left = wifi_visible_networks[i];
-      int right = wifi_visible_networks[j];
-      if (left < 0 || right < 0)
-        continue;
-      if (wifi_signal_levels[right] > wifi_signal_levels[left]) {
-        int tmp = wifi_visible_networks[i];
-        wifi_visible_networks[i] = wifi_visible_networks[j];
-        wifi_visible_networks[j] = tmp;
+  int i;
+  int j;
+
+  for (i = 0; i < wifi_state.visible_count; i++) {
+    for (j = i + 1; j < wifi_state.visible_count; j++) {
+      if (wifi_state.visible_networks[j].signal >
+          wifi_state.visible_networks[i].signal) {
+        wifi_network_t tmp = wifi_state.visible_networks[i];
+        wifi_state.visible_networks[i] = wifi_state.visible_networks[j];
+        wifi_state.visible_networks[j] = tmp;
       }
     }
   }
 }
 
 static void wifi_set_default_selection(void) {
+  int i;
+
   if (wifi_state.visible_count <= 0) {
     wifi_state.selected_network = -1;
     return;
   }
 
-  for (int i = 0; i < wifi_state.visible_count; i++) {
-    if (wifi_visible_networks[i] == wifi_state.connected_network) {
-      wifi_state.selected_network = i;
-      return;
+  if (wifi_state.connected && wifi_state.connected_ssid[0]) {
+    for (i = 0; i < wifi_state.visible_count; i++) {
+      if (wifi_text_equal(wifi_state.visible_networks[i].ssid,
+                          wifi_state.connected_ssid)) {
+        wifi_state.selected_network = i;
+        return;
+      }
     }
   }
 
   wifi_state.selected_network = 0;
+}
+
+static void wifi_reset_scan_results(void) {
+  int i;
+
+  wifi_state.visible_count = 0;
+  wifi_state.selected_network = -1;
+  wifi_state.scan_ready = 0;
+  for (i = 0; i < WIFI_MAX_NETWORKS; i++) {
+    wifi_state.visible_networks[i].ssid[0] = '\0';
+    wifi_state.visible_networks[i].signal = 0;
+    wifi_state.visible_networks[i].secure = 0;
+  }
 }
 
 static const wifi_pci_match_t *wifi_probe_supported_adapter(void) {
@@ -167,6 +217,25 @@ static const wifi_pci_match_t *wifi_probe_supported_adapter(void) {
   return 0;
 }
 
+static int wifi_stub_scan(void) {
+  wifi_begin_hardware_scan();
+  wifi_finish_hardware_scan(
+      "Adapter detected, but this driver has no real scan backend yet.");
+  return 0;
+}
+
+static int wifi_stub_connect(const char *ssid, int secure, const char *password) {
+  (void)ssid;
+  (void)secure;
+  (void)password;
+  wifi_set_status("Real Wi-Fi connection is not implemented for this adapter.");
+  return 0;
+}
+
+static void wifi_stub_disconnect(void) {
+  wifi_report_disconnected("Disconnected from Wi-Fi.");
+}
+
 void wifi_init(void) {
   const wifi_pci_match_t *match;
 
@@ -175,7 +244,7 @@ void wifi_init(void) {
 
   wifi_state.initialized = 1;
   wifi_state.selected_network = -1;
-  wifi_state.connected_network = -1;
+  wifi_reset_scan_results();
 
   printk(KERN_INFO "WIFI: Loading wireless drivers...\n");
 
@@ -190,12 +259,21 @@ void wifi_init(void) {
   wifi_state.intel_adapter = match->vendor_id == 0x8086 ? 1 : 0;
   wifi_state.adapter_name = match->adapter_name;
   wifi_state.driver_name = match->driver_name;
-  wifi_set_status(wifi_state.intel_adapter
-                      ? "Intel Wi-Fi adapter ready. Run a scan to list networks."
-                      : "Wi-Fi adapter ready. Run a scan to list networks.");
+  wifi_register_backend(&wifi_stub_backend, "stub wireless backend");
+  wifi_set_status(
+      "Adapter detected. Real Wi-Fi scanning and association are not ready yet.");
 
-  printk(KERN_INFO "WIFI: Bound %s using %s\n", wifi_state.adapter_name,
-         wifi_state.driver_name);
+  printk(KERN_INFO "WIFI: Bound %s using %s (%s)\n", wifi_state.adapter_name,
+         wifi_state.driver_name, wifi_state.backend_name);
+}
+
+void wifi_register_backend(const wifi_backend_ops_t *ops,
+                           const char *backend_name) {
+  wifi_state.backend = ops ? ops : &wifi_stub_backend;
+  wifi_state.backend_name =
+      backend_name && backend_name[0] ? backend_name : "wireless backend";
+  wifi_set_backend_capabilities(wifi_state.backend->supports_real_scanning,
+                                wifi_state.backend->supports_real_connecting);
 }
 
 int wifi_has_supported_adapter(void) { return wifi_state.adapter_present; }
@@ -209,6 +287,18 @@ int wifi_has_scan_results(void) {
          wifi_state.visible_count > 0;
 }
 
+int wifi_supports_real_scanning(void) { return wifi_state.real_scan_supported; }
+
+int wifi_supports_real_connect(void) {
+  return wifi_state.real_connect_supported;
+}
+
+int wifi_can_connect_selected(void) {
+  return wifi_state.real_connect_supported &&
+         wifi_state.selected_network >= 0 &&
+         wifi_state.selected_network < wifi_state.visible_count;
+}
+
 const char *wifi_get_adapter_name(void) { return wifi_state.adapter_name; }
 
 const char *wifi_get_driver_name(void) { return wifi_state.driver_name; }
@@ -216,21 +306,17 @@ const char *wifi_get_driver_name(void) { return wifi_state.driver_name; }
 const char *wifi_get_status_text(void) { return wifi_state.status_text; }
 
 const char *wifi_get_connected_ssid(void) {
-  if (!wifi_state.connected || wifi_state.connected_network < 0 ||
-      wifi_state.connected_network >=
-          (int)(sizeof(wifi_catalog) / sizeof(wifi_catalog[0])))
+  if (!wifi_state.connected || !wifi_state.connected_ssid[0])
     return "Not connected";
 
-  return wifi_catalog[wifi_state.connected_network].ssid;
+  return wifi_state.connected_ssid;
 }
 
 int wifi_get_signal_strength(void) {
-  if (!wifi_state.connected || wifi_state.connected_network < 0 ||
-      wifi_state.connected_network >=
-          (int)(sizeof(wifi_catalog) / sizeof(wifi_catalog[0])))
+  if (!wifi_state.connected)
     return 0;
 
-  return wifi_signal_levels[wifi_state.connected_network];
+  return wifi_state.connected_signal;
 }
 
 int wifi_get_network_count(void) {
@@ -241,30 +327,28 @@ int wifi_get_network_count(void) {
 }
 
 const char *wifi_get_network_ssid(int index) {
-  int catalog_index = wifi_visible_catalog_index(index);
-  if (catalog_index < 0)
+  if (index < 0 || index >= wifi_state.visible_count)
     return "";
-  return wifi_catalog[catalog_index].ssid;
+  return wifi_state.visible_networks[index].ssid;
 }
 
 int wifi_get_network_signal(int index) {
-  int catalog_index = wifi_visible_catalog_index(index);
-  if (catalog_index < 0)
+  if (index < 0 || index >= wifi_state.visible_count)
     return 0;
-  return wifi_signal_levels[catalog_index];
+  return wifi_state.visible_networks[index].signal;
 }
 
 int wifi_get_network_secure(int index) {
-  int catalog_index = wifi_visible_catalog_index(index);
-  if (catalog_index < 0)
+  if (index < 0 || index >= wifi_state.visible_count)
     return 0;
-  return wifi_catalog[catalog_index].secure;
+  return wifi_state.visible_networks[index].secure;
 }
 
 int wifi_is_network_connected(int index) {
-  int catalog_index = wifi_visible_catalog_index(index);
-  return catalog_index >= 0 && wifi_state.connected &&
-         catalog_index == wifi_state.connected_network;
+  if (index < 0 || index >= wifi_state.visible_count || !wifi_state.connected)
+    return 0;
+  return wifi_text_equal(wifi_state.visible_networks[index].ssid,
+                         wifi_state.connected_ssid);
 }
 
 int wifi_get_selected_network(void) { return wifi_state.selected_network; }
@@ -273,98 +357,138 @@ void wifi_select_network(int index) {
   if (index < 0 || index >= wifi_get_network_count())
     return;
   wifi_state.selected_network = index;
-  wifi_set_status("Network selected. Connect when ready.");
+  wifi_set_status("Network selected. Connect when the driver is ready.");
+}
+
+void wifi_set_backend_capabilities(int supports_scanning,
+                                   int supports_connecting) {
+  wifi_state.real_scan_supported = supports_scanning ? 1 : 0;
+  wifi_state.real_connect_supported = supports_connecting ? 1 : 0;
+}
+
+void wifi_begin_hardware_scan(void) { wifi_reset_scan_results(); }
+
+int wifi_add_hardware_scan_result(const char *ssid, int signal, int secure,
+                                  int connected) {
+  int i;
+  wifi_network_t *entry;
+
+  if (!ssid || !ssid[0] || wifi_state.visible_count >= WIFI_MAX_NETWORKS)
+    return 0;
+
+  for (i = 0; i < wifi_state.visible_count; i++) {
+    if (wifi_text_equal(wifi_state.visible_networks[i].ssid, ssid)) {
+      if (wifi_clamp_signal(signal) > wifi_state.visible_networks[i].signal)
+        wifi_state.visible_networks[i].signal = wifi_clamp_signal(signal);
+      if (secure)
+        wifi_state.visible_networks[i].secure = 1;
+      if (connected)
+        wifi_report_connected(ssid, signal, "Connected network refreshed.");
+      return 1;
+    }
+  }
+
+  entry = &wifi_state.visible_networks[wifi_state.visible_count++];
+  wifi_copy_text(entry->ssid, sizeof(entry->ssid), ssid);
+  entry->signal = wifi_clamp_signal(signal);
+  entry->secure = secure ? 1 : 0;
+
+  if (connected)
+    wifi_report_connected(ssid, signal, "Connected network refreshed.");
+
+  return 1;
+}
+
+void wifi_finish_hardware_scan(const char *status_text) {
+  wifi_sort_visible_networks();
+  wifi_state.scan_ready = 1;
+  wifi_set_default_selection();
+
+  if (status_text && status_text[0]) {
+    wifi_set_status(status_text);
+  } else if (wifi_state.visible_count > 0) {
+    wifi_set_status("Scan complete. Nearby Wi-Fi networks updated.");
+  } else {
+    wifi_set_status("Scan complete. No nearby Wi-Fi networks were reported.");
+  }
+}
+
+void wifi_report_connected(const char *ssid, int signal, const char *status_text) {
+  wifi_state.connected = 1;
+  wifi_state.connected_signal = wifi_clamp_signal(signal);
+  wifi_copy_text(wifi_state.connected_ssid, sizeof(wifi_state.connected_ssid),
+                 ssid ? ssid : "");
+  if (status_text && status_text[0]) {
+    wifi_set_status(status_text);
+  } else {
+    wifi_set_status_with_suffix("Connected to ", wifi_state.connected_ssid);
+  }
+  wifi_set_default_selection();
+}
+
+void wifi_report_disconnected(const char *status_text) {
+  wifi_state.connected = 0;
+  wifi_state.connected_signal = 0;
+  wifi_state.connected_ssid[0] = '\0';
+  if (status_text && status_text[0])
+    wifi_set_status(status_text);
+  else
+    wifi_set_status("Disconnected from Wi-Fi.");
+  wifi_set_default_selection();
 }
 
 int wifi_scan(void) {
-  int i;
-  int base_visible_count;
-  int connected_visible = 0;
+  if (!wifi_state.adapter_present) {
+    wifi_set_status("No supported Wi-Fi adapter detected.");
+    return 0;
+  }
+
+  if (!wifi_state.backend || !wifi_state.backend->scan) {
+    wifi_begin_hardware_scan();
+    wifi_finish_hardware_scan("No Wi-Fi scan backend is loaded.");
+    return 0;
+  }
+
+  return wifi_state.backend->scan();
+}
+
+int wifi_connect_selected(const char *password) {
+  wifi_network_t *network;
 
   if (!wifi_state.adapter_present) {
     wifi_set_status("No supported Wi-Fi adapter detected.");
     return 0;
   }
 
-  wifi_state.scan_generation++;
-  for (i = 0; i < wifi_catalog_count(); i++) {
-    int base = wifi_catalog[i].signal;
-    int delta = ((wifi_state.scan_generation + i) % 3) * 2;
-    wifi_signal_levels[i] = base - 2 + delta;
-    if (wifi_signal_levels[i] < 25)
-      wifi_signal_levels[i] = 25;
-  }
-
-  for (i = 0; i < wifi_catalog_count(); i++)
-    wifi_visible_networks[i] = -1;
-
-  base_visible_count = 2 + (wifi_state.scan_generation % 3);
-  if (base_visible_count > wifi_catalog_count())
-    base_visible_count = wifi_catalog_count();
-
-  wifi_state.visible_count = base_visible_count;
-  for (i = 0; i < wifi_state.visible_count; i++)
-    wifi_visible_networks[i] = i;
-
-  if (wifi_state.connected && wifi_state.connected_network >= 0) {
-    for (i = 0; i < wifi_state.visible_count; i++) {
-      if (wifi_visible_networks[i] == wifi_state.connected_network) {
-        connected_visible = 1;
-        break;
-      }
-    }
-    if (!connected_visible && wifi_state.visible_count < wifi_catalog_count()) {
-      wifi_visible_networks[wifi_state.visible_count++] =
-          wifi_state.connected_network;
-    } else if (!connected_visible && wifi_state.visible_count > 0) {
-      wifi_visible_networks[wifi_state.visible_count - 1] =
-          wifi_state.connected_network;
-    }
-  }
-
-  wifi_sort_visible_networks();
-  wifi_state.scan_ready = 1;
-  wifi_set_default_selection();
-  wifi_set_status("Scan complete. Nearby Wi-Fi networks refreshed.");
-  return wifi_state.visible_count;
-}
-
-int wifi_connect_selected(const char *password) {
-  int index = wifi_state.selected_network;
-  int catalog_index;
-  const char *ssid;
-
-  if (!wifi_state.adapter_present) {
-    wifi_set_status("No supported Wi-Fi adapter detected.");
+  if (!wifi_state.real_connect_supported) {
+    wifi_set_status("Real Wi-Fi connection is not implemented for this adapter.");
     return 0;
   }
 
   if (!wifi_state.scan_ready || wifi_state.visible_count <= 0) {
-    wifi_set_status("Run a Wi-Fi scan before connecting.");
+    wifi_set_status("Run a real Wi-Fi scan before connecting.");
     return 0;
   }
 
-  if (index < 0 || index >= wifi_get_network_count()) {
+  if (wifi_state.selected_network < 0 ||
+      wifi_state.selected_network >= wifi_state.visible_count) {
     wifi_set_status("Select a Wi-Fi network first.");
     return 0;
   }
 
-  catalog_index = wifi_visible_catalog_index(index);
-  if (catalog_index < 0) {
-    wifi_set_status("Selected Wi-Fi network is no longer available.");
-    return 0;
-  }
-
-  if (wifi_catalog[catalog_index].secure && (!password || !password[0])) {
+  network = &wifi_state.visible_networks[wifi_state.selected_network];
+  if (network->secure && (!password || !password[0])) {
     wifi_set_status("Enter the Wi-Fi password before connecting.");
     return 0;
   }
 
-  ssid = wifi_catalog[catalog_index].ssid;
-  wifi_state.connected = 1;
-  wifi_state.connected_network = catalog_index;
-  wifi_set_status_with_suffix("Connected to ", ssid);
-  return 1;
+  if (!wifi_state.backend || !wifi_state.backend->connect_selected) {
+    wifi_set_status("No Wi-Fi connection backend is loaded.");
+    return 0;
+  }
+
+  return wifi_state.backend->connect_selected(network->ssid, network->secure,
+                                              password);
 }
 
 void wifi_disconnect(void) {
@@ -373,8 +497,13 @@ void wifi_disconnect(void) {
     return;
   }
 
-  wifi_state.connected = 0;
-  wifi_state.connected_network = -1;
-  wifi_set_status("Disconnected from Wi-Fi.");
-  wifi_set_default_selection();
+  if (!wifi_state.connected) {
+    wifi_set_status("Wi-Fi link is already idle.");
+    return;
+  }
+
+  if (wifi_state.backend && wifi_state.backend->disconnect)
+    wifi_state.backend->disconnect();
+  else
+    wifi_report_disconnected("Disconnected from Wi-Fi.");
 }
