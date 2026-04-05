@@ -272,8 +272,8 @@ static int kapi_spawn(const char *path) {
 
 /* Yield CPU to other tasks */
 static void kapi_yield(void) {
-    /* Placeholder - would call scheduler */
-    for (volatile int i = 0; i < 1000; i++) { }
+    extern void process_yield(void);
+    process_yield();
 }
 
 static void kapi_uart_puts(const char *s) {

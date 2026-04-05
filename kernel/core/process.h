@@ -77,6 +77,7 @@ void process_yield(void);              // Give up CPU voluntarily
 void process_schedule(void);           // Pick next process to run
 void process_schedule_from_irq(void);  // Called from timer IRQ for preemption
 int process_count_ready(void);         // Count runnable processes
+int process_run_kernel_slice(void);    // Let kernel grant one background slice
 
 // Context switch (implemented in assembly)
 void process_context_switch(cpu_context_t *old_ctx, cpu_context_t *new_ctx);

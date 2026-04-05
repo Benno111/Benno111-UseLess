@@ -636,6 +636,17 @@ void process_schedule_from_irq(void) {
   }
 }
 
+int process_run_kernel_slice(void) {
+  if (current_pid >= 0)
+    return 0;
+
+  if (process_count_ready() <= 0)
+    return 0;
+
+  process_schedule();
+  return 1;
+}
+
 // Kill all children of a process (iterative to prevent stack overflow)
 static void kill_children(int parent_pid) {
   // Use a work stack to avoid recursion - max depth is MAX_PROCESSES

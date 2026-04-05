@@ -1430,10 +1430,12 @@ static void start_init_process(void) {
   int last_buttons = 0;
   int needs_redraw = 0; /* Initial render already completed */
   int cursor_only = 0;  /* Only cursor needs updating */
+  uint64_t last_kernel_slice_ms = arch_timer_get_ms();
 
   /* Timer for periodic auto-refresh (33ms = 30 FPS for responsive UI) */
   uint64_t last_refresh = arch_timer_get_ms();
   const uint64_t REFRESH_MS = 33; /* 30 FPS - responsive mouse */
+  const uint64_t KERNEL_SLICE_MS = 8; /* Kernel grants background runtime */
 
   {
     extern void mouse_get_position(int *x, int *y);
@@ -1512,6 +1514,16 @@ static void start_init_process(void) {
       gui_compose(); /* Cursor is drawn inside compose, before blit */
       needs_redraw = 0;
       cursor_only = 0;
+    }
+
+    if (!needs_redraw) {
+      uint64_t now_for_slice = arch_timer_get_ms();
+      if (now_for_slice - last_kernel_slice_ms >= KERNEL_SLICE_MS) {
+        extern int process_run_kernel_slice(void);
+        if (process_run_kernel_slice()) {
+          last_kernel_slice_ms = now_for_slice;
+        }
+      }
     }
 
     frame++;
