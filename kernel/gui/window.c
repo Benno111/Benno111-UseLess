@@ -11368,6 +11368,7 @@ static void draw_window(struct window *win) {
 static int menu_open = 0; /* 0=closed, 1=main menu open */
 static int main_menu_power_open = 0;
 static int main_menu_power_row_y_anim = -1;
+static int wifi_tray_open = 0;
 
 #define MAIN_MENU_W 364
 #define MAIN_MENU_H 350
@@ -11375,6 +11376,8 @@ static int main_menu_power_row_y_anim = -1;
 #define MAIN_MENU_LEFT_W 214
 #define MAIN_MENU_ROW_H 34
 #define MAIN_MENU_RIGHT_ROW_H 28
+#define WIFI_TRAY_PANEL_W 248
+#define WIFI_TRAY_PANEL_H 208
 
 enum {
   MAIN_MENU_ITEM_NONE = -1,
@@ -11404,6 +11407,70 @@ static void main_menu_launcher_button_rect(int *x, int *y, int *w, int *h) {
     *w = size;
   if (h)
     *h = size;
+}
+
+static void dock_status_panel_rect(int dock_y, int dock_h, int *x, int *y, int *w,
+                                   int *h) {
+  int panel_w = 122;
+  int panel_h = 34;
+  int panel_x = (int)primary_display.width - panel_w - 16;
+  int panel_y = dock_y + (dock_h - panel_h) / 2;
+
+  if (x)
+    *x = panel_x;
+  if (y)
+    *y = panel_y;
+  if (w)
+    *w = panel_w;
+  if (h)
+    *h = panel_h;
+}
+
+static void wifi_tray_button_rect(int dock_y, int dock_h, int *x, int *y, int *w,
+                                  int *h) {
+  int panel_x, panel_y, panel_w, panel_h;
+
+  dock_status_panel_rect(dock_y, dock_h, &panel_x, &panel_y, &panel_w, &panel_h);
+  if (x)
+    *x = panel_x + 8;
+  if (y)
+    *y = panel_y + 5;
+  if (w)
+    *w = 36;
+  if (h)
+    *h = panel_h - 10;
+}
+
+static void wifi_tray_panel_rect(int dock_y, int dock_h, int *x, int *y, int *w,
+                                 int *h) {
+  int panel_x, panel_y, panel_w, panel_h;
+
+  dock_status_panel_rect(dock_y, dock_h, &panel_x, &panel_y, &panel_w, &panel_h);
+  if (x)
+    *x = panel_x + panel_w - WIFI_TRAY_PANEL_W;
+  if (y)
+    *y = panel_y - WIFI_TRAY_PANEL_H - 10;
+  if (w)
+    *w = WIFI_TRAY_PANEL_W;
+  if (h)
+    *h = WIFI_TRAY_PANEL_H;
+}
+
+static int wifi_tray_contains_point(int x, int y) {
+  int dock_y = (int)primary_display.height - DOCK_HEIGHT;
+  int dock_h = DOCK_HEIGHT;
+  int bx, by, bw, bh;
+  int px, py, pw, ph;
+
+  wifi_tray_button_rect(dock_y, dock_h, &bx, &by, &bw, &bh);
+  if (x >= bx && x < bx + bw && y >= by && y < by + bh)
+    return 1;
+
+  if (!wifi_tray_open)
+    return 0;
+
+  wifi_tray_panel_rect(dock_y, dock_h, &px, &py, &pw, &ph);
+  return x >= px && x < px + pw && y >= py && y < py + ph;
 }
 
 static int main_menu_panel_x(void) {
@@ -12099,32 +12166,105 @@ int gui_draw_system_app_icon(const char *app_id, int x, int y, int size) {
 static void draw_dock_status_indicators(int dock_y, int dock_h) {
   char time_str[9];
   int hours24, minutes, seconds;
-  int panel_w = 122;
-  int panel_h = 34;
-  int panel_x = (int)primary_display.width - panel_w - 16;
-  int panel_y = dock_y + (dock_h - panel_h) / 2;
-  int wx = panel_x + 16;
-  int wy = panel_y + 16;
+  int panel_x, panel_y, panel_w, panel_h;
+  int wifi_x, wifi_y, wifi_w, wifi_h;
+  int wx;
+  int wy;
+  uint32_t wifi_color;
 
+  dock_status_panel_rect(dock_y, dock_h, &panel_x, &panel_y, &panel_w, &panel_h);
+  wifi_tray_button_rect(dock_y, dock_h, &wifi_x, &wifi_y, &wifi_w, &wifi_h);
+  wx = panel_x + 26;
+  wy = panel_y + 16;
   clock_get_time(&hours24, &minutes, &seconds);
   clock_format_time(time_str, hours24, minutes, seconds);
   time_str[5] = '\0';
+  wifi_color = wifi_has_supported_adapter()
+                   ? (wifi_is_connected() ? 0xA6E3A1 : 0xF9E2AF)
+                   : 0xF38BA8;
 
   gui_fill_rect_alpha(panel_x, panel_y, panel_w, panel_h, 0x28405268);
   gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, 0x50738BA3, 1);
   gui_fill_rect_alpha(panel_x, panel_y, panel_w, 1, 0x46FFFFFF);
+  gui_fill_rect_alpha(wifi_x, wifi_y, wifi_w, wifi_h,
+                      wifi_tray_open ? 0x406285A8 : 0x1E0F172A);
 
   /* WiFi status */
-  gui_draw_rect(wx, wy + 6, 2, 2, 0xFFFFFF);
-  gui_draw_line(wx - 3, wy + 3, wx, wy, 0xFFFFFF);
-  gui_draw_line(wx, wy, wx + 3, wy + 3, 0xFFFFFF);
-  gui_draw_line(wx - 6, wy, wx, wy - 3, 0xFFFFFF);
-  gui_draw_line(wx, wy - 3, wx + 6, wy, 0xFFFFFF);
-
-  /* Small green status dot */
-  draw_filled_circle(panel_x + 38, panel_y + panel_h / 2, 3, 0x22C55E);
+  gui_draw_rect(wx, wy + 6, 2, 2, wifi_color);
+  gui_draw_line(wx - 3, wy + 3, wx, wy, wifi_color);
+  gui_draw_line(wx, wy, wx + 3, wy + 3, wifi_color);
+  gui_draw_line(wx - 6, wy, wx, wy - 3, wifi_color);
+  gui_draw_line(wx, wy - 3, wx + 6, wy, wifi_color);
+  draw_filled_circle(panel_x + 38, panel_y + panel_h / 2, 3, wifi_color);
 
   gui_draw_string(panel_x + 50, panel_y + 9, time_str, 0xFFFFFF, 0x00000000);
+}
+
+static void draw_wifi_tray_panel(int dock_y, int dock_h) {
+  int panel_x, panel_y, panel_w, panel_h;
+  int button_y;
+  int network_count;
+
+  if (!wifi_tray_open)
+    return;
+
+  wifi_tray_panel_rect(dock_y, dock_h, &panel_x, &panel_y, &panel_w, &panel_h);
+  button_y = panel_y + 58;
+  network_count = wifi_get_network_count();
+
+  gui_fill_rect_alpha(panel_x + 8, panel_y + 8, panel_w, panel_h, 0x28050910);
+  gui_draw_glass_panel(panel_x, panel_y, panel_w, panel_h, 0x74354962,
+                       0x20FFFFFF, 0x8A7A8FA7, 1);
+  gui_draw_string(panel_x + 14, panel_y + 12, "Wi-Fi", 0xFFFFFF, 0x00000000);
+  gui_draw_string(panel_x + 14, panel_y + 30,
+                  wifi_is_intel_adapter() ? "Intel wireless"
+                                          : "Wireless networking",
+                  0xBAC8D7, 0x00000000);
+  gui_draw_string(panel_x + 14, panel_y + 44, wifi_get_adapter_name(),
+                  wifi_has_supported_adapter() ? 0xEAF2FF : 0xF38BA8,
+                  0x00000000);
+
+  gui_draw_system_button(panel_x + 14, button_y, 70, 24, "Scan",
+                         GUI_BUTTON_PRIMARY, 1, 0);
+  gui_draw_system_button(panel_x + 92, button_y, 72, 24, "Connect",
+                         GUI_BUTTON_SUCCESS, wifi_has_supported_adapter(), 0);
+  gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
+                         GUI_BUTTON_DANGER, wifi_has_supported_adapter(), 0);
+
+  gui_draw_string(panel_x + 14, panel_y + 92, wifi_get_status_text(),
+                  0xE2E8F0, 0x00000000);
+
+  if (!wifi_has_supported_adapter()) {
+    gui_draw_string(panel_x + 14, panel_y + 122,
+                    "No supported Intel or compatibility Wi-Fi card detected.",
+                    0xCBD5E1, 0x00000000);
+    gui_draw_string(panel_x + 14, panel_y + 140,
+                    "The tray menu is ready for supported hardware.",
+                    0xCBD5E1, 0x00000000);
+    return;
+  }
+
+  for (int i = 0; i < network_count && i < 3; i++) {
+    int row_y = panel_y + 118 + i * 24;
+    uint32_t fg = i == wifi_get_selected_network() ? 0xFFFFFF : 0xD7E3F2;
+    uint32_t accent = wifi_get_network_secure(i) ? 0xA6E3A1 : 0xF9E2AF;
+
+    if (i == wifi_get_selected_network())
+      gui_fill_rect_alpha(panel_x + 10, row_y - 2, panel_w - 20, 20, 0x3048667D);
+    gui_draw_string(panel_x + 14, row_y, wifi_get_network_ssid(i), fg,
+                    0x00000000);
+    gui_draw_string(panel_x + 128, row_y,
+                    wifi_get_network_secure(i) ? "Secured" : "Open", accent,
+                    0x00000000);
+
+    {
+      char signal_buf[24] = "";
+      append_uint_to_buf(signal_buf, sizeof(signal_buf),
+                         wifi_get_network_signal(i));
+      notepad_append_to_buf(signal_buf, sizeof(signal_buf), "%");
+      gui_draw_string(panel_x + 196, row_y, signal_buf, 0xCBD5E1, 0x00000000);
+    }
+  }
 }
 
 static void draw_dock(void) {
@@ -12198,6 +12338,7 @@ static void draw_dock(void) {
   }
 
   draw_dock_status_indicators(dock_y, dock_h);
+  draw_wifi_tray_panel(dock_y, dock_h);
 
   int center_y = dock_y + dock_h / 2;
   int curr_x = icon_start_x;
@@ -12529,6 +12670,14 @@ static int dock_handle_click(int x, int y) {
   int launcher_btn_y;
   int launcher_btn_w;
   int launcher_btn_h;
+  int wifi_btn_x;
+  int wifi_btn_y;
+  int wifi_btn_w;
+  int wifi_btn_h;
+  int wifi_panel_x;
+  int wifi_panel_y;
+  int wifi_panel_w;
+  int wifi_panel_h;
 
   if (!dock_is_visible())
     return 0;
@@ -12540,13 +12689,59 @@ static int dock_handle_click(int x, int y) {
   dock_h = DOCK_HEIGHT;
   main_menu_launcher_button_rect(&launcher_btn_x, &launcher_btn_y,
                                  &launcher_btn_w, &launcher_btn_h);
+  wifi_tray_button_rect(dock_y, dock_h, &wifi_btn_x, &wifi_btn_y, &wifi_btn_w,
+                        &wifi_btn_h);
+  wifi_tray_panel_rect(dock_y, dock_h, &wifi_panel_x, &wifi_panel_y,
+                       &wifi_panel_w, &wifi_panel_h);
+
+  if (wifi_tray_open &&
+      x >= wifi_panel_x && x < wifi_panel_x + wifi_panel_w && y >= wifi_panel_y &&
+      y < wifi_panel_y + wifi_panel_h) {
+    int button_y = wifi_panel_y + 58;
+
+    if (x >= wifi_panel_x + 14 && x < wifi_panel_x + 84 && y >= button_y &&
+        y < button_y + 24) {
+      wifi_scan();
+      return 1;
+    }
+    if (x >= wifi_panel_x + 92 && x < wifi_panel_x + 164 && y >= button_y &&
+        y < button_y + 24) {
+      wifi_connect_selected();
+      return 1;
+    }
+    if (x >= wifi_panel_x + 172 && x < wifi_panel_x + 234 && y >= button_y &&
+        y < button_y + 24) {
+      wifi_disconnect();
+      return 1;
+    }
+
+    for (int i = 0; i < wifi_get_network_count() && i < 3; i++) {
+      int row_y = wifi_panel_y + 118 + i * 24;
+      if (x >= wifi_panel_x + 10 && x < wifi_panel_x + wifi_panel_w - 10 &&
+          y >= row_y - 2 && y < row_y + 18) {
+        wifi_select_network(i);
+        return 1;
+      }
+    }
+
+    return 1;
+  }
 
   if (y < dock_y || y >= dock_y + dock_h)
     return 0;
 
+  if (x >= wifi_btn_x && x < wifi_btn_x + wifi_btn_w && y >= wifi_btn_y &&
+      y < wifi_btn_y + wifi_btn_h) {
+    wifi_tray_open = wifi_tray_open ? 0 : 1;
+    menu_open = 0;
+    main_menu_power_open = 0;
+    return 1;
+  }
+
   if (x >= launcher_btn_x && x < launcher_btn_x + launcher_btn_w &&
       y >= launcher_btn_y && y < launcher_btn_y + launcher_btn_h) {
     menu_open = menu_open ? 0 : 1;
+    wifi_tray_open = 0;
     if (!menu_open)
       main_menu_power_open = 0;
     return 1;
@@ -12561,6 +12756,7 @@ static int dock_handle_click(int x, int y) {
           y < icon_y_start + DOCK_ICON_SIZE) {
         menu_open = 0;
         main_menu_power_open = 0;
+        wifi_tray_open = 0;
         gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
       }
@@ -13485,6 +13681,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       menu_open = 0;
       main_menu_power_open = 0;
       return;
+    }
+
+    if (wifi_tray_open && !wifi_tray_contains_point(x, y)) {
+      wifi_tray_open = 0;
     }
 
     if (y < MENU_BAR_HEIGHT) {

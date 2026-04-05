@@ -14,6 +14,7 @@
 
 void wifi_init(void);
 int wifi_has_supported_adapter(void);
+int wifi_is_intel_adapter(void);
 int wifi_is_connected(void);
 const char *wifi_get_adapter_name(void);
 const char *wifi_get_driver_name(void);

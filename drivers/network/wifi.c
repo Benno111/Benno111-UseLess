@@ -25,14 +25,30 @@ typedef struct {
 } wifi_network_t;
 
 static const wifi_pci_match_t wifi_supported_devices[] = {
+    {0x8086, 0x0082, "Intel Centrino Advanced-N 6205",
+     "intel iwlwifi driver"},
+    {0x8086, 0x0085, "Intel Centrino Advanced-N + WiMAX 6250",
+     "intel iwlwifi driver"},
+    {0x8086, 0x008A, "Intel Centrino Wireless-N 1030",
+     "intel iwlwifi driver"},
+    {0x8086, 0x008B, "Intel Centrino Wireless-N 130",
+     "intel iwlwifi driver"},
     {0x8086, 0x0887, "Intel Centrino Wireless-N 2230",
-     "iwlwifi compatibility driver"},
+     "intel iwlwifi driver"},
     {0x8086, 0x0891, "Intel Centrino Wireless-N 2200",
-     "iwlwifi compatibility driver"},
+     "intel iwlwifi driver"},
+    {0x8086, 0x088E, "Intel Centrino Advanced-N 6235",
+     "intel iwlwifi driver"},
+    {0x8086, 0x088F, "Intel Centrino Advanced-N 6235",
+     "intel iwlwifi driver"},
     {0x8086, 0x08B1, "Intel Dual Band Wireless-AC 7260",
-     "iwlwifi compatibility driver"},
+     "intel iwlwifi driver"},
     {0x8086, 0x08B2, "Intel Dual Band Wireless-N 7260",
-     "iwlwifi compatibility driver"},
+     "intel iwlwifi driver"},
+    {0x8086, 0x08B3, "Intel Dual Band Wireless-AC 3160",
+     "intel iwlwifi driver"},
+    {0x8086, 0x08B4, "Intel Dual Band Wireless-AC 7260",
+     "intel iwlwifi driver"},
     {0x168C, 0x0030, "Qualcomm Atheros AR93xx",
      "ath9k compatibility driver"},
     {0x14E4, 0x4359, "Broadcom BCM43228", "brcmsmac compatibility driver"},
@@ -51,6 +67,7 @@ static int wifi_signal_levels[] = {82, 74, 63, 48};
 typedef struct {
   int initialized;
   int adapter_present;
+  int intel_adapter;
   int connected;
   int selected_network;
   int connected_network;
@@ -61,7 +78,7 @@ typedef struct {
 } wifi_state_t;
 
 static wifi_state_t wifi_state = {
-    0, 0, 0, 0, -1, 0, "No supported Wi-Fi adapter detected",
+    0, 0, 0, 0, 0, -1, 0, "No supported Wi-Fi adapter detected",
     "No wireless driver bound", "Wireless drivers are standing by.",
 };
 
@@ -125,15 +142,20 @@ void wifi_init(void) {
   }
 
   wifi_state.adapter_present = 1;
+  wifi_state.intel_adapter = match->vendor_id == 0x8086 ? 1 : 0;
   wifi_state.adapter_name = match->adapter_name;
   wifi_state.driver_name = match->driver_name;
-  wifi_set_status("Wi-Fi adapter ready. Run a scan to list networks.");
+  wifi_set_status(wifi_state.intel_adapter
+                      ? "Intel Wi-Fi adapter ready. Run a scan to list networks."
+                      : "Wi-Fi adapter ready. Run a scan to list networks.");
 
   printk(KERN_INFO "WIFI: Bound %s using %s\n", wifi_state.adapter_name,
          wifi_state.driver_name);
 }
 
 int wifi_has_supported_adapter(void) { return wifi_state.adapter_present; }
+
+int wifi_is_intel_adapter(void) { return wifi_state.intel_adapter; }
 
 int wifi_is_connected(void) { return wifi_state.connected; }
 
