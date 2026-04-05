@@ -13091,8 +13091,6 @@ static int resize_start_win_x = 0, resize_start_win_y = 0;
 
 #define RESIZE_BORDER                                                          \
   12 /* Pixel width of resize grab area - larger for easier grabbing */
-#define MIN_WINDOW_WIDTH 150
-#define MIN_WINDOW_HEIGHT 100
 
 void gui_handle_mouse_event(int x, int y, int buttons) {
   if (buttons < 0)
@@ -13334,22 +13332,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         resize_edge == RESIZE_TOP_RIGHT) {
       new_h = resize_start_h - dy;
       new_y = resize_start_win_y + dy;
-    }
-
-    /* Enforce minimum size */
-    if (new_w < MIN_WINDOW_WIDTH) {
-      if (resize_edge == RESIZE_LEFT || resize_edge == RESIZE_BOTTOM_LEFT ||
-          resize_edge == RESIZE_TOP_LEFT) {
-        new_x = resize_start_win_x + resize_start_w - MIN_WINDOW_WIDTH;
-      }
-      new_w = MIN_WINDOW_WIDTH;
-    }
-    if (new_h < MIN_WINDOW_HEIGHT) {
-      if (resize_edge == RESIZE_TOP || resize_edge == RESIZE_TOP_LEFT ||
-          resize_edge == RESIZE_TOP_RIGHT) {
-        new_y = resize_start_win_y + resize_start_h - MIN_WINDOW_HEIGHT;
-      }
-      new_h = MIN_WINDOW_HEIGHT;
     }
 
     /* Clamp to screen */
