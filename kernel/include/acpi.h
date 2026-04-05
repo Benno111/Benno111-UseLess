@@ -103,6 +103,47 @@ typedef struct {
 } __attribute__((packed)) acpi_madt_t;
 
 typedef struct {
+  uint8_t type;
+  uint8_t length;
+} __attribute__((packed)) acpi_madt_entry_header_t;
+
+typedef struct {
+  acpi_madt_entry_header_t header;
+  uint8_t acpi_processor_id;
+  uint8_t apic_id;
+  uint32_t flags;
+} __attribute__((packed)) acpi_madt_lapic_t;
+
+typedef struct {
+  acpi_madt_entry_header_t header;
+  uint8_t ioapic_id;
+  uint8_t reserved;
+  uint32_t ioapic_addr;
+  uint32_t gsi_base;
+} __attribute__((packed)) acpi_madt_ioapic_t;
+
+typedef struct {
+  acpi_madt_entry_header_t header;
+  uint8_t reserved[2];
+  uint64_t lapic_addr;
+} __attribute__((packed)) acpi_madt_lapic_addr_override_t;
+
+typedef struct {
+  acpi_madt_entry_header_t header;
+  uint16_t reserved;
+  uint32_t x2apic_id;
+  uint32_t flags;
+  uint32_t acpi_uid;
+} __attribute__((packed)) acpi_madt_x2apic_t;
+
+#define ACPI_MADT_ENTRY_LAPIC 0
+#define ACPI_MADT_ENTRY_IOAPIC 1
+#define ACPI_MADT_ENTRY_LAPIC_ADDR_OVERRIDE 5
+#define ACPI_MADT_ENTRY_X2APIC 9
+
+#define ACPI_MADT_LAPIC_ENABLED (1u << 0)
+
+typedef struct {
   uint16_t pm1a_cnt_port;
   uint16_t pm1b_cnt_port;
   uint8_t pm1_cnt_len;
@@ -116,6 +157,9 @@ typedef struct {
 void acpi_init(void *rsdp_ptr);
 const acpi_madt_t *acpi_get_madt(void);
 const acpi_fadt_t *acpi_get_fadt(void);
+uint64_t acpi_madt_get_lapic_base(void);
+uint64_t acpi_madt_get_ioapic_base(uint32_t *gsi_base_out);
+uint32_t acpi_madt_get_cpu_count(void);
 int acpi_power_available(void);
 int acpi_reboot(void);
 int acpi_poweroff(void);

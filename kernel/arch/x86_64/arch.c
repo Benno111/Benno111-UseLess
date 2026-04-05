@@ -298,8 +298,9 @@ uint32_t arch_cpu_id(void)
 
 uint32_t arch_cpu_count(void)
 {
-    /* TODO: Parse ACPI MADT for CPU count */
-    return 1;
+    uint32_t cpu_count = acpi_madt_get_cpu_count();
+
+    return cpu_count ? cpu_count : 1;
 }
 
 /* ===================================================================== */
@@ -308,8 +309,11 @@ uint32_t arch_cpu_count(void)
 
 void smp_init(void)
 {
+    uint32_t cpu_count = arch_cpu_count();
+
     printk(KERN_INFO "SMP: Initializing multiprocessor support (x86_64)\n");
     printk(KERN_INFO "SMP: Boot CPU (CPU 0) initialized\n");
+    printk(KERN_INFO "SMP: ACPI reports %u CPU(s)\n", cpu_count);
 }
 
 /* ===================================================================== */

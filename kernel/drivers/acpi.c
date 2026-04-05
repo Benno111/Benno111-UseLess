@@ -28,6 +28,20 @@ static int sig_eq(const char *a, const char *b) {
   return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
 }
 
+static const uint8_t *madt_entries_begin(const acpi_madt_t *madt) {
+  if (!madt || madt->header.length <= sizeof(*madt)) {
+    return NULL;
+  }
+  return (const uint8_t *)madt + sizeof(*madt);
+}
+
+static const uint8_t *madt_entries_end(const acpi_madt_t *madt) {
+  if (!madt || madt->header.length <= sizeof(*madt)) {
+    return NULL;
+  }
+  return (const uint8_t *)madt + madt->header.length;
+}
+
 static void *map_phys(uint64_t phys) {
   uint64_t hhdm = limine_get_hhdm_offset();
   if (!phys || !hhdm) {
@@ -214,6 +228,107 @@ const acpi_madt_t *acpi_get_madt(void) { return g_madt; }
 
 const acpi_fadt_t *acpi_get_fadt(void) { return g_fadt; }
 
+uint64_t acpi_madt_get_lapic_base(void) {
+  const uint8_t *ptr;
+  const uint8_t *end;
+
+  if (!g_madt) {
+    return 0;
+  }
+
+  ptr = madt_entries_begin(g_madt);
+  end = madt_entries_end(g_madt);
+  while (ptr && end && ptr + sizeof(acpi_madt_entry_header_t) <= end) {
+    const acpi_madt_entry_header_t *entry =
+        (const acpi_madt_entry_header_t *)ptr;
+    if (entry->length < sizeof(*entry) || ptr + entry->length > end) {
+      break;
+    }
+    if (entry->type == ACPI_MADT_ENTRY_LAPIC_ADDR_OVERRIDE &&
+        entry->length >= sizeof(acpi_madt_lapic_addr_override_t)) {
+      const acpi_madt_lapic_addr_override_t *override =
+          (const acpi_madt_lapic_addr_override_t *)ptr;
+      if (override->lapic_addr) {
+        return override->lapic_addr;
+      }
+    }
+    ptr += entry->length;
+  }
+
+  return g_madt->lapic_addr;
+}
+
+uint64_t acpi_madt_get_ioapic_base(uint32_t *gsi_base_out) {
+  const uint8_t *ptr;
+  const uint8_t *end;
+
+  if (gsi_base_out) {
+    *gsi_base_out = 0;
+  }
+  if (!g_madt) {
+    return 0;
+  }
+
+  ptr = madt_entries_begin(g_madt);
+  end = madt_entries_end(g_madt);
+  while (ptr && end && ptr + sizeof(acpi_madt_entry_header_t) <= end) {
+    const acpi_madt_entry_header_t *entry =
+        (const acpi_madt_entry_header_t *)ptr;
+    if (entry->length < sizeof(*entry) || ptr + entry->length > end) {
+      break;
+    }
+    if (entry->type == ACPI_MADT_ENTRY_IOAPIC &&
+        entry->length >= sizeof(acpi_madt_ioapic_t)) {
+      const acpi_madt_ioapic_t *ioapic = (const acpi_madt_ioapic_t *)ptr;
+      if (gsi_base_out) {
+        *gsi_base_out = ioapic->gsi_base;
+      }
+      return ioapic->ioapic_addr;
+    }
+    ptr += entry->length;
+  }
+
+  return 0;
+}
+
+uint32_t acpi_madt_get_cpu_count(void) {
+  const uint8_t *ptr;
+  const uint8_t *end;
+  uint32_t count = 0;
+
+  if (!g_madt) {
+    return 0;
+  }
+
+  ptr = madt_entries_begin(g_madt);
+  end = madt_entries_end(g_madt);
+  while (ptr && end && ptr + sizeof(acpi_madt_entry_header_t) <= end) {
+    const acpi_madt_entry_header_t *entry =
+        (const acpi_madt_entry_header_t *)ptr;
+    if (entry->length < sizeof(*entry) || ptr + entry->length > end) {
+      break;
+    }
+
+    if (entry->type == ACPI_MADT_ENTRY_LAPIC &&
+        entry->length >= sizeof(acpi_madt_lapic_t)) {
+      const acpi_madt_lapic_t *lapic = (const acpi_madt_lapic_t *)ptr;
+      if (lapic->flags & ACPI_MADT_LAPIC_ENABLED) {
+        count++;
+      }
+    } else if (entry->type == ACPI_MADT_ENTRY_X2APIC &&
+               entry->length >= sizeof(acpi_madt_x2apic_t)) {
+      const acpi_madt_x2apic_t *x2apic = (const acpi_madt_x2apic_t *)ptr;
+      if (x2apic->flags & ACPI_MADT_LAPIC_ENABLED) {
+        count++;
+      }
+    }
+
+    ptr += entry->length;
+  }
+
+  return count;
+}
+
 int acpi_power_available(void) {
   return g_acpi_ready && g_fadt != NULL;
 }
@@ -260,6 +375,17 @@ void acpi_init(void *rsdp_ptr) {
 const acpi_madt_t *acpi_get_madt(void) { return NULL; }
 
 const acpi_fadt_t *acpi_get_fadt(void) { return NULL; }
+
+uint64_t acpi_madt_get_lapic_base(void) { return 0; }
+
+uint64_t acpi_madt_get_ioapic_base(uint32_t *gsi_base_out) {
+  if (gsi_base_out) {
+    *gsi_base_out = 0;
+  }
+  return 0;
+}
+
+uint32_t acpi_madt_get_cpu_count(void) { return 0; }
 
 int acpi_power_available(void) { return 0; }
 

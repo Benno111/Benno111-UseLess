@@ -6,6 +6,7 @@
  */
 
 #include "apps/embedded_apps.h"
+#include "acpi.h"
 #include "arch/arch.h"
 #include "build_uuid.h"
 #include "drivers/storage.h"
@@ -461,6 +462,7 @@ static void start_x86_64_bringup(void) {
   printk(KERN_INFO "[INIT] x86_64 early bring-up\n");
   printk(KERN_INFO "  Using conservative Limine framebuffer path\n");
 
+  extern void *limine_get_rsdp(void);
   extern int fb_init(void);
   extern const char *limine_get_kernel_cmdline(void);
   extern void boot_parse_cmdline(const char *cmdline);
@@ -473,6 +475,11 @@ static void start_x86_64_bringup(void) {
   }
 
   fb_show_x86_64_bringup_screen();
+
+  printk(KERN_INFO "x86_64: initializing ACPI tables\n");
+  acpi_init(limine_get_rsdp());
+  printk(KERN_INFO "x86_64: ACPI CPU topology reports %u CPU(s)\n",
+         arch_cpu_count());
 
   printk(KERN_INFO "x86_64: framebuffer bring-up stable, continuing boot\n");
 }
