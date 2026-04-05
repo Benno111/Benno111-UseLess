@@ -255,7 +255,7 @@ static void panic_draw_screen(const char *msg, uintptr_t caller_hint,
   uint32_t fb_h = 0;
   uint32_t pitch = 0;
   uint32_t pitch_pixels;
-  char cpu_info[96];
+  char cpu_info[96] = "unavailable";
   char line0[128];
   char line1[128];
   char line2[128];
@@ -273,16 +273,26 @@ static void panic_draw_screen(const char *msg, uintptr_t caller_hint,
   int max_log_chars;
   uint64_t uptime_ms;
 
-  extern int fb_init(void);
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
   extern uint32_t fb_get_pitch(void);
 
   fb_get_info(&fb, &fb_w, &fb_h);
-  if (!fb || !fb_w || !fb_h) {
-    if (fb_init() == 0)
-      fb_get_info(&fb, &fb_w, &fb_h);
-  }
   pitch = fb_get_pitch();
+#if defined(ARCH_X86_64)
+  if ((!fb || !fb_w || !fb_h) || !pitch) {
+    extern int limine_get_framebuffer(uint32_t **buffer, uint32_t *width,
+                                      uint32_t *height, uint32_t *pitch);
+    limine_get_framebuffer(&fb, &fb_w, &fb_h, &pitch);
+  }
+#else
+  if (!fb || !fb_w || !fb_h) {
+    extern int fb_init(void);
+    if (fb_init() == 0) {
+      fb_get_info(&fb, &fb_w, &fb_h);
+      pitch = fb_get_pitch();
+    }
+  }
+#endif
   if (!fb || !fb_w || !fb_h)
     return;
 
@@ -312,6 +322,8 @@ static void panic_draw_screen(const char *msg, uintptr_t caller_hint,
   panel_y = 28;
   panel_w = (int)fb_w - 48;
   panel_h = (int)fb_h - 56;
+  if (panel_w < 120 || panel_h < 120)
+    return;
   panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, panel_x, panel_y, panel_w, panel_h,
                      0x1A1114);
   panic_fb_fill_rect(fb, pitch_pixels, fb_w, fb_h, panel_x, panel_y, panel_w, 2,
