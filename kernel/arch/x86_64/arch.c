@@ -463,7 +463,7 @@ void arch_poweroff(void)
 
 void arch_idle(void)
 {
-    asm volatile("hlt");
+    asm volatile("sti; hlt" ::: "memory");
 }
 
 void arch_barrier(void)
