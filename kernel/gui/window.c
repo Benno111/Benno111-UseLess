@@ -729,6 +729,9 @@ static const char *settings_menu_labels[SETTINGS_MENU_COUNT] = {
 static int settings_resolution_current_idx = -1;
 static int settings_resolution_pending_idx = -1;
 static int settings_resolution_saved_idx = -1;
+static char wifi_password_draft[32] = "";
+static int settings_wifi_password_active = 0;
+static int wifi_tray_password_active = 0;
 static uint32_t *g_saved_backbuffer;
 static int wallpaper_cached;
 static int wallpaper_cached_idx;
@@ -10168,8 +10171,16 @@ static void draw_window(struct window *win) {
     } else if (settings_active_tab == 1) {
       int info_y = panel_y + 72;
       int button_y = panel_y + 118;
-      int list_y = panel_y + 164;
+      int password_y = panel_y + 154;
+      int list_y = panel_y + 196;
       int network_count = wifi_get_network_count();
+      int selected_network = wifi_get_selected_network();
+      int selected_secure =
+          selected_network >= 0 ? wifi_get_network_secure(selected_network) : 0;
+      char masked_wifi_password[32];
+
+      mask_secret(wifi_password_draft, masked_wifi_password,
+                  sizeof(masked_wifi_password));
 
       gui_draw_rect(panel_x, info_y, panel_w - 18, 76, 0x252535);
       gui_draw_string(panel_x + 16, info_y + 12, "Wi-Fi Adapter", 0x89B4FA,
@@ -10191,6 +10202,15 @@ static void draw_window(struct window *win) {
                       wifi_is_connected() ? wifi_get_connected_ssid()
                                           : "Not connected",
                       wifi_is_connected() ? 0xA6E3A1 : 0x4A4A4A, 0xF8F8F8);
+
+      if (selected_secure) {
+        uint32_t field_bg = settings_wifi_password_active ? 0x31314A : 0x232337;
+        gui_draw_rect(panel_x, password_y, panel_w - 18, 28, field_bg);
+        gui_draw_string(panel_x + 12, password_y + 8,
+                        masked_wifi_password[0] ? masked_wifi_password
+                                                : "Wi-Fi password",
+                        masked_wifi_password[0] ? 0xFFFFFF : 0x6C7086, field_bg);
+      }
 
       if (!wifi_has_supported_adapter()) {
         gui_draw_rect(panel_x, list_y, panel_w - 18, 82, 0x252535);
@@ -12244,34 +12264,47 @@ static void draw_wifi_tray_panel(int dock_y, int dock_h) {
                          GUI_BUTTON_PRIMARY, 1, 0);
   gui_draw_system_button(panel_x + 92, button_y, 72, 24, "Connect",
                          GUI_BUTTON_SUCCESS, wifi_get_network_count() > 0, 0);
-  gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
+      gui_draw_system_button(panel_x + 172, button_y, 62, 24, "Off",
                          GUI_BUTTON_DANGER, wifi_is_connected(), 0);
 
-  gui_draw_string(panel_x + 14, panel_y + 92, wifi_get_status_text(),
+  gui_draw_string(panel_x + 14, panel_y + 84, wifi_get_status_text(),
                   0xE2E8F0, 0x00000000);
 
+  if (wifi_get_selected_network() >= 0 &&
+      wifi_get_network_secure(wifi_get_selected_network())) {
+    char masked_wifi_password[32];
+    uint32_t field_bg = wifi_tray_password_active ? 0x3048667D : 0x1F2937;
+    mask_secret(wifi_password_draft, masked_wifi_password,
+                sizeof(masked_wifi_password));
+    gui_fill_rect_alpha(panel_x + 14, panel_y + 102, panel_w - 28, 24, field_bg);
+    gui_draw_string(panel_x + 20, panel_y + 109,
+                    masked_wifi_password[0] ? masked_wifi_password
+                                            : "Wi-Fi password",
+                    masked_wifi_password[0] ? 0xFFFFFF : 0x94A3B8, 0x00000000);
+  }
+
   if (!wifi_has_supported_adapter()) {
-    gui_draw_string(panel_x + 14, panel_y + 122,
+    gui_draw_string(panel_x + 14, panel_y + 134,
                     "No supported Intel or compatibility Wi-Fi card detected.",
                     0xCBD5E1, 0x00000000);
-    gui_draw_string(panel_x + 14, panel_y + 140,
+    gui_draw_string(panel_x + 14, panel_y + 152,
                     "The tray menu is ready for supported hardware.",
                     0xCBD5E1, 0x00000000);
     return;
   }
 
   if (network_count <= 0) {
-    gui_draw_string(panel_x + 14, panel_y + 122,
+    gui_draw_string(panel_x + 14, panel_y + 134,
                     "No scan results yet. Press Scan to list nearby networks.",
                     0xCBD5E1, 0x00000000);
-    gui_draw_string(panel_x + 14, panel_y + 140,
+    gui_draw_string(panel_x + 14, panel_y + 152,
                     "The connect button unlocks after a scan finds entries.",
                     0xCBD5E1, 0x00000000);
     return;
   }
 
   for (int i = 0; i < network_count && i < 3; i++) {
-    int row_y = panel_y + 118 + i * 24;
+    int row_y = panel_y + 134 + i * 24;
     uint32_t fg = i == wifi_get_selected_network() ? 0xFFFFFF : 0xD7E3F2;
     uint32_t accent = wifi_is_network_connected(i)
                           ? 0x89B4FA
@@ -12729,28 +12762,43 @@ static int dock_handle_click(int x, int y) {
       x >= wifi_panel_x && x < wifi_panel_x + wifi_panel_w && y >= wifi_panel_y &&
       y < wifi_panel_y + wifi_panel_h) {
     int button_y = wifi_panel_y + 58;
+    int password_y = wifi_panel_y + 102;
 
     if (x >= wifi_panel_x + 14 && x < wifi_panel_x + 84 && y >= button_y &&
         y < button_y + 24) {
       wifi_scan();
+      wifi_tray_password_active = 0;
       return 1;
     }
     if (x >= wifi_panel_x + 92 && x < wifi_panel_x + 164 && y >= button_y &&
         y < button_y + 24) {
-      wifi_connect_selected();
+      wifi_connect_selected(wifi_password_draft);
+      wifi_tray_password_active = 0;
       return 1;
     }
     if (x >= wifi_panel_x + 172 && x < wifi_panel_x + 234 && y >= button_y &&
         y < button_y + 24) {
       wifi_disconnect();
+      wifi_tray_password_active = 0;
       return 1;
     }
 
+    if (wifi_get_selected_network() >= 0 &&
+        wifi_get_network_secure(wifi_get_selected_network()) &&
+        x >= wifi_panel_x + 14 && x < wifi_panel_x + wifi_panel_w - 14 &&
+        y >= password_y && y < password_y + 24) {
+      wifi_tray_password_active = 1;
+      return 1;
+    }
+    wifi_tray_password_active = 0;
+
     for (int i = 0; i < wifi_get_network_count() && i < 3; i++) {
-      int row_y = wifi_panel_y + 118 + i * 24;
+      int row_y = wifi_panel_y + 134 + i * 24;
       if (x >= wifi_panel_x + 10 && x < wifi_panel_x + wifi_panel_w - 10 &&
           y >= row_y - 2 && y < row_y + 18) {
         wifi_select_network(i);
+        if (!wifi_get_network_secure(i))
+          wifi_password_draft[0] = '\0';
         return 1;
       }
     }
@@ -12764,6 +12812,7 @@ static int dock_handle_click(int x, int y) {
   if (x >= wifi_btn_x && x < wifi_btn_x + wifi_btn_w && y >= wifi_btn_y &&
       y < wifi_btn_y + wifi_btn_h) {
     wifi_tray_open = wifi_tray_open ? 0 : 1;
+    wifi_tray_password_active = 0;
     menu_open = 0;
     main_menu_power_open = 0;
     return 1;
@@ -12773,6 +12822,7 @@ static int dock_handle_click(int x, int y) {
       y >= launcher_btn_y && y < launcher_btn_y + launcher_btn_h) {
     menu_open = menu_open ? 0 : 1;
     wifi_tray_open = 0;
+    wifi_tray_password_active = 0;
     if (!menu_open)
       main_menu_power_open = 0;
     return 1;
@@ -12788,6 +12838,7 @@ static int dock_handle_click(int x, int y) {
         menu_open = 0;
         main_menu_power_open = 0;
         wifi_tray_open = 0;
+        wifi_tray_password_active = 0;
         gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
       }
@@ -13191,6 +13242,22 @@ void gui_handle_key_event(int key) {
       return; /* Desktop consumed the key */
   }
 
+  if (wifi_tray_open && wifi_tray_password_active) {
+    if (key == '\t' || key == 27) {
+      wifi_tray_password_active = 0;
+      compositor_mark_full_redraw();
+      return;
+    }
+    if (key == '\r' || key == '\n') {
+      wifi_connect_selected(wifi_password_draft);
+      compositor_mark_full_redraw();
+      return;
+    }
+    append_input_char(wifi_password_draft, (int)sizeof(wifi_password_draft), key);
+    compositor_mark_full_redraw();
+    return;
+  }
+
   if (focused_window &&
       (!focused_window->visible || !gui_window_in_stack(focused_window))) {
     gui_clear_focus();
@@ -13213,6 +13280,26 @@ void gui_handle_key_event(int key) {
         return;
       }
       append_input_char(target, 32, key);
+      return;
+    }
+    if (focused_window->title[0] == 'S' && focused_window->title[1] == 'e' &&
+        focused_window->title[2] == 't' && settings_active_tab == 1 &&
+        settings_wifi_password_active) {
+      if (key == '\t' || key == 27) {
+        settings_wifi_password_active = 0;
+        compositor_mark_full_redraw();
+        return;
+      }
+      if (key == '\r' || key == '\n') {
+        wifi_connect_selected(wifi_password_draft);
+        str_copy_safe(settings_status, wifi_get_status_text(),
+                      sizeof(settings_status));
+        compositor_mark_full_redraw();
+        return;
+      }
+      append_input_char(wifi_password_draft, (int)sizeof(wifi_password_draft),
+                        key);
+      compositor_mark_full_redraw();
       return;
     }
     /* Check if it's a Terminal window */
@@ -13716,6 +13803,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     if (wifi_tray_open && !wifi_tray_contains_point(x, y)) {
       wifi_tray_open = 0;
+      wifi_tray_password_active = 0;
     }
 
     if (y < MENU_BAR_HEIGHT) {
@@ -14027,6 +14115,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           if (x >= content_x + 10 && x < content_x + sidebar_w - 10 &&
               y >= tab_y && y < tab_y + 18) {
             settings_active_tab = i;
+            settings_wifi_password_active = 0;
             str_copy_safe(settings_status, settings_default_status_message(i),
                           sizeof(settings_status));
             break;
@@ -14066,19 +14155,25 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
         } else if (settings_active_tab == 1) {
           int button_y = panel_y + 118;
-          int list_y = panel_y + 164;
+          int password_y = panel_y + 154;
+          int list_y = panel_y + 196;
           int network_count = wifi_get_network_count();
+          int selected_network = wifi_get_selected_network();
+          int selected_secure =
+              selected_network >= 0 ? wifi_get_network_secure(selected_network) : 0;
 
           if (x >= panel_x && x < panel_x + 88 && y >= button_y &&
               y < button_y + 28) {
             wifi_scan();
+            settings_wifi_password_active = 0;
             str_copy_safe(settings_status, wifi_get_status_text(),
                           sizeof(settings_status));
             break;
           }
           if (x >= panel_x + 98 && x < panel_x + 200 && y >= button_y &&
               y < button_y + 28) {
-            wifi_connect_selected();
+            wifi_connect_selected(wifi_password_draft);
+            settings_wifi_password_active = 0;
             str_copy_safe(settings_status, wifi_get_status_text(),
                           sizeof(settings_status));
             break;
@@ -14086,16 +14181,26 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           if (x >= panel_x + 210 && x < panel_x + 328 && y >= button_y &&
               y < button_y + 28) {
             wifi_disconnect();
+            settings_wifi_password_active = 0;
             str_copy_safe(settings_status, wifi_get_status_text(),
                           sizeof(settings_status));
             break;
           }
+
+          if (selected_secure && x >= panel_x && x < panel_x + panel_w - 18 &&
+              y >= password_y && y < password_y + 28) {
+            settings_wifi_password_active = 1;
+            break;
+          }
+          settings_wifi_password_active = 0;
 
           for (int i = 0; i < network_count; i++) {
             int row_y = list_y + i * 36;
             if (x >= panel_x && x < panel_x + panel_w - 18 && y >= row_y &&
                 y < row_y + 30) {
               wifi_select_network(i);
+              if (!wifi_get_network_secure(i))
+                wifi_password_draft[0] = '\0';
               str_copy_safe(settings_status, wifi_get_status_text(),
                             sizeof(settings_status));
               break;

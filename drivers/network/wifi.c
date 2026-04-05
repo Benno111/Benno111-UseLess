@@ -329,7 +329,7 @@ int wifi_scan(void) {
   return wifi_state.visible_count;
 }
 
-int wifi_connect_selected(void) {
+int wifi_connect_selected(const char *password) {
   int index = wifi_state.selected_network;
   int catalog_index;
   const char *ssid;
@@ -352,6 +352,11 @@ int wifi_connect_selected(void) {
   catalog_index = wifi_visible_catalog_index(index);
   if (catalog_index < 0) {
     wifi_set_status("Selected Wi-Fi network is no longer available.");
+    return 0;
+  }
+
+  if (wifi_catalog[catalog_index].secure && (!password || !password[0])) {
+    wifi_set_status("Enter the Wi-Fi password before connecting.");
     return 0;
   }
 

@@ -30,7 +30,7 @@ int wifi_is_network_connected(int index);
 int wifi_get_selected_network(void);
 void wifi_select_network(int index);
 int wifi_scan(void);
-int wifi_connect_selected(void);
+int wifi_connect_selected(const char *password);
 void wifi_disconnect(void);
 
 #endif
