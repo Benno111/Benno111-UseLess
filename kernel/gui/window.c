@@ -120,10 +120,13 @@ void gui_set_blur_effects_enabled(int enabled);
 int gui_blur_effects_requested(void);
 int gui_are_blur_effects_enabled(void);
 int gui_is_gpu_rendering_enabled(void);
+void gui_start_partial_redraw_clear_debug(void);
+int gui_partial_redraw_clear_debug_enabled(void);
 
 /* Blur/compositor state is defined later but used by early draw helpers. */
 static int g_blur_effects_requested;
 static int g_blur_effects_enabled;
+static int g_partial_redraw_clear_debug_frames;
 static char g_gpu_backend_name[32];
 
 
@@ -10366,6 +10369,13 @@ static void draw_window(struct window *win) {
                       dock_is_visible() ? "Dock is visible on this boot mode"
                                         : "Dock hidden in current mode",
                       0xCBD5E1, 0x252535);
+      gui_draw_string(panel_x + 16, preview_y + 62,
+                      gui_partial_redraw_clear_debug_enabled()
+                          ? "Dirty test running"
+                          : "Dirty test ready",
+                      gui_partial_redraw_clear_debug_enabled() ? 0xF38BA8
+                                                               : 0xCBD5E1,
+                      0x252535);
       gui_draw_rect(panel_x + 16, preview_y + 72, 110, 22,
                     g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
       gui_draw_string(panel_x + 44, preview_y + 79, "Light Mode", 0xFFFFFF,
@@ -10374,6 +10384,14 @@ static void draw_window(struct window *win) {
                     g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
       gui_draw_string(panel_x + 170, preview_y + 79, "Dark Mode", 0xFFFFFF,
                       g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+      gui_draw_system_button(panel_x + 260, preview_y + 72, 150, 22,
+                             gui_partial_redraw_clear_debug_enabled()
+                                 ? "Clear Test On"
+                                 : "Test Dirty Rects",
+                             gui_partial_redraw_clear_debug_enabled()
+                                 ? GUI_BUTTON_DANGER
+                                 : GUI_BUTTON_NEUTRAL,
+                             1, gui_partial_redraw_clear_debug_enabled());
 
       resolution_card_y = preview_y + 116;
       gui_draw_rect(panel_x, resolution_card_y, panel_w, 96, 0x252535);
@@ -12750,9 +12768,11 @@ static int g_dirty_count = 0;
 static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
 #define GUI_BOOT_FULL_REDRAW_FRAMES 300
+#define GUI_PARTIAL_REDRAW_CLEAR_DEBUG_FRAMES 180
 static int g_gpu_rendering_enabled = 0;
 static int g_blur_effects_requested = 1;
 static int g_blur_effects_enabled = 0;
+static int g_partial_redraw_clear_debug_frames = 0;
 static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
 
@@ -13011,6 +13031,15 @@ void compositor_mark_full_redraw(void) {
   } else {
     compositor_mark_screen_dirty();
   }
+}
+
+void gui_start_partial_redraw_clear_debug(void) {
+  g_partial_redraw_clear_debug_frames =
+      GUI_PARTIAL_REDRAW_CLEAR_DEBUG_FRAMES;
+}
+
+int gui_partial_redraw_clear_debug_enabled(void) {
+  return g_partial_redraw_clear_debug_frames > 0;
 }
 
 static int gui_backend_supports_blur_effects(void) {
@@ -13324,6 +13353,15 @@ static void blit_region(int x, int y, int w, int h) {
 
   int pitch_pixels = primary_display.pitch / 4;
 
+  if (gui_partial_redraw_clear_debug_enabled()) {
+    for (int row = y; row < y + h; row++) {
+      uint32_t *dst = primary_display.framebuffer + row * pitch_pixels + x;
+      for (int col = 0; col < w; col++)
+        dst[col] = 0x000000;
+    }
+    return;
+  }
+
   for (int row = y; row < y + h; row++) {
     uint32_t *src = primary_display.backbuffer + row * pitch_pixels + x;
     uint32_t *dst = primary_display.framebuffer + row * pitch_pixels + x;
@@ -13433,6 +13471,12 @@ void gui_compose(void) {
 
   /* Clear dirty regions for next frame */
   g_dirty_count = 0;
+
+  if (g_partial_redraw_clear_debug_frames > 0) {
+    g_partial_redraw_clear_debug_frames--;
+    if (g_partial_redraw_clear_debug_frames == 0)
+      compositor_mark_screen_dirty();
+  }
 
   /* Catch missed early-boot updates, then rely on explicit dirty regions. */
   if (gui_boot_full_redraws_allowed() &&
@@ -14608,6 +14652,14 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               y < theme_button_y + 22) {
             gui_set_theme_mode(GUI_THEME_DARK);
             str_copy_safe(settings_status, "Dark mode applied.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 260 && x < panel_x + 410 && y >= theme_button_y &&
+              y < theme_button_y + 22) {
+            gui_start_partial_redraw_clear_debug();
+            str_copy_safe(settings_status,
+                          "Partial redraw clear test armed briefly.",
                           sizeof(settings_status));
             break;
           }
