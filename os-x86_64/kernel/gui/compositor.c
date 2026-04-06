@@ -67,6 +67,7 @@ int ui_scale = 1;
 /* Redraw flags - declared early for keyboard callback */
 static int needs_redraw = 1;
 static int full_redraw = 1;
+static uint64_t frame_count = 0;
 
 /* Dock Configuration - scaled at runtime */
 static int dock_height = 70;
@@ -104,6 +105,7 @@ static int dock_smooth_sizes[NUM_DOCK_ICONS] = {0};
 #define DRAG_CLOCK 6
 #define DRAG_HELP 7
 #define DRAG_IMAGE_VIEWER 8
+#define DRAG_TASK_MANAGER 9
 static int dragging_window = DRAG_NONE;
 static int drag_offset_x = 0;
 static int drag_offset_y = 0;
@@ -117,8 +119,9 @@ static int drag_offset_y = 0;
 #define WIN_CLOCK 5
 #define WIN_HELP 6
 #define WIN_IMAGE_VIEWER 7
-#define NUM_MANAGED_WINDOWS 8
-static int window_z_order[NUM_MANAGED_WINDOWS] = {0, 1, 2, 3, 4, 5, 6, 7};
+#define WIN_TASK_MANAGER 8
+#define NUM_MANAGED_WINDOWS 9
+static int window_z_order[NUM_MANAGED_WINDOWS] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 static int focused_window_id = WIN_TERMINAL; /* Terminal focused by default */
 
 /* Bring window to front (highest z-order) */
@@ -404,7 +407,7 @@ static void wallpaper_build_cache(void) {
 
 /* Dock icons info - matching test folder */
 static const char *dock_labels[] = {"Terminal", "Files", "Calculator", "Notes", "Settings",
-                                    "Clock", "Snake", "Help", "Browser"};
+                                    "Clock", "Snake", "Help", "Browser", "Tasks"};
 
 /* Icon background colors for macOS Big Sur style dock */
 static const uint32_t dock_icon_colors[] = {
@@ -417,6 +420,7 @@ static const uint32_t dock_icon_colors[] = {
     0x34D399, /* 6 - Snake - teal green */
     0x3B82F6, /* 7 - Help - blue */
     0x0EA5E9, /* 8 - Browser - sky blue */
+    0xEF4444, /* 9 - Tasks - red */
 };
 
 /* ===================================================================== */
@@ -583,6 +587,8 @@ static const uint32_t *get_dock_icon_data(int icon_idx) {
     return dock_icon_help;        /* Help */
   case 8:
     return dock_icon_web;         /* Browser */
+  case 9:
+    return dock_icon_settings;    /* Task Manager */
   default:
     return dock_icon_terminal;
   }
@@ -2070,6 +2076,182 @@ static void draw_help_window(void) {
 }
 
 /* ===================================================================== */
+/* Task Manager                                                          */
+/* ===================================================================== */
+
+typedef struct {
+  int visible;
+  int x, y, width, height;
+  int selected;
+} task_manager_t;
+
+static task_manager_t task_manager = {0, 180, 90, 560, 420, -1};
+
+typedef struct {
+  const char *name;
+  const char *kind;
+  int *visible;
+  int pid;
+} task_row_t;
+
+static task_row_t task_manager_rows[] = {
+    {"Terminal", "App", &terminal.visible, 101},
+    {"Files", "App", &file_manager.visible, 102},
+    {"Calculator", "App", &calc.visible, 103},
+    {"Notes", "App", &notepad.visible, 104},
+    {"Clock", "Widget", &analog_clock.visible, 105},
+    {"Snake", "Game", &snake.visible, 106},
+    {"Help", "App", &help_win.visible, 107},
+    {"Browser", "App", &img_viewer.visible, 108},
+    {"Desktop", "System", (int *)0, 1},
+};
+
+#define TASK_MANAGER_ROW_COUNT ((int)(sizeof(task_manager_rows) / sizeof(task_manager_rows[0])))
+
+static const char *task_manager_state(const task_row_t *row) {
+  if (!row->visible)
+    return "Running";
+  return *row->visible ? "Running" : "Stopped";
+}
+
+static uint32_t task_manager_state_color(const task_row_t *row) {
+  if (!row->visible)
+    return THEME_BLUE;
+  return *row->visible ? THEME_GREEN : THEME_SUBTEXT;
+}
+
+static int task_manager_running_count(void) {
+  int count = 1; /* Desktop */
+  for (int i = 0; i < TASK_MANAGER_ROW_COUNT; i++) {
+    if (task_manager_rows[i].visible && *task_manager_rows[i].visible)
+      count++;
+  }
+  return count;
+}
+
+static void task_manager_end_row(int row) {
+  if (row < 0 || row >= TASK_MANAGER_ROW_COUNT)
+    return;
+  if (!task_manager_rows[row].visible)
+    return;
+  if (task_manager_rows[row].visible == &task_manager.visible)
+    return;
+  *task_manager_rows[row].visible = 0;
+}
+
+static int task_manager_handle_click(int mx, int my) {
+  if (!task_manager.visible)
+    return 0;
+
+  int x = task_manager.x;
+  int y = task_manager.y;
+  int w = task_manager.width;
+  int h = task_manager.height;
+  int title_h = UI_SCALE_VAL(32);
+  int row_h = UI_SCALE_VAL(30);
+  int table_y = y + title_h + UI_SCALE_VAL(114);
+
+  if (mx < x || mx >= x + w || my < y || my >= y + h)
+    return 0;
+  if (my < table_y)
+    return 1;
+
+  int row = (my - table_y) / row_h;
+  if (row >= 0 && row < TASK_MANAGER_ROW_COUNT) {
+    int row_y = table_y + row * row_h;
+    int btn_w = UI_SCALE_VAL(58);
+    int btn_h = UI_SCALE_VAL(20);
+    int btn_x = x + w - UI_SCALE_VAL(76);
+    int btn_y = row_y + (row_h - btn_h) / 2;
+
+    task_manager.selected = row;
+    if (mx >= btn_x && mx < btn_x + btn_w && my >= btn_y && my < btn_y + btn_h) {
+      task_manager_end_row(row);
+    }
+  }
+
+  return 1;
+}
+
+static void draw_task_manager(void) {
+  if (!task_manager.visible)
+    return;
+
+  int x = task_manager.x;
+  int y = task_manager.y;
+  int w = task_manager.width;
+  int h = task_manager.height;
+  int title_h = UI_SCALE_VAL(32);
+  int font_h = FONT_HEIGHT * ui_scale;
+
+  fb_fill_rect(x + UI_SCALE_VAL(6), y + UI_SCALE_VAL(6), w, h, 0x11111B);
+  fb_fill_rect(x, y, w, h, THEME_BASE);
+  fb_fill_rect(x, y, w, title_h, COLOR_TITLE_BAR);
+  draw_traffic_lights(x, y, title_h);
+  gui_draw_string(x + w / 2 - font_string_width("Task Manager") / 2,
+                  y + (title_h - font_h) / 2, "Task Manager", THEME_TEXT);
+
+  int content_x = x + UI_SCALE_VAL(18);
+  int content_y = y + title_h + UI_SCALE_VAL(16);
+
+  gui_draw_string(content_x, content_y, "System Monitor", THEME_BLUE);
+  char running_buf[40] = "Running apps: ";
+  itoa(task_manager_running_count(), running_buf + strlen(running_buf), 10);
+  gui_draw_string(content_x, content_y + UI_SCALE_VAL(22), running_buf, THEME_SUBTEXT);
+
+  char frame_buf[40] = "Frames: ";
+  itoa((int)(frame_count & 0x7FFFFFFF), frame_buf + strlen(frame_buf), 10);
+  gui_draw_string(content_x + w / 2, content_y + UI_SCALE_VAL(22), frame_buf, THEME_SUBTEXT);
+
+  int bar_y = content_y + UI_SCALE_VAL(52);
+  int bar_w = w - UI_SCALE_VAL(36);
+  int cpu_w = (int)((frame_count % 100) * bar_w / 100);
+  fb_fill_rect(content_x, bar_y, bar_w, UI_SCALE_VAL(10), THEME_SURFACE);
+  fb_fill_rect(content_x, bar_y, cpu_w, UI_SCALE_VAL(10), THEME_GREEN);
+  gui_draw_string(content_x, bar_y + UI_SCALE_VAL(16), "Activity", THEME_SUBTEXT);
+
+  int table_y = y + title_h + UI_SCALE_VAL(114);
+  int row_h = UI_SCALE_VAL(30);
+  int name_x = content_x;
+  int pid_x = x + UI_SCALE_VAL(185);
+  int kind_x = x + UI_SCALE_VAL(250);
+  int state_x = x + UI_SCALE_VAL(350);
+
+  fb_fill_rect(x + UI_SCALE_VAL(12), table_y - UI_SCALE_VAL(24),
+               w - UI_SCALE_VAL(24), UI_SCALE_VAL(22), THEME_SURFACE);
+  gui_draw_string(name_x, table_y - UI_SCALE_VAL(20), "Name", THEME_TEXT);
+  gui_draw_string(pid_x, table_y - UI_SCALE_VAL(20), "PID", THEME_TEXT);
+  gui_draw_string(kind_x, table_y - UI_SCALE_VAL(20), "Type", THEME_TEXT);
+  gui_draw_string(state_x, table_y - UI_SCALE_VAL(20), "State", THEME_TEXT);
+
+  for (int i = 0; i < TASK_MANAGER_ROW_COUNT; i++) {
+    task_row_t *row = &task_manager_rows[i];
+    int row_y = table_y + i * row_h;
+    uint32_t bg = (i == task_manager.selected) ? THEME_OVERLAY :
+                  ((i & 1) ? 0x242436 : THEME_BASE);
+
+    fb_fill_rect(x + UI_SCALE_VAL(12), row_y, w - UI_SCALE_VAL(24),
+                 row_h - UI_SCALE_VAL(2), bg);
+
+    gui_draw_string(name_x, row_y + UI_SCALE_VAL(7), row->name, THEME_TEXT);
+    char pid_buf[12];
+    itoa(row->pid, pid_buf, 10);
+    gui_draw_string(pid_x, row_y + UI_SCALE_VAL(7), pid_buf, THEME_SUBTEXT);
+    gui_draw_string(kind_x, row_y + UI_SCALE_VAL(7), row->kind, THEME_SUBTEXT);
+    gui_draw_string(state_x, row_y + UI_SCALE_VAL(7), task_manager_state(row),
+                    task_manager_state_color(row));
+
+    int btn_w = UI_SCALE_VAL(58);
+    int btn_h = UI_SCALE_VAL(20);
+    int btn_x = x + w - UI_SCALE_VAL(76);
+    int btn_y = row_y + (row_h - btn_h) / 2;
+    uint32_t btn_color = (row->visible && *row->visible) ? THEME_RED : THEME_SURFACE;
+    gui_draw_rounded_rect(btn_x, btn_y, btn_w, btn_h, UI_SCALE_VAL(4), btn_color);
+    gui_draw_string(btn_x + UI_SCALE_VAL(14), btn_y + UI_SCALE_VAL(3), "End", THEME_TEXT);
+  }
+}
+
+/* ===================================================================== */
 /* Desktop Background                                                    */
 /* ===================================================================== */
 
@@ -2342,6 +2524,7 @@ static void keyboard_callback(int key) {
     notepad.visible = 0;
     analog_clock.visible = 0;
     help_win.visible = 0;
+    task_manager.visible = 0;
     return;
   }
 
@@ -2559,6 +2742,14 @@ void gui_init(void) {
   help_win.height = UI_SCALE_VAL(420);
   help_win.x = screen_width - help_win.width - UI_SCALE_VAL(50);
   help_win.y = UI_SCALE_VAL(80);
+
+  /* Scale task manager */
+  task_manager.width = UI_SCALE_VAL(560);
+  task_manager.height = UI_SCALE_VAL(430);
+  if (task_manager.width > (int)screen_width - 100) task_manager.width = screen_width - 100;
+  if (task_manager.height > (int)screen_height - 160) task_manager.height = screen_height - 160;
+  task_manager.x = (screen_width - task_manager.width) / 2;
+  task_manager.y = UI_SCALE_VAL(70);
   
   /* Scale image viewer */
   img_viewer.width = UI_SCALE_VAL(650);
@@ -2604,7 +2795,6 @@ void gui_init(void) {
 /* Main Composition Loop - with dirty region optimization                */
 /* ===================================================================== */
 
-static uint64_t frame_count = 0;
 static int prev_buttons = 0;
 static int last_mouse_x = 0, last_mouse_y = 0;
 
@@ -2734,7 +2924,8 @@ static void handle_mouse_click(int x, int y, int button) {
   /* Check dock clicks */
   int dock_y = screen_height - DOCK_HEIGHT + UI_SCALE_VAL(6);
   if (y >= dock_y && y < (int)screen_height) {
-    int dock_w = NUM_DOCK_ICONS * (DOCK_ICON_SIZE + DOCK_PADDING) + UI_SCALE_VAL(32);
+    int dock_w = NUM_DOCK_ICONS * (DOCK_ICON_SIZE + DOCK_PADDING) -
+                 DOCK_PADDING + UI_SCALE_VAL(32);
     int dock_x = (screen_width - dock_w) / 2;
     
     if (x >= dock_x && x < dock_x + dock_w) {
@@ -2751,7 +2942,9 @@ static void handle_mouse_click(int x, int y, int button) {
           case 5: analog_clock.visible = !analog_clock.visible; break; /* Clock */
           case 6: snake.visible = !snake.visible; if (snake.visible) snake_init(); break; /* Snake */
           case 7: help_win.visible = !help_win.visible; break;         /* Help */
-          case 8: img_viewer.visible = !img_viewer.visible; bring_window_to_front(WIN_IMAGE_VIEWER); break; /* Images/Browser */          default: break;
+          case 8: img_viewer.visible = !img_viewer.visible; bring_window_to_front(WIN_IMAGE_VIEWER); break; /* Images/Browser */
+          case 9: task_manager.visible = !task_manager.visible; bring_window_to_front(WIN_TASK_MANAGER); break; /* Tasks */
+          default: break;
         }
       }
       return;
@@ -3152,6 +3345,10 @@ static void gui_poll_input(void) {
         img_viewer.x = new_win_x;
         img_viewer.y = new_win_y;
         break;
+      case DRAG_TASK_MANAGER:
+        task_manager.x = new_win_x;
+        task_manager.y = new_win_y;
+        break;
     }
     full_redraw = 1;
     needs_redraw = 1;
@@ -3201,6 +3398,7 @@ static void gui_poll_input(void) {
       {&analog_clock.visible, &analog_clock.x, &analog_clock.y, &analog_clock.size, &analog_clock.size, WIN_CLOCK, DRAG_CLOCK},
       {&help_win.visible, &help_win.x, &help_win.y, &help_win.width, &help_win.height, WIN_HELP, DRAG_HELP},
       {&img_viewer.visible, &img_viewer.x, &img_viewer.y, &img_viewer.width, &img_viewer.height, WIN_IMAGE_VIEWER, DRAG_IMAGE_VIEWER},
+      {&task_manager.visible, &task_manager.x, &task_manager.y, &task_manager.width, &task_manager.height, WIN_TASK_MANAGER, DRAG_TASK_MANAGER},
     };
     int num_windows = sizeof(windows) / sizeof(windows[0]);
     
@@ -3253,8 +3451,8 @@ static void gui_poll_input(void) {
         dx = mouse_x - max_cx;
         if (dx*dx + dy*dy <= btn_r*btn_r) {
           /* Toggle maximize for this window */
-          static int maximized[8] = {0};
-          static int saved[8][4];
+          static int maximized[NUM_MANAGED_WINDOWS] = {0};
+          static int saved[NUM_MANAGED_WINDOWS][4];
           if (maximized[w]) {
             *windows[w].x = saved[w][0];
             *windows[w].y = saved[w][1];
@@ -3357,6 +3555,9 @@ static void gui_poll_input(void) {
             }
           }
         }
+        else if (win_id == WIN_TASK_MANAGER) {
+          task_manager_handle_click(mouse_x, mouse_y);
+        }
         
         clicked_window = 1;
         break;
@@ -3418,6 +3619,7 @@ static void gui_draw_all(void) {
       case WIN_CLOCK: draw_clock_widget(); break;
       case WIN_HELP: draw_help_window(); break;
       case WIN_IMAGE_VIEWER: draw_image_viewer(); break;
+      case WIN_TASK_MANAGER: draw_task_manager(); break;
     }
   }
   
@@ -3464,4 +3666,3 @@ void gui_main_loop(void) {
     }
   }
 }
-
