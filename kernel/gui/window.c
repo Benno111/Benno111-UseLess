@@ -12907,7 +12907,8 @@ static int gui_backend_supports_blur_effects(void) {
 }
 
 static int gui_backend_prefers_coalesced_blits(void) {
-  return str_cmp(g_gpu_backend_name, "virtio-gpu") == 0;
+  return str_cmp(g_gpu_backend_name, "virtio-gpu") == 0 ||
+         str_cmp(g_gpu_backend_name, "intel-gfx") == 0;
 }
 
 static void gui_refresh_blur_effects_policy(void) {
@@ -13025,6 +13026,7 @@ static inline void fast_copy_framebuffer(uint32_t *dst, uint32_t *src,
 #if defined(ARCH_X86_64)
   if (pixels > 128 && gui_backend_prefers_coalesced_blits()) {
     size_t qwords = (pixels * sizeof(uint32_t)) / sizeof(uint64_t);
+    size_t tail = (pixels * sizeof(uint32_t)) & (sizeof(uint64_t) - 1);
     void *dst_ptr = dst;
     const void *src_ptr = src;
 
@@ -13032,6 +13034,12 @@ static inline void fast_copy_framebuffer(uint32_t *dst, uint32_t *src,
                  : "+D"(dst_ptr), "+S"(src_ptr), "+c"(qwords)
                  :
                  : "memory");
+    if (tail) {
+      uint8_t *d8 = (uint8_t *)dst_ptr;
+      const uint8_t *s8 = (const uint8_t *)src_ptr;
+      for (size_t i = 0; i < tail; i++)
+        d8[i] = s8[i];
+    }
     return;
   }
 #endif
