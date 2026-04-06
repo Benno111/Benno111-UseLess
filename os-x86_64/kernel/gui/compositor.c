@@ -2342,16 +2342,44 @@ static void draw_wallpaper(void) {
 /* Desktop Icons - desktop_icon_t defined in gui.h                       */
 /* ===================================================================== */
 
-static desktop_icon_t desktop_icons[] = {
-    {"Documents", 40, 60, 1},
-    {"Pictures", 40, 160, 1},
-    {"Downloads", 40, 260, 1},
-    {"Terminal", 40, 360, 0},
-};
-#define NUM_DESKTOP_ICONS 4
+#define MAX_DESKTOP_ICONS 16
+static char desktop_icon_names[MAX_DESKTOP_ICONS][64];
+static desktop_icon_t desktop_icons[MAX_DESKTOP_ICONS];
+static int desktop_icon_count = 0;
+
+static void desktop_add_icon(const char *name, int is_dir) {
+  if (desktop_icon_count >= MAX_DESKTOP_ICONS)
+    return;
+
+  int idx = desktop_icon_count++;
+  strncpy(desktop_icon_names[idx], name, sizeof(desktop_icon_names[idx]) - 1);
+  desktop_icon_names[idx][sizeof(desktop_icon_names[idx]) - 1] = '\0';
+  desktop_icons[idx].name = desktop_icon_names[idx];
+  desktop_icons[idx].x = 40;
+  desktop_icons[idx].y = 60 + idx * 100;
+  desktop_icons[idx].is_dir = is_dir;
+}
+
+static void desktop_refresh_icons(void) {
+  desktop_icon_count = 0;
+
+  dirent_t entries[MAX_DESKTOP_ICONS - 1];
+  int count = vfs_readdir("/", entries, MAX_DESKTOP_ICONS - 1);
+  for (int i = 0; i < count; i++) {
+    desktop_add_icon(entries[i].name, entries[i].type);
+  }
+
+  desktop_add_icon("Terminal", 0);
+  full_redraw = 1;
+  needs_redraw = 1;
+}
 
 static void draw_desktop_icons(void) {
-  for (int i = 0; i < NUM_DESKTOP_ICONS; i++) {
+  if (desktop_icon_count == 0) {
+    desktop_refresh_icons();
+  }
+
+  for (int i = 0; i < desktop_icon_count; i++) {
     int x = desktop_icons[i].x * ui_scale;
     int y = desktop_icons[i].y * ui_scale;
 
@@ -2713,6 +2741,7 @@ void gui_init(void) {
   /* Initialize VFS first */
   vfs_init();
   vfs_seed_content();
+  desktop_refresh_icons();
 
   font_init();
   term_init();
@@ -3035,6 +3064,7 @@ static void handle_mouse_click(int x, int y, int button) {
             vfs_create(path);
           } else if (strcmp(ctx_menu.items[i].label, "Refresh") == 0) {
             fm_refresh();
+            desktop_refresh_icons();
           } else if (strcmp(ctx_menu.items[i].label, "Open Terminal") == 0) {
             terminal.visible = 1;
           } else if (strcmp(ctx_menu.items[i].label, "Change Background") == 0) {
@@ -3269,7 +3299,7 @@ static void handle_mouse_click(int x, int y, int button) {
   }
   
   /* Desktop icon clicks */
-  for (int i = 0; i < NUM_DESKTOP_ICONS; i++) {
+  for (int i = 0; i < desktop_icon_count; i++) {
     int ix = desktop_icons[i].x * ui_scale;
     int iy = desktop_icons[i].y * ui_scale;
     int iw = UI_SCALE_VAL(64);
