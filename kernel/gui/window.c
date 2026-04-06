@@ -13935,9 +13935,16 @@ static void snap_window_to_zone(struct window *win, int mouse_x_pos,
   int screen_h;
   int work_y;
   int work_h;
+  int old_x;
+  int old_y;
+  int old_w;
+  int old_h;
+  int snapped = 0;
 
   if (!win)
     return;
+
+  window_get_draw_rect(win, &old_x, &old_y, &old_w, &old_h);
 
   screen_w = (int)primary_display.width;
   screen_h = (int)primary_display.height;
@@ -13957,64 +13964,75 @@ static void snap_window_to_zone(struct window *win, int mouse_x_pos,
     win->width = screen_w;
     win->height = work_h;
     win->state = WINDOW_MAXIMIZED;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
+  else if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
       mouse_y_pos <= work_y + work_h / 2) {
     win->x = 0;
     win->y = work_y;
     win->width = screen_w / 2;
     win->height = work_h / 2;
     win->state = WINDOW_NORMAL;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
+  else if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
       mouse_y_pos <= work_y + work_h / 2) {
     win->x = screen_w / 2;
     win->y = work_y;
     win->width = screen_w - win->x;
     win->height = work_h / 2;
     win->state = WINDOW_NORMAL;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
+  else if (mouse_x_pos <= SNAP_EDGE_THRESHOLD &&
       mouse_y_pos >= work_y + work_h - SNAP_EDGE_THRESHOLD) {
     win->x = 0;
     win->y = work_y + work_h / 2;
     win->width = screen_w / 2;
     win->height = work_h - work_h / 2;
     win->state = WINDOW_NORMAL;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
+  else if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD &&
       mouse_y_pos >= work_y + work_h - SNAP_EDGE_THRESHOLD) {
     win->x = screen_w / 2;
     win->y = work_y + work_h / 2;
     win->width = screen_w - win->x;
     win->height = work_h - work_h / 2;
     win->state = WINDOW_NORMAL;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos <= SNAP_EDGE_THRESHOLD) {
+  else if (mouse_x_pos <= SNAP_EDGE_THRESHOLD) {
     win->x = 0;
     win->y = work_y;
     win->width = screen_w / 2;
     win->height = work_h;
     win->state = WINDOW_NORMAL;
-    return;
+    snapped = 1;
   }
 
-  if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD) {
+  else if (mouse_x_pos >= screen_w - SNAP_EDGE_THRESHOLD) {
     win->x = screen_w / 2;
     win->y = work_y;
     win->width = screen_w - win->x;
     win->height = work_h;
     win->state = WINDOW_NORMAL;
+    snapped = 1;
+  }
+
+  if (snapped) {
+    int new_x;
+    int new_y;
+    int new_w;
+    int new_h;
+    compositor_mark_dirty(old_x, old_y, old_w, old_h);
+    window_get_draw_rect(win, &new_x, &new_y, &new_w, &new_h);
+    compositor_mark_dirty(new_x, new_y, new_w, new_h);
   }
 }
 
