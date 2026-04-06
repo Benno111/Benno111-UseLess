@@ -11465,6 +11465,7 @@ static int main_menu_power_open = 0;
 static int main_menu_power_row_y_anim = -1;
 static int wifi_tray_open = 0;
 static void main_menu_mark_dirty(void);
+static void wifi_tray_mark_dirty(void);
 
 #define MAIN_MENU_W 364
 #define MAIN_MENU_H 350
@@ -11567,6 +11568,28 @@ static int wifi_tray_contains_point(int x, int y) {
 
   wifi_tray_panel_rect(dock_y, dock_h, &px, &py, &pw, &ph);
   return x >= px && x < px + pw && y >= py && y < py + ph;
+}
+
+static void wifi_tray_mark_dirty(void) {
+  int dock_y;
+  int dock_h;
+  int x;
+  int y;
+  int w;
+  int h;
+
+  if (!dock_is_visible())
+    return;
+
+  dock_y = (int)primary_display.height - DOCK_HEIGHT;
+  dock_h = DOCK_HEIGHT;
+  dock_status_panel_rect(dock_y, dock_h, &x, &y, &w, &h);
+  compositor_mark_dirty(x - 8, y - 8, w + 16, h + 16);
+
+  if (wifi_tray_open) {
+    wifi_tray_panel_rect(dock_y, dock_h, &x, &y, &w, &h);
+    compositor_mark_dirty(x - 12, y - 12, w + 24, h + 24);
+  }
 }
 
 static int main_menu_panel_x(void) {
@@ -12885,22 +12908,28 @@ static int dock_handle_click(int x, int y) {
 
     if (x >= wifi_panel_x + 14 && x < wifi_panel_x + 84 && y >= button_y &&
         y < button_y + 24) {
+      wifi_tray_mark_dirty();
       if (wifi_has_supported_adapter() && wifi_supports_real_scanning())
         wifi_scan();
       wifi_tray_password_active = 0;
+      wifi_tray_mark_dirty();
       return 1;
     }
     if (x >= wifi_panel_x + 92 && x < wifi_panel_x + 164 && y >= button_y &&
         y < button_y + 24) {
+      wifi_tray_mark_dirty();
       if (wifi_can_connect_selected())
         wifi_connect_selected(wifi_password_draft);
       wifi_tray_password_active = 0;
+      wifi_tray_mark_dirty();
       return 1;
     }
     if (x >= wifi_panel_x + 172 && x < wifi_panel_x + 234 && y >= button_y &&
         y < button_y + 24) {
+      wifi_tray_mark_dirty();
       wifi_disconnect();
       wifi_tray_password_active = 0;
+      wifi_tray_mark_dirty();
       return 1;
     }
 
@@ -12908,18 +12937,24 @@ static int dock_handle_click(int x, int y) {
         wifi_get_network_secure(wifi_get_selected_network()) &&
         x >= wifi_panel_x + 14 && x < wifi_panel_x + wifi_panel_w - 14 &&
         y >= password_y && y < password_y + 24) {
+      wifi_tray_mark_dirty();
       wifi_tray_password_active = 1;
+      wifi_tray_mark_dirty();
       return 1;
     }
+    wifi_tray_mark_dirty();
     wifi_tray_password_active = 0;
+    wifi_tray_mark_dirty();
 
     for (int i = 0; i < wifi_get_network_count() && i < 3; i++) {
       int row_y = wifi_panel_y + 134 + i * 24;
       if (x >= wifi_panel_x + 10 && x < wifi_panel_x + wifi_panel_w - 10 &&
           y >= row_y - 2 && y < row_y + 18) {
+        wifi_tray_mark_dirty();
         wifi_select_network(i);
         if (!wifi_get_network_secure(i))
           wifi_password_draft[0] = '\0';
+        wifi_tray_mark_dirty();
         return 1;
       }
     }
@@ -12933,10 +12968,12 @@ static int dock_handle_click(int x, int y) {
   if (x >= wifi_btn_x && x < wifi_btn_x + wifi_btn_w && y >= wifi_btn_y &&
       y < wifi_btn_y + wifi_btn_h) {
     main_menu_mark_dirty();
+    wifi_tray_mark_dirty();
     wifi_tray_open = wifi_tray_open ? 0 : 1;
     wifi_tray_password_active = 0;
     menu_open = 0;
     main_menu_power_open = 0;
+    wifi_tray_mark_dirty();
     main_menu_mark_dirty();
     return 1;
   }
@@ -12944,11 +12981,13 @@ static int dock_handle_click(int x, int y) {
   if (x >= launcher_btn_x && x < launcher_btn_x + launcher_btn_w &&
       y >= launcher_btn_y && y < launcher_btn_y + launcher_btn_h) {
     main_menu_mark_dirty();
+    wifi_tray_mark_dirty();
     menu_open = menu_open ? 0 : 1;
     wifi_tray_open = 0;
     wifi_tray_password_active = 0;
     if (!menu_open)
       main_menu_power_open = 0;
+    wifi_tray_mark_dirty();
     main_menu_mark_dirty();
     return 1;
   }
@@ -12961,10 +13000,12 @@ static int dock_handle_click(int x, int y) {
       if (x >= icon_x && x < icon_x + DOCK_ICON_SIZE && y >= icon_y_start &&
           y < icon_y_start + DOCK_ICON_SIZE) {
         main_menu_mark_dirty();
+        wifi_tray_mark_dirty();
         menu_open = 0;
         main_menu_power_open = 0;
         wifi_tray_open = 0;
         wifi_tray_password_active = 0;
+        wifi_tray_mark_dirty();
         main_menu_mark_dirty();
         gui_focus_or_launch_app_by_id(dock_items[i]->id);
         return 1;
@@ -13699,6 +13740,11 @@ void gui_move_mouse(int dx, int dy) {
   if (mouse_x != old_x || mouse_y != old_y) {
     gui_mark_cursor_dirty_at(old_x, old_y);
     gui_mark_cursor_dirty_at(mouse_x, mouse_y);
+    if (menu_open)
+      main_menu_mark_dirty();
+    if (wifi_tray_open || wifi_tray_contains_point(old_x, old_y) ||
+        wifi_tray_contains_point(mouse_x, mouse_y))
+      wifi_tray_mark_dirty();
   }
 }
 
@@ -14087,6 +14133,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
       if (was_on_launcher || is_on_launcher)
         main_menu_mark_dirty();
     }
+    if (wifi_tray_open || wifi_tray_contains_point(old_mouse_x, old_mouse_y) ||
+        wifi_tray_contains_point(mouse_x, mouse_y))
+      wifi_tray_mark_dirty();
   }
 
   int left_click = (buttons & 1) && !(old_buttons & 1); /* Just pressed */
@@ -14403,8 +14452,10 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     }
 
     if (wifi_tray_open && !wifi_tray_contains_point(x, y)) {
+      wifi_tray_mark_dirty();
       wifi_tray_open = 0;
       wifi_tray_password_active = 0;
+      wifi_tray_mark_dirty();
     }
 
     if (y < MENU_BAR_HEIGHT) {
