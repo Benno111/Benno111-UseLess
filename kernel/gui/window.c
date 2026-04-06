@@ -12755,6 +12755,10 @@ static int g_blur_effects_enabled = 0;
 static uint32_t *g_saved_backbuffer = NULL;
 static char g_gpu_backend_name[32] = "software";
 
+static int gui_backend_prefers_coalesced_blits(void);
+static int compositor_build_dirty_bounds(int *x, int *y, int *w, int *h);
+void compositor_mark_full_redraw(void);
+
 static int dock_handle_click(int x, int y) {
   int dock_y;
   int dock_h;
@@ -12881,6 +12885,64 @@ static int dock_handle_click(int x, int y) {
 
 /* Mark a region as needing update */
 void compositor_mark_dirty(int x, int y, int w, int h) {
+  int x2;
+  int y2;
+
+  if (w <= 0 || h <= 0)
+    return;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x >= (int)primary_display.width || y >= (int)primary_display.height)
+    return;
+  if (x + w > (int)primary_display.width)
+    w = (int)primary_display.width - x;
+  if (y + h > (int)primary_display.height)
+    h = (int)primary_display.height - y;
+  if (w <= 0 || h <= 0)
+    return;
+
+  x2 = x + w;
+  y2 = y + h;
+
+  for (int i = 0; i < g_dirty_count; i++) {
+    int rx1;
+    int ry1;
+    int rx2;
+    int ry2;
+    int merge_pad = gui_backend_prefers_coalesced_blits() ? 32 : 0;
+
+    if (!g_dirty_regions[i].valid)
+      continue;
+
+    rx1 = g_dirty_regions[i].x;
+    ry1 = g_dirty_regions[i].y;
+    rx2 = rx1 + g_dirty_regions[i].w;
+    ry2 = ry1 + g_dirty_regions[i].h;
+
+    if (x >= rx1 && y >= ry1 && x2 <= rx2 && y2 <= ry2)
+      return;
+
+    if (x <= rx2 + merge_pad && x2 >= rx1 - merge_pad &&
+        y <= ry2 + merge_pad && y2 >= ry1 - merge_pad) {
+      int nx1 = x < rx1 ? x : rx1;
+      int ny1 = y < ry1 ? y : ry1;
+      int nx2 = x2 > rx2 ? x2 : rx2;
+      int ny2 = y2 > ry2 ? y2 : ry2;
+
+      g_dirty_regions[i].x = nx1;
+      g_dirty_regions[i].y = ny1;
+      g_dirty_regions[i].w = nx2 - nx1;
+      g_dirty_regions[i].h = ny2 - ny1;
+      return;
+    }
+  }
+
   if (g_dirty_count < MAX_DIRTY_REGIONS) {
     g_dirty_regions[g_dirty_count].x = x;
     g_dirty_regions[g_dirty_count].y = y;
@@ -12889,7 +12951,33 @@ void compositor_mark_dirty(int x, int y, int w, int h) {
     g_dirty_regions[g_dirty_count].valid = 1;
     g_dirty_count++;
   } else {
-    g_full_redraw = 1;
+    if (gui_backend_prefers_coalesced_blits()) {
+      int ux;
+      int uy;
+      int uw;
+      int uh;
+
+      if (compositor_build_dirty_bounds(&ux, &uy, &uw, &uh)) {
+        int ux2 = ux + uw;
+        int uy2 = uy + uh;
+        if (x < ux)
+          ux = x;
+        if (y < uy)
+          uy = y;
+        if (x2 > ux2)
+          ux2 = x2;
+        if (y2 > uy2)
+          uy2 = y2;
+        g_dirty_regions[0].x = ux;
+        g_dirty_regions[0].y = uy;
+        g_dirty_regions[0].w = ux2 - ux;
+        g_dirty_regions[0].h = uy2 - uy;
+        g_dirty_regions[0].valid = 1;
+        g_dirty_count = 1;
+        return;
+      }
+    }
+    compositor_mark_full_redraw();
   }
 }
 
@@ -12900,8 +12988,6 @@ void compositor_mark_full_redraw(void) {
 
 static int gui_backend_supports_blur_effects(void) {
   if (str_cmp(g_gpu_backend_name, "virtio-gpu") == 0)
-    return 1;
-  if (str_cmp(g_gpu_backend_name, "intel-gfx") == 0)
     return 1;
   return 0;
 }
@@ -13121,7 +13207,11 @@ static int compositor_build_coalesced_dirty_rect(int *x, int *y, int *w, int *h)
     return 0;
 
   union_area = (uint64_t)(union_x2 - union_x1) * (uint64_t)(union_y2 - union_y1);
-  if (g_dirty_count < 4 && union_area > sum_area + (sum_area / 2))
+  if (g_dirty_count < 4 && union_area > sum_area + (sum_area / 2) &&
+      str_cmp(g_gpu_backend_name, "intel-gfx") != 0)
+    return 0;
+  if (str_cmp(g_gpu_backend_name, "intel-gfx") == 0 &&
+      union_area > sum_area * 4)
     return 0;
 
   *x = union_x1;
@@ -13318,7 +13408,8 @@ void gui_compose(void) {
   g_dirty_count = 0;
 
   /* Force full redraw periodically to catch any missed updates */
-  if ((g_frame_count & 0x3F) == 0) { /* Every 64 frames */
+  if ((g_frame_count &
+       (gui_backend_prefers_coalesced_blits() ? 0x1FF : 0x3F)) == 0) {
     g_full_redraw = 1;
   }
 }
