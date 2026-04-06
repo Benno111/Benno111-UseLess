@@ -12749,7 +12749,7 @@ static compositor_dirty_rect_t g_dirty_regions[MAX_DIRTY_REGIONS];
 static int g_dirty_count = 0;
 static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
-#define GUI_BOOT_PERIODIC_FULL_REDRAW_FRAMES 300
+#define GUI_BOOT_FULL_REDRAW_FRAMES 300
 static int g_gpu_rendering_enabled = 0;
 static int g_blur_effects_requested = 1;
 static int g_blur_effects_enabled = 0;
@@ -12759,6 +12759,25 @@ static char g_gpu_backend_name[32] = "software";
 static int gui_backend_prefers_coalesced_blits(void);
 static int compositor_build_dirty_bounds(int *x, int *y, int *w, int *h);
 void compositor_mark_full_redraw(void);
+
+static int gui_boot_full_redraws_allowed(void) {
+  return g_frame_count <= GUI_BOOT_FULL_REDRAW_FRAMES;
+}
+
+static void compositor_mark_screen_dirty(void) {
+  if (!primary_display.width || !primary_display.height) {
+    g_full_redraw = 1;
+    return;
+  }
+
+  g_dirty_regions[0].x = 0;
+  g_dirty_regions[0].y = 0;
+  g_dirty_regions[0].w = (int)primary_display.width;
+  g_dirty_regions[0].h = (int)primary_display.height;
+  g_dirty_regions[0].valid = 1;
+  g_dirty_count = 1;
+  g_full_redraw = 0;
+}
 
 static int dock_handle_click(int x, int y) {
   int dock_y;
@@ -12978,13 +12997,20 @@ void compositor_mark_dirty(int x, int y, int w, int h) {
         return;
       }
     }
-    compositor_mark_full_redraw();
+    if (gui_boot_full_redraws_allowed())
+      compositor_mark_full_redraw();
+    else
+      compositor_mark_screen_dirty();
   }
 }
 
 void compositor_mark_full_redraw(void) {
-  g_full_redraw = 1;
-  g_dirty_count = 0;
+  if (gui_boot_full_redraws_allowed()) {
+    g_full_redraw = 1;
+    g_dirty_count = 0;
+  } else {
+    compositor_mark_screen_dirty();
+  }
 }
 
 static int gui_backend_supports_blur_effects(void) {
@@ -13409,7 +13435,7 @@ void gui_compose(void) {
   g_dirty_count = 0;
 
   /* Catch missed early-boot updates, then rely on explicit dirty regions. */
-  if (g_frame_count <= GUI_BOOT_PERIODIC_FULL_REDRAW_FRAMES &&
+  if (gui_boot_full_redraws_allowed() &&
       (g_frame_count &
        (gui_backend_prefers_coalesced_blits() ? 0x1FF : 0x3F)) == 0) {
     g_full_redraw = 1;
