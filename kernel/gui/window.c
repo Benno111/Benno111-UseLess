@@ -115,6 +115,7 @@ static void runtime_sync_log_line(const char *line);
 static void runtime_sync_flush_best_effort(const char *path);
 void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
+void compositor_mark_dirty(int x, int y, int w, int h);
 void compositor_mark_full_redraw(void);
 void gui_set_blur_effects_enabled(int enabled);
 int gui_blur_effects_requested(void);
@@ -2702,8 +2703,10 @@ static void gui_update_window_animations(void) {
   struct window *win = window_stack;
   while (win) {
     struct window *next = win->next;
+    int old_x = 0, old_y = 0, old_w = 0, old_h = 0;
     if (win->animation != WINDOW_ANIM_NONE) {
       any_active = 1;
+      window_get_draw_rect(win, &old_x, &old_y, &old_w, &old_h);
       if (win->anim_frame < win->anim_total_frames)
         win->anim_frame++;
       if (win->anim_frame >= win->anim_total_frames) {
@@ -2714,6 +2717,12 @@ static void gui_update_window_animations(void) {
           win->anim_frame = 0;
           win->anim_total_frames = 0;
         }
+      }
+      compositor_mark_dirty(old_x, old_y, old_w, old_h);
+      if (win->id != 0 && win->visible) {
+        int new_x, new_y, new_w, new_h;
+        window_get_draw_rect(win, &new_x, &new_y, &new_w, &new_h);
+        compositor_mark_dirty(new_x, new_y, new_w, new_h);
       }
     }
     win = next;
@@ -3136,8 +3145,13 @@ static void gui_clear_focus(void) {
 }
 
 static void gui_destroy_window_immediate(struct window *win) {
+  int dirty_x, dirty_y, dirty_w, dirty_h;
+
   if (!win || win->id == 0)
     return;
+
+  window_get_draw_rect(win, &dirty_x, &dirty_y, &dirty_w, &dirty_h);
+  compositor_mark_dirty(dirty_x, dirty_y, dirty_w, dirty_h);
 
   if (win->on_close) {
     win->on_close(win);
@@ -11610,6 +11624,7 @@ static void update_main_menu_power_animation(void) {
       step = 1;
     main_menu_power_row_y_anim -= step;
   }
+  compositor_mark_full_redraw();
 }
 
 static int main_menu_contains_point(int x, int y) {
@@ -13020,7 +13035,66 @@ void compositor_mark_dirty(int x, int y, int w, int h) {
     if (gui_boot_full_redraws_allowed())
       compositor_mark_full_redraw();
     else
-      compositor_mark_screen_dirty();
+      compositor_mark_dirty(0, 0, (int)primary_display.width,
+                            (int)primary_display.height);
+  }
+}
+
+static void compositor_mark_visible_ui_dirty(void) {
+  int screen_w = (int)primary_display.width;
+  int screen_h = (int)primary_display.height;
+
+  if (screen_w <= 0 || screen_h <= 0) {
+    compositor_mark_screen_dirty();
+    return;
+  }
+
+  if (MENU_BAR_HEIGHT > 0)
+    compositor_mark_dirty(0, 0, screen_w, MENU_BAR_HEIGHT);
+
+  if (dock_is_visible()) {
+    int dock_h = dock_reserved_height();
+    if (dock_h > 0)
+      compositor_mark_dirty(0, screen_h - dock_h, screen_w, dock_h);
+  }
+
+  if (menu_open) {
+    int x, y, w, h;
+    main_menu_panel_rect(&x, &y, &w, &h);
+    compositor_mark_dirty(x - 8, y - 8, w + 16, h + 16);
+  }
+
+  if (wifi_tray_open && dock_is_visible()) {
+    int x, y, w, h;
+    int dock_y = screen_h - DOCK_HEIGHT;
+    wifi_tray_panel_rect(dock_y, DOCK_HEIGHT, &x, &y, &w, &h);
+    compositor_mark_dirty(x - 8, y - 8, w + 16, h + 16);
+  }
+
+  if (window_switcher_frames > 0) {
+    int panel_w = 360;
+    int panel_h = 136;
+    int panel_x = (screen_w - panel_w) / 2;
+    int panel_y = MENU_BAR_HEIGHT + 36;
+    compositor_mark_dirty(panel_x - 12, panel_y - 12, panel_w + 24,
+                          panel_h + 24);
+  }
+
+  if (secure_attention_open) {
+    int panel_w = 420;
+    int panel_h = 220;
+    int panel_x = (screen_w - panel_w) / 2;
+    int panel_y = (screen_h - panel_h) / 2;
+    compositor_mark_dirty(panel_x - 12, panel_y - 12, panel_w + 24,
+                          panel_h + 24);
+  }
+
+  for (struct window *win = window_stack; win; win = win->next) {
+    int x, y, w, h;
+    if (!win->visible)
+      continue;
+    window_get_draw_rect(win, &x, &y, &w, &h);
+    compositor_mark_dirty(x, y, w, h);
   }
 }
 
@@ -13029,7 +13103,7 @@ void compositor_mark_full_redraw(void) {
     g_full_redraw = 1;
     g_dirty_count = 0;
   } else {
-    compositor_mark_screen_dirty();
+    compositor_mark_visible_ui_dirty();
   }
 }
 
@@ -13385,14 +13459,12 @@ void gui_compose(void) {
     installer_process_background_install();
   update_main_menu_power_animation();
 
-  if (!g_full_redraw && g_dirty_count > 0 &&
-      compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w, &draw_h)) {
-    prev_clip = gui_set_clip_rect(draw_x, draw_y, draw_w, draw_h);
-    clip_active = 1;
+  /* Catch missed early-boot updates, then rely on explicit dirty regions. */
+  if (gui_boot_full_redraws_allowed() &&
+      (g_frame_count &
+       (gui_backend_prefers_coalesced_blits() ? 0x1FF : 0x3F)) == 0) {
+    g_full_redraw = 1;
   }
-
-  /* Draw desktop and taskbar */
-  draw_desktop();
 
   /* Update Bowling game state (throttled) */
   static int bowling_tick = 0;
@@ -13402,6 +13474,28 @@ void gui_compose(void) {
   }
 
   gui_update_window_animations();
+
+  if (window_switcher_frames > 0)
+    compositor_mark_full_redraw();
+
+  if (g_partial_redraw_clear_debug_frames > 0) {
+    g_partial_redraw_clear_debug_frames--;
+    if (g_partial_redraw_clear_debug_frames == 0)
+      compositor_mark_visible_ui_dirty();
+  }
+
+  /* No dirty regions means no redraw work. */
+  if (!g_full_redraw && g_dirty_count == 0)
+    return;
+
+  if (!g_full_redraw && g_dirty_count > 0 &&
+      compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w, &draw_h)) {
+    prev_clip = gui_set_clip_rect(draw_x, draw_y, draw_w, draw_h);
+    clip_active = 1;
+  }
+
+  /* Draw desktop and taskbar */
+  draw_desktop();
 
   /* Draw windows from bottom to top (reverse order) */
   struct window *draw_order[MAX_WINDOWS];
@@ -13434,7 +13528,7 @@ void gui_compose(void) {
 
   /* Smart frame buffer update */
   if (primary_display.backbuffer && primary_display.framebuffer) {
-    if (g_full_redraw || g_dirty_count == 0) {
+    if (g_full_redraw) {
       size_t pixel_count =
           ((size_t)primary_display.pitch * (size_t)primary_display.height) /
           sizeof(uint32_t);
@@ -13472,18 +13566,6 @@ void gui_compose(void) {
   /* Clear dirty regions for next frame */
   g_dirty_count = 0;
 
-  if (g_partial_redraw_clear_debug_frames > 0) {
-    g_partial_redraw_clear_debug_frames--;
-    if (g_partial_redraw_clear_debug_frames == 0)
-      compositor_mark_screen_dirty();
-  }
-
-  /* Catch missed early-boot updates, then rely on explicit dirty regions. */
-  if (gui_boot_full_redraws_allowed() &&
-      (g_frame_count &
-       (gui_backend_prefers_coalesced_blits() ? 0x1FF : 0x3F)) == 0) {
-    g_full_redraw = 1;
-  }
 }
 
 /* ===================================================================== */
@@ -13521,6 +13603,10 @@ static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
+static void gui_mark_cursor_dirty_at(int x, int y) {
+  compositor_mark_dirty(x - 1, y - 1, CURSOR_WIDTH + 2, CURSOR_HEIGHT + 2);
+}
+
 /* Draw cursor directly to the active render target. */
 void gui_draw_cursor(void) {
   extern void mouse_get_position(int *x, int *y);
@@ -13557,6 +13643,9 @@ void gui_draw_cursor(void) {
 }
 
 void gui_move_mouse(int dx, int dy) {
+  int old_x = mouse_x;
+  int old_y = mouse_y;
+
   mouse_x += dx;
   mouse_y += dy;
 
@@ -13568,6 +13657,11 @@ void gui_move_mouse(int dx, int dy) {
     mouse_x = primary_display.width - 1;
   if (mouse_y >= (int)primary_display.height)
     mouse_y = primary_display.height - 1;
+
+  if (mouse_x != old_x || mouse_y != old_y) {
+    gui_mark_cursor_dirty_at(old_x, old_y);
+    gui_mark_cursor_dirty_at(mouse_x, mouse_y);
+  }
 }
 
 void gui_set_mouse_buttons(int buttons) { mouse_buttons = buttons; }
@@ -13888,6 +13982,9 @@ static int resize_start_win_x = 0, resize_start_win_y = 0;
   12 /* Pixel width of resize grab area - larger for easier grabbing */
 
 void gui_handle_mouse_event(int x, int y, int buttons) {
+  int old_mouse_x = mouse_x;
+  int old_mouse_y = mouse_y;
+
   if (buttons < 0)
     buttons = 0;
   buttons &= 0x1F;
@@ -13896,6 +13993,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
   mouse_x = x;
   mouse_y = y;
   prev_buttons = buttons;
+
+  if (mouse_x != old_mouse_x || mouse_y != old_mouse_y) {
+    gui_mark_cursor_dirty_at(old_mouse_x, old_mouse_y);
+    gui_mark_cursor_dirty_at(mouse_x, mouse_y);
+  }
 
   int left_click = (buttons & 1) && !(old_buttons & 1); /* Just pressed */
   int left_held = (buttons & 1);
@@ -14070,6 +14172,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
   /* Handle window dragging */
   if (dragging_window && left_held) {
+    int old_x, old_y, old_w, old_h;
+    window_get_draw_rect(dragging_window, &old_x, &old_y, &old_w, &old_h);
+
     if (dragging_window->state == WINDOW_MAXIMIZED) {
       dragging_window->x = dragging_window->saved_x;
       dragging_window->y = dragging_window->saved_y;
@@ -14096,16 +14201,23 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           WINDOW_BOTTOM_CLEARANCE;
     if (dragging_window->x > (int)primary_display.width - 100)
       dragging_window->x = primary_display.width - 100;
+
+    compositor_mark_dirty(old_x, old_y, old_w, old_h);
+    window_get_draw_rect(dragging_window, &old_x, &old_y, &old_w, &old_h);
+    compositor_mark_dirty(old_x, old_y, old_w, old_h);
   }
 
   /* Handle window resizing */
   if (resizing_window && left_held) {
+    int old_x, old_y, old_w, old_h;
     int dx = x - resize_start_x;
     int dy = y - resize_start_y;
     int new_w = resize_start_w;
     int new_h = resize_start_h;
     int new_x = resize_start_win_x;
     int new_y = resize_start_win_y;
+
+    window_get_draw_rect(resizing_window, &old_x, &old_y, &old_w, &old_h);
 
     /* Calculate new dimensions based on which edge is being dragged */
     if (resize_edge == RESIZE_RIGHT || resize_edge == RESIZE_BOTTOM_RIGHT ||
@@ -14137,6 +14249,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     resizing_window->y = new_y;
     resizing_window->width = new_w;
     resizing_window->height = new_h;
+    compositor_mark_dirty(old_x, old_y, old_w, old_h);
+    window_get_draw_rect(resizing_window, &old_x, &old_y, &old_w, &old_h);
+    compositor_mark_dirty(old_x, old_y, old_w, old_h);
   }
 
   if (left_release) {
@@ -14364,6 +14479,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         if ((x - min_cx) * (x - min_cx) + (y - btn_cy) * (y - btn_cy) <=
             btn_r * btn_r) {
           if (!window_minimize_disabled(win)) {
+            compositor_mark_dirty(draw_x, draw_y, draw_w, draw_h);
             win->visible = false;
             win->state = WINDOW_MINIMIZED;
           }
@@ -14374,6 +14490,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int zoom_cx = min_cx + 20;
         if ((x - zoom_cx) * (x - zoom_cx) + (y - btn_cy) * (y - btn_cy) <=
             btn_r * btn_r) {
+          compositor_mark_dirty(draw_x, draw_y, draw_w, draw_h);
           if (win->state == WINDOW_MAXIMIZED) {
             /* Restore */
             win->x = win->saved_x;
@@ -14395,6 +14512,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
                 dock_reserved_height() - WINDOW_BOTTOM_CLEARANCE;
             win->state = WINDOW_MAXIMIZED;
           }
+          window_get_draw_rect(win, &draw_x, &draw_y, &draw_w, &draw_h);
+          compositor_mark_dirty(draw_x, draw_y, draw_w, draw_h);
           return;
         }
 
