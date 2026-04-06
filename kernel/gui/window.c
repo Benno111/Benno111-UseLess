@@ -12749,6 +12749,7 @@ static compositor_dirty_rect_t g_dirty_regions[MAX_DIRTY_REGIONS];
 static int g_dirty_count = 0;
 static int g_full_redraw = 1; /* Start with full redraw */
 static int g_frame_count = 0;
+#define GUI_BOOT_PERIODIC_FULL_REDRAW_FRAMES 300
 static int g_gpu_rendering_enabled = 0;
 static int g_blur_effects_requested = 1;
 static int g_blur_effects_enabled = 0;
@@ -13407,8 +13408,9 @@ void gui_compose(void) {
   /* Clear dirty regions for next frame */
   g_dirty_count = 0;
 
-  /* Force full redraw periodically to catch any missed updates */
-  if ((g_frame_count &
+  /* Catch missed early-boot updates, then rely on explicit dirty regions. */
+  if (g_frame_count <= GUI_BOOT_PERIODIC_FULL_REDRAW_FRAMES &&
+      (g_frame_count &
        (gui_backend_prefers_coalesced_blits() ? 0x1FF : 0x3F)) == 0) {
     g_full_redraw = 1;
   }
