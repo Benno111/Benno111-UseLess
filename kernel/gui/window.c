@@ -3200,12 +3200,20 @@ void gui_destroy_window(struct window *win) {
 }
 
 void gui_focus_window(struct window *win) {
+  int dirty_x, dirty_y, dirty_w, dirty_h;
+
   if (!win)
     return;
 
   if (focused_window) {
+    window_get_draw_rect(focused_window, &dirty_x, &dirty_y, &dirty_w,
+                         &dirty_h);
+    compositor_mark_dirty(dirty_x, dirty_y, dirty_w, dirty_h);
     focused_window->focused = false;
   }
+
+  window_get_draw_rect(win, &dirty_x, &dirty_y, &dirty_w, &dirty_h);
+  compositor_mark_dirty(dirty_x, dirty_y, dirty_w, dirty_h);
 
   /* Move to top of stack */
   if (window_stack != win) {
@@ -3222,6 +3230,8 @@ void gui_focus_window(struct window *win) {
 
   win->focused = true;
   focused_window = win;
+  window_get_draw_rect(win, &dirty_x, &dirty_y, &dirty_w, &dirty_h);
+  compositor_mark_dirty(dirty_x, dirty_y, dirty_w, dirty_h);
 
   if (win->title[0] == 'T' && win->title[1] == 'e' && win->title[2] == 'r' &&
       win->userdata) {
@@ -3709,6 +3719,8 @@ static void apply_account_wallpaper(int idx) {
   wallpaper_cached_idx = -1;
   wallpaper_loaded = -1;
   wallpaper_ensure_loaded();
+  compositor_mark_dirty(0, 0, (int)primary_display.width,
+                        (int)primary_display.height);
 }
 
 static uint64_t parse_u64(const char *text) {
@@ -13752,6 +13764,16 @@ void gui_handle_key_event(int key) {
 
   /* Route key to focused window */
   if (focused_window && focused_window->visible) {
+    int focused_draw_x;
+    int focused_draw_y;
+    int focused_draw_w;
+    int focused_draw_h;
+
+    window_get_draw_rect(focused_window, &focused_draw_x, &focused_draw_y,
+                         &focused_draw_w, &focused_draw_h);
+    compositor_mark_dirty(focused_draw_x, focused_draw_y, focused_draw_w,
+                          focused_draw_h);
+
     if (focused_window->title[0] == 'S' && focused_window->title[1] == 'e' &&
         focused_window->title[2] == 't' && settings_user_editor_is_visible()) {
       if (!account_role_is_admin())
@@ -13853,6 +13875,13 @@ void gui_handle_key_event(int key) {
     /* Call window's key handler if set */
     if (focused_window->on_key) {
       focused_window->on_key(focused_window, key);
+    }
+    if (focused_window && focused_window->visible &&
+        gui_window_in_stack(focused_window)) {
+      window_get_draw_rect(focused_window, &focused_draw_x, &focused_draw_y,
+                           &focused_draw_w, &focused_draw_h);
+      compositor_mark_dirty(focused_draw_x, focused_draw_y, focused_draw_w,
+                            focused_draw_h);
     }
     return;
   }
@@ -14413,8 +14442,11 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
     if (x >= draw_x && x < draw_x + draw_w && y >= draw_y &&
         y < draw_y + draw_h) {
+      compositor_mark_dirty(draw_x, draw_y, draw_w, draw_h);
 
       gui_focus_window(win);
+      window_get_draw_rect(win, &draw_x, &draw_y, &draw_w, &draw_h);
+      compositor_mark_dirty(draw_x, draw_y, draw_w, draw_h);
 
       if (win->animation != WINDOW_ANIM_NONE)
         return;
