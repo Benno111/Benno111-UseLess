@@ -94,6 +94,8 @@ static int mouse_y = 300;
 static int mouse_buttons = 0;
 static int dock_hover_index = -1;
 static int dock_smooth_sizes[NUM_DOCK_ICONS] = {0};
+static int dock_magnification_enabled = 1;
+static int dock_labels_enabled = 1;
 
 /* Window dragging state */
 #define DRAG_NONE 0
@@ -161,6 +163,7 @@ typedef struct {
 } context_menu_t;
 
 static context_menu_t ctx_menu = {0};
+static int ctx_menu_source = 0; /* 0=desktop/file, 1=dock */
 
 /* Terminal state */
 #define TERM_COLS 80
@@ -639,7 +642,7 @@ static void draw_dock(void) {
     int base_center_x = dock_x + UI_SCALE_VAL(16) + i * (DOCK_ICON_SIZE + DOCK_PADDING) +
                         DOCK_ICON_SIZE / 2;
     
-    if (mouse_in_dock) {
+    if (dock_magnification_enabled && mouse_in_dock) {
       int dist = mouse_x - base_center_x;
       if (dist < 0)
         dist = -dist;
@@ -749,7 +752,7 @@ static void draw_dock(void) {
   }
   
   /* Draw hover label */
-  if (hovered_idx >= 0) {
+  if (dock_labels_enabled && hovered_idx >= 0) {
     const char *label = dock_labels[hovered_idx];
     int label_w = font_string_width(label) + UI_SCALE_VAL(16);
     int label_h = UI_SCALE_VAL(24);
@@ -794,12 +797,14 @@ static void ctx_menu_add_separator(void) {
   if (ctx_menu.item_count >= 16)
     return;
   ctx_menu.items[ctx_menu.item_count].label[0] = '\0';
+  ctx_menu.items[ctx_menu.item_count].enabled = 0;
   ctx_menu.items[ctx_menu.item_count].separator = 1;
   ctx_menu.item_count++;
 }
 
 static void ctx_menu_show(int x, int y) {
   ctx_menu_clear();
+  ctx_menu_source = 0;
   ctx_menu_add("Open", 1);
   ctx_menu_add("Open With...", 1);
   ctx_menu_add_separator();
@@ -830,6 +835,38 @@ static void ctx_menu_show(int x, int y) {
   }
 }
 
+static void dock_config_menu_show(int x, int y) {
+  ctx_menu_clear();
+  ctx_menu_source = 1;
+  ctx_menu_add("Dock Configuration", 0);
+  ctx_menu_add_separator();
+  ctx_menu_add("Open Task Manager", 1);
+  ctx_menu_add_separator();
+  ctx_menu_add(dock_magnification_enabled ? "Turn Magnification Off" : "Turn Magnification On", 1);
+  ctx_menu_add(dock_labels_enabled ? "Hide Dock Labels" : "Show Dock Labels", 1);
+
+  ctx_menu.x = x;
+  ctx_menu.y = y;
+  ctx_menu.width = UI_SCALE_VAL(220);
+  ctx_menu.height = UI_SCALE_VAL(8);
+  ctx_menu.visible = 1;
+
+  for (int i = 0; i < ctx_menu.item_count; i++) {
+    ctx_menu.height += UI_SCALE_VAL(24);
+    if (ctx_menu.items[i].separator) ctx_menu.height += UI_SCALE_VAL(8);
+  }
+
+  if (ctx_menu.x + ctx_menu.width > (int)screen_width) {
+    ctx_menu.x = screen_width - ctx_menu.width - UI_SCALE_VAL(4);
+  }
+  if (ctx_menu.y + ctx_menu.height > (int)screen_height - DOCK_HEIGHT) {
+    ctx_menu.y = screen_height - DOCK_HEIGHT - ctx_menu.height - UI_SCALE_VAL(4);
+  }
+  if (ctx_menu.y < MENU_BAR_HEIGHT) {
+    ctx_menu.y = MENU_BAR_HEIGHT + UI_SCALE_VAL(4);
+  }
+}
+
 static void draw_context_menu(void) {
   if (!ctx_menu.visible)
     return;
@@ -849,9 +886,9 @@ static void draw_context_menu(void) {
   int item_h = UI_SCALE_VAL(24);
   int item_y = y + UI_SCALE_VAL(4);
   for (int i = 0; i < ctx_menu.item_count; i++) {
-    if (ctx_menu.items[i].separator) {
+    if (ctx_menu.items[i].separator && ctx_menu.items[i].label[0] == '\0') {
       fb_fill_rect(x + UI_SCALE_VAL(8), item_y + UI_SCALE_VAL(10), w - UI_SCALE_VAL(16), 1, THEME_OVERLAY);
-      item_y += item_h;
+      item_y += item_h + UI_SCALE_VAL(8);
       continue;
     }
 
@@ -865,6 +902,11 @@ static void draw_context_menu(void) {
     gui_draw_string(x + UI_SCALE_VAL(12), item_y + UI_SCALE_VAL(4), ctx_menu.items[i].label, color);
 
     item_y += item_h;
+    if (ctx_menu.items[i].separator) {
+      fb_fill_rect(x + UI_SCALE_VAL(8), item_y + UI_SCALE_VAL(2),
+                   w - UI_SCALE_VAL(16), 1, THEME_OVERLAY);
+      item_y += UI_SCALE_VAL(8);
+    }
   }
 }
 
@@ -2519,6 +2561,7 @@ static void keyboard_callback(int key) {
   /* ESC: Close windows/context menu */
   if (key == KEY_ESC) {
     ctx_menu.visible = 0;
+    ctx_menu_source = 0;
     calc.visible = 0;
     snake.visible = 0;
     notepad.visible = 0;
@@ -2929,6 +2972,11 @@ static void handle_mouse_click(int x, int y, int button) {
     int dock_x = (screen_width - dock_w) / 2;
     
     if (x >= dock_x && x < dock_x + dock_w) {
+      if (button == 2) {
+        dock_config_menu_show(x, y - UI_SCALE_VAL(8));
+        return;
+      }
+
       int rel_x = x - dock_x - UI_SCALE_VAL(16);
       int icon_idx = rel_x / (DOCK_ICON_SIZE + DOCK_PADDING);
       
@@ -2962,7 +3010,20 @@ static void handle_mouse_click(int x, int y, int button) {
         if (y >= item_y && y < item_y + item_h - UI_SCALE_VAL(2) && ctx_menu.items[i].enabled) {
           ctx_menu.visible = 0;
           /* Handle action */
-          if (strcmp(ctx_menu.items[i].label, "New Folder") == 0) {
+          if (ctx_menu_source == 1) {
+            if (strcmp(ctx_menu.items[i].label, "Open Task Manager") == 0) {
+              task_manager.visible = 1;
+              bring_window_to_front(WIN_TASK_MANAGER);
+            } else if (strcmp(ctx_menu.items[i].label, "Turn Magnification Off") == 0) {
+              dock_magnification_enabled = 0;
+            } else if (strcmp(ctx_menu.items[i].label, "Turn Magnification On") == 0) {
+              dock_magnification_enabled = 1;
+            } else if (strcmp(ctx_menu.items[i].label, "Hide Dock Labels") == 0) {
+              dock_labels_enabled = 0;
+            } else if (strcmp(ctx_menu.items[i].label, "Show Dock Labels") == 0) {
+              dock_labels_enabled = 1;
+            }
+          } else if (strcmp(ctx_menu.items[i].label, "New Folder") == 0) {
             static int folder_num = 1;
             char path[64];
             snprintf(path, 64, "/Desktop/New Folder %d", folder_num++);
@@ -2979,6 +3040,7 @@ static void handle_mouse_click(int x, int y, int button) {
           } else if (strcmp(ctx_menu.items[i].label, "Change Background") == 0) {
             wallpaper_next();
           }
+          ctx_menu_source = 0;
           return;
         }
         item_y += item_h;
@@ -2986,12 +3048,14 @@ static void handle_mouse_click(int x, int y, int button) {
       }
     }
     ctx_menu.visible = 0;
+    ctx_menu_source = 0;
     return;
   }
   
   /* Right click on desktop - show full context menu like test folder */
   if (button == 2 && y > MENU_BAR_HEIGHT && y < (int)screen_height - DOCK_HEIGHT) {
     ctx_menu.visible = 1;
+    ctx_menu_source = 0;
     ctx_menu.x = x;
     ctx_menu.y = y;
     ctx_menu.width = UI_SCALE_VAL(180);
@@ -3588,14 +3652,17 @@ static void gui_draw_all(void) {
     int old_hover = ctx_menu.hover_index;
     ctx_menu.hover_index = -1;
     if (mouse_x >= ctx_menu.x && mouse_x < ctx_menu.x + ctx_menu.width) {
-      int item_y = ctx_menu.y + 8;
+      int item_y = ctx_menu.y + UI_SCALE_VAL(4);
+      int item_h = UI_SCALE_VAL(24);
       for (int i = 0; i < ctx_menu.item_count; i++) {
-        if (mouse_y >= item_y && mouse_y < item_y + 20) {
+        if (!(ctx_menu.items[i].separator && ctx_menu.items[i].label[0] == '\0') &&
+            mouse_y >= item_y &&
+            mouse_y < item_y + item_h - UI_SCALE_VAL(2)) {
           ctx_menu.hover_index = i;
           break;
         }
-        item_y += 24;
-        if (ctx_menu.items[i].separator) item_y += 8;
+        item_y += item_h;
+        if (ctx_menu.items[i].separator) item_y += UI_SCALE_VAL(8);
       }
     }
     if (old_hover != ctx_menu.hover_index) {
