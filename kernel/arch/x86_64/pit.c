@@ -37,6 +37,7 @@
 
 /* PIT frequency */
 #define PIT_FREQUENCY   1193182     /* Hz */
+#define TIMER_HZ        100         /* 100 Hz = 10ms tick */
 
 /* ===================================================================== */
 /* Initialization */
@@ -44,10 +45,10 @@
 
 void pit_init(void)
 {
-    /* Set up channel 0 for 1000 Hz (1ms) timer */
-    uint32_t divisor = PIT_FREQUENCY / 1000;
+    /* Set up channel 0 for the scheduler tick. */
+    uint32_t divisor = PIT_FREQUENCY / TIMER_HZ;
     
-    printk(KERN_INFO "PIT: Initializing at 1000 Hz (divisor=%u)\n", divisor);
+    printk(KERN_INFO "PIT: Initializing at %u Hz (divisor=%u)\n", TIMER_HZ, divisor);
     
     /* Send command byte */
     outb(PIT_COMMAND, PIT_CMD_CHANNEL0 | PIT_CMD_BOTH | PIT_CMD_MODE2 | PIT_CMD_BINARY);
@@ -55,6 +56,10 @@ void pit_init(void)
     /* Send divisor */
     outb(PIT_CHANNEL0, divisor & 0xFF);
     outb(PIT_CHANNEL0, (divisor >> 8) & 0xFF);
+
+    /* Enable IRQ 0 (timer interrupt). */
+    extern void pic_clear_mask(uint8_t irq);
+    pic_clear_mask(0);
     
     printk(KERN_INFO "PIT: Initialized\n");
 }
@@ -70,6 +75,13 @@ void pit_handler(void)
     pit_ticks++;
     extern void arch_timer_tick(void);
     arch_timer_tick();
+
+    /* Acknowledge before switching so the PIC can deliver future ticks. */
+    extern void pic_send_eoi(uint8_t irq);
+    pic_send_eoi(0);
+
+    extern void process_preempt_from_irq(void);
+    process_preempt_from_irq();
 }
 
 uint64_t pit_get_ticks(void)

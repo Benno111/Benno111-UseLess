@@ -55,4 +55,7 @@ void pit_handler(void)
     /* Send EOI to PIC */
     extern void pic_send_eoi(uint8_t irq);
     pic_send_eoi(0);
+
+    extern void process_preempt_from_irq(void);
+    process_preempt_from_irq();
 }

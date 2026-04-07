@@ -76,6 +76,7 @@ process_t **process_get_current_ptr(void);
 void process_yield(void);              // Give up CPU voluntarily
 void process_schedule(void);           // Pick next process to run
 void process_schedule_from_irq(void);  // Called from timer IRQ for preemption
+void process_preempt_from_irq(void);   // x86 IRQ-path preemptive switch
 int process_count_ready(void);         // Count runnable processes
 int process_run_kernel_slice(void);    // Let kernel grant one background slice
 

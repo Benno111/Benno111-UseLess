@@ -138,7 +138,7 @@ void arch_irq_init(void)
 /* ===================================================================== */
 
 static uint64_t timer_ticks = 0;
-static uint64_t timer_frequency = 1000; /* 1kHz default */
+static uint64_t timer_frequency = 100; /* PIT scheduler tick frequency */
 
 void arch_timer_init(void)
 {

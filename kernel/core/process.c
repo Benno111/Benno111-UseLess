@@ -39,6 +39,10 @@ static process_t proc_table[MAX_PROCESSES];
 static int current_pid = -1; // -1 means kernel/shell is running
 static int next_pid = 1;
 
+// 100Hz timer paths preempt every 20 ticks (about 200ms).
+#define PROCESS_TIME_SLICE_TICKS 20
+static unsigned int preempt_ticks = 0;
+
 // Spinlock protecting process table access
 static DEFINE_SPINLOCK(proc_table_lock);
 
@@ -281,14 +285,14 @@ int process_create(const char *path, int argc, char **argv) {
   proc->context.x[21] = (uint64_t)argc;       // x21 = argc
   proc->context.x[22] = (uint64_t)argv;       // x22 = argv
 #elif defined(ARCH_X86_64)
-  arch_context_set_flags(&proc->context, 0x202); // IF (interrupts enabled)
+  arch_context_set_flags(&proc->context, 0x2); // Entry wrapper enables IRQs
   // Pass arguments via callee-saved registers (similar to ARM64)
   proc->context.r12 = proc->entry;          // r12 = entry point
   proc->context.r13 = (uint64_t)kapi_get(); // r13 = kapi pointer
   proc->context.r14 = (uint64_t)argc;       // r14 = argc
   proc->context.r15 = (uint64_t)argv;       // r15 = argv
 #elif defined(ARCH_X86)
-  arch_context_set_flags(&proc->context, 0x202); // IF (interrupts enabled)
+  arch_context_set_flags(&proc->context, 0x2); // Entry stub enables IRQs
   proc->context.cs = 0x08;                       // Kernel code
   proc->context.ds = 0x10;                       // Kernel data
   proc->context.es = 0x10;
@@ -343,7 +347,8 @@ static void __attribute__((naked)) process_entry_wrapper(void) {
 // Parameters passed in callee-saved registers r12-r15
 // r12 = entry, r13 = kapi, r14 = argc, r15 = argv
 static void __attribute__((naked)) process_entry_wrapper(void) {
-  asm volatile("movq %%r13, %%rdi\n"  // rdi = kapi (1st arg)
+  asm volatile("sti\n"
+               "movq %%r13, %%rdi\n"  // rdi = kapi (1st arg)
                "movq %%r14, %%rsi\n"  // rsi = argc (2nd arg)
                "movq %%r15, %%rdx\n"  // rdx = argv (3rd arg)
                "callq *%%r12\n"       // Call entry(kapi, argc, argv)
@@ -586,9 +591,39 @@ int process_exec(const char *path) {
   return process_exec_args(path, 1, argv);
 }
 
-// Called from IRQ handler for preemptive scheduling
-// Just updates current_process - IRQ handler does the actual context switch
+static int process_preempt_quantum_expired(void) {
+  preempt_ticks++;
+  if (preempt_ticks < PROCESS_TIME_SLICE_TICKS) {
+    return 0;
+  }
+
+  preempt_ticks = 0;
+  return 1;
+}
+
+static int process_pick_next_ready(int old_slot) {
+  int start = (old_slot >= 0) ? old_slot + 1 : 0;
+
+  for (int i = 0; i < MAX_PROCESSES; i++) {
+    int idx = (start + i) % MAX_PROCESSES;
+    if (proc_table[idx].state == PROC_STATE_READY &&
+        arch_context_get_sp(&proc_table[idx].context) != 0 &&
+        arch_context_get_pc(&proc_table[idx].context) != 0) {
+      return idx;
+    }
+  }
+
+  return -1;
+}
+
+// Called from IRQ handler for preemptive scheduling.
+// ARM64 IRQ assembly does the register save/restore and uses this to select
+// the next task context to restore.
 void process_schedule_from_irq(void) {
+  if (!process_preempt_quantum_expired()) {
+    return;
+  }
+
   // Check how many processes are ready to run
   int ready_count = process_count_ready();
 
@@ -602,38 +637,61 @@ void process_schedule_from_irq(void) {
     return; // Kernel running, no processes to switch to
   }
 
-  // Find next runnable process (round-robin)
   int old_slot = current_pid;
-  int start = (old_slot >= 0) ? old_slot + 1 : 0;
+  int next = process_pick_next_ready(old_slot);
 
-  for (int i = 0; i < MAX_PROCESSES; i++) {
-    int idx = (start + i) % MAX_PROCESSES;
-    if (proc_table[idx].state == PROC_STATE_READY) {
-      // Found a different process to switch to
-      if (idx != old_slot) {
-        // Safety check: verify process has valid context
-        process_t *new_proc = &proc_table[idx];
-        if (arch_context_get_sp(&new_proc->context) == 0 ||
-            arch_context_get_pc(&new_proc->context) == 0) {
-          continue; // Skip invalid process
-        }
-
-        // Mark old process as ready (it was running)
-        if (old_slot >= 0 && proc_table[old_slot].state == PROC_STATE_RUNNING) {
-          proc_table[old_slot].state = PROC_STATE_READY;
-        }
-
-        // Switch to new process
-        proc_table[idx].state = PROC_STATE_RUNNING;
-        current_pid = idx;
-        current_process = new_proc;
-
-        // Memory barrier to ensure current_process is visible to IRQ handler
-        arch_dsb();
-      }
-      return;
-    }
+  if (next < 0 || next == old_slot) {
+    return;
   }
+
+  if (old_slot >= 0 && proc_table[old_slot].state == PROC_STATE_RUNNING) {
+    proc_table[old_slot].state = PROC_STATE_READY;
+  }
+
+  proc_table[next].state = PROC_STATE_RUNNING;
+  current_pid = next;
+  current_process = &proc_table[next];
+
+  // Memory barrier to ensure current_process is visible to IRQ handler.
+  arch_dsb();
+}
+
+// x86/x86_64 do not have the ARM64 IRQ restore trampoline, so switch from the
+// timer IRQ call chain itself. IRQs must already be disabled and the IRQ should
+// already be acknowledged before this is called.
+void process_preempt_from_irq(void) {
+  if (!process_preempt_quantum_expired()) {
+    return;
+  }
+
+  int ready_count = process_count_ready();
+  if (current_pid >= 0 && ready_count <= 1) {
+    return;
+  }
+  if (current_pid < 0 && ready_count == 0) {
+    return;
+  }
+
+  int old_slot = current_pid;
+  int next = process_pick_next_ready(old_slot);
+  if (next < 0 || next == old_slot) {
+    return;
+  }
+
+  process_t *old_proc = (old_slot >= 0) ? &proc_table[old_slot] : NULL;
+  process_t *new_proc = &proc_table[next];
+
+  if (old_proc && old_proc->state == PROC_STATE_RUNNING) {
+    old_proc->state = PROC_STATE_READY;
+  }
+
+  new_proc->state = PROC_STATE_RUNNING;
+  current_pid = next;
+  current_process = new_proc;
+  arch_dsb();
+
+  cpu_context_t *old_ctx = old_proc ? &old_proc->context : &kernel_context;
+  switch_context(old_ctx, &new_proc->context);
 }
 
 int process_run_kernel_slice(void) {
