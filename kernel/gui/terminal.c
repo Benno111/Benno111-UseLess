@@ -624,6 +624,22 @@ static void format_uptime_string(char *buf, int buf_size) {
   minutes = total_minutes % 60;
   buf[0] = '\0';
 
+  if (total_minutes == 0) {
+    ti = 0;
+    do {
+      tmp[ti++] = (char)('0' + (total_seconds % 10));
+      total_seconds /= 10;
+    } while (total_seconds > 0 && ti < (int)sizeof(tmp) - 1);
+    while (ti > 0 && idx < buf_size - 1)
+      buf[idx++] = tmp[--ti];
+    if (idx < buf_size - 1)
+      buf[idx++] = ' ';
+    if (idx < buf_size - 1)
+      buf[idx++] = 's';
+    buf[idx] = '\0';
+    return;
+  }
+
   if (days > 0) {
     ti = 0;
     do {
@@ -1036,7 +1052,11 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   } else if (str_starts_with(cmd, "date")) {
     term_puts(term, "Thu Jan 16 21:35:00 EST 2026\n");
   } else if (str_starts_with(cmd, "uptime")) {
-    term_puts(term, " 21:35:00 up 0 min,  1 user,  load: 0.00, 0.00, 0.00\n");
+    char uptime_buf[32];
+    format_uptime_string(uptime_buf, sizeof(uptime_buf));
+    term_puts(term, " 21:35:00 up ");
+    term_puts(term, uptime_buf);
+    term_puts(term, ",  1 user,  load: 0.00, 0.00, 0.00\n");
   } else if (str_starts_with(cmd, "free")) {
     term_puts(term, "              total        used        free\n");
     term_puts(term, "Mem:         252 MB       12 MB      240 MB\n");

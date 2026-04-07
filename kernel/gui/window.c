@@ -1785,6 +1785,12 @@ static void ui_format_uptime_string(char *buf, int buf_size) {
   minutes = total_minutes % 60;
   buf[0] = '\0';
 
+  if (total_minutes == 0) {
+    idx = ui_append_u64(buf, buf_size, idx, total_seconds);
+    ui_append_str(buf, buf_size, idx, " s");
+    return;
+  }
+
   if (days > 0) {
     ti = 0;
     do {
