@@ -28,6 +28,7 @@ struct block_header {
   size_t size;               /* Size of this block (including header) */
   uint32_t magic;            /* Magic number for validation */
   uint32_t flags;            /* Block flags */
+  int32_t owner;             /* GC owner; 0 means manually managed kernel block */
   struct block_header *next; /* Next free block (if free) */
   struct block_header *prev; /* Previous block */
 };
@@ -82,6 +83,44 @@ static inline struct block_header *data_to_block(void *ptr) {
   return (struct block_header *)((uint8_t *)ptr - sizeof(struct block_header));
 }
 
+static void kfree_block_locked(struct block_header *block) {
+  heap_used -= block->size;
+
+  /* Mark as free */
+  block->magic = BLOCK_MAGIC_FREE;
+  block->flags = BLOCK_FLAG_FREE;
+  block->owner = 0;
+
+  /* Add to front of free list */
+  block->next = free_list;
+  block->prev = NULL;
+  if (free_list) {
+    free_list->prev = block;
+  }
+  free_list = block;
+
+  /* Coalesce with next physical block if it's free */
+  struct block_header *next_physical =
+      (struct block_header *)((uint8_t *)block + block->size);
+  if ((uint8_t *)next_physical < heap_end &&
+      next_physical->magic == BLOCK_MAGIC_FREE) {
+    /* Remove next_physical from free list */
+    if (next_physical->prev) {
+      next_physical->prev->next = next_physical->next;
+    } else {
+      free_list = next_physical->next;
+    }
+    if (next_physical->next) {
+      next_physical->next->prev = next_physical->prev;
+    }
+    /* Merge sizes */
+    block->size += next_physical->size;
+    /* Invalidate merged block's magic to prevent double-free */
+    next_physical->magic = 0;
+    next_physical->owner = 0;
+  }
+}
+
 /* ===================================================================== */
 /* Initialization */
 /* ===================================================================== */
@@ -103,6 +142,7 @@ void kmalloc_init(void) {
   free_list->size = HEAP_SIZE;
   free_list->magic = BLOCK_MAGIC_FREE;
   free_list->flags = BLOCK_FLAG_FREE;
+  free_list->owner = 0;
   free_list->next = NULL;
   free_list->prev = NULL;
 
@@ -168,6 +208,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
     new_block->size = block->size - total_size;
     new_block->magic = BLOCK_MAGIC_FREE;
     new_block->flags = BLOCK_FLAG_FREE;
+    new_block->owner = 0;
     new_block->next = block->next;
     new_block->prev = block;
 
@@ -193,6 +234,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
   /* Mark as used */
   block->magic = BLOCK_MAGIC_USED;
   block->flags = 0;
+  block->owner = 0;
   block->next = NULL;
 
   heap_used += block->size;
@@ -236,41 +278,51 @@ void kfree(void *ptr) {
 
   lock_heap();
 
-  heap_used -= block->size;
+  kfree_block_locked(block);
 
-  /* Mark as free */
-  block->magic = BLOCK_MAGIC_FREE;
-  block->flags = BLOCK_FLAG_FREE;
+  unlock_heap();
+}
 
-  /* Add to front of free list */
-  block->next = free_list;
-  block->prev = NULL;
-  if (free_list) {
-    free_list->prev = block;
-  }
-  free_list = block;
+int kmalloc_set_owner(void *ptr, int owner) {
+  if (!ptr)
+    return -1;
 
-  /* Coalesce with next physical block if it's free */
-  struct block_header *next_physical =
-      (struct block_header *)((uint8_t *)block + block->size);
-  if ((uint8_t *)next_physical < heap_end &&
-      next_physical->magic == BLOCK_MAGIC_FREE) {
-    /* Remove next_physical from free list */
-    if (next_physical->prev) {
-      next_physical->prev->next = next_physical->next;
+  struct block_header *block = data_to_block(ptr);
+  if (block->magic != BLOCK_MAGIC_USED)
+    return -1;
+
+  lock_heap();
+  block->owner = owner;
+  unlock_heap();
+  return 0;
+}
+
+size_t kmalloc_collect_owner(int owner) {
+  if (!heap_initialized || owner == 0)
+    return 0;
+
+  size_t collected = 0;
+  lock_heap();
+
+  uint8_t *cursor = heap_start;
+  while (cursor < heap_end) {
+    struct block_header *block = (struct block_header *)cursor;
+    if (block->magic != BLOCK_MAGIC_USED && block->magic != BLOCK_MAGIC_FREE)
+      break;
+    if (block->size == 0 || cursor + block->size > heap_end)
+      break;
+
+    if (block->magic == BLOCK_MAGIC_USED && block->owner == owner) {
+      kfree_block_locked(block);
+      collected++;
+      cursor = (uint8_t *)block + block->size;
     } else {
-      /* next_physical was head of free list, but block is new head now */
+      cursor += block->size;
     }
-    if (next_physical->next) {
-      next_physical->next->prev = next_physical->prev;
-    }
-    /* Merge sizes */
-    block->size += next_physical->size;
-    /* Invalidate merged block's magic to prevent double-free */
-    next_physical->magic = 0;
   }
 
   unlock_heap();
+  return collected;
 }
 
 /* ===================================================================== */
@@ -289,6 +341,7 @@ void *krealloc(void *ptr, size_t new_size, uint32_t flags) {
 
   struct block_header *block = data_to_block(ptr);
   size_t old_size = block->size - sizeof(struct block_header);
+  int32_t old_owner = block->owner;
 
   /* If new size fits in current block, just return */
   if (new_size <= old_size) {
@@ -300,6 +353,7 @@ void *krealloc(void *ptr, size_t new_size, uint32_t flags) {
   if (!new_ptr) {
     return NULL;
   }
+  kmalloc_set_owner(new_ptr, old_owner);
 
   /* Copy old data */
   uint8_t *src = (uint8_t *)ptr;

@@ -7,6 +7,7 @@
 #include "apps/kapi.h"
 #include "printk.h"
 #include "mm/kmalloc.h"
+#include "core/process.h"
 
 /* Display structure from window.c - MUST match exactly! */
 struct display {
@@ -177,7 +178,11 @@ static void kapi_sleep_ms(uint32_t ms) {
 }
 
 static void *kapi_malloc(size_t size) {
-    return kmalloc(size);
+    void *ptr = kmalloc(size);
+    process_t *proc = process_current();
+    if (ptr && proc)
+        kmalloc_set_owner(ptr, proc->pid);
+    return ptr;
 }
 
 static void kapi_free(void *ptr) {

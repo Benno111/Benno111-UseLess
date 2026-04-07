@@ -53,6 +53,23 @@ void *kzalloc(size_t size, uint32_t flags);
 void kfree(void *ptr);
 
 /**
+ * kmalloc_set_owner - Tag an allocation for owner-based garbage collection
+ * @ptr: Allocation returned by kmalloc/kzalloc/krealloc
+ * @owner: Owner ID; 0 disables automatic owner collection
+ *
+ * Return: 0 on success, negative on invalid pointer
+ */
+int kmalloc_set_owner(void *ptr, int owner);
+
+/**
+ * kmalloc_collect_owner - Free all heap allocations tagged to an owner
+ * @owner: Owner ID to collect
+ *
+ * Return: Number of allocations collected
+ */
+size_t kmalloc_collect_owner(int owner);
+
+/**
  * krealloc - Reallocate kernel memory
  * @ptr: Original pointer
  * @new_size: New size
