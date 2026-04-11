@@ -2414,218 +2414,75 @@ static void draw_desktop_icons(void) {
 }
 
 /* ===================================================================== */
-/* Menu Bar - OpenShell inspired main menu skin                          */
+/* Menu Bar - macOS Big Sur style (matching test folder)                 */
 /* ===================================================================== */
 
 static int menu_open = 0;
 
-typedef struct {
-  const char *label;
-  const char *subtitle;
-  int action;
-} start_menu_entry_t;
-
-enum {
-  MENU_ACTION_NONE = 0,
-  MENU_ACTION_ABOUT,
-  MENU_ACTION_SETTINGS,
-  MENU_ACTION_TERMINAL,
-  MENU_ACTION_FILES,
-  MENU_ACTION_NOTES,
-  MENU_ACTION_CALCULATOR,
-  MENU_ACTION_TASKS,
-  MENU_ACTION_CLOCK,
-  MENU_ACTION_HELP,
-  MENU_ACTION_RESTART
-};
-
-static const start_menu_entry_t menu_primary_items[] = {
-    {"Terminal", "Command line and system tools", MENU_ACTION_TERMINAL},
-    {"File Explorer", "Browse documents and folders", MENU_ACTION_FILES},
-    {"Notes", "Quick text editing", MENU_ACTION_NOTES},
-    {"Calculator", "Desktop utilities", MENU_ACTION_CALCULATOR},
-};
-
-static const start_menu_entry_t menu_system_items[] = {
-    {"Task Manager", "Running apps and activity", MENU_ACTION_TASKS},
-    {"Clock", "Open the desktop clock widget", MENU_ACTION_CLOCK},
-    {"Help Center", "About OS8 and shortcuts", MENU_ACTION_HELP},
-    {"Restart", "Reboot the system", MENU_ACTION_RESTART},
-};
-
-#define MENU_PRIMARY_COUNT ((int)(sizeof(menu_primary_items) / sizeof(menu_primary_items[0])))
-#define MENU_SYSTEM_COUNT ((int)(sizeof(menu_system_items) / sizeof(menu_system_items[0])))
-
-static int main_menu_x(void) { return UI_SCALE_VAL(12); }
-static int main_menu_y(void) { return MENU_BAR_HEIGHT + UI_SCALE_VAL(10); }
-static int main_menu_w(void) { return UI_SCALE_VAL(430); }
-static int main_menu_h(void) { return UI_SCALE_VAL(328); }
-
-static int main_menu_contains(int mx, int my) {
-  int x = main_menu_x();
-  int y = main_menu_y();
-  int w = main_menu_w();
-  int h = main_menu_h();
-  return mx >= x && mx < x + w && my >= y && my < y + h;
-}
-
-static int main_menu_hit_test(int mx, int my) {
-  int x = main_menu_x();
-  int y = main_menu_y();
-  int w = main_menu_w();
-  int h = main_menu_h();
-  int rail_w = UI_SCALE_VAL(92);
-  int right_w = UI_SCALE_VAL(150);
-  int search_h = UI_SCALE_VAL(34);
-  int hero_h = UI_SCALE_VAL(58);
-  int item_h = UI_SCALE_VAL(44);
-
-  if (mx < x || mx >= x + w || my < y || my >= y + h)
-    return MENU_ACTION_NONE;
-
-  if (my >= y + UI_SCALE_VAL(16) && my < y + UI_SCALE_VAL(16) + UI_SCALE_VAL(32)) {
-    if (mx >= x + UI_SCALE_VAL(18) && mx < x + rail_w - UI_SCALE_VAL(12))
-      return MENU_ACTION_ABOUT;
-  }
-
-  if (my >= y + h - UI_SCALE_VAL(118) && my < y + h - UI_SCALE_VAL(86) &&
-      mx >= x + UI_SCALE_VAL(16) && mx < x + rail_w - UI_SCALE_VAL(10))
-    return MENU_ACTION_FILES;
-  if (my >= y + h - UI_SCALE_VAL(78) && my < y + h - UI_SCALE_VAL(46) &&
-      mx >= x + UI_SCALE_VAL(16) && mx < x + rail_w - UI_SCALE_VAL(10))
-    return MENU_ACTION_SETTINGS;
-  if (my >= y + h - UI_SCALE_VAL(38) && my < y + h - UI_SCALE_VAL(6) &&
-      mx >= x + UI_SCALE_VAL(16) && mx < x + rail_w - UI_SCALE_VAL(10))
-    return MENU_ACTION_RESTART;
-
-  int center_x = x + rail_w + UI_SCALE_VAL(10);
-  int center_w = w - rail_w - right_w - UI_SCALE_VAL(24);
-  int list_y = y + hero_h + search_h + UI_SCALE_VAL(30);
-  for (int i = 0; i < MENU_PRIMARY_COUNT; i++) {
-    int item_y = list_y + i * (item_h + UI_SCALE_VAL(8));
-    if (mx >= center_x && mx < center_x + center_w &&
-        my >= item_y && my < item_y + item_h)
-      return menu_primary_items[i].action;
-  }
-
-  int right_x = x + w - right_w - UI_SCALE_VAL(10);
-  int right_y = y + hero_h + UI_SCALE_VAL(24);
-  for (int i = 0; i < MENU_SYSTEM_COUNT; i++) {
-    int item_y = right_y + i * UI_SCALE_VAL(52);
-    if (mx >= right_x + UI_SCALE_VAL(8) && mx < right_x + right_w - UI_SCALE_VAL(8) &&
-        my >= item_y && my < item_y + UI_SCALE_VAL(38))
-      return menu_system_items[i].action;
-  }
-
-  return MENU_ACTION_NONE;
-}
-
 static void draw_menu_bar(void) {
+  /* Glossy menu bar - gradient from dark to slightly lighter (like test folder) */
   for (int y = 0; y < MENU_BAR_HEIGHT; y++) {
-    uint8_t r = 0x20 + (uint8_t)((y * 12) / MENU_BAR_HEIGHT);
-    uint8_t g = 0x45 + (uint8_t)((y * 10) / MENU_BAR_HEIGHT);
-    uint8_t b = 0x79 + (uint8_t)((y * 8) / MENU_BAR_HEIGHT);
-    uint32_t color = (r << 16) | (g << 8) | b;
+    int brightness = 45 + (y * 10) / MENU_BAR_HEIGHT; /* 45 to 55 */
+    uint32_t color = (brightness << 16) | (brightness << 8) | (brightness + 5);
     for (int x = 0; x < (int)screen_width; x++) {
       fb_put_pixel(x, y, color);
     }
   }
-
+  
+  /* Bottom highlight line */
   for (int x = 0; x < (int)screen_width; x++) {
-    fb_put_pixel(x, MENU_BAR_HEIGHT - 1, 0x86A7CC);
+    fb_put_pixel(x, MENU_BAR_HEIGHT - 1, 0x606060);
   }
 
+  /* Apple logo (using @ as placeholder, bold white) */
   int font_h = FONT_HEIGHT * ui_scale;
   int text_y = (MENU_BAR_HEIGHT - font_h) / 2;
-  int orb_x = UI_SCALE_VAL(15);
-  int orb_y = MENU_BAR_HEIGHT / 2;
-  int orb_r = UI_SCALE_VAL(8);
-  gui_draw_circle(orb_x, orb_y, orb_r, 0xEAF4FF);
-  fb_fill_rect(orb_x - UI_SCALE_VAL(4), orb_y - UI_SCALE_VAL(4), UI_SCALE_VAL(3), UI_SCALE_VAL(3), 0x2F5F97);
-  fb_fill_rect(orb_x + UI_SCALE_VAL(1), orb_y - UI_SCALE_VAL(4), UI_SCALE_VAL(3), UI_SCALE_VAL(3), 0x2F5F97);
-  fb_fill_rect(orb_x - UI_SCALE_VAL(4), orb_y + UI_SCALE_VAL(1), UI_SCALE_VAL(3), UI_SCALE_VAL(3), 0x2F5F97);
-  fb_fill_rect(orb_x + UI_SCALE_VAL(1), orb_y + UI_SCALE_VAL(1), UI_SCALE_VAL(3), UI_SCALE_VAL(3), 0x2F5F97);
+  gui_draw_string(UI_SCALE_VAL(14), text_y, "@", 0xFFFFFF);
+  
+  /* App name - bold */
+  gui_draw_string(UI_SCALE_VAL(36), text_y, "OS8", 0xFFFFFF);
 
-  gui_draw_string(UI_SCALE_VAL(32), text_y, "OpenShell", 0xFFFFFF);
-  gui_draw_string(UI_SCALE_VAL(122), text_y, "OS8", 0xDDEBFF);
-
+  /* Right side - Clock */
   int clock_w = font_string_width("12:00");
   gui_draw_string((int)screen_width - clock_w - UI_SCALE_VAL(16), text_y,
                   "12:00", 0xFFFFFF);
-
+  
+  /* WiFi icon area */
   int wx = (int)screen_width - UI_SCALE_VAL(86);
   int wy = text_y + UI_SCALE_VAL(6);
-  fb_fill_rect(wx, wy + UI_SCALE_VAL(6), UI_SCALE_VAL(2), UI_SCALE_VAL(2), 0xFFFFFF);
-  fb_fill_rect(wx - UI_SCALE_VAL(2), wy + UI_SCALE_VAL(3), UI_SCALE_VAL(6), UI_SCALE_VAL(2), 0xFFFFFF);
-  fb_fill_rect(wx - UI_SCALE_VAL(4), wy, UI_SCALE_VAL(10), UI_SCALE_VAL(2), 0xFFFFFF);
+  fb_fill_rect(wx, wy + UI_SCALE_VAL(6), UI_SCALE_VAL(2), UI_SCALE_VAL(2),
+               0xFFFFFF);
+  fb_fill_rect(wx - UI_SCALE_VAL(2), wy + UI_SCALE_VAL(3), UI_SCALE_VAL(6),
+               UI_SCALE_VAL(2), 0xFFFFFF);
+  fb_fill_rect(wx - UI_SCALE_VAL(4), wy, UI_SCALE_VAL(10), UI_SCALE_VAL(2),
+               0xFFFFFF);
 
+  /* Draw dropdown if open */
   if (menu_open == 1) {
-    int mx = main_menu_x();
-    int my = main_menu_y();
-    int mw = main_menu_w();
-    int mh = main_menu_h();
-    int rail_w = UI_SCALE_VAL(92);
-    int right_w = UI_SCALE_VAL(150);
-    int hero_h = UI_SCALE_VAL(58);
-    int search_h = UI_SCALE_VAL(34);
-    int item_h = UI_SCALE_VAL(44);
-    int hovered_action = main_menu_hit_test(mouse_x, mouse_y);
-
-    gui_draw_rounded_rect(mx + UI_SCALE_VAL(6), my + UI_SCALE_VAL(6), mw, mh, UI_SCALE_VAL(18), 0x0E1825);
-    gui_draw_rounded_rect(mx, my, mw, mh, UI_SCALE_VAL(18), 0xF1F6FB);
-
-    fb_fill_rect(mx + rail_w, my + UI_SCALE_VAL(16), UI_SCALE_VAL(1), mh - UI_SCALE_VAL(32), 0xC7D8EA);
-    fb_fill_rect(mx + mw - right_w - UI_SCALE_VAL(12), my + UI_SCALE_VAL(16), UI_SCALE_VAL(1), mh - UI_SCALE_VAL(32), 0xD3E0EE);
-
-    gui_draw_rounded_rect(mx + UI_SCALE_VAL(14), my + UI_SCALE_VAL(12), rail_w - UI_SCALE_VAL(20), mh - UI_SCALE_VAL(24), UI_SCALE_VAL(16), 0x2D5B90);
-    gui_draw_string(mx + UI_SCALE_VAL(24), my + UI_SCALE_VAL(22), "BENNO", 0xFFFFFF);
-    gui_draw_string(mx + UI_SCALE_VAL(24), my + UI_SCALE_VAL(42), "Desktop", 0xD9E7F7);
-
-    if (hovered_action == MENU_ACTION_ABOUT) {
-      gui_draw_rounded_rect(mx + UI_SCALE_VAL(16), my + UI_SCALE_VAL(16), rail_w - UI_SCALE_VAL(24), UI_SCALE_VAL(32), UI_SCALE_VAL(10), 0x4A77AC);
-      gui_draw_string(mx + UI_SCALE_VAL(24), my + UI_SCALE_VAL(22), "BENNO", 0xFFFFFF);
-      gui_draw_string(mx + UI_SCALE_VAL(24), my + UI_SCALE_VAL(42), "Desktop", 0xD9E7F7);
-    }
-
-    gui_draw_string(mx + rail_w + UI_SCALE_VAL(20), my + UI_SCALE_VAL(18), "Pinned Apps", 0x284F78);
-    gui_draw_string(mx + mw - right_w + UI_SCALE_VAL(16), my + UI_SCALE_VAL(18), "System", 0x284F78);
-
-    gui_draw_rounded_rect(mx + rail_w + UI_SCALE_VAL(16), my + hero_h, mw - rail_w - right_w - UI_SCALE_VAL(34), search_h, UI_SCALE_VAL(10), 0xE6EEF6);
-    gui_draw_string(mx + rail_w + UI_SCALE_VAL(28), my + hero_h + UI_SCALE_VAL(8), "Search programs and files", 0x6A7F98);
-
-    int list_x = mx + rail_w + UI_SCALE_VAL(16);
-    int list_w = mw - rail_w - right_w - UI_SCALE_VAL(34);
-    int list_y = my + hero_h + search_h + UI_SCALE_VAL(30);
-    for (int i = 0; i < MENU_PRIMARY_COUNT; i++) {
-      int item_y = list_y + i * (item_h + UI_SCALE_VAL(8));
-      uint32_t bg = (hovered_action == menu_primary_items[i].action) ? 0xD6E6F8 : 0xFFFFFF;
-      gui_draw_rounded_rect(list_x, item_y, list_w, item_h, UI_SCALE_VAL(10), bg);
-      gui_draw_rounded_rect(list_x + UI_SCALE_VAL(10), item_y + UI_SCALE_VAL(8), UI_SCALE_VAL(28), UI_SCALE_VAL(28), UI_SCALE_VAL(8), 0x4A77AC);
-      gui_draw_string(list_x + UI_SCALE_VAL(50), item_y + UI_SCALE_VAL(7), menu_primary_items[i].label, 0x203B59);
-      gui_draw_string(list_x + UI_SCALE_VAL(50), item_y + UI_SCALE_VAL(24), menu_primary_items[i].subtitle, 0x7086A0);
-    }
-
-    int right_x = mx + mw - right_w - UI_SCALE_VAL(10);
-    int right_y = my + hero_h + UI_SCALE_VAL(24);
-    for (int i = 0; i < MENU_SYSTEM_COUNT; i++) {
-      int item_y = right_y + i * UI_SCALE_VAL(52);
-      uint32_t bg = (hovered_action == menu_system_items[i].action) ? 0xD6E6F8 : 0xE9F0F7;
-      gui_draw_rounded_rect(right_x + UI_SCALE_VAL(8), item_y, right_w - UI_SCALE_VAL(16), UI_SCALE_VAL(38), UI_SCALE_VAL(9), bg);
-      gui_draw_string(right_x + UI_SCALE_VAL(18), item_y + UI_SCALE_VAL(10), menu_system_items[i].label, 0x26486F);
-      if (i != MENU_SYSTEM_COUNT - 1) {
-        fb_fill_rect(right_x + UI_SCALE_VAL(14), item_y + UI_SCALE_VAL(45), right_w - UI_SCALE_VAL(28), UI_SCALE_VAL(1), 0xD1DEEC);
-      }
-    }
-
-    uint32_t files_bg = (hovered_action == MENU_ACTION_FILES) ? 0x4A77AC : 0x3B6B9F;
-    uint32_t settings_bg = (hovered_action == MENU_ACTION_SETTINGS) ? 0x4A77AC : 0x3B6B9F;
-    uint32_t restart_bg = (hovered_action == MENU_ACTION_RESTART) ? 0x7B3447 : 0x6A2D3D;
-    gui_draw_rounded_rect(mx + UI_SCALE_VAL(16), my + mh - UI_SCALE_VAL(118), rail_w - UI_SCALE_VAL(24), UI_SCALE_VAL(32), UI_SCALE_VAL(8), files_bg);
-    gui_draw_string(mx + UI_SCALE_VAL(24), my + mh - UI_SCALE_VAL(110), "Documents", 0xFFFFFF);
-    gui_draw_rounded_rect(mx + UI_SCALE_VAL(16), my + mh - UI_SCALE_VAL(78), rail_w - UI_SCALE_VAL(24), UI_SCALE_VAL(32), UI_SCALE_VAL(8), settings_bg);
-    gui_draw_string(mx + UI_SCALE_VAL(24), my + mh - UI_SCALE_VAL(70), "Settings", 0xFFFFFF);
-    gui_draw_rounded_rect(mx + UI_SCALE_VAL(16), my + mh - UI_SCALE_VAL(38), rail_w - UI_SCALE_VAL(24), UI_SCALE_VAL(32), UI_SCALE_VAL(8), restart_bg);
-    gui_draw_string(mx + UI_SCALE_VAL(24), my + mh - UI_SCALE_VAL(30), "Restart", 0xFFFFFF);
+    int dd_x = UI_SCALE_VAL(8);
+    int dd_y = MENU_BAR_HEIGHT;
+    int dd_w = UI_SCALE_VAL(160);
+    int dd_h = UI_SCALE_VAL(80);
+    
+    /* Shadow */
+    fb_fill_rect(dd_x + UI_SCALE_VAL(3), dd_y + UI_SCALE_VAL(3), dd_w, dd_h,
+                 0x151520);
+    
+    /* Background */
+    fb_fill_rect(dd_x, dd_y, dd_w, dd_h, 0x404050);
+    fb_draw_rect(dd_x, dd_y, dd_w, dd_h, 0x606070);
+    
+    /* Menu items */
+    gui_draw_string(dd_x + UI_SCALE_VAL(12), dd_y + UI_SCALE_VAL(10),
+                    "About OS", 0xFFFFFF);
+    fb_fill_rect(dd_x + UI_SCALE_VAL(8), dd_y + UI_SCALE_VAL(30),
+                 dd_w - UI_SCALE_VAL(16), UI_SCALE_VAL(1), 0x606070);
+    gui_draw_string(dd_x + UI_SCALE_VAL(12), dd_y + UI_SCALE_VAL(38),
+                    "Settings...", 0xFFFFFF);
+    fb_fill_rect(dd_x + UI_SCALE_VAL(8), dd_y + UI_SCALE_VAL(56),
+                 dd_w - UI_SCALE_VAL(16), UI_SCALE_VAL(1), 0x606070);
+    gui_draw_string(dd_x + UI_SCALE_VAL(12), dd_y + UI_SCALE_VAL(62),
+                    "Restart", 0xFFFFFF);
   }
 }
 
@@ -3109,66 +2966,30 @@ static void smart_swap_buffers(void) {
 static void handle_mouse_click(int x, int y, int button) {
   /* Check menu bar */
   if (y < MENU_BAR_HEIGHT) {
-    if (x < UI_SCALE_VAL(150)) {
+    if (x < 90) {
       menu_open = menu_open ? 0 : 1;
     } else {
       menu_open = 0;
     }
     return;
   }
-
-  /* Check main menu */
-  if (menu_open) {
-    if (main_menu_contains(x, y)) {
-      int action = main_menu_hit_test(x, y);
-      if (action != MENU_ACTION_NONE) {
-        switch (action) {
-        case MENU_ACTION_ABOUT:
-        case MENU_ACTION_HELP:
-          help_win.visible = 1;
-          bring_window_to_front(WIN_HELP);
-          break;
-        case MENU_ACTION_SETTINGS:
-        case MENU_ACTION_FILES:
-          file_manager.visible = 1;
-          bring_window_to_front(WIN_FILE_MANAGER);
-          break;
-        case MENU_ACTION_TERMINAL:
-          terminal.visible = 1;
-          bring_window_to_front(WIN_TERMINAL);
-          break;
-        case MENU_ACTION_NOTES:
-          notepad.visible = 1;
-          bring_window_to_front(WIN_NOTEPAD);
-          break;
-        case MENU_ACTION_CALCULATOR:
-          calc.visible = 1;
-          bring_window_to_front(WIN_CALCULATOR);
-          break;
-        case MENU_ACTION_TASKS:
-          task_manager.visible = 1;
-          bring_window_to_front(WIN_TASK_MANAGER);
-          break;
-        case MENU_ACTION_CLOCK:
-          analog_clock.visible = 1;
-          bring_window_to_front(WIN_CLOCK);
-          break;
-        case MENU_ACTION_RESTART: {
-          extern void arch_reboot(void);
-          arch_reboot();
-          break;
-        }
-        default:
-          break;
-        }
-        menu_open = 0;
-        return;
-      }
-    } else {
-      menu_open = 0;
+  
+  /* Check menu dropdown */
+  if (menu_open && y >= MENU_BAR_HEIGHT &&
+      y < MENU_BAR_HEIGHT + UI_SCALE_VAL(100) &&
+      x < UI_SCALE_VAL(188)) {
+    int rel_y = y - MENU_BAR_HEIGHT;
+    if (rel_y >= UI_SCALE_VAL(8) && rel_y < UI_SCALE_VAL(30)) {
+      /* About clicked */
+      help_win.visible = 1;
+    } else if (rel_y >= UI_SCALE_VAL(38) && rel_y < UI_SCALE_VAL(58)) {
+      /* Settings clicked */
+      file_manager.visible = 1;
     }
+    menu_open = 0;
+    return;
   }
-
+  
   /* Close menu if clicking elsewhere */
   menu_open = 0;
   
