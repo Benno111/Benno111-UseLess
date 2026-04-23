@@ -46,6 +46,13 @@
 #define CH_ML  0xCC   /* ╠ */
 #define CH_MR  0xB9   /* ╣ */
 
+/* ── Key codes and scan codes ───────────────────────────────────────── */
+#define KEY_ENTER        0x0D   /* ASCII carriage return                 */
+#define KEY_ESC          0x1B   /* ASCII escape                          */
+#define SCAN_UP          0x48   /* BIOS scan code for ↑ arrow (INT 16h)  */
+#define SCAN_DOWN        0x50   /* BIOS scan code for ↓ arrow (INT 16h)  */
+#define HEX_LETTER_BASE  10     /* nibble values ≥ this use A–F          */
+
 /* ── Window geometry (all values are absolute screen coordinates) ─────
  *   Window is 52 chars wide and occupies rows 5-14, cols 14-65.          */
 #define WIN_ROW_TOP  5
@@ -106,14 +113,16 @@ input_loop:
     test    %al, %al
     jz      ext_key             /* AL==0 → extended / special key */
 
-    cmp     $0x0D, %al          /* Enter */
+    cmp     $KEY_ENTER, %al     /* Enter */
     je      do_enter
+    cmp     $KEY_ESC, %al       /* Esc → reboot */
+    je      do_reboot
     jmp     input_loop
 
 ext_key:
-    cmp     $0x48, %ah          /* ↑  scan code 0x48 */
+    cmp     $SCAN_UP, %ah       /* ↑  scan code 0x48 */
     je      key_up
-    cmp     $0x50, %ah          /* ↓  scan code 0x50 */
+    cmp     $SCAN_DOWN, %ah     /* ↓  scan code 0x50 */
     je      key_down
     jmp     input_loop
 
@@ -645,9 +654,9 @@ print_nibble_attr:
     push    %bx
     push    %cx
     and     $0x0F, %al
-    cmp     $10, %al
+    cmp     $HEX_LETTER_BASE, %al
     jb      pna_digit
-    add     $('A' - 10), %al
+    add     $('A' - HEX_LETTER_BASE), %al
     jmp     pna_emit
 pna_digit:
     add     $'0', %al
@@ -796,7 +805,7 @@ acd_wait:
     xor     %ax, %ax
     int     $0x16               /* wait for '1'..'8' or ESC */
 
-    cmp     $0x1B, %al
+    cmp     $KEY_ESC, %al
     je      acd_done
     cmp     $'1', %al
     jb      acd_done
@@ -845,10 +854,10 @@ ash_wait:
     xor     %ax, %ax
     int     $0x16
 
-    cmp     $0x1B, %al          /* ESC → exit shell */
+    cmp     $KEY_ESC, %al       /* ESC → exit shell */
     je      ash_exit
-    cmp     $0x0D, %al          /* Enter → new prompt */
-    je      ash_prompt
+    cmp     $KEY_ENTER, %al     /* Enter → newline then new prompt */
+    je      ash_newline
     cmp     $0x20, %al          /* ignore non-printable */
     jb      ash_wait
 
@@ -857,6 +866,16 @@ ash_wait:
     xor     %bh, %bh
     int     $0x10
     jmp     ash_wait
+
+ash_newline:
+    /* Output CR+LF via teletype so the next prompt starts on a fresh line */
+    mov     $0x0E, %ah
+    xor     %bh, %bh
+    mov     $'\r', %al
+    int     $0x10
+    mov     $'\n', %al
+    int     $0x10
+    jmp     ash_prompt
 
 ash_exit:
     /* Re-hide cursor before returning to the GUI */
