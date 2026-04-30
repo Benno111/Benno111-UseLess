@@ -24,7 +24,6 @@ _start:
     sti
 
     movb    $0, selected_drive
-    call    find_default_target
 
 main_menu:
     call    clear_screen

@@ -193,7 +193,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-iso dos-installer-binary stage2-binary qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-iso dos-installer-binary qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -228,7 +228,6 @@ help:
 	@echo "  dos-installer-image - Create FreeDOS-based BIOS installer image"
 	@echo "  dos-installer-iso - Create standalone BIOS DOS installer ISO"
 	@echo "  dos-installer-binary - Create DOS runnable installer utility"
-	@echo "  stage2-binary - Build BIOS stage-2 setup GUI binary"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -386,25 +385,6 @@ $(DOS_INSTALLER_COM_BIN): $(DOS_INSTALLER_COM_ELF)
 	@echo "[OBJCOPY] $@"
 	@$(OBJCOPY) -O binary $< $@
 
-# Stage-2 BIOS setup binary (text-mode GUI installer, loaded at 0x7E00)
-STAGE2_OBJ := $(BUILD_DIR)/boot/installer_stage2.o
-STAGE2_ELF := $(BUILD_DIR)/boot/stage2.elf
-STAGE2_BIN := $(BUILD_DIR)/boot/stage2.bin
-LDFLAGS_STAGE2 := -nostdlib -static -Ttext 0x7E00 -e real_mode_entry -N
-
-$(STAGE2_OBJ): $(ROOT_DIR)/boot/bios/installer_stage2.S | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@echo "[AS] $<"
-	@$(AS) --target=i686-unknown-none-elf -m16 -c $< -o $@
-
-$(STAGE2_ELF): $(STAGE2_OBJ)
-	@echo "[LD] $@"
-	@$(LD) $(LDFLAGS_STAGE2) -o $@ $<
-
-$(STAGE2_BIN): $(STAGE2_ELF)
-	@echo "[OBJCOPY] $@"
-	@$(OBJCOPY) -O binary $< $@
-
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
 	@$(LD) $(LDFLAGS_KERNEL) -o $@ $^
@@ -454,7 +434,7 @@ else
 	@exit 1
 endif
 
-dos-installer-image: kernel $(DOS_INSTALLER_COM_BIN) $(STAGE2_BIN)
+dos-installer-image: kernel $(DOS_INSTALLER_COM_BIN)
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating FreeDOS-based BIOS installer image..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
@@ -491,14 +471,6 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/OSSYS.IMG"
 else
 	@echo "[IMAGE] dos-installer-binary is currently supported only for ARCH=x86_64"
-	@exit 1
-endif
-
-stage2-binary: $(STAGE2_BIN)
-ifeq ($(ARCH),x86_64)
-	@echo "[STAGE2] BIOS stage-2 setup binary: $(STAGE2_BIN)"
-else
-	@echo "[STAGE2] stage2-binary is currently supported only for ARCH=x86_64"
 	@exit 1
 endif
 
