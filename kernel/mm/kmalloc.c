@@ -281,46 +281,14 @@ void kfree(void *ptr) {
 }
 
 int kmalloc_set_owner(void *ptr, int owner) {
-  if (!ptr)
-    return -1;
-
-  uint64_t heap_flags = lock_heap();
-  struct block_header *block = data_to_block(ptr);
-  if (block->magic != BLOCK_MAGIC_USED) {
-    unlock_heap(heap_flags);
-    return -1;
-  }
-  block->owner = owner;
-  unlock_heap(heap_flags);
+  (void)ptr;
+  (void)owner;
   return 0;
 }
 
 size_t kmalloc_collect_owner(int owner) {
-  if (!heap_initialized || owner == 0)
-    return 0;
-
-  size_t collected = 0;
-  uint64_t heap_flags = lock_heap();
-
-  uint8_t *cursor = heap_start;
-  while (cursor < heap_end) {
-    struct block_header *block = (struct block_header *)cursor;
-    if (block->magic != BLOCK_MAGIC_USED && block->magic != BLOCK_MAGIC_FREE)
-      break;
-    if (block->size == 0 || cursor + block->size > heap_end)
-      break;
-
-    if (block->magic == BLOCK_MAGIC_USED && block->owner == owner) {
-      kfree_block_locked(block);
-      collected++;
-      cursor = (uint8_t *)block + block->size;
-    } else {
-      cursor += block->size;
-    }
-  }
-
-  unlock_heap(heap_flags);
-  return collected;
+  (void)owner;
+  return 0;
 }
 
 /* ===================================================================== */

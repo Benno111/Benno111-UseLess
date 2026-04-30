@@ -441,13 +441,6 @@ void process_exit(int status) {
   // Free stack - but we're still on it! Don't free yet.
   // The stack will be freed when the slot is reused.
 
-  // Collect any process-owned KAPI allocations the app leaked.
-  size_t collected = kmalloc_collect_owner(proc->pid);
-  if (collected > 0) {
-    printf("[PROC] GC collected %lu allocation(s) for pid %d\n",
-           (unsigned long)collected, proc->pid);
-  }
-
   // Mark slot as free (simple cleanup for now)
   proc->state = PROC_STATE_FREE;
 

@@ -178,18 +178,7 @@ static void kapi_sleep_ms(uint32_t ms) {
 }
 
 static void *kapi_malloc(size_t size) {
-    process_t *proc = process_current();
-    int owner_pid = proc ? proc->pid : 0;
-    void *ptr = kmalloc(size);
-
-    /*
-     * Capture the owner before allocating so a timer preemption cannot
-     * retag the block to whatever process happens to be running later.
-     */
-    if (ptr && owner_pid)
-        kmalloc_set_owner(ptr, owner_pid);
-
-    return ptr;
+    return kmalloc(size);
 }
 
 static void kapi_free(void *ptr) {
