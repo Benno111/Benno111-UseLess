@@ -37,11 +37,9 @@ static int intel_hda_should_init_mmio(const pci_device_t *pci_dev) {
 #if defined(ARCH_X86_64) || defined(ARCH_X86)
   /*
    * Real Intel HDA controllers on x86 hardware are still sensitive during
-   * bring-up. Keep the legacy/QEMU-safe ID enabled there, but defer the newer
-   * class-matched hardware until a safer native init path exists.
+   * bring-up. Keep this path read-only until a safer native init path exists.
    */
-  if (pci_dev->device_id != HDA_DEVICE_ID)
-    return 0;
+  return 0;
 #endif
   return 1;
 }
