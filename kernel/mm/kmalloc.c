@@ -7,6 +7,7 @@
 
 #include "mm/kmalloc.h"
 #include "mm/pmm.h"
+#include "sync/spinlock.h"
 #include "printk.h"
 
 /* ===================================================================== */
@@ -52,20 +53,16 @@ static bool heap_initialized = false;
 static uint8_t x86_64_heap_storage[HEAP_SIZE] __attribute__((aligned(4096)));
 #endif
 
-/* Simple spinlock for heap operations */
-static volatile int heap_lock = 0;
+/* IRQ-safe spinlock for heap operations */
+static spinlock_t heap_lock = SPINLOCK_INIT;
 
-static void lock_heap(void) {
-  while (__atomic_test_and_set(&heap_lock, __ATOMIC_ACQUIRE)) {
-#ifdef ARCH_ARM64
-    asm volatile("yield");
-#elif defined(ARCH_X86_64) || defined(ARCH_X86)
-    asm volatile("pause");
-#endif
-  }
+static inline uint64_t lock_heap(void) {
+  return spin_lock_irqsave(&heap_lock);
 }
 
-static void unlock_heap(void) { __atomic_clear(&heap_lock, __ATOMIC_RELEASE); }
+static inline void unlock_heap(uint64_t flags) {
+  spin_unlock_irqrestore(&heap_lock, flags);
+}
 
 /* ===================================================================== */
 /* Helper functions */
@@ -172,7 +169,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
   /* Align size and add header */
   size_t total_size = align_up(size + sizeof(struct block_header), MIN_ALLOC);
 
-  lock_heap();
+  uint64_t heap_flags = lock_heap();
 
   /* Find first fit */
   struct block_header *block = free_list;
@@ -181,7 +178,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
   while (block) {
     if (block->magic != BLOCK_MAGIC_FREE) {
       printk(KERN_ERR "KMALLOC: Corrupted free list!\n");
-      unlock_heap();
+      unlock_heap(heap_flags);
       return NULL;
     }
 
@@ -196,7 +193,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
 
   if (!block) {
     /* No suitable block found */
-    unlock_heap();
+    unlock_heap(heap_flags);
     return NULL;
   }
 
@@ -239,7 +236,7 @@ void *_kmalloc(size_t size, uint32_t flags) {
 
   heap_used += block->size;
 
-  unlock_heap();
+  unlock_heap(heap_flags);
 
   void *ptr = block_data(block);
 
@@ -267,33 +264,34 @@ void kfree(void *ptr) {
     return;
   }
 
+  uint64_t heap_flags = lock_heap();
   struct block_header *block = data_to_block(ptr);
 
-  /* Validate block */
+  /* Validate block under the heap lock so preemption can't race the free. */
   if (block->magic != BLOCK_MAGIC_USED) {
     printk(KERN_ERR "KMALLOC: kfree of invalid pointer %p (magic=0x%x)\n", ptr,
            block->magic);
+    unlock_heap(heap_flags);
     return;
   }
 
-  lock_heap();
-
   kfree_block_locked(block);
 
-  unlock_heap();
+  unlock_heap(heap_flags);
 }
 
 int kmalloc_set_owner(void *ptr, int owner) {
   if (!ptr)
     return -1;
 
+  uint64_t heap_flags = lock_heap();
   struct block_header *block = data_to_block(ptr);
-  if (block->magic != BLOCK_MAGIC_USED)
+  if (block->magic != BLOCK_MAGIC_USED) {
+    unlock_heap(heap_flags);
     return -1;
-
-  lock_heap();
+  }
   block->owner = owner;
-  unlock_heap();
+  unlock_heap(heap_flags);
   return 0;
 }
 
@@ -302,7 +300,7 @@ size_t kmalloc_collect_owner(int owner) {
     return 0;
 
   size_t collected = 0;
-  lock_heap();
+  uint64_t heap_flags = lock_heap();
 
   uint8_t *cursor = heap_start;
   while (cursor < heap_end) {
@@ -321,7 +319,7 @@ size_t kmalloc_collect_owner(int owner) {
     }
   }
 
-  unlock_heap();
+  unlock_heap(heap_flags);
   return collected;
 }
 
