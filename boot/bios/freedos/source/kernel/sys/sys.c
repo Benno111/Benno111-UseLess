@@ -832,7 +832,13 @@ void initOptions(int argc, char *argv[], SYSOptions *opts)
     int slen;
     /* set source path, reserving room to append filename */
     if ( (argv[srcarg][1] == ':') || ((argv[srcarg][0]=='\\') && (argv[srcarg][1] == '\\')) ) 
-      strncpy(opts->srcDrive, argv[srcarg], SYS_MAXPATH-13);
+    {
+      size_t copy_len = strlen(argv[srcarg]);
+      if (copy_len >= sizeof(opts->srcDrive))
+        copy_len = sizeof(opts->srcDrive) - 1;
+      memcpy(opts->srcDrive, argv[srcarg], copy_len);
+      opts->srcDrive[copy_len] = '\0';
+    }
     else if (argv[srcarg][1] == '\0') /* assume 1 char is drive not path specifier */
       sprintf(opts->srcDrive, "%c:", toupper(*(argv[srcarg])));
     else /* only path provided, append to default drive */
@@ -2094,4 +2100,3 @@ BOOL copy(SYSOptions *opts, const BYTE *source, COUNT drive, const BYTE * filena
 
   return TRUE;
 } /* copy */
-

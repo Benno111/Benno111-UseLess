@@ -103,7 +103,7 @@ void desktop_refresh(void) {
   int col = 0, row = 0;
   for (int i = 0; i < count && desktop_icon_count < DESKTOP_MAX_ICONS; i++) {
     dsk_icon_t *icon = &desktop_icons[desktop_icon_count++];
-    strncpy(icon->name, entries[i].name, 63);
+    strlcpy(icon->name, entries[i].name, sizeof(icon->name));
     snprintf(icon->path, 256, "%s/%s", DESKTOP_PATH, entries[i].name);
     icon->type = entries[i].type ? ICON_FOLDER : get_icon_type(entries[i].name);
     icon->x = DESKTOP_START_X + col * DESKTOP_ICON_SPACING;
@@ -165,8 +165,7 @@ void desktop_draw_icons(void) {
     
     /* Label text (truncated) */
     char label[12];
-    strncpy(label, icon->name, 10);
-    label[10] = '\0';
+    strlcpy(label, icon->name, sizeof(label));
     if (strlen(icon->name) > 10) {
       label[8] = '.';
       label[9] = '.';
@@ -226,7 +225,8 @@ static void action_rename(void *ctx) {
 static void action_copy(void *ctx) {
   (void)ctx;
   if (desktop_selected >= 0) {
-    strncpy(clipboard_path, desktop_icons[desktop_selected].path, 255);
+    strlcpy(clipboard_path, desktop_icons[desktop_selected].path,
+            sizeof(clipboard_path));
     clipboard_cut = 0;
   }
 }
@@ -234,7 +234,8 @@ static void action_copy(void *ctx) {
 static void action_cut(void *ctx) {
   (void)ctx;
   if (desktop_selected >= 0) {
-    strncpy(clipboard_path, desktop_icons[desktop_selected].path, 255);
+    strlcpy(clipboard_path, desktop_icons[desktop_selected].path,
+            sizeof(clipboard_path));
     clipboard_cut = 1;
   }
 }
@@ -312,7 +313,7 @@ static void action_sort_name(void *ctx) {
 static void ctx_menu_add(const char *label, void (*action)(void *), int enabled) {
   if (ctx_menu.item_count >= 16) return;
   menu_item_t *item = &ctx_menu.items[ctx_menu.item_count++];
-  strncpy(item->label, label, 31);
+  strlcpy(item->label, label, sizeof(item->label));
   item->action = action;
   item->enabled = enabled;
   item->separator = 0;

@@ -114,19 +114,18 @@ char *strcpy(char *dest, const char *src)
     return dest;
 }
 
-char *strncpy(char *dest, const char *src, size_t n)
+size_t strlcpy(char *dest, const char *src, size_t size)
 {
-    char *d = dest;
-    
-    while (n && (*d++ = *src++)) {
-        n--;
+    size_t src_len = strlen(src);
+    size_t copy_len = 0;
+
+    if (size > 0) {
+        copy_len = (src_len >= size) ? (size - 1) : src_len;
+        memcpy(dest, src, copy_len);
+        dest[copy_len] = '\0';
     }
-    
-    while (n--) {
-        *d++ = '\0';
-    }
-    
-    return dest;
+
+    return src_len;
 }
 
 char *strcat(char *dest, const char *src)

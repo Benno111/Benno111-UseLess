@@ -95,7 +95,6 @@ char *Strend(char *s);
 #define strcspn Strcspn
 #define memcpy Memcpy
 #define strlwr Strlwr
-#define strncpy Strncpy
 #define strlen Strlen
 #define strstr Strstr
 #define strrev Strrev

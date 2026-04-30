@@ -13,11 +13,9 @@
 #include "../include/mm/aslr.h"
 #include "../include/mm/kmalloc.h"
 #include "../include/printk.h"
+#include "../include/string.h"
 #include "../include/sync/spinlock.h"
 
-/* Forward declare strncpy and strlen from our kernel */
-extern char *strncpy(char *dst, const char *src, size_t n);
-extern size_t strlen(const char *s);
 extern void *memset(void *s, int c, size_t n);
 
 /* Fixed program load base address (after heap area at 0x42800000) */
@@ -276,8 +274,7 @@ int process_create(const char *path, int argc, char **argv) {
 
   // Set up process structure
   process_t *proc = &proc_table[slot];
-  strncpy(proc->name, path, PROCESS_NAME_MAX - 1);
-  proc->name[PROCESS_NAME_MAX - 1] = '\0';
+  strlcpy(proc->name, path, PROCESS_NAME_MAX);
   proc->load_base = info.load_base;
   proc->load_size = info.load_size;
   proc->entry = info.entry;

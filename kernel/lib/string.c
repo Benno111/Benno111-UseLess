@@ -66,25 +66,24 @@ size_t strlen(const char *s) {
   return len;
 }
 
-char *strncpy(char *dest, const char *src, size_t n) {
-  size_t i;
-  for (i = 0; i < n && src[i]; i++) {
-    dest[i] = src[i];
+size_t strlcpy(char *dest, const char *src, size_t size) {
+  size_t src_len = strlen(src);
+  size_t copy_len = 0;
+
+  if (size > 0) {
+    copy_len = (src_len >= size) ? (size - 1) : src_len;
+    memcpy(dest, src, copy_len);
+    dest[copy_len] = '\0';
   }
-  for (; i < n; i++) {
-    dest[i] = '\0';
-  }
-  return dest;
+
+  return src_len;
 }
 
-/* DEPRECATED: Use strncpy instead. This wrapper limits copies to prevent
+/* DEPRECATED: Use strlcpy instead. This wrapper limits copies to prevent
  * overflow. */
 char *strcpy(char *dest, const char *src) {
   /* Safety limit - prevent unbounded copies */
-  size_t src_len = strlen(src);
-  if (src_len > 4095)
-    src_len = 4095;
-  strncpy(dest, src, src_len + 1);
+  strlcpy(dest, src, 4096);
   return dest;
 }
 

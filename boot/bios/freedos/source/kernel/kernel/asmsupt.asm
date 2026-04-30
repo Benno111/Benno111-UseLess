@@ -27,7 +27,7 @@
 ; version 1.4 by tom.ehlert@ginko.de
 ; added some more functions
 ; changed bcopy, scopy, sncopy,...
-; to      memcpy, strcpy, strncpy
+; to      memcpy, strcpy, bounded string copy
 ; Bart Oldeman: optimized a bit: see /usr/include/bits/string.h from 
 ; glibc 2.2
 ;

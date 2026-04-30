@@ -270,7 +270,7 @@ void term_execute(terminal_t *term, const char *cmd) {
   
   /* Save to history */
   if (term->history_count < 16) {
-    strncpy(term->history[term->history_count++], cmd, 255);
+    strlcpy(term->history[term->history_count++], cmd, 256);
   }
   
   term_puts_t(term, "\n");
@@ -329,9 +329,9 @@ void term_execute(terminal_t *term, const char *cmd) {
     
     char target[256];
     if (path[0] == '/') {
-      strncpy(target, path, 255);
+      strlcpy(target, path, sizeof(target));
     } else if (strcmp(path, "..") == 0) {
-      strncpy(target, term->cwd, 255);
+      strlcpy(target, term->cwd, sizeof(target));
       int len = strlen(target);
       while (len > 1 && target[len-1] != '/') len--;
       if (len > 1) len--;
@@ -342,7 +342,7 @@ void term_execute(terminal_t *term, const char *cmd) {
     }
     
     if (vfs_exists(target)) {
-      strncpy(term->cwd, target, 255);
+      strlcpy(term->cwd, target, sizeof(term->cwd));
     } else {
       term_puts_t(term, "cd: no such directory: ");
       term_puts_t(term, path);
@@ -354,7 +354,7 @@ void term_execute(terminal_t *term, const char *cmd) {
     
     char path[256];
     if (filename[0] == '/') {
-      strncpy(path, filename, 255);
+      strlcpy(path, filename, sizeof(path));
     } else {
       snprintf(path, 256, "%s/%s", term->cwd[0] ? term->cwd : "", filename);
     }

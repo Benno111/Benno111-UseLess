@@ -786,8 +786,8 @@ static void ctx_menu_clear(void) {
 static void ctx_menu_add(const char *label, int enabled) {
   if (ctx_menu.item_count >= 16)
     return;
-  strncpy(ctx_menu.items[ctx_menu.item_count].label, label, 31);
-  ctx_menu.items[ctx_menu.item_count].label[31] = '\0';
+  strlcpy(ctx_menu.items[ctx_menu.item_count].label, label,
+          sizeof(ctx_menu.items[ctx_menu.item_count].label));
   ctx_menu.items[ctx_menu.item_count].enabled = enabled;
   ctx_menu.items[ctx_menu.item_count].separator = 0;
   ctx_menu.item_count++;
@@ -2352,8 +2352,7 @@ static void desktop_add_icon(const char *name, int is_dir) {
     return;
 
   int idx = desktop_icon_count++;
-  strncpy(desktop_icon_names[idx], name, sizeof(desktop_icon_names[idx]) - 1);
-  desktop_icon_names[idx][sizeof(desktop_icon_names[idx]) - 1] = '\0';
+  strlcpy(desktop_icon_names[idx], name, sizeof(desktop_icon_names[idx]));
   desktop_icons[idx].name = desktop_icon_names[idx];
   desktop_icons[idx].x = 40;
   desktop_icons[idx].y = 60 + idx * 100;

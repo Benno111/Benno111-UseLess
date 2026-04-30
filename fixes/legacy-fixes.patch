@@ -14,13 +14,13 @@ index 0000000..0000000 100644
 
  int vfs_mount(const char *target, struct fs *fs) {
 +    char norm_target[256];
-+    strncpy(norm_target, target, sizeof(norm_target));
++    strlcpy(norm_target, target, sizeof(norm_target));
 +    normalize_path(norm_target);
 
      for (int i = 0; i < MAX_MOUNTS; i++) {
 -        if (strcmp(mounts[i].target, target) == 0) {
 +        char existing[256];
-+        strncpy(existing, mounts[i].target, sizeof(existing));
++        strlcpy(existing, mounts[i].target, sizeof(existing));
 +        normalize_path(existing);
 +
 +        if (strcmp(existing, norm_target) == 0) {
@@ -32,8 +32,8 @@ index 0000000..0000000 100644
          if (!mounts[i].used) {
              mounts[i].used = 1;
              mounts[i].fs = fs;
--            strncpy(mounts[i].target, target, sizeof(mounts[i].target));
-+            strncpy(mounts[i].target, norm_target, sizeof(mounts[i].target));
+-            strlcpy(mounts[i].target, target, sizeof(mounts[i].target));
++            strlcpy(mounts[i].target, norm_target, sizeof(mounts[i].target));
              return 0;
          }
      }
@@ -67,7 +67,7 @@ index 0000000..0000000 100644
 +
 +        if (duplicate) continue;
 +
-+        strncpy(seen[seen_count++], ent->name, 256);
++        strlcpy(seen[seen_count++], ent->name, 256);
 +        add_entry(win, ent->name, ent->type);
      }
  }

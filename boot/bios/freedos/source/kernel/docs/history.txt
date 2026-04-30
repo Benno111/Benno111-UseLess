@@ -1420,7 +1420,7 @@ Most recent changes to source code (see version.h) are:
       vector table corruption.
     * kernel.asm: Use "local" (instead of "global") disable/enable
       A20. This solves the problems with NIOS.
-    * asmsupt.asm, misc.c, proto.h, strings.c: Remove (unused) strncpy.
+    * asmsupt.asm, misc.c, proto.h, strings.c: Remove unused bounded string copies.
 
 
 2003 Jul 19 - Build 2031
@@ -1822,7 +1822,7 @@ Most recent changes to source code (see version.h) are:
       a bug in fcbfns.c
     * started big clean-up
       - converted obsolete bcopy(), sncopy() and friends to memcpy(),
-        strncpy() etc.
+        bounded string copy helpers etc.
       - removed $Log entries that are also on the CVS server and
         removed the $ so no new entries will be added in files.
       indenting will be next - other fixes will be buried in diffs if
@@ -4053,4 +4053,3 @@ Initial revision.
 25 May 1993  patv
 dirmatch.h:
 Initial revision.
-

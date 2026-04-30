@@ -29,8 +29,13 @@ int histGet(const int num, char * const str, const unsigned len)
 	if(ctxtIsValid()
 	 && ctxtGet(0, CTXT_TAG_HISTORY, realNum(CTXT_TAG_HISTORY, num), &p) == 0) {
 		assert(p);
-		strncpy(str, p, len);
-		str[len - 1] = 0;		/* Make sure the string is terminated */
+		if (len > 0) {
+			size_t copy_len = strlen(p);
+			if (copy_len >= len)
+				copy_len = len - 1;
+			memcpy(str, p, copy_len);
+			str[copy_len] = 0;		/* Make sure the string is terminated */
+		}
 		free(p);
 		return 1;
 	}

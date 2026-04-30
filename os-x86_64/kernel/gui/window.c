@@ -44,8 +44,7 @@ window_t *window_create(const char *title, int x, int y, int width,
   /* Initialize window */
   memset(win, 0, sizeof(window_t));
   win->id = next_window_id++;
-  strncpy(win->title, title, MAX_TITLE_LEN - 1);
-  win->title[MAX_TITLE_LEN - 1] = '\0';
+  strlcpy(win->title, title, MAX_TITLE_LEN);
   win->x = x;
   win->y = y;
   win->width = width;
