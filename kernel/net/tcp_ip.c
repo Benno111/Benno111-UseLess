@@ -7,6 +7,7 @@
 #include "net/net.h"
 #include "printk.h"
 #include "mm/kmalloc.h"
+#include "string.h"
 #include "types.h"
 
 /* ===================================================================== */
