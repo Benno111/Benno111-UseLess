@@ -477,15 +477,6 @@ int input_init(void) {
   printk(KERN_INFO "INPUT: Initializing PS/2 keyboard and mouse\n");
   trackpad_input_init();
 
-#ifdef ARCH_X86_64
-  /*
-   * Keep the x86_64 bring-up path away from the legacy PS/2 controller.
-   * UART and GUI input still work, and trackpad state remains initialized.
-   */
-  printk(KERN_INFO "INPUT: PS/2 deferred on x86_64 bring-up path\n");
-  return 0;
-#endif
-
   ps2_flush_output();
   ps2_send_command(PS2_CMD_DISABLE_KB);
   ps2_send_command(PS2_CMD_DISABLE_MOUSE);
@@ -574,10 +565,6 @@ void input_set_mouse_scale(int scale) {
 
 void input_poll(void) {
   trackpad_input_poll();
-
-#ifdef ARCH_X86_64
-  return;
-#endif
 
   for (int i = 0; i < 64; i++) {
     uint8_t status = inb(PS2_STATUS_PORT);
