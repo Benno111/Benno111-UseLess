@@ -1288,7 +1288,6 @@ static void init_subsystems(void *dtb) {
   virtio_net_init();
   vbox_net_init();
   wifi_init();
-  gui_notify_storage_ready();
 
   if (fb_buffer) {
     /* Keep the splash visible while drivers load, then render the desktop/login UI. */
@@ -1296,6 +1295,13 @@ static void init_subsystems(void *dtb) {
     gui_draw_cursor();
     printk(KERN_INFO "  GUI desktop ready!\n");
   }
+
+  /*
+   * Notify the GUI only after the first desktop compose is complete.
+   * This avoids racing early storage and startup-flow setup with the
+   * initial x86_64 desktop bring-up path.
+   */
+  gui_notify_storage_ready();
 
   /* ================================================================= */
   /* Phase 6: Enable Interrupts */
