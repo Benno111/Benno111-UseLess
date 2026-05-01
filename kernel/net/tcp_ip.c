@@ -961,10 +961,13 @@ struct net_interface *net_add_interface(const char *name, uint8_t *mac, uint32_t
     if (num_interfaces >= MAX_INTERFACES) return NULL;
     
     struct net_interface *iface = &interfaces[num_interfaces++];
+
+    memset(iface, 0, sizeof(*iface));
     
-    for (int i = 0; i < 15 && name[i]; i++) {
+    for (int i = 0; i < (int)sizeof(iface->name) - 1 && name[i]; i++) {
         iface->name[i] = name[i];
     }
+    iface->name[sizeof(iface->name) - 1] = '\0';
     
     for (int i = 0; i < ETH_ALEN; i++) {
         iface->mac[i] = mac[i];
