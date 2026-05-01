@@ -16,9 +16,6 @@ LIMINE_TOOL_PATH="${LIMINE_BIN_DIR}/limine"
 LIMINE_CFG="${LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
 INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
-DOS_INSTALLER_IMAGE="${DOS_INSTALLER_IMAGE:-${IMAGE_DIR}/os8-x86_64-dos-installer.img}"
-DOS_INSTALLER_COM="${DOS_INSTALLER_COM:-${BUILD_DIR}/boot/OSINST.COM}"
-DOS_SYSTEM_IMAGE="${DOS_SYSTEM_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -122,29 +119,9 @@ log "Preparing ISO root at $ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot"
 mkdir -p "$ISO_ROOT/EFI/BOOT"
 mkdir -p "$ISO_ROOT/limine"
-mkdir -p "$ISO_ROOT/dos"
 mkdir -p "$INSTALL_ROOT/boot"
 mkdir -p "$INSTALL_ROOT/EFI/BOOT"
 mkdir -p "$INSTALL_ROOT/limine"
-mkdir -p "$INSTALL_ROOT/dos"
-
-if [ -f "$DOS_INSTALLER_IMAGE" ]; then
-    DOS_INSTALLER_ENABLED=1
-else
-    DOS_INSTALLER_ENABLED=0
-fi
-
-if [ -f "$DOS_INSTALLER_COM" ]; then
-    DOS_INSTALLER_COM_ENABLED=1
-else
-    DOS_INSTALLER_COM_ENABLED=0
-fi
-
-if [ -f "$DOS_SYSTEM_IMAGE" ]; then
-    DOS_SYSTEM_IMAGE_ENABLED=1
-else
-    DOS_SYSTEM_IMAGE_ENABLED=0
-fi
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
@@ -177,56 +154,12 @@ cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
 cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
 
-if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
-    link_or_copy "$DOS_INSTALLER_IMAGE" "$ISO_ROOT/boot/dos-installer.img"
-    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$INSTALL_ROOT/boot/dos-installer.img"
-    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$ISO_ROOT/dos/OSINST.IMG"
-    link_or_copy "$ISO_ROOT/boot/dos-installer.img" "$INSTALL_ROOT/dos/OSINST.IMG"
-fi
-
-if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
-    link_or_copy "$DOS_INSTALLER_COM" "$ISO_ROOT/dos/OSINST.COM"
-    link_or_copy "$ISO_ROOT/dos/OSINST.COM" "$INSTALL_ROOT/dos/OSINST.COM"
-fi
-
-if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
-    link_or_copy "$DOS_SYSTEM_IMAGE" "$ISO_ROOT/dos/OSSYS.IMG"
-    link_or_copy "$ISO_ROOT/dos/OSSYS.IMG" "$INSTALL_ROOT/dos/OSSYS.IMG"
-fi
-
-cat > "$ISO_ROOT/dos/README.TXT" <<EOF
-OS8 DOS Rescue Tools
-
-This folder contains the DOS-side fallback installer package:
-- OSINST.COM : run this from an existing DOS system
-- OSSYS.IMG  : raw regular OS system disk image
-
-Usage from DOS:
-1. Copy both files to a DOS machine or DOS boot disk.
-2. Boot DOS and change into the directory containing these files.
-3. Run OSINST.COM.
-4. Choose a target BIOS disk and confirm the write of OSSYS.IMG.
-
-The target disk will be overwritten sector-by-sector.
-EOF
-
-cp "$ISO_ROOT/dos/README.TXT" "$INSTALL_ROOT/dos/README.TXT"
-
 cat > "$ISO_ROOT/INSTALLERS.TXT" <<EOF
 OS8 Installer Types
 
 1. Graphical Installer
    Boot menu entry: "OS8 Graphical Installer"
    Use this for the normal desktop installer flow.
-
-2. DOS Rescue Installer
-   Provided as /dos/OSINST.COM and /dos/OSSYS.IMG
-   Use this from an existing DOS system to write the regular system image.
-
-DOS rescue files are also mirrored in /dos:
-- OSINST.COM
-- OSSYS.IMG
-- README.TXT
 EOF
 
 cp "$ISO_ROOT/INSTALLERS.TXT" "$INSTALL_ROOT/INSTALLERS.TXT"
@@ -236,7 +169,6 @@ OS8 System Image
 
 This ISO contains:
 - a graphical installer environment
-- a separate DOS rescue installer path
 - a bundled system image payload at /install/system-image
 
 Primary payload files:
@@ -254,11 +186,6 @@ Primary payload files:
 If present, repo assets are mirrored under:
 - /install/system-image/assets
 
-DOS fallback tools included in the ISO:
-- /boot/dos-installer.img
-- /dos/OSINST.COM
-- /dos/OSSYS.IMG
-- /dos/README.TXT
 - /INSTALLERS.TXT
 
 The installer GUI boots from the top-level ISO files and installs the bundled
@@ -306,21 +233,7 @@ require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/INSTALLERS.TXT"
-if [ "$DOS_INSTALLER_ENABLED" -eq 1 ]; then
-    require_iso_path "/boot/dos-installer.img"
-    require_iso_path "/install/system-image/boot/dos-installer.img"
-fi
-if [ "$DOS_INSTALLER_COM_ENABLED" -eq 1 ]; then
-    require_iso_path "/dos/OSINST.COM"
-    require_iso_path "/install/system-image/dos/OSINST.COM"
-fi
-if [ "$DOS_SYSTEM_IMAGE_ENABLED" -eq 1 ]; then
-    require_iso_path "/dos/OSSYS.IMG"
-    require_iso_path "/install/system-image/dos/OSSYS.IMG"
-fi
-require_iso_path "/dos/README.TXT"
 require_iso_path "/install/system-image/INSTALLERS.TXT"
-require_iso_path "/install/system-image/dos/README.TXT"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"
 require_iso_path "/install/system-image/limine.conf"

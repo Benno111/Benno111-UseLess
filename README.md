@@ -188,13 +188,6 @@ Important notes:
 - the installer path is still evolving
 - storage and partition handling are development-grade and should be treated carefully
 
-There is also a second installer variant:
-
-- a BIOS-only, 16-bit real-mode, DOS-style text installer image
-- this variant stays in BIOS real mode and does not transition into the 64-bit kernel path
-- it does not boot the kernel
-- it is currently a fallback installer shell and framework, not a full replacement for the GUI installer yet
-
 ## Runtime Filesystem Model
 
 A lot of the current OS experience is seeded into RAMFS during boot.

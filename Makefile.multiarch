@@ -364,23 +364,6 @@ $(BUILD_DIR)/drivers/%.o: $(DRIVERS_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
 	@$(CC) $(CFLAGS_KERNEL) $(DEPFLAGS) -c $< -o $@
-DOS_INSTALLER_COM_OBJ := $(BUILD_DIR)/boot/dos_installer_com.o
-DOS_INSTALLER_COM_ELF := $(BUILD_DIR)/boot/OSINST.elf
-DOS_INSTALLER_COM_BIN := $(BUILD_DIR)/boot/OSINST.COM
-LDFLAGS_DOS_COM := -nostdlib -static -Ttext 0x100 -e _start -N
-
-$(DOS_INSTALLER_COM_OBJ): $(ROOT_DIR)/boot/bios/dos_installer_com.S | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@echo "[AS] $<"
-	@$(AS) --target=i686-unknown-none-elf -c $< -o $@
-
-$(DOS_INSTALLER_COM_ELF): $(DOS_INSTALLER_COM_OBJ)
-	@echo "[LD] $@"
-	@$(LD) $(LDFLAGS_DOS_COM) -o $@ $<
-
-$(DOS_INSTALLER_COM_BIN): $(DOS_INSTALLER_COM_ELF)
-	@echo "[OBJCOPY] $@"
-	@$(OBJCOPY) -O binary $< $@
 
 $(KERNEL_BINARY): $(ALL_OBJECTS)
 	@echo "[LD] $@"
@@ -417,11 +400,11 @@ else ifeq ($(ARCH),x86)
 	@echo "[IMAGE] Created: $(RAW_IMAGE)"
 endif
 
-installer-image: kernel $(DOS_INSTALLER_COM_BIN)
+installer-image: kernel
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installer.conf" INSTALL_LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine.conf" DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installer.conf" INSTALL_LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@cp "$(IMAGE_DIR)/os8-x86_64-system.img" "$(IMAGE_DIR)/os-x86_64-system.img"
 	@cp "$(IMAGE_DIR)/os8-x86_64-installer.iso" "$(IMAGE_DIR)/os-x86_64-installer.iso"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-installer.iso"
