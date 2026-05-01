@@ -4143,6 +4143,13 @@ static const char *resolve_user_storage_path(const char *path, char *buf,
 
   if (!path || !buf || max <= 0)
     return path;
+  /*
+   * The install-target record is the bootstrap input for boot_storage_root_path().
+   * Resolving it through the runtime-mutable path logic would recurse back into
+   * load_install_target_disk_location() while we are already trying to read it.
+   */
+  if (str_cmp(path, "/System/install-target.cfg") == 0)
+    return path;
   if (path_is_active_account_home(path) &&
       account_storage_root_path(account_root, sizeof(account_root)) == 0) {
     str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
