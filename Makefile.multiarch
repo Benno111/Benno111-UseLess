@@ -193,7 +193,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image dos-installer-image dos-installer-iso dos-installer-binary qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -225,9 +225,6 @@ help:
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
-	@echo "  dos-installer-image - Create FreeDOS-based BIOS installer image"
-	@echo "  dos-installer-iso - Create standalone BIOS DOS installer ISO"
-	@echo "  dos-installer-binary - Create DOS runnable installer utility"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -431,46 +428,6 @@ ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-installer.iso"
 else
 	@echo "[IMAGE] installer-image is currently supported only for ARCH=x86_64"
-	@exit 1
-endif
-
-dos-installer-image: kernel $(DOS_INSTALLER_COM_BIN)
-ifeq ($(ARCH),x86_64)
-	@echo "[IMAGE] Creating FreeDOS-based BIOS installer image..."
-	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@cp "$(IMAGE_DIR)/os8-x86_64-dos-installer.img" "$(IMAGE_DIR)/os-x86_64-dos-installer.img"
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-dos-installer.img"
-	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-dos-installer.img"
-else
-	@echo "[IMAGE] dos-installer-image is currently supported only for ARCH=x86_64"
-	@exit 1
-endif
-
-dos-installer-iso: kernel $(DOS_INSTALLER_COM_BIN)
-ifeq ($(ARCH),x86_64)
-	@echo "[IMAGE] Creating standalone BIOS DOS installer ISO..."
-	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@DOS_INSTALLER_COM="$(DOS_INSTALLER_COM_BIN)" DOS_SYSTEM_IMAGE="$(IMAGE_DIR)/os8-x86_64-system.img" bash ./scripts/create-dos-installer-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@cp "$(IMAGE_DIR)/os8-x86_64-dos-installer.iso" "$(IMAGE_DIR)/os-x86_64-dos-installer.iso"
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-dos-installer.iso"
-	@echo "[IMAGE] Compatibility alias: $(IMAGE_DIR)/os-x86_64-dos-installer.iso"
-else
-	@echo "[IMAGE] dos-installer-iso is currently supported only for ARCH=x86_64"
-	@exit 1
-endif
-
-dos-installer-binary: kernel $(DOS_INSTALLER_COM_BIN)
-ifeq ($(ARCH),x86_64)
-	@echo "[IMAGE] Creating DOS runnable installer utility package..."
-	@bash ./scripts/create-dos-installer-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@cp "$(DOS_INSTALLER_COM_BIN)" "$(IMAGE_DIR)/OSINST.COM"
-	@cp "$(IMAGE_DIR)/os8-x86_64-system.img" "$(IMAGE_DIR)/OSSYS.IMG"
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/OSINST.COM"
-	@echo "[IMAGE] Created: $(IMAGE_DIR)/OSSYS.IMG"
-else
-	@echo "[IMAGE] dos-installer-binary is currently supported only for ARCH=x86_64"
 	@exit 1
 endif
 

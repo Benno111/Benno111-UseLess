@@ -92,7 +92,6 @@ Common targets:
 - `kernel` builds only the kernel
 - `image` builds the bootable image or ISO
 - `installer-image` builds the x86_64 installer ISO
-- `dos-installer-image` builds a BIOS-only 16-bit text installer image with 64-bit kernel handoff disabled
 - `qemu` runs the default emulator flow
 - `qemu-bios` runs BIOS boot where supported
 - `qemu-uefi` runs UEFI boot where supported
@@ -117,11 +116,6 @@ For x86_64 ISO creation, the current scripts also expect:
 - Limine boot assets under `os-x86_64/limine/bin`
 
 Host assumptions in the current build system are best on Linux or macOS-style environments. Some helper scripts are shell-based and assume Unix tooling.
-
-For the DOS-based setup flow, the repo now keeps vendored FreeDOS package copies
-under `boot/bios/freedos/vendor/packages/`. Put the matching bootable FreeDOS
-media image under `boot/bios/freedos/vendor/media/` so the DOS installer build
-can reuse local inputs without downloading them each time.
 
 For Windows-based repo automation, use:
 
@@ -149,18 +143,6 @@ This produces:
 
 ```text
 image/os8-x86_64-installer.iso
-```
-
-### x86_64 DOS-style text installer
-
-```sh
-make ARCH=x86_64 dos-installer-image
-```
-
-This produces:
-
-```text
-image/os8-x86_64-dos-installer.img
 ```
 
 ### x86_64 default image
