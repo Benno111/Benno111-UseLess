@@ -48,11 +48,6 @@ jobs:
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 installer-image
 
-      - name: Build x86_64 DOS Installer ISO
-        run: |
-          set -euxo pipefail
-          make -f Makefile.multiarch ARCH=x86_64 dos-installer-iso
-
       - name: Verify release files
         run: |
           set -euxo pipefail
@@ -60,8 +55,6 @@ jobs:
           file image/os8-x86_64.iso
           ls -lh image/os8-x86_64-installer.iso
           file image/os8-x86_64-installer.iso
-          ls -lh image/os8-x86_64-dos-installer.iso
-          file image/os8-x86_64-dos-installer.iso
 
       - name: Generate release notes
         run: |
@@ -75,13 +68,11 @@ jobs:
           - ARM64 ISO: skipped for now
           - x86_64 ISO: success
           - x86_64 Installer ISO: success
-          - x86_64 DOS Installer ISO: success
 
           ## Bootable Media
 
           - \`os8-x86_64.iso\`
           - \`os8-x86_64-installer.iso\`
-          - \`os8-x86_64-dos-installer.iso\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -102,6 +93,5 @@ jobs:
           files: |
             image/os8-x86_64.iso
             image/os8-x86_64-installer.iso
-            image/os8-x86_64-dos-installer.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
