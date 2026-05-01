@@ -199,6 +199,23 @@ typedef struct {
 
 static file_manager_t file_manager = {0};
 
+static void fm_set_current_path(const char *path) {
+  strlcpy(file_manager.current_path, path, sizeof(file_manager.current_path));
+}
+
+static void fm_enter_directory(const char *name) {
+  char new_path[sizeof(file_manager.current_path)];
+
+  if (strcmp(file_manager.current_path, "/") == 0) {
+    snprintf(new_path, sizeof(new_path), "/%s", name);
+  } else {
+    snprintf(new_path, sizeof(new_path), "%s/%s", file_manager.current_path,
+             name);
+  }
+
+  fm_set_current_path(new_path);
+}
+
 /* Simulated filesystem - matches reference OS */
 static const struct {
   const char *path;
@@ -924,7 +941,7 @@ static void term_init(void) {
   terminal.cursor_x = 0;
   terminal.cursor_y = 0;
   terminal.input_len = 0;
-  strcpy(terminal.cwd, "/");
+  strlcpy(terminal.cwd, "/", sizeof(terminal.cwd));
   terminal.visible = 0;
 
   /* Clear screen */
@@ -1078,9 +1095,9 @@ static void term_execute(const char *cmd) {
       if (last > terminal.cwd)
         *last = '\0';
       else
-        strcpy(terminal.cwd, "/");
+        strlcpy(terminal.cwd, "/", sizeof(terminal.cwd));
     } else if (strcmp(dir, "/") == 0) {
-      strcpy(terminal.cwd, "/");
+      strlcpy(terminal.cwd, "/", sizeof(terminal.cwd));
     } else {
       /* Check if dir exists */
       int found = 0;
@@ -1089,10 +1106,11 @@ static void term_execute(const char *cmd) {
             strcmp(sim_files[i].name, dir) == 0 && sim_files[i].is_dir) {
           found = 1;
           if (strcmp(terminal.cwd, "/") == 0) {
-            strcpy(terminal.cwd + 1, dir);
+            snprintf(terminal.cwd, sizeof(terminal.cwd), "/%s", dir);
           } else {
-            strcat(terminal.cwd, "/");
-            strcat(terminal.cwd, dir);
+            char new_cwd[sizeof(terminal.cwd)];
+            snprintf(new_cwd, sizeof(new_cwd), "%s/%s", terminal.cwd, dir);
+            strlcpy(terminal.cwd, new_cwd, sizeof(terminal.cwd));
           }
           break;
         }
@@ -1204,7 +1222,7 @@ static void fm_init(void) {
   file_manager.height = 350;
   file_manager.x = 80;
   file_manager.y = 50;
-  strcpy(file_manager.current_path, "/");
+  fm_set_current_path("/");
   file_manager.selected = -1;
   file_manager.visible = 0;
 }
@@ -1214,7 +1232,8 @@ static void fm_refresh(void) {
 
   /* Add parent directory */
   if (strcmp(file_manager.current_path, "/") != 0) {
-    strcpy(file_manager.entries[0].name, "..");
+    strlcpy(file_manager.entries[0].name, "..",
+            sizeof(file_manager.entries[0].name));
     file_manager.entries[0].is_dir = 1;
     file_manager.entry_count = 1;
   }
@@ -1223,8 +1242,9 @@ static void fm_refresh(void) {
   for (int i = 0; sim_files[i].path != NULL && file_manager.entry_count < 32;
        i++) {
     if (strcmp(sim_files[i].path, file_manager.current_path) == 0) {
-      strcpy(file_manager.entries[file_manager.entry_count].name,
-             sim_files[i].name);
+      strlcpy(file_manager.entries[file_manager.entry_count].name,
+              sim_files[i].name,
+              sizeof(file_manager.entries[file_manager.entry_count].name));
       file_manager.entries[file_manager.entry_count].is_dir =
           sim_files[i].is_dir;
       file_manager.entry_count++;
@@ -1351,7 +1371,7 @@ static void draw_file_manager(void) {
       name_buf[max_chars - 1] = '.';
       name_buf[max_chars] = '\0';
     } else {
-      strcpy(name_buf, file_manager.entries[i].name);
+      strlcpy(name_buf, file_manager.entries[i].name, sizeof(name_buf));
     }
     int text_w = font_string_width(name_buf);
     int text_x = ix + (item_w - UI_SCALE_VAL(10) - text_w) / 2;
@@ -3091,38 +3111,46 @@ static void handle_mouse_click(int x, int y, int button) {
     ctx_menu.item_count = 0;
     
     /* New items */
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "New Folder");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "New Folder",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 0;
     
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "New Text Document");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "New Text Document",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 1;
     
     /* Clipboard */
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Paste");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Paste",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 0;
     ctx_menu.items[ctx_menu.item_count++].separator = 1;
     
     /* Sort options */
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Sort by Name");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Sort by Name",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 0;
     
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Sort by Type");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Sort by Type",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 1;
     
     /* Actions */
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Refresh");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Refresh",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 0;
     
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Open Terminal");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Open Terminal",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 1;
     
-    strcpy(ctx_menu.items[ctx_menu.item_count].label, "Change Background");
+    strlcpy(ctx_menu.items[ctx_menu.item_count].label, "Change Background",
+            sizeof(ctx_menu.items[ctx_menu.item_count].label));
     ctx_menu.items[ctx_menu.item_count].enabled = 1;
     ctx_menu.items[ctx_menu.item_count++].separator = 0;
     
@@ -3210,7 +3238,7 @@ static void handle_mouse_click(int x, int y, int button) {
           if (len > 1) len--; /* Remove trailing slash unless root */
           file_manager.current_path[len] = '\0';
           if (len == 0) {
-            strcpy(file_manager.current_path, "/");
+            fm_set_current_path("/");
           }
           file_manager.selected = -1;
           fm_refresh();
@@ -3280,10 +3308,9 @@ static void handle_mouse_click(int x, int y, int button) {
               if (plen == 1 && file_manager.current_path[0] == '/') {
                 char new_path[256];
                 snprintf(new_path, 256, "/%s", file_manager.entries[idx].name);
-                strcpy(file_manager.current_path, new_path);
+                fm_set_current_path(new_path);
               } else {
-                strcat(file_manager.current_path, "/");
-                strcat(file_manager.current_path, file_manager.entries[idx].name);
+                fm_enter_directory(file_manager.entries[idx].name);
               }
               file_manager.selected = -1;
               fm_refresh();
@@ -3312,7 +3339,7 @@ static void handle_mouse_click(int x, int y, int button) {
         bring_window_to_front(WIN_FILE_MANAGER);
         char path[256];
         snprintf(path, 256, "/%s", desktop_icons[i].name);
-        strcpy(file_manager.current_path, path);
+        fm_set_current_path(path);
         fm_refresh();
       }
       return;
@@ -3591,7 +3618,7 @@ static void gui_poll_input(void) {
                 while (len > 0 && file_manager.current_path[len-1] != '/') len--;
                 if (len > 1) len--;
                 file_manager.current_path[len] = '\0';
-                if (len == 0) strcpy(file_manager.current_path, "/");
+                if (len == 0) fm_set_current_path("/");
                 file_manager.selected = -1;
                 fm_refresh();
               }
@@ -3636,10 +3663,9 @@ static void gui_poll_input(void) {
                   if (file_manager.current_path[0] == '/' && file_manager.current_path[1] == '\0') {
                     char np[256];
                     snprintf(np, 256, "/%s", file_manager.entries[idx].name);
-                    strcpy(file_manager.current_path, np);
+                    fm_set_current_path(np);
                   } else {
-                    strcat(file_manager.current_path, "/");
-                    strcat(file_manager.current_path, file_manager.entries[idx].name);
+                    fm_enter_directory(file_manager.entries[idx].name);
                   }
                   file_manager.selected = -1;
                   fm_refresh();

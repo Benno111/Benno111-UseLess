@@ -12,7 +12,6 @@
 /* String manipulation */
 /* ===================================================================== */
 
-char *strcpy(char *dest, const char *src);
 size_t strlcpy(char *dest, const char *src, size_t size);
 char *strcat(char *dest, const char *src);
 char *strncat(char *dest, const char *src, size_t n);

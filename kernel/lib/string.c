@@ -79,14 +79,6 @@ size_t strlcpy(char *dest, const char *src, size_t size) {
   return src_len;
 }
 
-/* DEPRECATED: Use strlcpy instead. This wrapper limits copies to prevent
- * overflow. */
-char *strcpy(char *dest, const char *src) {
-  /* Safety limit - prevent unbounded copies */
-  strlcpy(dest, src, 4096);
-  return dest;
-}
-
 int strcmp(const char *s1, const char *s2) {
   while (*s1 && *s1 == *s2) {
     s1++;

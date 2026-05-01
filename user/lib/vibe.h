@@ -308,12 +308,6 @@ static inline int strncmp(const char *a, const char *b, size_t n) {
     return *a - *b;
 }
 
-static inline char *strcpy(char *dst, const char *src) {
-    char *d = dst;
-    while ((*d++ = *src++));
-    return dst;
-}
-
 static inline char *strncpy_safe(char *dst, const char *src, size_t n) {
     size_t i;
     for (i = 0; i < n - 1 && src[i]; i++) {

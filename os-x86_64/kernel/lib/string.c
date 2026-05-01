@@ -83,13 +83,6 @@ int strncmp(const char *s1, const char *s2, size_t n) {
   return *(unsigned char *)s1 - *(unsigned char *)s2;
 }
 
-char *strcpy(char *dest, const char *src) {
-  char *d = dest;
-  while ((*d++ = *src++))
-    ;
-  return dest;
-}
-
 size_t strlcpy(char *dest, const char *src, size_t size) {
   size_t src_len = strlen(src);
   size_t copy_len = 0;

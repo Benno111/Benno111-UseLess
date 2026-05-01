@@ -336,7 +336,7 @@ void term_execute(terminal_t *term, const char *cmd) {
       while (len > 1 && target[len-1] != '/') len--;
       if (len > 1) len--;
       target[len] = '\0';
-      if (target[0] == '\0') strcpy(target, "/");
+      if (target[0] == '\0') strlcpy(target, "/", sizeof(target));
     } else {
       snprintf(target, 256, "%s/%s", term->cwd[0] ? term->cwd : "", path);
     }
@@ -505,7 +505,7 @@ terminal_t *term_create(int x, int y) {
   term->current_fg = 7;
   term->current_bg = 0;
   term->visible = 1;
-  strcpy(term->cwd, "/home/user");
+  strlcpy(term->cwd, "/home/user", sizeof(term->cwd));
   
   for (int i = 0; i < TERM_ROWS * TERM_COLS; i++) {
     term->chars[i] = ' ';
