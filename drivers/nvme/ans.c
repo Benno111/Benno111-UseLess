@@ -85,8 +85,8 @@ static ans_nvme_ctx_t ans_ctx;
 static bool ans_initialized = false;
 
 /* Forward declarations */
-int ans_read_blocks(uint64_t lba, uint32_t count, void *buffer);
-int ans_write_blocks(uint64_t lba, uint32_t count, const void *buffer);
+int ans_read_blocks(uint64_t lba, uint32_t count, void *buffer, void *ctx);
+int ans_write_blocks(uint64_t lba, uint32_t count, const void *buffer, void *ctx);
 
 /* ===================================================================== */
 /* MMIO Helpers */
@@ -385,31 +385,37 @@ int ans_nvme_init(void) {
 /* Block Operations */
 /* ===================================================================== */
 
-int ans_read_blocks(uint64_t lba, uint32_t count, void *buffer) {
+int ans_read_blocks(uint64_t lba, uint32_t count, void *buffer, void *ctx) {
   uint8_t *dst = (uint8_t *)buffer;
+  ans_nvme_ctx_t *use_ctx = (ans_nvme_ctx_t *)ctx;
 
-  if (!ans_initialized || !ans_ctx.active || !buffer || count == 0)
+  if (!use_ctx)
+    use_ctx = &ans_ctx;
+  if (!ans_initialized || !use_ctx->active || !buffer || count == 0)
     return -1;
-  if (ans_ctx.sector_count > 0 && lba + (uint64_t)count > ans_ctx.sector_count)
+  if (use_ctx->sector_count > 0 && lba + (uint64_t)count > use_ctx->sector_count)
     return -1;
 
   for (uint32_t i = 0; i < count; i++) {
-    if (ans_nvme_rw_one(lba + i, dst + i * ans_ctx.sector_size, 0) != 0)
+    if (ans_nvme_rw_one(lba + i, dst + i * use_ctx->sector_size, 0) != 0)
       return -1;
   }
   return 0;
 }
 
-int ans_write_blocks(uint64_t lba, uint32_t count, const void *buffer) {
+int ans_write_blocks(uint64_t lba, uint32_t count, const void *buffer, void *ctx) {
   const uint8_t *src = (const uint8_t *)buffer;
+  ans_nvme_ctx_t *use_ctx = (ans_nvme_ctx_t *)ctx;
 
-  if (!ans_initialized || !ans_ctx.active || !buffer || count == 0)
+  if (!use_ctx)
+    use_ctx = &ans_ctx;
+  if (!ans_initialized || !use_ctx->active || !buffer || count == 0)
     return -1;
-  if (ans_ctx.sector_count > 0 && lba + (uint64_t)count > ans_ctx.sector_count)
+  if (use_ctx->sector_count > 0 && lba + (uint64_t)count > use_ctx->sector_count)
     return -1;
 
   for (uint32_t i = 0; i < count; i++) {
-    if (ans_nvme_rw_one(lba + i, (void *)(uintptr_t)(src + i * ans_ctx.sector_size),
+    if (ans_nvme_rw_one(lba + i, (void *)(uintptr_t)(src + i * use_ctx->sector_size),
                         1) != 0)
       return -1;
   }
