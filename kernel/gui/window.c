@@ -7056,18 +7056,65 @@ static int installer_build_payload_fallback(const char *src_path, char *alt,
   return 0;
 }
 
+static int installer_build_boot_fallback(const char *src_path, char *alt,
+                                         int max) {
+  static const char *setup_boot_prefix = "/setup/boot/";
+  const char *boot_tail = NULL;
+  int idx = 0;
+
+  if (!src_path || !alt || max <= 0)
+    return -1;
+
+  boot_tail = src_path;
+  while (*boot_tail) {
+    if (boot_tail[0] == '/' && boot_tail[1] == 'b' && boot_tail[2] == 'o' &&
+        boot_tail[3] == 'o' && boot_tail[4] == 't' && boot_tail[5] == '/') {
+      boot_tail += 6;
+      break;
+    }
+    boot_tail++;
+  }
+
+  if (!boot_tail || !boot_tail[0])
+    return -1;
+
+  if (src_path[0] == '/' && src_path[1] == 's' && src_path[2] == 'e' &&
+      src_path[3] == 't' && src_path[4] == 'u' && src_path[5] == 'p' &&
+      src_path[6] == '/' && src_path[7] == 'b' && src_path[8] == 'o' &&
+      src_path[9] == 'o' && src_path[10] == 't' && src_path[11] == '/') {
+    return -1;
+  }
+
+  for (int i = 0; setup_boot_prefix[i] && idx < max - 1; i++)
+    alt[idx++] = setup_boot_prefix[i];
+  for (int i = 0; boot_tail[i] && idx < max - 1; i++)
+    alt[idx++] = boot_tail[i];
+  alt[idx] = '\0';
+  return 0;
+}
+
 static int installer_copy_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
   char alt_src[256];
+  char boot_alt_src[256];
+  const char *used_src = NULL;
   char msg[320];
   int ret;
 
+  alt_src[0] = '\0';
+  boot_alt_src[0] = '\0';
   if (media_load_file(src_path, &data, &size) != 0) {
-    if (installer_build_payload_fallback(src_path, alt_src, sizeof(alt_src)) == 0 &&
-        media_load_file(alt_src, &data, &size) == 0) {
+    if ((installer_build_payload_fallback(src_path, alt_src,
+                                          sizeof(alt_src)) == 0 &&
+         media_load_file(alt_src, &data, &size) == 0 &&
+         (used_src = alt_src, 1)) ||
+        (installer_build_boot_fallback(src_path, boot_alt_src,
+                                       sizeof(boot_alt_src)) == 0 &&
+         media_load_file(boot_alt_src, &data, &size) == 0 &&
+         (used_src = boot_alt_src, 1))) {
       str_copy_safe(msg, "read fallback: ", sizeof(msg));
-      installer_append_to_buf(msg, sizeof(msg), alt_src);
+      installer_append_to_buf(msg, sizeof(msg), used_src ? used_src : src_path);
       installer_append_to_buf(msg, sizeof(msg), " (from ");
       installer_append_to_buf(msg, sizeof(msg), src_path);
       installer_append_to_buf(msg, sizeof(msg), ")");
