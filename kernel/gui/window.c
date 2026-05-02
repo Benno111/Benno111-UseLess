@@ -7274,19 +7274,48 @@ static int installer_boot_alias_copy_count(const char *target_root) {
   return installer_payload_file_exists(boot_bios_path) ? 3 : 0;
 }
 
+static int installer_score_system_image_root(const char *root) {
+  static const char *boot_suffixes[] = {
+      "/boot",
+      "/boot/main.sys",
+      "/boot/bootloader.sys",
+      "/boot/limine-bios.sys",
+      "/boot/limine-bios-cd.bin",
+      "/boot/limine-uefi-cd.bin",
+      "/boot/limine.conf",
+      "/boot/BOOTABLE.CFG",
+  };
+  char probe[192];
+  int score = 0;
+
+  if (!root || !root[0])
+    return -1;
+
+  for (int i = 0; i < (int)(sizeof(boot_suffixes) / sizeof(boot_suffixes[0]));
+       i++) {
+    str_copy_safe(probe, root, sizeof(probe));
+    installer_append_to_buf(probe, sizeof(probe), boot_suffixes[i]);
+    if (installer_payload_file_exists(probe))
+      score++;
+  }
+  return score;
+}
+
 static const char *installer_system_image_root_path(void) {
   static const char *roots[] = {"/install/system-image",
                                 "/setup/install/system-image"};
-  char probe[192];
+  int best_score = -1;
+  const char *best_root = "/install/system-image";
 
   for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
-    str_copy_safe(probe, roots[i], sizeof(probe));
-    installer_append_to_buf(probe, sizeof(probe), "/boot/main.sys");
-    if (installer_payload_file_exists(probe))
-      return roots[i];
+    int score = installer_score_system_image_root(roots[i]);
+    if (score > best_score) {
+      best_score = score;
+      best_root = roots[i];
+    }
   }
 
-  return "/install/system-image";
+  return best_root;
 }
 
 static int installer_validate_system_image_payload(void) {
