@@ -7471,8 +7471,10 @@ static int installer_finalize_install(void) {
   char summary[96];
   int selected_disk_index;
   int user_partition_result = 0;
+  int install_partition_result = 0;
 
   extern int storage_prepare_user_partition(int disk_index);
+  extern int storage_ensure_install_partitions(int disk_index);
 
   dock_loaded = 0;
   load_dock_config();
@@ -7482,9 +7484,13 @@ static int installer_finalize_install(void) {
     installer_log("install failed: target disk index unavailable");
     return -1;
   }
-  if (installer_write_target_config() != 0) {
-    installer_log("install failed: could not persist install target config");
+  install_partition_result =
+      storage_ensure_install_partitions(selected_disk_index);
+  if (install_partition_result < 0) {
+    installer_log("install failed: could not prepare boot partitions");
     return -1;
+  } else if (install_partition_result > 0) {
+    installer_log("prepared EFI/system boot partitions for the target disk");
   }
 
   user_partition_result =
@@ -7495,6 +7501,11 @@ static int installer_finalize_install(void) {
     installer_log("user data partition already present or not required");
   } else {
     installer_log("warning: could not prepare HDD user data partition");
+  }
+
+  if (installer_write_target_config() != 0) {
+    installer_log("install failed: could not persist install target config");
+    return -1;
   }
 
   if (installer_refresh_bootloader_state("", 1) != 0) {
