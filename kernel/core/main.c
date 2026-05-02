@@ -1411,6 +1411,8 @@ static void start_init_process(void) {
   /* Set up input handling */
   extern int input_init(void);
   extern void input_poll(void);
+  extern void virtio_net_poll(void);
+  extern void vbox_net_poll(void);
   extern void input_set_key_callback(void (*callback)(int key));
   extern void input_set_gui_key_callback(void (*callback)(int key));
   extern void gui_compose(void);
@@ -1457,6 +1459,8 @@ static void start_init_process(void) {
   while (1) {
     /* Poll input devices once per iteration. */
     input_poll();
+    virtio_net_poll();
+    vbox_net_poll();
 
     /* Poll for keyboard input from UART as well */
     extern int uart_getc_nonblock(void);

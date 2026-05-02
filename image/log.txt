@@ -1,0 +1,1 @@
+Networking is now wired through the software-backed VirtualBox NIC path.
