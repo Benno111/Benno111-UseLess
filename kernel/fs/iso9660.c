@@ -30,6 +30,11 @@ static uint32_t iso_le32(const uint8_t *p) {
          ((uint32_t)p[3] << 24);
 }
 
+static void iso_cooperative_yield(void) {
+  extern void process_yield(void);
+  process_yield();
+}
+
 static int iso_build_path(char *dst, int max, const char *root,
                           const char *name) {
   int idx = 0;
@@ -133,6 +138,8 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
     } else if (desc[0] == 255) {
       return saw_primary ? 0 : -1;
     }
+    if ((lba & 3U) == 3U)
+      iso_cooperative_yield();
   }
 
   return saw_primary ? 0 : -1;
@@ -253,6 +260,8 @@ static int iso_copy_file_from_extent(int disk_index, uint32_t extent,
       data[offset + i] = sector[i];
     offset += chunk;
     remaining -= chunk;
+    if ((lba & 3U) == 0U)
+      iso_cooperative_yield();
   }
 
   if (iso_write_file(dst_path, data, file_size) != 0) {
@@ -283,6 +292,8 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
     }
     for (uint32_t j = 0; j < ISO_BLOCK_SIZE; j++)
       dir_data[i * ISO_BLOCK_SIZE + j] = sector[j];
+    if ((i & 3U) == 3U)
+      iso_cooperative_yield();
   }
 
   while (pos < size) {
@@ -341,6 +352,9 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
         }
         copied_entries++;
       }
+
+      if ((copied_entries & 7) == 0)
+        iso_cooperative_yield();
     }
 
     pos += record_len;
