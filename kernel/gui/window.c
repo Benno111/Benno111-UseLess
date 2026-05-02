@@ -7011,17 +7011,73 @@ static void installer_ensure_parent_dirs(const char *path) {
   }
 }
 
+static int installer_build_payload_fallback(const char *src_path, char *alt,
+                                            int max) {
+  static const char *install_prefix = "/install/system-image";
+  static const char *setup_prefix = "/setup/install/system-image";
+  int idx = 0;
+  const char *replacement = NULL;
+  int prefix_len = 0;
+
+  if (!src_path || !alt || max <= 0)
+    return -1;
+
+  if (src_path[0] == '/' && src_path[1] == 'i' && src_path[2] == 'n' &&
+      src_path[3] == 's' && src_path[4] == 't' && src_path[5] == 'a' &&
+      src_path[6] == 'l' && src_path[7] == 'l' && src_path[8] == '/' &&
+      src_path[9] == 's' && src_path[10] == 'y' && src_path[11] == 's' &&
+      src_path[12] == 't' && src_path[13] == 'e' && src_path[14] == 'm' &&
+      src_path[15] == '-' && src_path[16] == 'i' && src_path[17] == 'm' &&
+      src_path[18] == 'a' && src_path[19] == 'g' && src_path[20] == 'e' &&
+      (src_path[21] == '\0' || src_path[21] == '/')) {
+    replacement = setup_prefix;
+    prefix_len = 21;
+  } else if (src_path[0] == '/' && src_path[1] == 's' && src_path[2] == 'e' &&
+             src_path[3] == 't' && src_path[4] == 'u' && src_path[5] == 'p' &&
+             src_path[6] == '/' && src_path[7] == 'i' && src_path[8] == 'n' &&
+             src_path[9] == 's' && src_path[10] == 't' && src_path[11] == 'a' &&
+             src_path[12] == 'l' && src_path[13] == 'l' && src_path[14] == '/' &&
+             src_path[15] == 's' && src_path[16] == 'y' && src_path[17] == 's' &&
+             src_path[18] == 't' && src_path[19] == 'e' && src_path[20] == 'm' &&
+             src_path[21] == '-' && src_path[22] == 'i' && src_path[23] == 'm' &&
+             src_path[24] == 'a' && src_path[25] == 'g' && src_path[26] == 'e' &&
+             (src_path[27] == '\0' || src_path[27] == '/')) {
+    replacement = install_prefix;
+    prefix_len = 27;
+  } else {
+    return -1;
+  }
+
+  for (int i = 0; replacement[i] && idx < max - 1; i++)
+    alt[idx++] = replacement[i];
+  for (int i = prefix_len; src_path[i] && idx < max - 1; i++)
+    alt[idx++] = src_path[i];
+  alt[idx] = '\0';
+  return 0;
+}
+
 static int installer_copy_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
+  char alt_src[256];
   char msg[320];
   int ret;
 
   if (media_load_file(src_path, &data, &size) != 0) {
-    str_copy_safe(msg, "read failed: ", sizeof(msg));
-    installer_append_to_buf(msg, sizeof(msg), src_path);
-    installer_log(msg);
-    return -1;
+    if (installer_build_payload_fallback(src_path, alt_src, sizeof(alt_src)) == 0 &&
+        media_load_file(alt_src, &data, &size) == 0) {
+      str_copy_safe(msg, "read fallback: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), alt_src);
+      installer_append_to_buf(msg, sizeof(msg), " (from ");
+      installer_append_to_buf(msg, sizeof(msg), src_path);
+      installer_append_to_buf(msg, sizeof(msg), ")");
+      installer_log(msg);
+    } else {
+      str_copy_safe(msg, "read failed: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), src_path);
+      installer_log(msg);
+      return -1;
+    }
   }
 
   installer_ensure_parent_dirs(dst_path);
