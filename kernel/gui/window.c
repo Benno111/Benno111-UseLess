@@ -4386,6 +4386,7 @@ static int installer_write_raw_file(const char *path, const uint8_t *data,
 static int installer_write_target_file(const char *logical_path,
                                        const uint8_t *data, size_t size) {
   char physical_path[256];
+  int wrote_physical = 0;
 
   if (installer_write_raw_file(logical_path, data, size) != 0)
     return -1;
@@ -4393,7 +4394,11 @@ static int installer_write_target_file(const char *logical_path,
                                       sizeof(physical_path)) == 0) {
     if (installer_write_raw_file(physical_path, data, size) != 0)
       return -1;
+    wrote_physical = 1;
   }
+  runtime_sync_flush_best_effort(logical_path);
+  if (wrote_physical)
+    runtime_sync_flush_best_effort(physical_path);
   return 0;
 }
 
