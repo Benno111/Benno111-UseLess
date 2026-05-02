@@ -84,6 +84,10 @@ typedef struct {
 static ans_nvme_ctx_t ans_ctx;
 static bool ans_initialized = false;
 
+/* Forward declarations */
+int ans_read_blocks(uint64_t lba, uint32_t count, void *buffer);
+int ans_write_blocks(uint64_t lba, uint32_t count, const void *buffer);
+
 /* ===================================================================== */
 /* MMIO Helpers */
 /* ===================================================================== */
