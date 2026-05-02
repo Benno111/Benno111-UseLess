@@ -250,8 +250,8 @@ static void vbox_handle_tcp(const struct ethhdr *eth, const struct iphdr *ip,
                                   sizeof(struct vbox_tcp_hdr) + rdata_len));
   rip->check = 0;
   rip->check = vbox_checksum(rip, sizeof(*rip));
-  rtcp->check = 0;
-  rtcp->check = vbox_checksum(rtcp, sizeof(struct vbox_tcp_hdr) + rdata_len);
+  rtcp->checksum = 0;
+  rtcp->checksum = vbox_checksum(rtcp, sizeof(struct vbox_tcp_hdr) + rdata_len);
 
   vbox_emit_packet(reply, sizeof(struct ethhdr) + sizeof(struct iphdr) +
                                sizeof(struct vbox_tcp_hdr) + rdata_len);
