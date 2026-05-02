@@ -71,6 +71,7 @@ static void installer_refresh_disk_inventory(void);
 static const char *installer_selected_disk_label(void);
 static int installer_write_target_config(void);
 static void installer_append_to_buf(char *buf, int max, const char *text);
+static void installer_log(const char *line);
 static int load_install_target_disk_location(char *buf, int max);
 static int installer_journal_install_write(const char *path,
                                            const uint8_t *data, size_t size);
