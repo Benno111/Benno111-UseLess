@@ -5,6 +5,7 @@
  */
 
 #include "apps/kapi.h"
+#include "arch/arch.h"
 #include "printk.h"
 #include "mm/kmalloc.h"
 #include "core/process.h"
@@ -28,6 +29,10 @@ extern void uart_putc(char c);
 
 /* Timer ticks counter */
 static volatile uint64_t uptime_ticks = 0;
+static uint64_t app_frame_last_ms = 0;
+
+#define APP_FRAME_RATE_HZ 60U
+#define APP_FRAME_INTERVAL_MS (1000U / APP_FRAME_RATE_HZ)
 
 /* Global kernel API instance */
 static kapi_t global_kapi;
@@ -71,6 +76,26 @@ static int kapi_getc(void) {
 
 static int kapi_has_key(void) {
     return uart_getc_nonblock() >= 0 ? 1 : 0;
+}
+
+static void app_frame_wait(void) {
+    uint64_t now;
+    uint64_t deadline;
+
+    now = arch_timer_get_ms();
+    if (app_frame_last_ms == 0) {
+        app_frame_last_ms = now;
+        return;
+    }
+
+    deadline = app_frame_last_ms + APP_FRAME_INTERVAL_MS;
+    while (now < deadline) {
+        extern void process_yield(void);
+        process_yield();
+        now = arch_timer_get_ms();
+    }
+
+    app_frame_last_ms = now;
 }
 
 static void kapi_clear(void) {
@@ -173,8 +198,17 @@ static unsigned long kapi_get_uptime_ticks(void) {
 }
 
 static void kapi_sleep_ms(uint32_t ms) {
-    /* Simple busy-wait sleep */
-    for (volatile uint32_t i = 0; i < ms * 10000; i++) { }
+    uint64_t deadline;
+    uint32_t delay_ms = ms;
+
+    if (delay_ms < APP_FRAME_INTERVAL_MS)
+        delay_ms = APP_FRAME_INTERVAL_MS;
+
+    deadline = arch_timer_get_ms() + delay_ms;
+    while (arch_timer_get_ms() < deadline) {
+        extern void process_yield(void);
+        process_yield();
+    }
 }
 
 static void *kapi_malloc(size_t size) {
@@ -273,6 +307,7 @@ static int kapi_spawn(const char *path) {
 
 /* Yield CPU to other tasks */
 static void kapi_yield(void) {
+    app_frame_wait();
     extern void process_yield(void);
     process_yield();
 }
@@ -1031,6 +1066,7 @@ static app_entry_t app_registry[] = {
 /* Run an embedded application by name */
 int app_run(const char *name, int argc, char **argv) {
     printk(KERN_INFO "[APP] Running: %s\n", name);
+    app_frame_last_ms = 0;
     
     /* Find app in registry */
     for (int i = 0; app_registry[i].name != NULL; i++) {
