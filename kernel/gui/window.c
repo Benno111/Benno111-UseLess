@@ -72,6 +72,8 @@ static const char *installer_selected_disk_label(void);
 static int installer_write_target_config(void);
 static void installer_append_to_buf(char *buf, int max, const char *text);
 static int load_install_target_disk_location(char *buf, int max);
+static int installer_journal_install_write(const char *path,
+                                           const uint8_t *data, size_t size);
 static const char *installed_system_bootable_cfg(void);
 static const char *installed_system_bios_bootable_cfg(void);
 static const char *installed_system_installer_state(int first_boot_setup);
@@ -89,6 +91,7 @@ static int read_text_file(const char *path, char *buf, int max);
 static int manifest_get_value(const char *manifest, const char *key, char *out,
                               int out_max);
 static uint64_t parse_u64(const char *text);
+static int installer_selected_disk_index(void);
 static void gui_flush_account_state_before_power_transition(void);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
@@ -354,6 +357,10 @@ static int installer_ensured_changes = 0;
 static uint64_t installer_reboot_deadline_ms = 0;
 static int installer_progress_total_files = 0;
 static int installer_progress_processed_files = 0;
+static int installer_install_journal_ready = 0;
+static int installer_install_journal_disk_index = -1;
+static uint32_t installer_install_journal_next_lba = 0;
+static uint32_t installer_install_journal_last_lba = 0;
 static char installer_target_root[96];
 static char installer_efi_root[128];
 static char installer_update_root[128];
@@ -3970,11 +3977,34 @@ static int write_text_file(const char *path, const char *content) {
 }
 
 static int installer_get_persistent_root(char *buf, int max) {
+  char disk_location[32];
+  char installed_root[96];
   static const char *roots[] = {"/Persist", "/persist", "/disk", "/mnt/disk"};
   struct file *dir;
 
   if (!buf || max <= 0)
     return -1;
+
+  if (load_install_target_disk_location(disk_location,
+                                        sizeof(disk_location)) == 0 &&
+      disk_location[0]) {
+    int idx = 0;
+    str_copy_safe(installed_root, "/Installed", sizeof(installed_root));
+    while (installed_root[idx] && idx < (int)sizeof(installed_root) - 1)
+      idx++;
+    if (idx < (int)sizeof(installed_root) - 1)
+      installed_root[idx++] = '/';
+    for (int i = 0; disk_location[i] && idx < (int)sizeof(installed_root) - 1;
+         i++)
+      installed_root[idx++] = disk_location[i];
+    installed_root[idx] = '\0';
+    dir = vfs_open(installed_root, O_RDONLY, 0);
+    if (dir) {
+      vfs_close(dir);
+      str_copy_safe(buf, installed_root, max);
+      return 0;
+    }
+  }
 
   for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
     dir = vfs_open(roots[i], O_RDONLY, 0);
@@ -3987,6 +4017,136 @@ static int installer_get_persistent_root(char *buf, int max) {
 
   buf[0] = '\0';
   return -1;
+}
+
+static int installer_journal_init(void) {
+  int selected_disk_index;
+  int partition_count;
+
+  if (installer_install_journal_ready)
+    return 0;
+  if (installer_install_journal_disk_index >= 0)
+    return 0;
+
+  selected_disk_index = installer_selected_disk_index();
+  if (selected_disk_index < 0)
+    return -1;
+
+  partition_count = storage_get_partition_count(selected_disk_index);
+  for (int i = 0; i < partition_count; i++) {
+    storage_partition_kind_t kind;
+    uint32_t start_lba = 0;
+    uint32_t sector_count = 0;
+
+    if (storage_get_partition_info(selected_disk_index, i, &kind, NULL, 0,
+                                   &start_lba, &sector_count) != 0)
+      continue;
+    if (kind != STORAGE_PARTITION_SYSTEM)
+      continue;
+    if (sector_count < 8)
+      continue;
+
+    installer_install_journal_disk_index = selected_disk_index;
+    installer_install_journal_next_lba = start_lba;
+    installer_install_journal_last_lba = start_lba + sector_count;
+    installer_install_journal_ready = 1;
+    return 0;
+  }
+
+  return -1;
+}
+
+static int installer_journal_write_sector(uint32_t lba, const uint8_t *src,
+                                          size_t len) {
+  uint8_t sector[512];
+
+  for (int i = 0; i < 512; i++)
+    sector[i] = 0;
+  if (src && len > 0) {
+    if (len > sizeof(sector))
+      len = sizeof(sector);
+    for (size_t i = 0; i < len; i++)
+      sector[i] = src[i];
+  }
+  if (storage_write_block(installer_install_journal_disk_index, lba, sector,
+                          512) != 0)
+    return -1;
+  return 0;
+}
+
+static int installer_journal_install_write(const char *path,
+                                           const uint8_t *data, size_t size) {
+  uint8_t header[512];
+  size_t path_len = 0;
+  size_t remaining = size;
+  uint32_t lba;
+
+  if (!path || !path[0] || (size > 0 && !data))
+    return -1;
+  if (installer_journal_init() != 0)
+    return -1;
+  if (installer_install_journal_next_lba >= installer_install_journal_last_lba)
+    return -1;
+
+  while (path[path_len] && path_len < 255)
+    path_len++;
+
+  for (int i = 0; i < 512; i++)
+    header[i] = 0;
+  header[0] = 'O';
+  header[1] = 'S';
+  header[2] = '8';
+  header[3] = 'J';
+  header[4] = 'R';
+  header[5] = 'N';
+  header[6] = '1';
+  header[7] = 0;
+  header[8] = (uint8_t)(path_len & 0xFF);
+  header[9] = (uint8_t)((path_len >> 8) & 0xFF);
+  header[10] = (uint8_t)((path_len >> 16) & 0xFF);
+  header[11] = (uint8_t)((path_len >> 24) & 0xFF);
+  header[12] = (uint8_t)(size & 0xFF);
+  header[13] = (uint8_t)((size >> 8) & 0xFF);
+  header[14] = (uint8_t)((size >> 16) & 0xFF);
+  header[15] = (uint8_t)((size >> 24) & 0xFF);
+  header[16] = (uint8_t)((size >> 32) & 0xFF);
+  header[17] = (uint8_t)((size >> 40) & 0xFF);
+  header[18] = (uint8_t)((size >> 48) & 0xFF);
+  header[19] = (uint8_t)((size >> 56) & 0xFF);
+
+  lba = installer_install_journal_next_lba++;
+  if (installer_journal_write_sector(lba, header, sizeof(header)) != 0)
+    return -1;
+
+  if (path_len > 0) {
+    const uint8_t *path_bytes = (const uint8_t *)path;
+    size_t path_written = 0;
+    while (path_written < path_len) {
+      size_t chunk = path_len - path_written;
+      if (chunk > 512)
+        chunk = 512;
+      if (installer_install_journal_next_lba >= installer_install_journal_last_lba)
+        return -1;
+      lba = installer_install_journal_next_lba++;
+      if (installer_journal_write_sector(lba, path_bytes + path_written,
+                                         chunk) != 0)
+        return -1;
+      path_written += chunk;
+    }
+  }
+
+  while (remaining > 0) {
+    size_t chunk = remaining > 512 ? 512 : remaining;
+    if (installer_install_journal_next_lba >= installer_install_journal_last_lba)
+      return -1;
+    lba = installer_install_journal_next_lba++;
+    if (installer_journal_write_sector(lba, data + (size - remaining), chunk) !=
+        0)
+      return -1;
+    remaining -= chunk;
+  }
+
+  return 0;
 }
 
 static int boot_storage_root_path(char *buf, int max) {
@@ -4390,6 +4550,12 @@ static int installer_write_target_file(const char *logical_path,
 
   if (installer_write_raw_file(logical_path, data, size) != 0)
     return -1;
+  if (installer_journal_install_write(logical_path, data, size) != 0) {
+    char msg[320];
+    str_copy_safe(msg, "journal write unavailable: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), logical_path);
+    installer_log(msg);
+  }
   if (installer_translate_target_path(logical_path, physical_path,
                                       sizeof(physical_path)) == 0) {
     if (installer_write_raw_file(physical_path, data, size) != 0)
@@ -7693,6 +7859,10 @@ static void installer_start_background_install(void) {
   installer_failed_files = 0;
   installer_ensured_changes = 0;
   installer_reboot_deadline_ms = 0;
+  installer_install_journal_ready = 0;
+  installer_install_journal_disk_index = -1;
+  installer_install_journal_next_lba = 0;
+  installer_install_journal_last_lba = 0;
   installer_target_root[0] = '\0';
   installer_efi_root[0] = '\0';
   installer_update_root[0] = '\0';
@@ -15622,6 +15792,10 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
     installer_active = 0;
     installer_show_restart_screen = 0;
     installer_page = INSTALLER_PAGE_WELCOME;
+    installer_install_journal_ready = 0;
+    installer_install_journal_disk_index = -1;
+    installer_install_journal_next_lba = 0;
+    installer_install_journal_last_lba = 0;
     installer_set_status("Ready to install the system image.");
   }
 
