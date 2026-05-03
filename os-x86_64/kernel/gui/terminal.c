@@ -412,11 +412,7 @@ void term_execute(terminal_t *term, const char *cmd) {
     term_puts_t(term, "\n");
   } else if (strncmp(cmd, "neofetch", 8) == 0) {
     term_puts_t(term, "\033[36m");
-    term_puts_t(term, "       _  _         ___  ____  \n");
-    term_puts_t(term, " __   _(_)| |__     / _ \\/ ___| \n");
-    term_puts_t(term, " \\ \\ / / || '_ \\   | | | \\___ \\ \n");
-    term_puts_t(term, "  \\ V /| || |_) |  | |_| |___) |\n");
-    term_puts_t(term, "   \\_/ |_||_.__/    \\___/|____/ \n");
+    term_puts_t(term, "OS 8\n");
     term_puts_t(term, "\033[0m\n");
     term_puts_t(term, "\033[33mOS:\033[0m      OS8 8.0.0\n");
     term_puts_t(term, "\033[33mHost:\033[0m    Bare Metal x86_64\n");
@@ -456,7 +452,7 @@ void term_execute(terminal_t *term, const char *cmd) {
   } else if (strncmp(cmd, "id", 2) == 0) {
     term_puts_t(term, "uid=0(root) gid=0(root) groups=0(root)\n");
   } else if (strncmp(cmd, "hostname", 8) == 0) {
-    term_puts_t(term, "os-next-stage\n");
+    term_puts_t(term, "os\n");
   } else if (strncmp(cmd, "date", 4) == 0) {
     term_puts_t(term, "Thu Jan 23 00:00:00 UTC 2025\n");
   } else if (strncmp(cmd, "uptime", 6) == 0) {
@@ -469,7 +465,7 @@ void term_execute(terminal_t *term, const char *cmd) {
 
 /* Print prompt */
 void term_prompt(terminal_t *term) {
-  term_puts_t(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+  term_puts_t(term, "\033[32mos\033[0m:\033[34m~\033[0m$ ");
 }
 
 /* Handle keyboard input */
@@ -517,7 +513,7 @@ terminal_t *term_create(int x, int y) {
   term_puts_t(term, "\033[1;36mOS8 Terminal v1.0\033[0m\n");
   term_puts_t(term, "Type '\033[33mhelp\033[0m' for commands, "
                     "'\033[33mneofetch\033[0m' for system info.\n\n");
-  term_puts_t(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+  term_puts_t(term, "\033[32mos\033[0m:\033[34m~\033[0m$ ");
   
   return term;
 }

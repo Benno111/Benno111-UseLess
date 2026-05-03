@@ -996,7 +996,7 @@ static void term_puts(const char *str, uint8_t color) {
 }
 
 static void term_prompt(void) {
-  term_puts("os-next-stage", 10); /* Green */
+  term_puts("os", 10); /* Green */
   term_puts(":", 7);       /* White */
   term_puts("~", 12);      /* Blue */
   term_puts("$ ", 7);      /* White */
@@ -1048,11 +1048,7 @@ static void term_execute(const char *cmd) {
   } else if (strcmp(cmd, "uname") == 0 || strcmp(cmd, "uname -a") == 0) {
     term_puts("OS8 1.0.0 x86_64\n", 11);
   } else if (strcmp(cmd, "neofetch") == 0) {
-    term_puts("       _  _         ___  ____  \n", 14);
-    term_puts(" __   _(_)| |__     / _ \\/ ___| \n", 14);
-    term_puts(" \\ \\ / / || '_ \\   | | | \\___ \\ \n", 14);
-    term_puts("  \\ V /| || |_) |  | |_| |___) |\n", 14);
-    term_puts("   \\_/ |_||_.__/    \\___/|____/ \n", 14);
+    term_puts("OS 8\n", 14);
     term_puts("\n", 7);
     term_puts("OS:      ", 11);
     term_puts("OS8 1.0.0\n", 7);
@@ -1071,7 +1067,7 @@ static void term_execute(const char *cmd) {
   } else if (strcmp(cmd, "id") == 0) {
     term_puts("uid=0(root) gid=0(root) groups=0(root)\n", 7);
   } else if (strcmp(cmd, "hostname") == 0) {
-    term_puts("os-next-stage\n", 7);
+    term_puts("os\n", 7);
   } else if (strcmp(cmd, "free") == 0) {
     term_puts("              total        used        free\n", 7);
     term_puts("Mem:         512 MB       12 MB      500 MB\n", 7);

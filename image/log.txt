@@ -1,1 +1,637 @@
-Networking is now wired through the software-backed VirtualBox NIC path.
+
+
+=== OS8 ===
+Kernel entry point reached!
+Boot IDT installed
+Limine base revision OK
+Framebuffer acquired:
+  Address: 0xFFFF8000E0000000
+  Width: 0x0000000000000400
+  Height: 0x0000000000000300
+  Pitch: 0x0000000000001000
+  BPP: 0x0000000000000020
+  RSDP: 0x0000000000000000
+  HHDM: 0x0000000000000000
+  Cmdline ptr: 0xFFFF80000FF7A000
+Calling kernel_main...
+
+        _  _         ___  ____  
+ __   _(_)| |__     / _ \/ ___| 
+ \ \ / / || '_ \   | | | \___ \ 
+  \ V /| || |_) |  | |_| |___) |
+   \_/ |_||_.__/    \___/|____/ 
+
+OS8 v0.5.0 - x86_64 bring-up
+A Unix-like operating system for x86_64
+Copyright (c) 2026 OS8 Project
+Build UUID: a1e88c09-3d7c-693a-f772-92fe8b4a6aea
+
+[INIT] architecture early init
+x86_64: Early initialization complete (legacy PIC/PIT mode)
+[INIT] architecture MMU init
+x86_64: MMU already enabled
+[INIT] x86_64 early bring-up
+  Using conservative Limine framebuffer path
+BOOT: Cmdline parsed - verbose=0 debug=0 splash=1 usb=1 installer=1 xhci=0
+FB: Initializing framebuffer
+FB: Using Limine framebuffer 1024x768 at 0xffff8000e0000000
+x86_64: initializing ACPI tables
+ACPI: no RSDP provided by bootloader
+x86_64: ACPI CPU topology reports 1 CPU(s)
+x86_64: framebuffer bring-up stable, continuing boot
+[INIT] Phase 1: Core Hardware
+  Parsing device tree...
+  Initializing interrupt controller...
+x86_64: Initializing legacy PIC for bring-up
+  Initializing timer...
+PIT: Initializing at 100 Hz (divisor=11931)
+PIT: Initialized
+[INIT] Phase 2: Memory Management
+  Initializing physical memory manager...
+PMM: Starting init
+PMM: Memory configured
+PMM: Free lists cleared
+PMM: Skipping bitmap clear (BSS pre-zeroed)
+PMM: Got kernel addresses
+PMM: Kernel pages marked
+PMM: Init complete
+  About to init VMM...
+  Initializing virtual memory manager...
+VMM: Initializing virtual memory manager
+VMM: Using Limine paging on x86_64 bring-up path
+  Initializing kernel heap...
+KMALLOC: Heap at 0xffffffff80943000 - 0xffffffff88943000 (131072 KB)
+[INIT] Phase 3: Process Management
+  Initializing scheduler...
+SCHED: Initializing scheduler
+SCHED: Scheduler initialized
+  Initializing process subsystem...
+[PROC] Process subsystem initialized (max 16 processes)
+[PROC] Program load area: 0x44000000+
+[PROC] kernel_context at: 0xffffffff80931f98
+[INIT] Phase 4: Filesystems
+  Initializing VFS...
+  Initializing VFS...
+VFS: Initializing virtual filesystem
+VFS: Registered filesystem 'fat32'
+VFS: Initialized
+  Initializing RamFS...
+RAMFS: Registering ramfs filesystem
+VFS: Registered filesystem 'ramfs'
+  Mounting root filesystem...
+VFS: mount('ramfs', '/', 'ramfs')
+RAMFS: Mounting ramfs
+RAMFS: Mounted successfully
+VFS: Mounted 'ramfs' on '/'
+RAMFS: Created directory '/Documents'
+RAMFS: Created directory '/Downloads'
+RAMFS: Created directory '/Pictures'
+RAMFS: Created directory '/assets'
+RAMFS: Created directory '/assets/wallpapers'
+RAMFS: Created directory '/System'
+RAMFS: Created directory '/Desktop'
+RAMFS: Created directory '/System/Apps'
+RAMFS: Created directory '/Desktop/System Apps'
+RAMFS: Created directory '/Desktop/Projects'
+RAMFS: Created file '/Desktop/notes.txt'
+RAMFS: Created file '/Desktop/readme.txt'
+RAMFS: Created file '/readme.txt'
+RAMFS: Created file '/todo.txt'
+RAMFS: Created file '/sample.mp3' (37206 bytes)
+RAMFS: Created file '/assets/logo.png' (34597 bytes)
+RAMFS: Created file '/assets/wallpapers/landscape.png' (5087335 bytes)
+RAMFS: Created file '/assets/wallpapers/nature.jpg' (13497 bytes)
+RAMFS: Created file '/assets/wallpapers/city.jpg' (14076 bytes)
+RAMFS: Created file '/assets/wallpapers/portrait.jpg' (3889 bytes)
+RAMFS: Created file '/assets/wallpapers/square.jpg' (2158 bytes)
+RAMFS: Created file '/assets/wallpapers/default.jpg' (84323 bytes)
+RAMFS: Created file '/Pictures/test.png' (48941 bytes)
+RAMFS: Created directory '/bin'
+RAMFS: Created directory '/sbin'
+RAMFS: Created directory '/usr'
+RAMFS: Created directory '/usr/bin'
+RAMFS: Created file '/sbin/init' (24632 bytes)
+RAMFS: Created file '/bin/login' (23216 bytes)
+RAMFS: Created file '/bin/sh' (3848 bytes)
+RAMFS: Created directory '/examples'
+RAMFS: Created file '/examples/hello.py'
+RAMFS: Created file '/examples/fibonacci.py'
+RAMFS: Created file '/examples/hello.nano'
+RAMFS: Created file '/examples/calculator.nano'
+RAMFS: Created directory '/install'
+RAMFS: Created directory '/install/system-image'
+RAMFS: Created directory '/install/system-image/boot'
+RAMFS: Created directory '/install/system-image/EFI'
+RAMFS: Created directory '/install/system-image/EFI/BOOT'
+RAMFS: Created directory '/install/system-image/limine'
+RAMFS: Created directory '/install/system-image/Documents'
+RAMFS: Created directory '/install/system-image/Downloads'
+RAMFS: Created directory '/install/system-image/Pictures'
+RAMFS: Created directory '/install/system-image/assets'
+RAMFS: Created directory '/install/system-image/assets/wallpapers'
+RAMFS: Created directory '/install/system-image/System'
+RAMFS: Created directory '/install/system-image/Desktop'
+RAMFS: Created directory '/install/system-image/System/Apps'
+RAMFS: Created directory '/install/system-image/Desktop/System Apps'
+RAMFS: Created directory '/install/system-image/Desktop/Projects'
+RAMFS: Created file '/install/system-image/Desktop/notes.txt'
+RAMFS: Created file '/install/system-image/Desktop/readme.txt'
+RAMFS: Created file '/install/system-image/readme.txt'
+RAMFS: Created file '/install/system-image/todo.txt'
+RAMFS: Created file '/install/system-image/sample.mp3' (37206 bytes)
+RAMFS: Created file '/install/system-image/assets/logo.png' (34597 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/landscape.png' (5087335 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/nature.jpg' (13497 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/city.jpg' (14076 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/portrait.jpg' (3889 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/square.jpg' (2158 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/default.jpg' (84323 bytes)
+RAMFS: Created file '/install/system-image/Pictures/test.png' (48941 bytes)
+RAMFS: Created directory '/install/system-image/bin'
+RAMFS: Created directory '/install/system-image/sbin'
+RAMFS: Created directory '/install/system-image/usr'
+RAMFS: Created directory '/install/system-image/usr/bin'
+RAMFS: Created file '/install/system-image/sbin/init' (24632 bytes)
+RAMFS: Created file '/install/system-image/bin/login' (23216 bytes)
+RAMFS: Created file '/install/system-image/bin/sh' (3848 bytes)
+RAMFS: Created directory '/install/system-image/examples'
+RAMFS: Created file '/install/system-image/examples/hello.py'
+RAMFS: Created file '/install/system-image/examples/fibonacci.py'
+RAMFS: Created file '/install/system-image/examples/hello.nano'
+RAMFS: Created file '/install/system-image/examples/calculator.nano'
+RAMFS: Created directory '/setup'
+RAMFS: Created directory '/setup/boot'
+RAMFS: Created directory '/setup/EFI'
+RAMFS: Created directory '/setup/EFI/BOOT'
+RAMFS: Created directory '/setup/limine'
+RAMFS: Created directory '/setup/install'
+RAMFS: Created directory '/setup/install/system-image'
+RAMFS: Created directory '/setup/install/system-image/boot'
+RAMFS: Created directory '/setup/install/system-image/EFI'
+RAMFS: Created directory '/setup/install/system-image/EFI/BOOT'
+RAMFS: Created directory '/setup/install/system-image/limine'
+RAMFS: Created directory '/setup/install/system-image/Documents'
+RAMFS: Created directory '/setup/install/system-image/Downloads'
+RAMFS: Created directory '/setup/install/system-image/Pictures'
+RAMFS: Created directory '/setup/install/system-image/assets'
+RAMFS: Created directory '/setup/install/system-image/assets/wallpapers'
+RAMFS: Created directory '/setup/install/system-image/System'
+RAMFS: Created directory '/setup/install/system-image/Desktop'
+RAMFS: Created directory '/setup/install/system-image/System/Apps'
+RAMFS: Created directory '/setup/install/system-image/Desktop/System Apps'
+RAMFS: Created directory '/setup/install/system-image/Desktop/Projects'
+RAMFS: Created file '/setup/install/system-image/Desktop/notes.txt'
+RAMFS: Created file '/setup/install/system-image/Desktop/readme.txt'
+RAMFS: Created file '/setup/install/system-image/readme.txt'
+RAMFS: Created file '/setup/install/system-image/todo.txt'
+RAMFS: Created file '/setup/install/system-image/sample.mp3' (37206 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/logo.png' (34597 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/landscape.png' (5087335 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/nature.jpg' (13497 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/city.jpg' (14076 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/portrait.jpg' (3889 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/square.jpg' (2158 bytes)
+RAMFS: Created file '/setup/install/system-image/assets/wallpapers/default.jpg' (84323 bytes)
+RAMFS: Created file '/setup/install/system-image/Pictures/test.png' (48941 bytes)
+RAMFS: Created directory '/setup/install/system-image/bin'
+RAMFS: Created directory '/setup/install/system-image/sbin'
+RAMFS: Created directory '/setup/install/system-image/usr'
+RAMFS: Created directory '/setup/install/system-image/usr/bin'
+RAMFS: Created file '/setup/install/system-image/sbin/init' (24632 bytes)
+RAMFS: Created file '/setup/install/system-image/bin/login' (23216 bytes)
+RAMFS: Created file '/setup/install/system-image/bin/sh' (3848 bytes)
+RAMFS: Created directory '/setup/install/system-image/examples'
+RAMFS: Created file '/setup/install/system-image/examples/hello.py'
+RAMFS: Created file '/setup/install/system-image/examples/fibonacci.py'
+RAMFS: Created file '/setup/install/system-image/examples/hello.nano'
+RAMFS: Created file '/setup/install/system-image/examples/calculator.nano'
+INSTALL: bundled system image payload seeded in RAMFS
+INSTALL: setup media exposed at /setup/
+INSTALL: looking for staged system image at /install/system-image
+INSTALL: staged system image found
+RAMFS: Created directory '/limine'
+RAMFS: Created directory '/EFI'
+RAMFS: Created directory '/EFI/BOOT'
+INSTALL: imported staged /install/system-image into live root (skipping /boot)
+  Mounting procfs...
+  Mounting sysfs...
+  Mounting devfs...
+[INIT] Phase 5: Device Drivers
+  Loading framebuffer driver...
+FB: Initializing framebuffer
+FB: Using Limine framebuffer 1024x768 at 0xffff8000e0000000
+  Initializing PCI bus...
+PCI: Initializing x86 config-space scan...
+PCI: Found 8086:1237 at 00:00.0
+PCI: Found 8086:7000 at 00:01.0
+PCI: Found 8086:7010 at 00:01.1
+STORAGE: Loading IDE driver for 00:01.1
+STORAGE: Registered disk IDE Hard Disk at hd0
+STORAGE: Registered disk ATAPI CD-ROM at cd1
+STORAGE: Registered IDE/PATA controller via pci
+PCI: Found 80ee:beef at 00:02.0
+PCI: Found 1022:2000 at 00:03.0
+PCI: Found 80ee:cafe at 00:04.0
+PCI: Found 8086:2415 at 00:05.0
+PCI: Found 8086:7113 at 00:07.0
+PCI: Found 8086:1e31 at 00:0c.0
+PCI: Found xHCI USB controller at 00:0c.0
+PCI: xHCI deferred on x86 bring-up path
+PCI: xHCI remains disabled on x86 bring-up path (set cmdline: xhci=on to enable)
+PCI: Scan complete (9 devices found).
+  Initializing GPU driver...
+  GPU: No virtio-gpu found (software rendering)
+  Initializing GUI...
+GUI: Initializing windowing system
+GUI: Created window 'Installer' (944x688)
+GUI: Display 1024x768 initialized
+GUI: Created window 'Terminal' (400x300)
+TERM: Created terminal 48x15
+GUI: Created window 'File Manager' (450x350)
+  Loading keyboard driver...
+  Loading NVMe driver...
+  Loading USB driver...
+  Loading network driver...
+  Loading Wi-Fi drivers...
+NET: Initializing network stack
+NET: Loopback interface configured
+NET: TCP/IP stack initialized
+NET: Initializing virtio-net...
+NET: virtio-mmio network probe skipped on PC platform
+VBOX-NET: Probing VirtualBox PCNet adapter...
+VBOX-NET: Found VirtualBox PCNet at 00:03.0 IO=0xd020 MAC=08:00:27:22:e7:11
+NET: Added interface eth0
+VBOX-NET: Software-backed network interface ready
+WIFI: Loading wireless drivers...
+WIFI: No supported PCI Wi-Fi adapter detected
+  GUI desktop ready!
+[INIT] Enabling interrupts...
+x86_64: leaving interrupts disabled on the desktop bring-up path
+[INIT] Kernel initialization complete!
+
+All subsystems initialized successfully
+Starting init process...
+
+x86_64: skipping /sbin/init spawn, using kernel desktop loop
+System ready.
+
+INPUT: Initializing PS/2 keyboard and mouse
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 ready
+GUI: Event loop started - type in terminal!\n
+
+=== OS8 ===
+Kernel entry point reached!
+Boot IDT installed
+Limine base revision OK
+Framebuffer acquired:
+  Address: 0xFFFF8000E0000000
+  Width: 0x0000000000000400
+  Height: 0x0000000000000300
+  Pitch: 0x0000000000001000
+  BPP: 0x0000000000000020
+  RSDP: 0x0000000000000000
+  HHDM: 0x0000000000000000
+  Cmdline ptr: 0xFFFF80000FF79000
+Calling kernel_main...
+
+        _  _         ___  ____  
+ __   _(_)| |__     / _ \/ ___| 
+ \ \ / / || '_ \   | | | \___ \ 
+  \ V /| || |_) |  | |_| |___) |
+   \_/ |_||_.__/    \___/|____/ 
+
+OS8 v0.5.0 - x86_64 bring-up
+A Unix-like operating system for x86_64
+Copyright (c) 2026 OS8 Project
+Build UUID: a1e88c09-3d7c-693a-f772-92fe8b4a6aea
+
+[INIT] architecture early init
+x86_64: Early initialization complete (legacy PIC/PIT mode)
+[INIT] architecture MMU init
+x86_64: MMU already enabled
+[INIT] x86_64 early bring-up
+  Using conservative Limine framebuffer path
+BOOT: Cmdline parsed - verbose=0 debug=0 splash=1 usb=1 installer=0 xhci=0
+FB: Initializing framebuffer
+FB: Using Limine framebuffer 1024x768 at 0xffff8000e0000000
+x86_64: initializing ACPI tables
+ACPI: no RSDP provided by bootloader
+x86_64: ACPI CPU topology reports 1 CPU(s)
+x86_64: framebuffer bring-up stable, continuing boot
+[INIT] Phase 1: Core Hardware
+  Parsing device tree...
+  Initializing interrupt controller...
+x86_64: Initializing legacy PIC for bring-up
+  Initializing timer...
+PIT: Initializing at 100 Hz (divisor=11931)
+PIT: Initialized
+[INIT] Phase 2: Memory Management
+  Initializing physical memory manager...
+PMM: Starting init
+PMM: Memory configured
+PMM: Free lists cleared
+PMM: Skipping bitmap clear (BSS pre-zeroed)
+PMM: Got kernel addresses
+PMM: Kernel pages marked
+PMM: Init complete
+  About to init VMM...
+  Initializing virtual memory manager...
+VMM: Initializing virtual memory manager
+VMM: Using Limine paging on x86_64 bring-up path
+  Initializing kernel heap...
+KMALLOC: Heap at 0xffffffff80943000 - 0xffffffff88943000 (131072 KB)
+[INIT] Phase 3: Process Management
+  Initializing scheduler...
+SCHED: Initializing scheduler
+SCHED: Scheduler initialized
+  Initializing process subsystem...
+[PROC] Process subsystem initialized (max 16 processes)
+[PROC] Program load area: 0x44000000+
+[PROC] kernel_context at: 0xffffffff80931f98
+[INIT] Phase 4: Filesystems
+  Initializing VFS...
+  Initializing VFS...
+VFS: Initializing virtual filesystem
+VFS: Registered filesystem 'fat32'
+VFS: Initialized
+  Initializing RamFS...
+RAMFS: Registering ramfs filesystem
+VFS: Registered filesystem 'ramfs'
+  Mounting root filesystem...
+VFS: mount('ramfs', '/', 'ramfs')
+RAMFS: Mounting ramfs
+RAMFS: Mounted successfully
+VFS: Mounted 'ramfs' on '/'
+RAMFS: Created directory '/Documents'
+RAMFS: Created directory '/Downloads'
+RAMFS: Created directory '/Pictures'
+RAMFS: Created directory '/assets'
+RAMFS: Created directory '/assets/wallpapers'
+RAMFS: Created directory '/System'
+RAMFS: Created directory '/Desktop'
+RAMFS: Created directory '/System/Apps'
+RAMFS: Created directory '/Desktop/System Apps'
+RAMFS: Created directory '/Desktop/Projects'
+RAMFS: Created file '/Desktop/notes.txt'
+RAMFS: Created file '/Desktop/readme.txt'
+RAMFS: Created file '/readme.txt'
+RAMFS: Created file '/todo.txt'
+RAMFS: Created file '/sample.mp3' (37206 bytes)
+RAMFS: Created file '/assets/logo.png' (34597 bytes)
+RAMFS: Created file '/assets/wallpapers/landscape.png' (5087335 bytes)
+RAMFS: Created file '/assets/wallpapers/nature.jpg' (13497 bytes)
+RAMFS: Created file '/assets/wallpapers/city.jpg' (14076 bytes)
+RAMFS: Created file '/assets/wallpapers/portrait.jpg' (3889 bytes)
+RAMFS: Created file '/assets/wallpapers/square.jpg' (2158 bytes)
+RAMFS: Created file '/assets/wallpapers/default.jpg' (84323 bytes)
+RAMFS: Created file '/Pictures/test.png' (48941 bytes)
+RAMFS: Created directory '/bin'
+RAMFS: Created directory '/sbin'
+RAMFS: Created directory '/usr'
+RAMFS: Created directory '/usr/bin'
+RAMFS: Created file '/sbin/init' (24632 bytes)
+RAMFS: Created file '/bin/login' (23216 bytes)
+RAMFS: Created file '/bin/sh' (3848 bytes)
+RAMFS: Created directory '/examples'
+RAMFS: Created file '/examples/hello.py'
+RAMFS: Created file '/examples/fibonacci.py'
+RAMFS: Created file '/examples/hello.nano'
+RAMFS: Created file '/examples/calculator.nano'
+RAMFS: Created directory '/install'
+RAMFS: Created directory '/install/system-image'
+RAMFS: Created directory '/install/system-image/boot'
+RAMFS: Created directory '/install/system-image/EFI'
+RAMFS: Created directory '/install/system-image/EFI/BOOT'
+RAMFS: Created directory '/install/system-image/limine'
+RAMFS: Created directory '/install/system-image/Documents'
+RAMFS: Created directory '/install/system-image/Downloads'
+RAMFS: Created directory '/install/system-image/Pictures'
+RAMFS: Created directory '/install/system-image/assets'
+RAMFS: Created directory '/install/system-image/assets/wallpapers'
+RAMFS: Created directory '/install/system-image/System'
+RAMFS: Created directory '/install/system-image/Desktop'
+RAMFS: Created directory '/install/system-image/System/Apps'
+RAMFS: Created directory '/install/system-image/Desktop/System Apps'
+RAMFS: Created directory '/install/system-image/Desktop/Projects'
+RAMFS: Created file '/install/system-image/Desktop/notes.txt'
+RAMFS: Created file '/install/system-image/Desktop/readme.txt'
+RAMFS: Created file '/install/system-image/readme.txt'
+RAMFS: Created file '/install/system-image/todo.txt'
+RAMFS: Created file '/install/system-image/sample.mp3' (37206 bytes)
+RAMFS: Created file '/install/system-image/assets/logo.png' (34597 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/landscape.png' (5087335 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/nature.jpg' (13497 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/city.jpg' (14076 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/portrait.jpg' (3889 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/square.jpg' (2158 bytes)
+RAMFS: Created file '/install/system-image/assets/wallpapers/default.jpg' (84323 bytes)
+RAMFS: Created file '/install/system-image/Pictures/test.png' (48941 bytes)
+RAMFS: Created directory '/install/system-image/bin'
+RAMFS: Created directory '/install/system-image/sbin'
+RAMFS: Created directory '/install/system-image/usr'
+RAMFS: Created directory '/install/system-image/usr/bin'
+RAMFS: Created file '/install/system-image/sbin/init' (24632 bytes)
+RAMFS: Created file '/install/system-image/bin/login' (23216 bytes)
+RAMFS: Created file '/install/system-image/bin/sh' (3848 bytes)
+RAMFS: Created directory '/install/system-image/examples'
+RAMFS: Created file '/install/system-image/examples/hello.py'
+RAMFS: Created file '/install/system-image/examples/fibonacci.py'
+RAMFS: Created file '/install/system-image/examples/hello.nano'
+RAMFS: Created file '/install/system-image/examples/calculator.nano'
+INSTALL: bundled system image payload seeded in RAMFS
+INSTALL: looking for staged system image at /install/system-image
+INSTALL: staged system image found
+RAMFS: Created directory '/limine'
+RAMFS: Created directory '/EFI'
+RAMFS: Created directory '/EFI/BOOT'
+INSTALL: imported staged /install/system-image into live root (skipping /boot)
+  Mounting procfs...
+  Mounting sysfs...
+  Mounting devfs...
+[INIT] Phase 5: Device Drivers
+  Loading framebuffer driver...
+FB: Initializing framebuffer
+FB: Using Limine framebuffer 1024x768 at 0xffff8000e0000000
+  Initializing PCI bus...
+PCI: Initializing x86 config-space scan...
+PCI: Found 8086:1237 at 00:00.0
+PCI: Found 8086:7000 at 00:01.0
+PCI: Found 8086:7010 at 00:01.1
+STORAGE: Loading IDE driver for 00:01.1
+STORAGE: Registered disk IDE Hard Disk at hd0
+STORAGE: Registered disk ATAPI CD-ROM at cd1
+STORAGE: Registered IDE/PATA controller via pci
+PCI: Found 80ee:beef at 00:02.0
+PCI: Found 1022:2000 at 00:03.0
+PCI: Found 80ee:cafe at 00:04.0
+PCI: Found 8086:2415 at 00:05.0
+PCI: Found 8086:7113 at 00:07.0
+PCI: Found 8086:1e31 at 00:0c.0
+PCI: Found xHCI USB controller at 00:0c.0
+PCI: xHCI deferred on x86 bring-up path
+PCI: xHCI remains disabled on x86 bring-up path (set cmdline: xhci=on to enable)
+PCI: Scan complete (9 devices found).
+  Initializing GPU driver...
+  GPU: No virtio-gpu found (software rendering)
+  Initializing GUI...
+GUI: Initializing windowing system
+GUI: Display 1024x768 initialized
+GUI: Created window 'Terminal' (400x300)
+TERM: Created terminal 48x15
+GUI: Created window 'File Manager' (450x350)
+  Loading keyboard driver...
+  Loading NVMe driver...
+  Loading USB driver...
+  Loading network driver...
+  Loading Wi-Fi drivers...
+NET: Initializing network stack
+NET: Loopback interface configured
+NET: TCP/IP stack initialized
+NET: Initializing virtio-net...
+NET: virtio-mmio network probe skipped on PC platform
+VBOX-NET: Probing VirtualBox PCNet adapter...
+VBOX-NET: Found VirtualBox PCNet at 00:03.0 IO=0xd020 MAC=08:00:27:22:e7:11
+NET: Added interface eth0
+VBOX-NET: Software-backed network interface ready
+WIFI: Loading wireless drivers...
+WIFI: No supported PCI Wi-Fi adapter detected
+SYNC: sync flush unavailable: /System/Apps/terminal.app
+SYNC: sync write complete: /System/Apps/terminal.app
+SYNC: sync flush unavailable: /System/Apps/files.app
+SYNC: sync write complete: /System/Apps/files.app
+SYNC: sync flush unavailable: /System/Apps/calculator.app
+SYNC: sync write complete: /System/Apps/calculator.app
+SYNC: sync flush unavailable: /System/Apps/notes.app
+SYNC: sync write complete: /System/Apps/notes.app
+SYNC: sync flush unavailable: /System/Apps/settings.app
+SYNC: sync write complete: /System/Apps/settings.app
+SYNC: sync flush unavailable: /System/Apps/clock.app
+SYNC: sync write complete: /System/Apps/clock.app
+SYNC: sync flush unavailable: /System/Apps/snake.app
+SYNC: sync write complete: /System/Apps/snake.app
+SYNC: sync flush unavailable: /System/Apps/help.app
+SYNC: sync write complete: /System/Apps/help.app
+SYNC: sync flush unavailable: /System/Apps/browser.app
+SYNC: sync write complete: /System/Apps/browser.app
+SYNC: sync flush unavailable: /System/Apps/appstore.app
+SYNC: sync write complete: /System/Apps/appstore.app
+SYNC: sync flush unavailable: /Applications/terminal.app
+SYNC: sync write complete: /Applications/terminal.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Terminal.app
+SYNC: sync write complete: /Desktop/System Apps/Terminal.app
+SYNC: sync flush unavailable: /Applications/files.app
+SYNC: sync write complete: /Applications/files.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Files.app
+SYNC: sync write complete: /Desktop/System Apps/Files.app
+SYNC: sync flush unavailable: /Applications/calculator.app
+SYNC: sync write complete: /Applications/calculator.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Calculator.app
+SYNC: sync write complete: /Desktop/System Apps/Calculator.app
+SYNC: sync flush unavailable: /Applications/notes.app
+SYNC: sync write complete: /Applications/notes.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Notes.app
+SYNC: sync write complete: /Desktop/System Apps/Notes.app
+SYNC: sync flush unavailable: /Applications/settings.app
+SYNC: sync write complete: /Applications/settings.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Settings.app
+SYNC: sync write complete: /Desktop/System Apps/Settings.app
+SYNC: sync flush unavailable: /Applications/clock.app
+SYNC: sync write complete: /Applications/clock.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Clock.app
+SYNC: sync write complete: /Desktop/System Apps/Clock.app
+SYNC: sync flush unavailable: /Applications/snake.app
+SYNC: sync write complete: /Applications/snake.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Bowling.app
+SYNC: sync write complete: /Desktop/System Apps/Bowling.app
+SYNC: sync flush unavailable: /Applications/help.app
+SYNC: sync write complete: /Applications/help.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Help.app
+SYNC: sync write complete: /Desktop/System Apps/Help.app
+SYNC: sync flush unavailable: /Applications/browser.app
+SYNC: sync write complete: /Applications/browser.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Browser.app
+SYNC: sync write complete: /Desktop/System Apps/Browser.app
+SYNC: sync flush unavailable: /Applications/appstore.app
+SYNC: sync write complete: /Applications/appstore.app
+SYNC: sync flush unavailable: /Desktop/System Apps/App Store.app
+SYNC: sync write complete: /Desktop/System Apps/App Store.app
+SYNC: sync flush unavailable: /Applications/terminal.app
+SYNC: sync write complete: /Applications/terminal.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Terminal.app
+SYNC: sync write complete: /Desktop/System Apps/Terminal.app
+SYNC: sync flush unavailable: /Applications/files.app
+SYNC: sync write complete: /Applications/files.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Files.app
+SYNC: sync write complete: /Desktop/System Apps/Files.app
+SYNC: sync flush unavailable: /Applications/calculator.app
+SYNC: sync write complete: /Applications/calculator.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Calculator.app
+SYNC: sync write complete: /Desktop/System Apps/Calculator.app
+SYNC: sync flush unavailable: /Applications/notes.app
+SYNC: sync write complete: /Applications/notes.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Notes.app
+SYNC: sync write complete: /Desktop/System Apps/Notes.app
+SYNC: sync flush unavailable: /Applications/appstore.app
+SYNC: sync write complete: /Applications/appstore.app
+SYNC: sync flush unavailable: /Desktop/System Apps/App Store.app
+SYNC: sync write complete: /Desktop/System Apps/App Store.app
+SYNC: sync flush unavailable: /System/dock.cfg
+SYNC: sync write complete: /System/dock.cfg
+  GUI desktop ready!
+SYNC: sync flush unavailable: /BOOTABLE.CFG
+SYNC: sync write complete: /BOOTABLE.CFG
+SYNC: sync flush unavailable: /EFI/BOOT/BOOTABLE.CFG
+SYNC: sync write complete: /EFI/BOOT/BOOTABLE.CFG
+SYNC: sync flush unavailable: /boot/BOOTABLE.CFG
+SYNC: sync write complete: /boot/BOOTABLE.CFG
+SYNC: sync flush unavailable: /System/installer-state.txt
+SYNC: sync write complete: /System/installer-state.txt
+SYNC: sync flush unavailable: /System/efi-boot.cfg
+SYNC: sync write complete: /System/efi-boot.cfg
+SYNC: sync flush unavailable: /System/mbr-boot.cfg
+SYNC: sync write complete: /System/mbr-boot.cfg
+SYNC: sync flush unavailable: /Applications/terminal.app
+SYNC: sync write complete: /Applications/terminal.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Terminal.app
+SYNC: sync write complete: /Desktop/System Apps/Terminal.app
+SYNC: sync flush unavailable: /Applications/files.app
+SYNC: sync write complete: /Applications/files.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Files.app
+SYNC: sync write complete: /Desktop/System Apps/Files.app
+SYNC: sync flush unavailable: /Applications/calculator.app
+SYNC: sync write complete: /Applications/calculator.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Calculator.app
+SYNC: sync write complete: /Desktop/System Apps/Calculator.app
+SYNC: sync flush unavailable: /Applications/notes.app
+SYNC: sync write complete: /Applications/notes.app
+SYNC: sync flush unavailable: /Desktop/System Apps/Notes.app
+SYNC: sync write complete: /Desktop/System Apps/Notes.app
+SYNC: sync flush unavailable: /Applications/appstore.app
+SYNC: sync write complete: /Applications/appstore.app
+SYNC: sync flush unavailable: /Desktop/System Apps/App Store.app
+SYNC: sync write complete: /Desktop/System Apps/App Store.app
+SYNC: sync flush unavailable: /System/dock.cfg
+SYNC: sync write complete: /System/dock.cfg
+SYNC: sync flush unavailable: /System/setup-state.cfg
+SYNC: sync write complete: /System/setup-state.cfg
+DESKTOP: Found 5 items on desktop
+[INIT] Enabling interrupts...
+x86_64: leaving interrupts disabled on the desktop bring-up path
+[INIT] Kernel initialization complete!
+
+All subsystems initialized successfully
+Starting init process...
+
+x86_64: skipping /sbin/init spawn, using kernel desktop loop
+System ready.
+
+INPUT: Initializing PS/2 keyboard and mouse
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 extended pointer detected (id=0x3)
+INPUT: PS/2 ready
+GUI: Event loop started - type in terminal!\nGUI: Created window 'Partition Manager' (560x360)
+

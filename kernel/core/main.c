@@ -437,11 +437,7 @@ void kernel_main(void *dtb) {
  */
 static void print_banner(void) {
   printk("\n");
-  printk("        _  _         ___  ____  \n");
-  printk(" __   _(_)| |__     / _ \\/ ___| \n");
-  printk(" \\ \\ / / || '_ \\   | | | \\___ \\ \n");
-  printk("  \\ V /| || |_) |  | |_| |___) |\n");
-  printk("   \\_/ |_||_.__/    \\___/|____/ \n");
+  printk("OS 8\n");
   printk("\n");
 #ifdef ARCH_X86_64
   printk("OS8 v%d.%d.%d - x86_64 bring-up\n", OS_VERSION_MAJOR,
@@ -1260,7 +1256,7 @@ static void init_subsystems(void *dtb) {
 
     /* Create demo windows with working terminal */
     extern struct window *gui_create_file_manager(int x, int y);
-    gui_create_window("Terminal", 50, 50, 400, 300);
+    //gui_create_window("Terminal", 50, 50, 400, 300); unwanted for now since it's just a placeholder with no real functionality
 
     /* Create and set active terminal so keyboard input works */
     {
@@ -1272,7 +1268,7 @@ static void init_subsystems(void *dtb) {
       }
     }
 
-    gui_create_file_manager(200, 100);
+    //gui_create_file_manager(200, 100); unwanted for now since it's just a placeholder with no real functionality
   }
   gui_refresh_hardware_acceleration_policy();
 

@@ -59,7 +59,7 @@ jobs:
       - name: Generate release notes
         run: |
           cat > release_notes.md << EOF
-          # os-next-stage CI Draft
+          # os CI Draft
 
           Automatic draft release generated from CI.
 
@@ -86,7 +86,7 @@ jobs:
         with:
           tag_name: ci-draft
           target_commitish: ${{ github.sha }}
-          name: os-next-stage CI Draft
+          name: os CI Draft
           body_path: release_notes.md
           draft: true
           prerelease: true

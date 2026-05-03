@@ -8978,7 +8978,7 @@ static void fm_open_item(struct window *win, struct fm_state *st, const char *na
           run_cmd[j++] = full_path[i];
         run_cmd[j] = '\0';
         term_execute_command(term, run_cmd);
-        term_puts(term, "\n\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+        term_puts(term, "\n\033[32mos\033[0m:\033[34m~\033[0m$ ");
       }
     }
 
@@ -10499,7 +10499,7 @@ static void draw_window(struct window *win) {
     if (gui_are_blur_effects_enabled()) {
       blur_status = "Blur enabled";
     } else if (gui_blur_effects_requested()) {
-      blur_status = "Blur requested but auto-disabled";
+      blur_status = "Blur unavailable";
     } else {
       blur_status = "Blur disabled";
     }

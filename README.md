@@ -1,6 +1,6 @@
 # OS8
 
-OS8 is a hobby Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
+OS8 is a Unix-like operating system project with a multi-architecture build system and an actively evolving kernel, GUI, installer, and storage stack.
 
 ## License
 

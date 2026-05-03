@@ -1373,7 +1373,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
   } else if (str_starts_with(cmd, "id")) {
     term_puts(term, "uid=0(root) gid=0(root) groups=0(root)\n");
   } else if (str_starts_with(cmd, "hostname")) {
-    term_puts(term, "os-next-stage\n");
+    term_puts(term, "os\n");
   } else if (str_starts_with(cmd, "head ") || str_starts_with(cmd, "tail ")) {
     term_puts(term, "(file viewing commands coming soon)\n");
   } else if (str_starts_with(cmd, "wc ")) {
@@ -1621,7 +1621,7 @@ void term_handle_key(struct terminal *term, int key) {
     }
 
     /* Show new prompt */
-    term_puts(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+    term_puts(term, "\033[32mos\033[0m:\033[34m~\033[0m$ ");
 
     term->input_len = 0;
     term->input_pos = 0;
@@ -1720,7 +1720,7 @@ struct terminal *term_create(int x, int y, int cols, int rows) {
   term_puts(term, "\033[1;36mOS8 Terminal v1.0\033[0m\n");
   term_puts(term, "Type '\033[33mhelp\033[0m' for commands, "
                   "'\033[33mneofetch\033[0m' for system info.\n\n");
-  term_puts(term, "\033[32mos-next-stage\033[0m:\033[34m~\033[0m$ ");
+  term_puts(term, "\033[32mos\033[0m:\033[34m~\033[0m$ ");
 
   printk(KERN_INFO "TERM: Created terminal %dx%d\n", cols, rows);
 
