@@ -43,10 +43,10 @@ jobs:
           set -euxo pipefail
           make -f Makefile.multiarch ARCH=x86_64 image
 
-      - name: Build x86_64 Installer ISO
-        run: |
-          set -euxo pipefail
-          make -f Makefile.multiarch ARCH=x86_64 installer-image
+      ##- name: Build x86_64 Installer ISO
+        ##run: |
+        ##  set -euxo pipefail
+        ##  make -f Makefile.multiarch ARCH=x86_64 installer-image
 
       - name: Verify release files
         run: |
