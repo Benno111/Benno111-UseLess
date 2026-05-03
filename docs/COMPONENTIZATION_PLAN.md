@@ -92,8 +92,8 @@ Language/runtime build helpers.
 Visual and branding assets.
 
 - `assets/`
-- `boot-assets/`
-- screenshots
+- `assets/boot-assets/`
+- `assets/screenshots/`
 - generated logos and wallpapers
 
 ### 9. `build-tooling`

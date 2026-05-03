@@ -46,6 +46,8 @@ The live environment is still largely RAMFS-based. The installer writes a staged
 
 ```text
 assets/               Shared art, wallpapers, and branding assets
+assets/boot-assets/   Boot UI artwork and installer imagery
+assets/screenshots/   Captured product and UI screenshots
 boot/                 Boot configs and bootloader-related assets
 shared-api/           Versioned headers shared across repo boundaries
 docs/                 Build notes and supporting documentation

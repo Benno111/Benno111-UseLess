@@ -2409,7 +2409,7 @@ static void gui_draw_boot_progress_asset(int x, int y, int w, int h,
   if (filled_w > max_fill)
     filled_w = max_fill;
 
-  /* Rounded white outline from boot-assets/bar.svg. */
+  /* Rounded white outline from assets/boot-assets/bar.svg. */
   gui_draw_rect(x + radius, y, w - radius * 2, 2, 0xFFFFFF);
   gui_draw_rect(x + radius, y + h - 2, w - radius * 2, 2, 0xFFFFFF);
   gui_draw_rect(x, y + radius, 2, h - radius * 2, 0xFFFFFF);
