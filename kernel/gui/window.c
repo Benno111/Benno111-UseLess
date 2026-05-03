@@ -2396,41 +2396,224 @@ static void gui_wait_for_boot_splash(uint64_t duration_ms) {
   }
 }
 
-static void gui_draw_boot_progress_asset(int x, int y, int w, int h,
-                                         int filled_w) {
-  int radius = h / 2;
-  int inner_x = x + 3;
-  int inner_y = y + 3;
-  int inner_h = h - 6;
-  int max_fill = w - 6;
+static int gui_min3(int a, int b, int c) {
+  int min = a < b ? a : b;
+  return min < c ? min : c;
+}
 
-  if (filled_w < 0)
-    filled_w = 0;
-  if (filled_w > max_fill)
-    filled_w = max_fill;
+static int gui_max3(int a, int b, int c) {
+  int max = a > b ? a : b;
+  return max > c ? max : c;
+}
 
-  /* Rounded white outline from assets/boot-assets/bar.svg. */
-  gui_draw_rect(x + radius, y, w - radius * 2, 2, 0xFFFFFF);
-  gui_draw_rect(x + radius, y + h - 2, w - radius * 2, 2, 0xFFFFFF);
-  gui_draw_rect(x, y + radius, 2, h - radius * 2, 0xFFFFFF);
-  gui_draw_rect(x + w - 2, y + radius, 2, h - radius * 2, 0xFFFFFF);
-  gui_draw_circle(x + radius, y + radius, radius, 0xFFFFFF, false);
-  gui_draw_circle(x + w - radius - 1, y + radius, radius, 0xFFFFFF, false);
+static int gui_triangle_edge(int ax, int ay, int bx, int by, int cx, int cy) {
+  return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
+}
 
-  if (filled_w > 0) {
-    uint32_t fill = 0x22FF00;
-    if (filled_w <= inner_h) {
-      gui_draw_circle(inner_x + inner_h / 2, inner_y + inner_h / 2,
-                      filled_w / 2, fill, true);
-    } else {
-      gui_draw_rect(inner_x + inner_h / 2, inner_y, filled_w - inner_h, inner_h,
-                    fill);
-      gui_draw_circle(inner_x + inner_h / 2, inner_y + inner_h / 2,
-                      inner_h / 2, fill, true);
-      gui_draw_circle(inner_x + filled_w - inner_h / 2 - 1,
-                      inner_y + inner_h / 2, inner_h / 2, fill, true);
+static void gui_fill_triangle(int x1, int y1, int x2, int y2, int x3, int y3,
+                              uint32_t color) {
+  int min_x = gui_min3(x1, x2, x3);
+  int max_x = gui_max3(x1, x2, x3);
+  int min_y = gui_min3(y1, y2, y3);
+  int max_y = gui_max3(y1, y2, y3);
+  int area = gui_triangle_edge(x1, y1, x2, y2, x3, y3);
+
+  if (area == 0)
+    return;
+
+  for (int y = min_y; y <= max_y; y++) {
+    for (int x = min_x; x <= max_x; x++) {
+      int w0 = gui_triangle_edge(x2, y2, x3, y3, x, y);
+      int w1 = gui_triangle_edge(x3, y3, x1, y1, x, y);
+      int w2 = gui_triangle_edge(x1, y1, x2, y2, x, y);
+      if ((area > 0 && w0 >= 0 && w1 >= 0 && w2 >= 0) ||
+          (area < 0 && w0 <= 0 && w1 <= 0 && w2 <= 0)) {
+        draw_pixel_alpha(x, y, color);
+      }
     }
   }
+}
+
+static void gui_stage_point_to_screen(int stage_x, int stage_y, int stage_x0,
+                                      int stage_y0, int stage_scale,
+                                      int *screen_x, int *screen_y) {
+  if (screen_x) {
+    *screen_x = stage_x0 + ((stage_x + 240) * stage_scale);
+  }
+  if (screen_y) {
+    *screen_y = stage_y0 + ((180 - stage_y) * stage_scale);
+  }
+}
+
+static void gui_draw_boot_logo_stamp(const media_image_t *logo, int center_x,
+                                     int center_y, int logo_w, int brightness,
+                                     int glow_alpha) {
+  int logo_h;
+  int x;
+  int y;
+  int pad = 0;
+
+  if (logo && logo->pixels && logo->width && logo->height) {
+    logo_h = (int)(((uint64_t)logo_w * logo->height) / logo->width);
+    if (logo_h <= 0)
+      logo_h = 1;
+    x = center_x - logo_w / 2;
+    y = center_y - logo_h / 2;
+    pad = logo_w / 40;
+    if (pad < 2)
+      pad = 2;
+
+    if (glow_alpha > 0) {
+      int glow = gui_argb((uint8_t)glow_alpha, 0xFFFFFF);
+      gui_fill_rect_alpha(x - pad, y - pad, logo_w + pad * 2, pad, glow);
+      gui_fill_rect_alpha(x - pad, y + logo_h, logo_w + pad * 2, pad, glow);
+      gui_fill_rect_alpha(x - pad, y, pad, logo_h, glow);
+      gui_fill_rect_alpha(x + logo_w, y, pad, logo_h, glow);
+    }
+
+    gui_draw_image_scaled(x, y, logo_w, logo_h, logo);
+
+    if (brightness < 0) {
+      int alpha = (-brightness * 255) / 100;
+      if (alpha > 255)
+        alpha = 255;
+      gui_fill_rect_alpha(x, y, logo_w, logo_h, gui_argb((uint8_t)alpha, 0x000000));
+    }
+    return;
+  }
+
+  {
+    int fallback_scale = logo_w / 14;
+    if (fallback_scale < 1)
+      fallback_scale = 1;
+    x = center_x - (14 * fallback_scale) / 2;
+    y = center_y - (14 * fallback_scale) / 2;
+    gui_draw_os_logo(x, y, fallback_scale, 0xFFFFFF, 0x89B4FA,
+                     0x00000000);
+    if (brightness < 0) {
+      int alpha = (-brightness * 255) / 100;
+      if (alpha > 255)
+        alpha = 255;
+      gui_fill_rect_alpha(x, y, 14 * fallback_scale, 14 * fallback_scale,
+                          gui_argb((uint8_t)alpha, 0x000000));
+    }
+  }
+}
+
+static void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
+  media_image_t boot_logo = {0};
+  int have_logo = 0;
+  int stage_scale;
+  int stage_w;
+  int stage_h;
+  int stage_x;
+  int stage_y;
+  int logo_w;
+
+  if (media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len, &boot_logo) == 0 &&
+      boot_logo.width && boot_logo.height) {
+    have_logo = 1;
+  }
+
+  stage_scale = (int)(width / 480);
+  if ((int)(height / 360) < stage_scale)
+    stage_scale = (int)(height / 360);
+  if (stage_scale < 1)
+    stage_scale = 1;
+
+  stage_w = 480 * stage_scale;
+  stage_h = 360 * stage_scale;
+  stage_x = ((int)width - stage_w) / 2;
+  stage_y = ((int)height - stage_h) / 2;
+  logo_w = 120 * stage_scale;
+
+  /* Match the old script's short startup pause. */
+  gui_wait_for_boot_splash(120);
+
+  for (int frame = 0; frame < 20; frame++) {
+    int sprite_x = -55 + (frame * 55) / 19;
+    int brightness = -100 + (frame * 100) / 19;
+    int center_x;
+    int center_y;
+    int tx1;
+    int ty1;
+    int tx2;
+    int ty2;
+    int tx3;
+    int ty3;
+
+    for (int y = 0; y < (int)height; y++) {
+      for (int x = 0; x < (int)width; x++)
+        draw_pixel(x, y, 0x000000);
+    }
+
+    gui_stage_point_to_screen(-200, -100, stage_x, stage_y, stage_scale,
+                              &tx1, &ty1);
+    gui_stage_point_to_screen(200, -200, stage_x, stage_y, stage_scale,
+                              &tx2, &ty2);
+    gui_stage_point_to_screen(200, 0, stage_x, stage_y, stage_scale,
+                              &tx3, &ty3);
+    gui_fill_triangle(tx1, ty1, tx2, ty2, tx3, ty3, gui_argb(235, 0x05070A));
+    gui_draw_line(tx1, ty1, tx2, ty2, 0x0B0D10);
+    gui_draw_line(tx2, ty2, tx3, ty3, 0x0B0D10);
+    gui_draw_line(tx3, ty3, tx1, ty1, 0x0B0D10);
+
+    gui_stage_point_to_screen(sprite_x, 0, stage_x, stage_y, stage_scale,
+                              &center_x, &center_y);
+    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
+                             logo_w, brightness, 0);
+
+    if (frame < 3) {
+      gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL,
+                               center_x + stage_scale * 3,
+                               center_y, logo_w, brightness + 8,
+                               24);
+    }
+
+    gui_wait_for_boot_splash(28);
+  }
+
+  {
+    int center_x;
+    int center_y;
+    int tx1;
+    int ty1;
+    int tx2;
+    int ty2;
+    int tx3;
+    int ty3;
+
+    for (int y = 0; y < (int)height; y++) {
+      for (int x = 0; x < (int)width; x++)
+        draw_pixel(x, y, 0x000000);
+    }
+
+    gui_stage_point_to_screen(-200, -100, stage_x, stage_y, stage_scale,
+                              &tx1, &ty1);
+    gui_stage_point_to_screen(200, -200, stage_x, stage_y, stage_scale,
+                              &tx2, &ty2);
+    gui_stage_point_to_screen(200, 0, stage_x, stage_y, stage_scale,
+                              &tx3, &ty3);
+    gui_fill_triangle(tx1, ty1, tx2, ty2, tx3, ty3, gui_argb(235, 0x05070A));
+    gui_draw_line(tx1, ty1, tx2, ty2, 0x0B0D10);
+    gui_draw_line(tx2, ty2, tx3, ty3, 0x0B0D10);
+    gui_draw_line(tx3, ty3, tx1, ty1, 0x0B0D10);
+
+    gui_stage_point_to_screen(0, 0, stage_x, stage_y, stage_scale, &center_x,
+                              &center_y);
+    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
+                             logo_w, 0, 40);
+    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL,
+                             center_x + stage_scale, center_y,
+                             logo_w + stage_scale * 6, 0, 64);
+    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
+                             logo_w, 0, 0);
+  }
+
+  gui_wait_for_boot_splash(180);
+
+  if (have_logo)
+    media_free_image(&boot_logo);
 }
 
 /* ===================================================================== */
@@ -15816,87 +15999,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   /* ============================================= */
 
   if (boot_should_show_splash()) {
-    /* Fill with a darker cinematic gradient for the new boot assets. */
-    for (int y = 0; y < (int)height; y++) {
-      int progress = (y * 256) / height;
-      uint8_t r = 6 + (progress * 10) / 256;
-      uint8_t g = 12 + (progress * 14) / 256;
-      uint8_t b = 22 + (progress * 38) / 256;
-      uint32_t color = (r << 16) | (g << 8) | b;
-      for (int x = 0; x < (int)width; x++) {
-        framebuffer[y * (pitch / 4) + x] = color;
-      }
-    }
-
-    /* Add a soft focal glow behind the logo. */
-    {
-      int cx = (int)width / 2;
-      int cy = (int)height / 2 - 56;
-      int radius = (width < 900 ? 92 : 128);
-      for (int py = cy - radius; py <= cy + radius; py++) {
-        for (int px = cx - radius; px <= cx + radius; px++) {
-          int dx = px - cx;
-          int dy = py - cy;
-          int dist2 = dx * dx + dy * dy;
-          if (dist2 < radius * radius) {
-            int alpha = 46 - (dist2 * 46) / (radius * radius);
-            if (alpha > 0)
-              draw_pixel_alpha(px, py, ((uint32_t)alpha << 24) | 0x183B66);
-          }
-        }
-      }
-    }
-
-    /* Draw the new boot logo asset look. */
-    {
-      media_image_t boot_logo = {0};
-      int decode_ret =
-          media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len, &boot_logo);
-      if (decode_ret == 0 && boot_logo.width && boot_logo.height) {
-        int logo_w = width < 900 ? 180 : 240;
-        int logo_h = (int)((logo_w * boot_logo.height) / boot_logo.width);
-        int logo_x = ((int)width - logo_w) / 2;
-        int logo_y = (int)height / 2 - logo_h - 8;
-        gui_draw_image_scaled(logo_x, logo_y, logo_w, logo_h, &boot_logo);
-        media_free_image(&boot_logo);
-      } else {
-        int fallback_x = (int)width / 2 - 28;
-        int fallback_y = (int)height / 2 - 62;
-        gui_draw_os_logo(fallback_x, fallback_y, width < 900 ? 4 : 5, 0xFFFFFF,
-                         0x89B4FA, 0x00000000);
-      }
-    }
-
-    /* Draw supporting copy and the new rounded progress bar treatment. */
-    {
-      const char *version = "v1.0 - New Boot Experience";
-      int ver_x = ((int)width - 28 * 8) / 2;
-      int ver_y = height / 2 + 26;
-      int bar_w = width < 900 ? 240 : 320;
-      int bar_h = 18;
-      int bar_x = (width - bar_w) / 2;
-      int bar_y = height / 2 + 58;
-      const char *loading_msgs[] = {"Initializing hardware...",
-                                    "Loading new boot assets...",
-                                    "Starting services...",
-                                    "Welcome to OS8!"};
-
-      gui_draw_string(ver_x, ver_y, version, 0xD1D5DB, 0x00000000);
-
-      for (int stage = 0; stage < 4; stage++) {
-        int fill = ((bar_w - 6) * (stage + 1)) / 4;
-        int msg_x = ((int)width - 31 * 8) / 2;
-        int msg_y = bar_y + 32;
-
-        gui_draw_boot_progress_asset(bar_x, bar_y, bar_w, bar_h, fill);
-        gui_draw_rect(msg_x - 12, msg_y - 2, 280, 20, 0x000000);
-        gui_draw_string(msg_x, msg_y, loading_msgs[stage], 0xE4E4E7,
-                        0x000000);
-      }
-    }
-
-    /* Keep the boot screen visible long enough to be seen consistently. */
-    gui_wait_for_boot_splash(5000);
+    gui_play_old_boot_sequence(width, height);
   }
 
   /* ============================================= */
