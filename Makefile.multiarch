@@ -23,6 +23,8 @@ USERSPACE_DIR := $(ROOT_DIR)/userspace
 RUNTIMES_DIR := $(ROOT_DIR)/runtimes
 IMAGE_DIR := $(ROOT_DIR)/image
 SYSROOT := $(BUILD_DIR)/sysroot
+SDK_DIR := $(BUILD_DIR)/sdk
+SDK_INCLUDE_DIR := $(SDK_DIR)/include
 
 # Detect host OS
 UNAME_S := $(shell uname -s)
@@ -194,7 +196,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel sdk image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -226,6 +228,7 @@ help:
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
+	@echo "  sdk      - Export application headers into build/sdk/include"
 	@echo "  qemu     - Run in QEMU emulator"
 	@echo "  qemu-bios - Run via legacy BIOS (x86/x86_64)"
 	@echo "  qemu-uefi - Run via UEFI (arm64/x86_64)"
@@ -311,6 +314,15 @@ assets: $(BUILD_DIR)
 	else \
 		echo "[ASSETS] No bootstrap wallpaper source directory found"; \
 	fi
+
+sdk: $(BUILD_DIR)
+	@echo "[SDK] Exporting application headers..."
+	@rm -rf $(SDK_INCLUDE_DIR)
+	@mkdir -p $(SDK_INCLUDE_DIR)/shared-api
+	@mkdir -p $(SDK_INCLUDE_DIR)/userspace/lib
+	@cp $(ROOT_DIR)/shared-api/*.h $(SDK_INCLUDE_DIR)/shared-api/
+	@cp $(ROOT_DIR)/userspace/lib/*.h $(SDK_INCLUDE_DIR)/userspace/lib/
+	@cp $(ROOT_DIR)/userspace/linker.ld $(SDK_DIR)/linker.ld
 
 # ============================================================================
 # Kernel Build

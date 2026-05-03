@@ -17,6 +17,7 @@ Shared contracts used by multiple components.
 - Syscall and ABI headers
 - Kernel/userspace interface types
 - Common protocol definitions
+- Application SDK headers and build-exported public interfaces
 - Any header that must remain versioned independently
 
 ### 2. `kernel-core`

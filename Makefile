@@ -21,6 +21,8 @@ USERSPACE_DIR := $(ROOT_DIR)/userspace
 RUNTIMES_DIR := $(ROOT_DIR)/runtimes
 IMAGE_DIR := $(ROOT_DIR)/image
 SYSROOT := $(BUILD_DIR)/sysroot
+SDK_DIR := $(BUILD_DIR)/sdk
+SDK_INCLUDE_DIR := $(SDK_DIR)/include
 
 # Detect OS
 UNAME_S := $(shell uname -s)
@@ -98,7 +100,7 @@ QEMU_FLAGS := -M $(QEMU_MACHINE) -cpu $(QEMU_CPU) -m $(QEMU_MEMORY) \
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel drivers libc userspace runtimes image qemu qemu-debug test help \
+.PHONY: all clean kernel drivers libc userspace sdk runtimes image qemu qemu-debug test help \
         x86_64 x86_64-kernel x86_64-image x86_64-qemu x86_64-qemu-bios x86_64-qemu-uefi x86_64-qemu-debug
 
 MULTIARCH_MAKEFILE := Makefile.multiarch
@@ -121,6 +123,7 @@ help:
 	@echo "  drivers      - Build device drivers"
 	@echo "  libc         - Build C library"
 	@echo "  userspace    - Build userspace programs"
+	@echo "  sdk          - Export application headers"
 	@echo "  runtimes     - Build Python and Node.js"
 	@echo "  image        - Create bootable disk image"
 	@echo ""
@@ -244,7 +247,16 @@ libc: $(BUILD_DIR)
 # Userspace Build
 # ============================================================================
 
-userspace: $(BUILD_DIR) libc
+sdk: $(BUILD_DIR)
+	@echo "[SDK] Exporting application headers..."
+	@rm -rf $(SDK_INCLUDE_DIR)
+	@mkdir -p $(SDK_INCLUDE_DIR)/shared-api
+	@mkdir -p $(SDK_INCLUDE_DIR)/userspace/lib
+	@cp $(ROOT_DIR)/shared-api/*.h $(SDK_INCLUDE_DIR)/shared-api/
+	@cp $(ROOT_DIR)/userspace/lib/*.h $(SDK_INCLUDE_DIR)/userspace/lib/
+	@cp $(ROOT_DIR)/userspace/linker.ld $(SDK_DIR)/linker.ld
+
+userspace: $(BUILD_DIR) libc sdk
 	@echo "[USERSPACE] Building userspace programs..."
 	@if [ -f $(USERSPACE_DIR)/Makefile ]; then \
 		$(MAKE) -C $(USERSPACE_DIR) SYSROOT=$(SYSROOT); \

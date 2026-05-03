@@ -63,6 +63,7 @@ Makefile.multiarch    Main build entry point
 Repo hygiene notes:
 
 - generated output belongs under `build/` and `image/`
+- exported app SDK headers are staged under `build/sdk/include/`
 - helper launchers live under `scripts/`
 - standalone docs belong under `docs/`
 - ad-hoc patch files belong under `fixes/`
@@ -91,6 +92,7 @@ Common targets:
 
 - `all` builds the kernel and boot image
 - `kernel` builds only the kernel
+- `sdk` exports app-facing headers under `build/sdk/include/`
 - `image` builds the bootable image or ISO
 - `installer-image` builds the x86_64 installer ISO
 - `qemu` runs the default emulator flow
