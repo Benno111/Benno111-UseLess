@@ -53,8 +53,8 @@ jobs:
           set -euxo pipefail
           ls -lh image/os8-x86_64.iso
           file image/os8-x86_64.iso
-          ls -lh image/os8-x86_64-installer.iso
-          file image/os8-x86_64-installer.iso
+          ##ls -lh image/os8-x86_64-installer.iso
+          ##file image/os8-x86_64-installer.iso
 
       - name: Generate release notes
         run: |
