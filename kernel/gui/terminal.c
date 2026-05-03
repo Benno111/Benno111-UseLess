@@ -1255,7 +1255,7 @@ void term_execute_command(struct terminal *term, const char *cmd) {
     term_puts(term, "\033[33mNanoLang Compiler\033[0m\n");
     term_puts(term, "To compile NanoLang programs, run from host:\n");
     term_puts(term, "  cd vendor/nanolang\n");
-    term_puts(term, "  ./bin/nanoc ../../examples/hello.nano -o hello\n");
+    term_puts(term, "  ./bin/nanoc ../../userspace/examples/hello.nano -o hello\n");
     term_puts(term, "  ./hello\n");
   } else if (str_starts_with(cmd, "python ")) {
     term_puts(term, "\033[33mMicroPython\033[0m\n");

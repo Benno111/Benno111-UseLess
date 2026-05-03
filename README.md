@@ -47,6 +47,7 @@ The live environment is still largely RAMFS-based. The installer writes a staged
 ```text
 assets/               Shared art, wallpapers, and branding assets
 boot/                 Boot configs and bootloader-related assets
+shared-api/           Versioned headers shared across repo boundaries
 docs/                 Build notes and supporting documentation
 drivers/              Shared driver code
 fixes/                Patch snapshots and one-off fix bundles
@@ -54,7 +55,7 @@ kernel/               Core kernel, arch code, GUI, FS, media, apps
 libc/                 C library work
 runtimes/             Runtime/toolchain experiments
 scripts/              Image creation and helper scripts
-userspace/            Userspace programs and binaries used by seeding/builds
+userspace/            Userspace programs, support headers, and examples
 os-x86_64/            Limine config and x86_64 boot assets
 Makefile.multiarch    Main build entry point
 ```

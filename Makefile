@@ -73,6 +73,7 @@ CFLAGS_COMMON := -Wall -Wextra -Wno-unused-function -ffreestanding -fstack-prote
 
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) \
                  -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(ROOT_DIR) \
+                 -I$(ROOT_DIR)/shared-api \
                  -mgeneral-regs-only \
                  -fno-builtin -nostdlib -nostdinc \
                  -DARCH_ARM64

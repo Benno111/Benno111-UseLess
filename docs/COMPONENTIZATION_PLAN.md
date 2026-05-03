@@ -65,7 +65,8 @@ Userspace programs and support code.
 - `userspace/init`
 - `userspace/login`
 - `userspace/shell`
-- `user/lib`
+- `userspace/lib`
+- `userspace/examples`
 - application packaging and seed content
 
 ### 6. `boot-platform`

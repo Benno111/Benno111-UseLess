@@ -1,7 +1,7 @@
 /*
  * OS8 Kernel API for Userspace Applications
  * 
- * IMPORTANT: This structure MUST match user/lib/vibe.h exactly!
+ * IMPORTANT: This structure MUST match userspace/lib/vibe.h exactly!
  * Userspace programs depend on the exact field layout.
  */
 
@@ -10,7 +10,7 @@
 
 #include "types.h"
 
-/* Kernel API structure - must match vibe.h layout! */
+/* Kernel API structure - must match userspace/lib/vibe.h layout! */
 typedef struct kapi {
     uint32_t version;
 

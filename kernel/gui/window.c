@@ -19,7 +19,7 @@
 #include "mm/kmalloc.h"
 #include "mm/pmm.h"
 #include "printk.h"
-#include "../../shared/password_hash.h"
+#include "password_hash.h"
 #include "toolbar_icons.h" /* Toolbar icons for image viewer */
 #include "types.h"
 

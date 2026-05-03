@@ -6,6 +6,8 @@ CFLAGS = -target aarch64-unknown-none-elf \
          -nostdlib -nostdinc \
          -I../build/sysroot/usr/include \
          -I../libc/include \
+         -I../shared-api \
+         -Ilib \
          -O2 -Wall -Wextra
 
 LD = ld.lld

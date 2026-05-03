@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "../../shared/password_hash.h"
+#include "password_hash.h"
 
 #define ACCOUNT_CONFIG_PATH "/System/account.cfg"
 #define ACCOUNTS_DIR "/System/Accounts"
@@ -277,7 +277,7 @@ int main(int argc, char *argv[]) {
       execve(cred.shell, shell_argv, envp);
 
       printf("Failed to execute shell: %s\n", cred.shell);
-      exit(1);
+      _exit(1);
     }
 
     printf("\nLogin incorrect\n\n");

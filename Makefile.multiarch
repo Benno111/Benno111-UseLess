@@ -107,6 +107,7 @@ DEPFLAGS := -MMD -MP
 CFLAGS_KERNEL := $(CFLAGS_COMMON) $(CROSS_TARGET) $(ARCH_CFLAGS) \
                  -I$(KERNEL_DIR)/include -I$(KERNEL_DIR) -I$(GENERATED_DIR) \
                  -I$(ROOT_DIR) \
+                 -I$(ROOT_DIR)/shared-api \
                  -fno-builtin -nostdlib -nostdinc \
                  -DARCH_$(shell echo $(ARCH) | tr a-z A-Z | tr - _)
 
