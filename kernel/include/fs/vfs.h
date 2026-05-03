@@ -241,6 +241,7 @@ struct file {
 
 struct super_block {
     dev_t s_dev;
+    int s_disk_index;
     uint32_t s_blocksize;
     uint32_t s_blocksize_bits;
     loff_t s_maxbytes;

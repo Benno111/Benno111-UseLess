@@ -4,6 +4,7 @@
 
 #include "fs/vfs.h"
 #include "fs/fat32.h"
+#include "drivers/storage.h"
 #include "printk.h"
 
 extern int ramfs_truncate_file(void *inode_private);
@@ -97,6 +98,12 @@ static struct vfsmount *find_mount_by_target(const char *target) {
       return mounts[i];
   }
   return NULL;
+}
+
+static int resolve_disk_index(const char *source) {
+  if (!source || source[0] == '\0')
+    return -1;
+  return storage_get_disk_index_by_location(source);
 }
 
 /* ===================================================================== */
@@ -729,6 +736,10 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
   struct super_block *sb = fs->mount(fs, flags, source, (void *)data);
   if (!sb) {
     return -EIO;
+  }
+
+  if (sb->s_disk_index < 0) {
+    sb->s_disk_index = resolve_disk_index(source);
   }
 
   /* Create mount structure */

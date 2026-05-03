@@ -541,6 +541,7 @@ static struct super_block *ramfs_mount(struct file_system_type *fs_type,
   static struct super_block sb;
   sb.s_blocksize = RAMFS_BLOCK_SIZE;
   sb.s_type = fs_type;
+  sb.s_disk_index = -1;
   sb.s_fs_info = &ramfs_sb;
 
   /* Create VFS root inode */

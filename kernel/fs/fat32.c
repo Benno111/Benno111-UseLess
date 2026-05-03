@@ -2,6 +2,7 @@
  * OS8 - FAT32 Filesystem Implementation
  */
 
+#include "drivers/storage.h"
 #include "fs/fat32.h"
 #include "fs/vfs.h"
 #include "mm/kmalloc.h"
@@ -99,6 +100,7 @@ static struct super_block *fat32_mount(struct file_system_type *fs_type,
     return NULL;
   }
   sb->s_fs_info = sbi;
+  sb->s_disk_index = storage_get_disk_index_by_location(dev_name);
 
   // Read Boot Sector (Sector 0)
   struct fat32_bpb *bpb = kzalloc(512, GFP_KERNEL);
