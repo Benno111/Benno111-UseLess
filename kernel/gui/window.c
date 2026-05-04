@@ -46,6 +46,7 @@ static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color);
 static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride);
+static uint32_t gui_contrast_title_color(uint32_t rgb);
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color);
 static void draw_filled_circle(int cx, int cy, int r, uint32_t color);
