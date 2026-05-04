@@ -14068,12 +14068,34 @@ static void blit_region(int x, int y, int w, int h) {
   }
 }
 
+static void gui_draw_scene_layers(void) {
+  draw_desktop();
+
+  /* Draw windows from bottom to top (reverse order) */
+  struct window *draw_order[MAX_WINDOWS];
+  int count = 0;
+  for (struct window *win = window_stack; win && count < MAX_WINDOWS;
+       win = win->next) {
+    draw_order[count++] = win;
+  }
+
+  for (int i = count - 1; i >= 0; i--) {
+    draw_window(draw_order[i]);
+  }
+
+  draw_menu_bar();
+  if (dock_is_visible())
+    draw_dock();
+
+  draw_window_switcher_overlay();
+  draw_secure_attention_overlay();
+}
+
 /* Forward declaration for cursor */
 void gui_draw_cursor(void);
 
 void gui_compose(void) {
   struct gui_clip_state prev_clip = g_clip;
-  int clip_active = 0;
   int draw_x;
   int draw_y;
   int draw_w;
@@ -14113,43 +14135,33 @@ void gui_compose(void) {
   if (!g_full_redraw && g_dirty_count == 0)
     return;
 
-  if (!g_full_redraw && g_dirty_count > 0 &&
-      compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w, &draw_h)) {
+  if (g_full_redraw) {
+    gui_draw_scene_layers();
+  } else if (g_dirty_count > 1 &&
+             !compositor_build_coalesced_dirty_rect(&draw_x, &draw_y, &draw_w,
+                                                    &draw_h)) {
+    for (int d = 0; d < g_dirty_count; d++) {
+      if (!g_dirty_regions[d].valid || g_dirty_regions[d].w <= 0 ||
+          g_dirty_regions[d].h <= 0)
+        continue;
+      prev_clip = gui_set_clip_rect(g_dirty_regions[d].x, g_dirty_regions[d].y,
+                                    g_dirty_regions[d].w,
+                                    g_dirty_regions[d].h);
+      gui_draw_scene_layers();
+      gui_restore_clip_rect(prev_clip);
+    }
+  } else if (compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w,
+                                           &draw_h)) {
     prev_clip = gui_set_clip_rect(draw_x, draw_y, draw_w, draw_h);
-    clip_active = 1;
+    gui_draw_scene_layers();
+    gui_restore_clip_rect(prev_clip);
   }
-
-  /* Draw desktop and taskbar */
-  draw_desktop();
-
-  /* Draw windows from bottom to top (reverse order) */
-  struct window *draw_order[MAX_WINDOWS];
-  int count = 0;
-  for (struct window *win = window_stack; win && count < MAX_WINDOWS;
-       win = win->next) {
-    draw_order[count++] = win;
-  }
-
-  /* Draw in reverse (bottom to top) */
-  for (int i = count - 1; i >= 0; i--) {
-    draw_window(draw_order[i]);
-  }
-
-  draw_menu_bar();
-  if (dock_is_visible())
-    draw_dock();
-
-  draw_window_switcher_overlay();
-  draw_secure_attention_overlay();
 
   if (window_switcher_frames > 0)
     window_switcher_frames--;
 
   /* Draw cursor to backbuffer BEFORE blit */
   gui_draw_cursor();
-
-  if (clip_active)
-    gui_restore_clip_rect(prev_clip);
 
   /* Smart frame buffer update */
   if (primary_display.backbuffer && primary_display.framebuffer) {
