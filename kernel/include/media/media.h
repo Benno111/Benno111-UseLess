@@ -33,4 +33,7 @@ void media_free_audio(media_audio_t *audio);
 int media_decode_png(const uint8_t *data, size_t size, media_image_t *out);
 int media_decode_svg(const uint8_t *data, size_t size, media_image_t *out);
 
+int boot_splash_prepare(void);
+const media_image_t *boot_splash_get_logo(void);
+
 #endif /* _KERNEL_MEDIA_H */

@@ -5,6 +5,7 @@
  */
 
 #include "types.h"
+#include "media/media.h"
 #include "printk.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
@@ -73,6 +74,21 @@ static struct {
 } framebuffer = {0};
 
 extern int boot_should_show_splash(void);
+
+static uint32_t fb_blend_rgb(uint32_t dst, uint32_t src, uint8_t alpha) {
+    uint32_t inv = 255 - (uint32_t)alpha;
+    uint32_t dr = (dst >> 16) & 0xFF;
+    uint32_t dg = (dst >> 8) & 0xFF;
+    uint32_t db = dst & 0xFF;
+    uint32_t sr = (src >> 16) & 0xFF;
+    uint32_t sg = (src >> 8) & 0xFF;
+    uint32_t sb = src & 0xFF;
+
+    uint32_t r = (sr * alpha + dr * inv + 127) / 255;
+    uint32_t g = (sg * alpha + dg * inv + 127) / 255;
+    uint32_t b = (sb * alpha + db * inv + 127) / 255;
+    return (r << 16) | (g << 8) | b;
+}
 
 /* ===================================================================== */
 /* Framebuffer Operations */
@@ -148,28 +164,97 @@ void fb_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg)
     }
 }
 
+static void fb_draw_image_scaled(int x, int y, int w, int h,
+                                 const media_image_t *image) {
+    uint32_t stride;
+
+    if (!image || !image->pixels || image->width == 0 || image->height == 0 ||
+        w <= 0 || h <= 0)
+        return;
+
+    stride = framebuffer.pitch ? (framebuffer.pitch / 4) : framebuffer.width;
+    if (!stride)
+        stride = framebuffer.width;
+
+    for (int dy = 0; dy < h; dy++) {
+        uint32_t src_y = ((uint32_t)dy * image->height) / (uint32_t)h;
+        int py = y + dy;
+
+        if (py < 0 || py >= (int)framebuffer.height)
+            continue;
+
+        for (int dx = 0; dx < w; dx++) {
+            uint32_t src_x = ((uint32_t)dx * image->width) / (uint32_t)w;
+            uint32_t src = image->pixels[src_y * image->width + src_x];
+            int px = x + dx;
+            uint32_t *dst;
+
+            if (px < 0 || px >= (int)framebuffer.width)
+                continue;
+
+            dst = &framebuffer.buffer[py * stride + px];
+            if ((src >> 24) == 0xFF) {
+                *dst = src & 0x00FFFFFF;
+            } else if ((src >> 24) != 0x00) {
+                *dst = fb_blend_rgb(*dst, src & 0x00FFFFFF,
+                                    (uint8_t)(src >> 24));
+            }
+        }
+    }
+}
+
 /* ===================================================================== */
 /* Boot Splash Screen */
 /* ===================================================================== */
 
 void fb_show_splash(void)
 {
+    const media_image_t *logo;
+
     if (!framebuffer.initialized) return;
     
     /* Dark blue background */
     fb_clear(0x1E1E2E);
-    
-    /* Draw logo area */
-    int cx = framebuffer.width / 2;
-    int cy = framebuffer.height / 2 - 50;
-    
-    /* Simple "OS8" text */
-    fb_fill_rect(cx - 60, cy - 30, 120, 60, 0x89B4FA);  /* Blue box */
-    fb_draw_string(cx - 28, cy - 4, "OS8", 0xFFFFFF, 0x89B4FA);
-    
-    /* Boot message */
-    fb_draw_string(cx - 60, cy + 50, "ARM64 Operating System", 0xCDD6F4, 0x1E1E2E);
-    fb_draw_string(cx - 40, cy + 70, "Booting...", 0x808080, 0x1E1E2E);
+
+    logo = boot_splash_get_logo();
+    if (logo && logo->width && logo->height) {
+        uint32_t max_w = framebuffer.width * 2 / 5;
+        uint32_t max_h = framebuffer.height / 3;
+        uint32_t draw_w = max_w;
+        uint32_t draw_h = (logo->height * draw_w) / logo->width;
+        int text_x;
+        int text_y;
+
+        if (draw_h > max_h) {
+            draw_h = max_h;
+            draw_w = (logo->width * draw_h) / logo->height;
+        }
+        if (!draw_w)
+            draw_w = logo->width;
+        if (!draw_h)
+            draw_h = logo->height;
+
+        fb_draw_image_scaled((int)(framebuffer.width - draw_w) / 2,
+                             (int)(framebuffer.height - draw_h) / 2 - 10,
+                             (int)draw_w, (int)draw_h, logo);
+        text_x = ((int)framebuffer.width - 80) / 2;
+        text_y = ((int)framebuffer.height + (int)draw_h) / 2 + 18;
+        fb_draw_string(text_x, text_y,
+                       "Booting...", 0xCDD6F4, 0x1E1E2E);
+        return;
+    }
+
+    /* Fallback if the PNG cache is not ready yet. */
+    {
+        int cx = framebuffer.width / 2;
+        int cy = framebuffer.height / 2 - 50;
+
+        fb_fill_rect(cx - 60, cy - 30, 120, 60, 0x89B4FA);
+        fb_draw_string(cx - 28, cy - 4, "OS8", 0xFFFFFF, 0x89B4FA);
+        fb_draw_string(cx - 60, cy + 50, "ARM64 Operating System", 0xCDD6F4,
+                       0x1E1E2E);
+        fb_draw_string(cx - 40, cy + 70, "Booting...", 0x808080, 0x1E1E2E);
+    }
 }
 
 void fb_show_x86_64_bringup_screen(void)
@@ -226,6 +311,7 @@ int fb_init(void)
         printk(KERN_INFO "FB: Using Limine framebuffer %ux%u at 0x%lx\n",
                framebuffer.width, framebuffer.height,
                (unsigned long)framebuffer.buffer);
+        boot_splash_prepare();
         if (boot_should_show_splash()) {
             fb_show_splash();
         }
@@ -249,6 +335,7 @@ int fb_init(void)
     
     /* Clear to dark blue */
     fb_clear(0x1E1E2E);
+    boot_splash_prepare();
     
     /* Configure QEMU ramfb to display our framebuffer */
 #ifndef ARCH_X86_64

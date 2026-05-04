@@ -2353,26 +2353,16 @@ static void gui_draw_image_scaled(int x, int y, int w, int h,
 }
 
 static int gui_draw_embedded_logo(int x, int y, int w, int h) {
-  static media_image_t embedded_logo = {0};
-  static int embedded_logo_state = 0;
+  const media_image_t *embedded_logo;
 
   if (w <= 0 || h <= 0)
     return -1;
 
-  if (embedded_logo_state == 0) {
-    if (media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len,
-                         &embedded_logo) == 0 &&
-        embedded_logo.width && embedded_logo.height) {
-      embedded_logo_state = 1;
-    } else {
-      embedded_logo_state = -1;
-    }
-  }
-
-  if (embedded_logo_state != 1 || !embedded_logo.pixels)
+  embedded_logo = boot_splash_get_logo();
+  if (!embedded_logo || !embedded_logo->pixels)
     return -1;
 
-  gui_draw_image_scaled(x, y, w, h, &embedded_logo);
+  gui_draw_image_scaled(x, y, w, h, embedded_logo);
   return 0;
 }
 
@@ -2503,19 +2493,13 @@ static void gui_draw_boot_logo_stamp(const media_image_t *logo, int center_x,
 }
 
 static void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
-  media_image_t boot_logo = {0};
-  int have_logo = 0;
+  const media_image_t *boot_logo = boot_splash_get_logo();
   int stage_scale;
   int stage_w;
   int stage_h;
   int stage_x;
   int stage_y;
   int logo_w;
-
-  if (media_decode_png(bootstrap_logo_png, bootstrap_logo_png_len, &boot_logo) == 0 &&
-      boot_logo.width && boot_logo.height) {
-    have_logo = 1;
-  }
 
   stage_scale = (int)(width / 480);
   if ((int)(height / 360) < stage_scale)
@@ -2562,14 +2546,12 @@ static void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
 
     gui_stage_point_to_screen(sprite_x, 0, stage_x, stage_y, stage_scale,
                               &center_x, &center_y);
-    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
-                             logo_w, brightness, 0);
+    gui_draw_boot_logo_stamp(boot_logo, center_x, center_y, logo_w, brightness,
+                             0);
 
     if (frame < 3) {
-      gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL,
-                               center_x + stage_scale * 3,
-                               center_y, logo_w, brightness + 8,
-                               24);
+      gui_draw_boot_logo_stamp(boot_logo, center_x + stage_scale * 3,
+                               center_y, logo_w, brightness + 8, 24);
     }
 
     gui_wait_for_boot_splash(28);
@@ -2603,19 +2585,13 @@ static void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
 
     gui_stage_point_to_screen(0, 0, stage_x, stage_y, stage_scale, &center_x,
                               &center_y);
-    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
-                             logo_w, 0, 40);
-    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL,
-                             center_x + stage_scale, center_y,
+    gui_draw_boot_logo_stamp(boot_logo, center_x, center_y, logo_w, 0, 40);
+    gui_draw_boot_logo_stamp(boot_logo, center_x + stage_scale, center_y,
                              logo_w + stage_scale * 6, 0, 64);
-    gui_draw_boot_logo_stamp(have_logo ? &boot_logo : NULL, center_x, center_y,
-                             logo_w, 0, 0);
+    gui_draw_boot_logo_stamp(boot_logo, center_x, center_y, logo_w, 0, 0);
   }
 
   gui_wait_for_boot_splash(180);
-
-  if (have_logo)
-    media_free_image(&boot_logo);
 }
 
 /* ===================================================================== */
