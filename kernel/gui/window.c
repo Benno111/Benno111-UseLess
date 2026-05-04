@@ -9931,12 +9931,17 @@ static void draw_window(struct window *win) {
     int title_x = x + (w - title_len * 8) / 2;
     int title_y = y + BORDER_WIDTH + 7;
     uint32_t title_glow_rgb = theme->title_glow & 0x00FFFFFF;
-    uint32_t title_glow = gui_argb(win->focused ? 0x14 : 0x0A, title_glow_rgb);
+    uint32_t title_glow_soft = gui_argb(win->focused ? 0x20 : 0x14, title_glow_rgb);
+    uint32_t title_glow_core = gui_argb(win->focused ? 0x2E : 0x1E, title_glow_rgb);
     uint32_t title_fg = gui_contrast_title_color(title_glow_rgb);
-    gui_draw_string(title_x - 1, title_y, win->title, title_glow, 0x00000000);
-    gui_draw_string(title_x + 1, title_y, win->title, title_glow, 0x00000000);
-    gui_draw_string(title_x, title_y - 1, win->title, title_glow, 0x00000000);
-    gui_draw_string(title_x, title_y + 1, win->title, title_glow, 0x00000000);
+    gui_draw_string(title_x - 2, title_y, win->title, title_glow_soft, 0x00000000);
+    gui_draw_string(title_x + 2, title_y, win->title, title_glow_soft, 0x00000000);
+    gui_draw_string(title_x, title_y - 2, win->title, title_glow_soft, 0x00000000);
+    gui_draw_string(title_x, title_y + 2, win->title, title_glow_soft, 0x00000000);
+    gui_draw_string(title_x - 1, title_y - 1, win->title, title_glow_core, 0x00000000);
+    gui_draw_string(title_x + 1, title_y - 1, win->title, title_glow_core, 0x00000000);
+    gui_draw_string(title_x - 1, title_y + 1, win->title, title_glow_core, 0x00000000);
+    gui_draw_string(title_x + 1, title_y + 1, win->title, title_glow_core, 0x00000000);
     gui_draw_string(title_x, title_y, win->title, title_fg, 0x00000000);
   }
 
