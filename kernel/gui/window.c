@@ -2935,9 +2935,6 @@ static int gui_has_active_animation(void) {
 
   if (window_switcher_frames > 0)
     return 1;
-  if (main_menu_power_row_y_anim >= 0 &&
-      main_menu_power_row_y_anim != main_menu_power_row_y())
-    return 1;
 
   while (win) {
     if (win->animation != WINDOW_ANIM_NONE)
