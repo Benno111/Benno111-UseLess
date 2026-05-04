@@ -88,7 +88,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: os CI Draft
           body_path: release_notes.md
-          draft: true
+          draft: False ##Auto-draft is not working, so we set it to false and update the release with the files
           prerelease: true
           files: |
             image/os8-x86_64.iso
