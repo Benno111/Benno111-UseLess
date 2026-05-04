@@ -43,7 +43,7 @@ This creates `uefi-demo.iso`.
 
 ### First build notes
 
-First build downloads Limine 8.6.0 (~2MB). Takes a minute.
+First build uses the vendored OS-BOOT-MANAGER v12.x binaries (~2MB). Takes a minute.
 
 ## Running
 
