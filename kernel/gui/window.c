@@ -14129,19 +14129,6 @@ void gui_compose(void) {
 
   if (g_full_redraw) {
     gui_draw_scene_layers();
-  } else if (g_dirty_count > 1 &&
-             !compositor_build_coalesced_dirty_rect(&draw_x, &draw_y, &draw_w,
-                                                    &draw_h)) {
-    for (int d = 0; d < g_dirty_count; d++) {
-      if (!g_dirty_regions[d].valid || g_dirty_regions[d].w <= 0 ||
-          g_dirty_regions[d].h <= 0)
-        continue;
-      prev_clip = gui_set_clip_rect(g_dirty_regions[d].x, g_dirty_regions[d].y,
-                                    g_dirty_regions[d].w,
-                                    g_dirty_regions[d].h);
-      gui_draw_scene_layers();
-      gui_restore_clip_rect(prev_clip);
-    }
   } else if (compositor_build_dirty_bounds(&draw_x, &draw_y, &draw_w,
                                            &draw_h)) {
     prev_clip = gui_set_clip_rect(draw_x, draw_y, draw_w, draw_h);
@@ -14166,22 +14153,7 @@ void gui_compose(void) {
       g_full_redraw = 0;
     } else {
       /* Partial update - only copy dirty regions */
-      int merged_x;
-      int merged_y;
-      int merged_w;
-      int merged_h;
-
-      if (compositor_build_coalesced_dirty_rect(&merged_x, &merged_y, &merged_w,
-                                                &merged_h)) {
-        blit_region(merged_x, merged_y, merged_w, merged_h);
-      } else {
-        for (int d = 0; d < g_dirty_count; d++) {
-          if (g_dirty_regions[d].valid) {
-            blit_region(g_dirty_regions[d].x, g_dirty_regions[d].y,
-                        g_dirty_regions[d].w, g_dirty_regions[d].h);
-          }
-        }
-      }
+      blit_region(draw_x, draw_y, draw_w, draw_h);
     }
 
     /* Memory barrier */
