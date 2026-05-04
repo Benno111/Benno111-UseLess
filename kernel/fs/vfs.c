@@ -5,6 +5,7 @@
 #include "fs/vfs.h"
 #include "fs/fat32.h"
 #include "drivers/storage.h"
+#include "mm/kmalloc.h"
 #include "printk.h"
 
 extern int ramfs_truncate_file(void *inode_private);
@@ -19,6 +20,8 @@ static struct file_system_type *file_systems = NULL;
 /* Mount points */
 static struct vfsmount *mounts[MAX_MOUNTS];
 static int mount_count = 0;
+static struct vfsmount mount_pool[MAX_MOUNTS];
+static int mount_slot_used[MAX_MOUNTS];
 
 /* Root filesystem */
 static struct vfsmount *root_mount = NULL;
@@ -90,10 +93,20 @@ static void path_copy(char *dst, const char *src, int max) {
   dst[i] = '\0';
 }
 
+static void vfs_free_dentry_chain(struct dentry *dentry) {
+  while (dentry && dentry != root_dentry) {
+    struct dentry *parent = dentry->d_parent;
+    kfree(dentry);
+    if (!parent || parent == dentry)
+      break;
+    dentry = parent;
+  }
+}
+
 static struct vfsmount *find_mount_by_target(const char *target) {
   if (!target)
     return NULL;
-  for (int i = 0; i < mount_count; i++) {
+  for (int i = 0; i < MAX_MOUNTS; i++) {
     if (mounts[i] && path_compare(mounts[i]->mnt_target, target) == 0)
       return mounts[i];
   }
@@ -116,6 +129,7 @@ void vfs_init(void) {
   /* Clear mount table */
   for (int i = 0; i < MAX_MOUNTS; i++) {
     mounts[i] = NULL;
+    mount_slot_used[i] = 0;
   }
 
   /* Register built-in filesystems */
@@ -151,12 +165,6 @@ int register_filesystem(struct file_system_type *fs) {
 
   return 0;
 }
-
-/* ===================================================================== */
-/* File operations */
-/* ===================================================================== */
-
-#include "mm/kmalloc.h"
 
 /* ===================================================================== */
 /* Path lookup */
@@ -209,6 +217,7 @@ static struct dentry *vfs_lookup_path(const char *path, const char **filename) {
     /* Lookup child */
     if (!curr->d_inode || !curr->d_inode->i_op ||
         !curr->d_inode->i_op->lookup) {
+      vfs_free_dentry_chain(curr);
       return NULL;
     }
 
@@ -227,8 +236,10 @@ static struct dentry *vfs_lookup_path(const char *path, const char **filename) {
 
     /* Allocate a dentry to be safe/consistent */
     struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-    if (!child)
+    if (!child) {
+      vfs_free_dentry_chain(curr);
       return NULL;
+    }
 
     for (int i = 0; i <= len; i++)
       child->d_name[i] = buf[i];
@@ -243,7 +254,7 @@ static struct dentry *vfs_lookup_path(const char *path, const char **filename) {
 
     if (!child->d_inode) {
       /* Not found */
-      kfree(child);
+      vfs_free_dentry_chain(child);
       return NULL;
     }
 
@@ -297,12 +308,15 @@ static struct dentry *vfs_lookup_parent(const char *path, char *name_buf) {
     /* Traverse down */
     if (!curr->d_inode || !curr->d_inode->i_op ||
         !curr->d_inode->i_op->lookup) {
+      vfs_free_dentry_chain(curr);
       return NULL;
     }
 
     struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-    if (!child)
+    if (!child) {
+      vfs_free_dentry_chain(curr);
       return NULL;
+    }
 
     for (int i = 0; i <= len; i++)
       child->d_name[i] = buf[i];
@@ -311,7 +325,7 @@ static struct dentry *vfs_lookup_parent(const char *path, char *name_buf) {
     curr->d_inode->i_op->lookup(curr->d_inode, child);
 
     if (!child->d_inode) {
-      kfree(child);
+      vfs_free_dentry_chain(child);
       return NULL;
     }
     curr = child;
@@ -369,11 +383,16 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
 
   /* Now look for the file in parent */
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-  if (!child)
+  if (!child) {
+    if (parent && parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return NULL;
+  }
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
   if (name[0] == '\0') {
+    if (parent && parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     kfree(child);
     return NULL;
   }
@@ -392,22 +411,24 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
       if (parent->d_inode->i_op && parent->d_inode->i_op->create) {
         int ret = parent->d_inode->i_op->create(parent->d_inode, child, mode);
         if (ret != 0) {
-          kfree(child);
+          vfs_free_dentry_chain(child);
           return NULL;
         }
       } else {
-        kfree(child);
+        vfs_free_dentry_chain(child);
         return NULL;
       }
     } else {
-      kfree(child);
+      vfs_free_dentry_chain(child);
       return NULL;
     }
   }
 
   struct file *f = kzalloc(sizeof(struct file), GFP_KERNEL);
-  if (!f)
+  if (!f) {
+    vfs_free_dentry_chain(child);
     return NULL;
+  }
 
   f->f_dentry = child;
   f->f_op = child->d_inode->i_fop;
@@ -433,6 +454,11 @@ struct file *vfs_open(const char *path, int flags, mode_t mode) {
     }
   }
 
+  if (parent && parent != root_dentry) {
+    child->d_parent = root_dentry;
+    vfs_free_dentry_chain(parent);
+  }
+
   return f;
 }
 
@@ -441,25 +467,30 @@ int vfs_create(const char *path, mode_t mode) {
   struct dentry *parent = vfs_lookup_parent(path, name);
   if (!parent)
     return -ENOENT;
-  if (name[0] == '\0')
+  if (name[0] == '\0') {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -EINVAL;
+  }
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-  if (!child)
+  if (!child) {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -ENOMEM;
+  }
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
   child->d_parent = parent;
   child->d_sb = parent->d_sb;
 
   if (!parent->d_inode || !parent->d_inode->i_op || !parent->d_inode->i_op->create) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -EPERM;
   }
 
   int ret = parent->d_inode->i_op->create(parent->d_inode, child, mode);
-  if (ret != 0)
-    kfree(child);
+  vfs_free_dentry_chain(child);
   return ret;
 }
 
@@ -468,25 +499,30 @@ int vfs_mkdir(const char *path, mode_t mode) {
   struct dentry *parent = vfs_lookup_parent(path, name);
   if (!parent)
     return -ENOENT;
-  if (name[0] == '\0')
+  if (name[0] == '\0') {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -EINVAL;
+  }
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-  if (!child)
+  if (!child) {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -ENOMEM;
+  }
   for (int i = 0; i < NAME_MAX && name[i]; i++)
     child->d_name[i] = name[i];
   child->d_parent = parent;
   child->d_sb = parent->d_sb;
 
   if (!parent->d_inode || !parent->d_inode->i_op || !parent->d_inode->i_op->mkdir) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -EPERM;
   }
 
   int ret = parent->d_inode->i_op->mkdir(parent->d_inode, child, mode);
-  if (ret != 0)
-    kfree(child);
+  vfs_free_dentry_chain(child);
   return ret;
 }
 
@@ -507,6 +543,8 @@ int vfs_close(struct file *file) {
   }
   file->f_count.counter--;
   if (file->f_count.counter <= 0) {
+    if (file->f_dentry && file->f_dentry != root_dentry)
+      vfs_free_dentry_chain(file->f_dentry);
     kfree(file);
   }
   return 0;
@@ -566,8 +604,11 @@ int vfs_rmdir(const char *path) {
     return -ENOENT;
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-  if (!child)
+  if (!child) {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -ENOMEM;
+  }
 
   int i;
   for (i = 0; i < NAME_MAX && name[i]; i++)
@@ -580,24 +621,24 @@ int vfs_rmdir(const char *path) {
   }
 
   if (!child->d_inode) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -ENOENT;
   }
 
   /* Must be a directory */
   if (!S_ISDIR(child->d_inode->i_mode)) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -ENOTDIR;
   }
 
   /* Check if rmdir operation is supported */
   if (!parent->d_inode->i_op || !parent->d_inode->i_op->rmdir) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -EPERM;
   }
 
   int ret = parent->d_inode->i_op->rmdir(parent->d_inode, child);
-  kfree(child);
+  vfs_free_dentry_chain(child);
   return ret;
 }
 
@@ -608,8 +649,11 @@ int vfs_unlink(const char *path) {
     return -ENOENT;
 
   struct dentry *child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
-  if (!child)
+  if (!child) {
+    if (parent != root_dentry)
+      vfs_free_dentry_chain(parent);
     return -ENOMEM;
+  }
 
   int i;
   for (i = 0; i < NAME_MAX && name[i]; i++)
@@ -622,24 +666,24 @@ int vfs_unlink(const char *path) {
   }
 
   if (!child->d_inode) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -ENOENT;
   }
 
   /* Must not be a directory (use rmdir for that) */
   if (S_ISDIR(child->d_inode->i_mode)) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -EISDIR;
   }
 
   /* Check if unlink operation is supported */
   if (!parent->d_inode->i_op || !parent->d_inode->i_op->unlink) {
-    kfree(child);
+    vfs_free_dentry_chain(child);
     return -EPERM;
   }
 
   int ret = parent->d_inode->i_op->unlink(parent->d_inode, child);
-  kfree(child);
+  vfs_free_dentry_chain(child);
   return ret;
 }
 int vfs_rename(const char *old, const char *new) {
@@ -650,43 +694,63 @@ int vfs_rename(const char *old, const char *new) {
 
   char new_name_buf[NAME_MAX + 1];
   struct dentry *new_parent = vfs_lookup_parent(new, new_name_buf);
-  if (!new_parent)
+  if (!new_parent) {
+    if (old_parent != root_dentry)
+      vfs_free_dentry_chain(old_parent);
     return -ENOENT;
+  }
 
   /* Lookup full old dentry */
   struct dentry *old_child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
+  if (!old_child) {
+    if (old_parent != root_dentry)
+      vfs_free_dentry_chain(old_parent);
+    if (new_parent != root_dentry)
+      vfs_free_dentry_chain(new_parent);
+    return -ENOMEM;
+  }
   int i;
   for (i = 0; i < NAME_MAX && old_name_buf[i]; i++)
     old_child->d_name[i] = old_name_buf[i];
   old_child->d_name[i] = '\0';
+  old_child->d_parent = old_parent;
+  old_child->d_sb = old_parent->d_sb;
 
   if (old_parent->d_inode->i_op && old_parent->d_inode->i_op->lookup) {
     old_parent->d_inode->i_op->lookup(old_parent->d_inode, old_child);
   }
 
   if (!old_child->d_inode) {
-    kfree(old_child);
+    vfs_free_dentry_chain(old_child);
     return -ENOENT;
   }
 
   /* Construct new dentry pattern */
   struct dentry *new_child = kzalloc(sizeof(struct dentry), GFP_KERNEL);
+  if (!new_child) {
+    vfs_free_dentry_chain(old_child);
+    if (new_parent != root_dentry)
+      vfs_free_dentry_chain(new_parent);
+    return -ENOMEM;
+  }
   for (i = 0; i < NAME_MAX && new_name_buf[i]; i++)
     new_child->d_name[i] = new_name_buf[i];
   new_child->d_name[i] = '\0';
+  new_child->d_parent = new_parent;
+  new_child->d_sb = new_parent->d_sb;
 
   /* Check if operation supported */
   if (!old_parent->d_inode->i_op || !old_parent->d_inode->i_op->rename) {
-    kfree(old_child);
-    kfree(new_child);
+    vfs_free_dentry_chain(old_child);
+    vfs_free_dentry_chain(new_child);
     return -EPERM; /* Should be ENOSYS/EPERM */
   }
 
   int ret = old_parent->d_inode->i_op->rename(old_parent->d_inode, old_child,
                                               new_parent->d_inode, new_child);
 
-  kfree(old_child);
-  kfree(new_child);
+  vfs_free_dentry_chain(old_child);
+  vfs_free_dentry_chain(new_child);
   return ret;
 }
 
@@ -724,9 +788,8 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
   }
 
   /* Check mount limit */
-  if (mount_count >= MAX_MOUNTS) {
+  if (mount_count >= MAX_MOUNTS)
     return -ENOMEM;
-  }
 
   /* Call filesystem's mount function */
   if (!fs->mount) {
@@ -743,9 +806,18 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
   }
 
   /* Create mount structure */
-  /* TODO: Allocate properly */
-  static struct vfsmount mount_pool[MAX_MOUNTS];
-  struct vfsmount *mnt = &mount_pool[mount_count];
+  int slot = -1;
+  for (int i = 0; i < MAX_MOUNTS; i++) {
+    if (!mount_slot_used[i]) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0)
+    return -ENOMEM;
+
+  struct vfsmount *mnt = &mount_pool[slot];
+  mount_slot_used[slot] = 1;
 
   mnt->mnt_root = sb->s_root;
   mnt->mnt_sb = sb;
@@ -761,7 +833,8 @@ int vfs_mount(const char *source, const char *target, const char *fstype,
   path_copy(mnt->mnt_target, target, sizeof(mnt->mnt_target));
   path_copy(mnt->mnt_fstype, fstype, sizeof(mnt->mnt_fstype));
 
-  mounts[mount_count++] = mnt;
+  mounts[slot] = mnt;
+  mount_count++;
 
   /* If mounting root, set root_mount */
   if (path_compare(target, "/") == 0) {
@@ -778,9 +851,10 @@ int vfs_umount(const char *target) {
   printk(KERN_INFO "VFS: umount('%s')\n", target);
 
   /* Find mount point */
-  for (int i = 0; i < mount_count; i++) {
+  for (int i = 0; i < MAX_MOUNTS; i++) {
     if (mounts[i] && mounts[i]->mnt_root &&
         path_compare(mounts[i]->mnt_target, target) == 0) {
+      int slot = (int)(mounts[i] - mount_pool);
       /* TODO: Tear down the superblock properly. */
       mounts[i]->mnt_root = NULL;
       mounts[i]->mnt_sb = NULL;
@@ -793,6 +867,11 @@ int vfs_umount(const char *target) {
         root_mount = NULL;
         root_dentry = NULL;
       }
+      mounts[i] = NULL;
+      if (slot >= 0 && slot < MAX_MOUNTS)
+        mount_slot_used[slot] = 0;
+      if (mount_count > 0)
+        mount_count--;
       printk(KERN_INFO "VFS: Unmounted '%s'\n", target);
       return 0;
     }
