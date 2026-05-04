@@ -2930,6 +2930,24 @@ static void gui_update_window_animations(void) {
     compositor_mark_full_redraw();
 }
 
+static int gui_has_active_animation(void) {
+  struct window *win = window_stack;
+
+  if (window_switcher_frames > 0)
+    return 1;
+  if (main_menu_power_row_y_anim >= 0 &&
+      main_menu_power_row_y_anim != main_menu_power_row_y())
+    return 1;
+
+  while (win) {
+    if (win->animation != WINDOW_ANIM_NONE)
+      return 1;
+    win = win->next;
+  }
+
+  return 0;
+}
+
 static void gui_clamp_windows_to_display(void) {
   int max_y = (int)primary_display.height - dock_reserved_height() - 12;
 
@@ -13366,6 +13384,7 @@ static char g_gpu_backend_name[32] = "software";
 static int gui_backend_prefers_coalesced_blits(void);
 static int compositor_build_dirty_bounds(int *x, int *y, int *w, int *h);
 void compositor_mark_full_redraw(void);
+int gui_needs_redraw(void);
 
 static int gui_boot_full_redraws_allowed(void) {
   return g_frame_count <= GUI_BOOT_FULL_REDRAW_FRAMES;
@@ -13709,6 +13728,11 @@ void gui_invalidate_rect(int x, int y, int w, int h) {
 
 void gui_invalidate_screen(void) {
   compositor_mark_full_redraw();
+}
+
+int gui_needs_redraw(void) {
+  return g_full_redraw || g_dirty_count > 0 ||
+         g_partial_redraw_clear_debug_frames > 0 || gui_has_active_animation();
 }
 
 void gui_start_partial_redraw_clear_debug(void) {

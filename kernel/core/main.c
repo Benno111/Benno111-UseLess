@@ -1244,6 +1244,7 @@ static void init_subsystems(void *dtb) {
                                           int w, int h);
   extern void gui_compose(void);
   extern void gui_draw_cursor(void);
+  extern int gui_needs_redraw(void);
 
   uint32_t *fb_buffer;
   uint32_t fb_width, fb_height;
@@ -1413,6 +1414,7 @@ static void start_init_process(void) {
   extern void input_set_gui_key_callback(void (*callback)(int key));
   extern void gui_compose(void);
   extern void gui_draw_cursor(void);
+  extern int gui_needs_redraw(void);
 
   input_init();
   g_gui_key_r = 0;
@@ -1432,13 +1434,7 @@ static void start_init_process(void) {
   uint32_t frame = 0;
   int last_mx = 0, last_my = 0;
   int last_buttons = 0;
-  int needs_redraw = 0; /* Initial render already completed */
-  int cursor_only = 0;  /* Only cursor needs updating */
   uint64_t last_kernel_slice_ms = arch_timer_get_ms();
-
-  /* Timer for periodic auto-refresh (33ms = 30 FPS for responsive UI) */
-  uint64_t last_refresh = arch_timer_get_ms();
-  const uint64_t REFRESH_MS = 33; /* 30 FPS - responsive mouse */
   const uint64_t KERNEL_SLICE_MS = 8; /* Kernel grants background runtime */
 
   {
@@ -1465,14 +1461,12 @@ static void start_init_process(void) {
     if (c >= 0) {
       /* Route to focused window */
       gui_handle_key_event(c);
-      needs_redraw = 1;
     }
 
     {
       int queued_key;
       while (gui_key_queue_pop(&queued_key)) {
         gui_handle_key_event(queued_key);
-        needs_redraw = 1;
       }
     }
 
@@ -1500,29 +1494,17 @@ static void start_init_process(void) {
       /* Always call mouse event handler for hover support */
       gui_handle_mouse_event(mx, my, mbuttons);
 
-      /* Always redraw on mouse move - cursor is now composited */
-      needs_redraw = 1;
-
       last_mx = mx;
       last_my = my;
       last_buttons = mbuttons;
     }
 
-    /* Periodic refresh for animations (5 FPS) */
-    uint64_t now = arch_timer_get_ms();
-    if (now - last_refresh >= REFRESH_MS) {
-      last_refresh = now;
-      needs_redraw = 1;
-    }
-
-    /* Redraw when needed - compose includes cursor drawing */
-    if (needs_redraw) {
+    /* Redraw only when the compositor says something is pending. */
+    if (gui_needs_redraw()) {
       gui_compose(); /* Cursor is drawn inside compose, before blit */
-      needs_redraw = 0;
-      cursor_only = 0;
     }
 
-    if (!needs_redraw) {
+    if (!gui_needs_redraw()) {
       uint64_t now_for_slice = arch_timer_get_ms();
       if (now_for_slice - last_kernel_slice_ms >= KERNEL_SLICE_MS) {
         extern int process_run_kernel_slice(void);
