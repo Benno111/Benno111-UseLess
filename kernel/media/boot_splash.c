@@ -4,6 +4,7 @@
 
 #include "media/media.h"
 #include "media/seed_assets.h"
+#include "fs/vfs.h"
 #include "printk.h"
 #include "types.h"
 
