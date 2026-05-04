@@ -9953,8 +9953,9 @@ static void draw_window(struct window *win) {
       title_len++;
     int title_x = x + (w - title_len * 8) / 2;
     int title_y = y + BORDER_WIDTH + 7;
-    uint32_t title_glow = theme->title_glow;
-    uint32_t title_fg = theme->title_text;
+    uint32_t title_glow_rgb = theme->title_glow & 0x00FFFFFF;
+    uint32_t title_glow = gui_argb(win->focused ? 0x14 : 0x0A, title_glow_rgb);
+    uint32_t title_fg = gui_contrast_title_color(title_glow_rgb);
     gui_draw_string(title_x - 1, title_y, win->title, title_glow, 0x00000000);
     gui_draw_string(title_x + 1, title_y, win->title, title_glow, 0x00000000);
     gui_draw_string(title_x, title_y - 1, win->title, title_glow, 0x00000000);
@@ -14089,6 +14090,15 @@ static void gui_draw_scene_layers(void) {
 
   draw_window_switcher_overlay();
   draw_secure_attention_overlay();
+}
+
+static uint32_t gui_contrast_title_color(uint32_t rgb) {
+  uint32_t r = (rgb >> 16) & 0xFF;
+  uint32_t g = (rgb >> 8) & 0xFF;
+  uint32_t b = rgb & 0xFF;
+  uint32_t luminance = r * 299 + g * 587 + b * 114;
+
+  return luminance >= 128000 ? 0x000000 : 0xFFFFFF;
 }
 
 /* Forward declaration for cursor */
