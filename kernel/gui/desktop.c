@@ -19,6 +19,8 @@ extern void gui_draw_string(int x, int y, const char *str, uint32_t fg,
                             uint32_t bg);
 extern void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 extern void gui_draw_line(int x, int y, int x2, int y2, uint32_t color);
+extern void gui_invalidate_rect(int x, int y, int w, int h);
+extern void gui_invalidate_screen(void);
 
 /* External window functions */
 struct window; /* Forward declare */
@@ -610,13 +612,13 @@ void desktop_mark_dirty(int x, int y, int w, int h) {
   }
 
   /* Also notify the compositor to update this region */
-  extern void compositor_mark_dirty(int x, int y, int w, int h);
-  compositor_mark_dirty(x, y, w, h);
+  gui_invalidate_rect(x, y, w, h);
 }
 
 void desktop_mark_full_redraw(void) {
   full_redraw_needed = 1;
   dirty_count = 0;
+  gui_invalidate_screen();
 }
 
 int desktop_needs_redraw(void) { return full_redraw_needed || dirty_count > 0; }

@@ -23,7 +23,6 @@ extern void gui_draw_rect(int x, int y, int w, int h, uint32_t color);
 extern void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 extern struct window *gui_create_window(const char *title, int x, int y, int w,
                                         int h);
-extern void compositor_mark_full_redraw(void);
 extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
 
 /* ===================================================================== */
@@ -120,6 +119,15 @@ static struct terminal *active_terminal = NULL;
 static int term_is_usable(const struct terminal *term) {
   return term && term->chars && term->fg_colors && term->bg_colors &&
          term->cols > 0 && term->rows > 0;
+}
+
+static void term_request_redraw(struct terminal *term) {
+  if (!term_is_usable(term))
+    return;
+
+  gui_invalidate_rect(term->content_x, term->content_y,
+                      term->cols * TERM_CHAR_W + TERM_PADDING * 2,
+                      term->rows * TERM_CHAR_H + TERM_PADDING * 2);
 }
 
 static void term_clamp_cursor(struct terminal *term) {
@@ -369,6 +377,7 @@ void term_puts(struct terminal *term, const char *str) {
   while (*str) {
     term_putc(term, *str++);
   }
+  term_request_redraw(term);
 }
 
 /* ===================================================================== */
@@ -1658,7 +1667,7 @@ void term_handle_key(struct terminal *term, int key) {
     }
   }
 
-  compositor_mark_full_redraw();
+  term_request_redraw(term);
 }
 
 /* ===================================================================== */

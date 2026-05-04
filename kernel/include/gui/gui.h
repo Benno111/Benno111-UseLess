@@ -18,6 +18,8 @@ struct display;
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height, uint32_t pitch);
 struct display *gui_get_display(void);
 void gui_compose(void);
+void gui_invalidate_rect(int x, int y, int w, int h);
+void gui_invalidate_screen(void);
 void gui_configure_gpu_rendering(int enabled);
 int gui_is_gpu_rendering_enabled(void);
 void gui_refresh_hardware_acceleration_policy(void);

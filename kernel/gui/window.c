@@ -121,6 +121,8 @@ void gui_open_image_viewer(const char *path);
 static void gui_play_mp3_file(const char *path);
 void compositor_mark_dirty(int x, int y, int w, int h);
 void compositor_mark_full_redraw(void);
+void gui_invalidate_rect(int x, int y, int w, int h);
+void gui_invalidate_screen(void);
 void gui_set_blur_effects_enabled(int enabled);
 int gui_blur_effects_requested(void);
 int gui_are_blur_effects_enabled(void);
@@ -13701,6 +13703,14 @@ void compositor_mark_full_redraw(void) {
   }
 }
 
+void gui_invalidate_rect(int x, int y, int w, int h) {
+  compositor_mark_dirty(x, y, w, h);
+}
+
+void gui_invalidate_screen(void) {
+  compositor_mark_full_redraw();
+}
+
 void gui_start_partial_redraw_clear_debug(void) {
   g_partial_redraw_clear_debug_frames =
       GUI_PARTIAL_REDRAW_CLEAR_DEBUG_FRAMES;
@@ -14190,7 +14200,7 @@ static const uint8_t cursor_data[CURSOR_HEIGHT][CURSOR_WIDTH] = {
 };
 
 static void gui_mark_cursor_dirty_at(int x, int y) {
-  compositor_mark_dirty(x - 1, y - 1, CURSOR_WIDTH + 2, CURSOR_HEIGHT + 2);
+  gui_invalidate_rect(x - 1, y - 1, CURSOR_WIDTH + 2, CURSOR_HEIGHT + 2);
 }
 
 /* Draw cursor directly to the active render target. */
