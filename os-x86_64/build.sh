@@ -1,14 +1,16 @@
 #!/bin/bash
 # Build script for UEFI Demo OS
-# Uses pre-built Limine binaries for macOS compatibility
+# Refreshes the latest OS-BOOT-MANAGER boot assets before each build.
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Configuration
-LIMINE_VERSION="8.6.0"
 BUILD_DIR="build"
 ISO_ROOT="iso_root"
 ISO_NAME="uefi-demo.iso"
+BOOT_MANAGER_DIR="${BUILD_DIR}/boot-assets/os-boot-manager"
+BOOT_MANAGER_SYNC="${ROOT_DIR}/scripts/update-os-boot-manager.sh"
 
 echo "=== UEFI Demo OS Build Script ==="
 echo ""
@@ -46,53 +48,27 @@ ld.lld -nostdlib -static -z max-page-size=0x1000 -T kernel/linker.ld \
 
 echo "   Kernel: $BUILD_DIR/main.sys ($(ls -lh $BUILD_DIR/main.sys | awk '{print $5}'))"
 
-# Download pre-built Limine from release tarball
-echo "[3/5] Getting Limine bootloader..."
-mkdir -p limine-bin
-if [ ! -f "limine-bin/BOOTX64.EFI" ]; then
-    echo "   Downloading Limine ${LIMINE_VERSION}..."
-    # Download the tarball release and extract the pre-built binaries
-    curl -sL "https://github.com/limine-bootloader/limine/releases/download/v${LIMINE_VERSION}/limine-${LIMINE_VERSION}.tar.xz" -o limine.tar.xz
-    
-    mkdir -p limine-extract
-    tar -xf limine.tar.xz -C limine-extract --strip-components=1
-    rm limine.tar.xz
-    
-    # The pre-built binaries are in the tarball
-    # Copy what we need
-    if [ -f "limine-extract/BOOTX64.EFI" ]; then
-        cp limine-extract/BOOTX64.EFI limine-bin/
-    fi
-    if [ -f "limine-extract/limine-bios-cd.bin" ]; then
-        cp limine-extract/limine-bios-cd.bin limine-bin/ 
-    fi
-    if [ -f "limine-extract/limine-uefi-cd.bin" ]; then
-        cp limine-extract/limine-uefi-cd.bin limine-bin/
-    fi
-    
-    rm -rf limine-extract
+# Refresh the boot manager assets before building the image.
+echo "[3/5] Getting OS-BOOT-MANAGER boot assets..."
+BOOT_MANAGER_DIR="$("$BOOT_MANAGER_SYNC" "$BOOT_MANAGER_DIR")"
+LIMINE_BIN_DIR="${BOOT_MANAGER_DIR}/bin"
+LIMINE_SRC_DIR="${BOOT_MANAGER_DIR}"
+
+if [ ! -f "${LIMINE_BIN_DIR}/BOOTX64.EFI" ]; then
+    echo "   WARNING: Latest boot assets were not refreshed, falling back to the generated cache if available."
 fi
 
-# If no pre-built binaries in tarball, try to build a minimal UEFI stub
-if [ ! -f "limine-bin/BOOTX64.EFI" ]; then
-    echo "   Pre-built not found, downloading from assets..."
-    # Try alternative: get just BOOTX64.EFI directly
-    curl -sL "https://raw.githubusercontent.com/limine-bootloader/limine/v${LIMINE_VERSION}-binary-branch/BOOTX64.EFI" -o limine-bin/BOOTX64.EFI || true
-fi
-
-# Still no luck? Let's create a simple EFI boot structure
-if [ ! -f "limine-bin/BOOTX64.EFI" ]; then
+if [ ! -f "${LIMINE_BIN_DIR}/BOOTX64.EFI" ]; then
     echo ""
-    echo "WARNING: Could not download pre-built Limine UEFI binary."
-    echo "You may need to build Limine manually or use QEMU with direct kernel boot."
+    echo "WARNING: Could not obtain a bootable OS-BOOT-MANAGER release."
+    echo "You may need network access or a cached boot asset directory."
     echo ""
     echo "For now, creating a QEMU-compatible disk image..."
-    
-    # Create a simple bootable image for QEMU testing
+
     mkdir -p "$ISO_ROOT"/boot
     cp $BUILD_DIR/main.sys "$ISO_ROOT"/boot/main.sys
     cp limine.conf "$ISO_ROOT"/boot/limine.conf
-    
+
     echo ""
     echo "To test in QEMU with direct kernel boot:"
     echo "  qemu-system-x86_64 -M q35 -m 512M -kernel $BUILD_DIR/main.sys -serial stdio"
@@ -100,7 +76,7 @@ if [ ! -f "limine-bin/BOOTX64.EFI" ]; then
     exit 0
 fi
 
-echo "   Limine bootloader ready!"
+echo "   OS-BOOT-MANAGER boot assets ready!"
 
 # Create ISO structure
 echo "[4/5] Creating ISO structure..."
@@ -118,12 +94,12 @@ mkdir -p "$ISO_ROOT"/limine
 cp limine.conf "$ISO_ROOT"/limine/limine.conf
 
 # Copy UEFI bootloader and config together (Limine looks here first!)
-cp limine-bin/BOOTX64.EFI "$ISO_ROOT"/EFI/BOOT/BOOTX64.EFI
+cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT"/EFI/BOOT/BOOTX64.EFI
 cp limine.conf "$ISO_ROOT"/EFI/BOOT/limine.conf
 
 # Copy CD boot files if available
-[ -f limine-bin/limine-bios-cd.bin ] && cp limine-bin/limine-bios-cd.bin "$ISO_ROOT"/boot/
-[ -f limine-bin/limine-uefi-cd.bin ] && cp limine-bin/limine-uefi-cd.bin "$ISO_ROOT"/boot/
+[ -f "$LIMINE_BIN_DIR/limine-bios-cd.bin" ] && cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT"/boot/
+[ -f "$LIMINE_BIN_DIR/limine-uefi-cd.bin" ] && cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT"/boot/
 
 # Create ISO
 echo "[5/5] Creating bootable ISO..."

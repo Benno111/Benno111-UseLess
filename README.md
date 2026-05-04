@@ -118,7 +118,7 @@ Typical requirements:
 For x86_64 ISO creation, the current scripts also expect:
 
 - `xorriso`
-- Limine boot assets under `os-x86_64/limine/bin`
+- Boot assets refreshed automatically from the latest OS-BOOT-MANAGER release during the x86_64 build
 
 Host assumptions in the current build system are best on Linux or macOS-style environments. Some helper scripts are shell-based and assume Unix tooling.
 

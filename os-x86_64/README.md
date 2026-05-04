@@ -43,7 +43,7 @@ This creates `uefi-demo.iso`.
 
 ### First build notes
 
-First build uses the vendored OS-BOOT-MANAGER v12.x binaries (~2MB). Takes a minute.
+First build refreshes the latest OS-BOOT-MANAGER release (~2MB). Takes a minute.
 
 ## Running
 

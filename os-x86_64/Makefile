@@ -21,6 +21,8 @@ ISO_ROOT := iso_root
 # Output files
 KERNEL := $(BUILD_DIR)/main.sys
 ISO := uefi-demo.iso
+BOOT_MANAGER_DIR := $(BUILD_DIR)/boot-assets/os-boot-manager
+BOOT_MANAGER_SYNC := $(ROOT_DIR)/scripts/update-os-boot-manager.sh
 
 # Compiler flags
 CFLAGS := -target x86_64-unknown-none-elf \
@@ -99,10 +101,8 @@ SOURCES := $(KERNEL_DIR)/boot/limine_boot.c \
 # Object files
 OBJECTS := $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
-# Limine
-LIMINE_VERSION := 8.6.0
-LIMINE_DIR := limine
-LIMINE_URL := https://github.com/limine-bootloader/limine/releases/download/v$(LIMINE_VERSION)/limine-$(LIMINE_VERSION).tar.xz
+# OS-BOOT-MANAGER cache
+LIMINE_DIR := $(BOOT_MANAGER_DIR)
 
 # Default target
 .PHONY: all
@@ -127,16 +127,17 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c | $(BUILD_DIR)
 $(KERNEL): $(OBJECTS)
 	$(LD) $(LDFLAGS) $(OBJECTS) -o $@
 
-# Download and build Limine
-$(LIMINE_DIR):
-	curl -L $(LIMINE_URL) -o limine.tar.xz
-	mkdir -p $(LIMINE_DIR)
-	tar -xf limine.tar.xz -C $(LIMINE_DIR) --strip-components=1
-	rm limine.tar.xz
-	cd $(LIMINE_DIR) && ./configure --enable-uefi-x86-64 && make
+# Refresh the boot manager assets on every build.
+.PHONY: boot-manager-refresh
+boot-manager-refresh:
+	@bash $(BOOT_MANAGER_SYNC) $(LIMINE_DIR) >/dev/null
+
+$(LIMINE_DIR)/limine: boot-manager-refresh $(LIMINE_DIR)/limine.c
+	@echo "[CC] $<"
+	@cc -g -O2 -pipe -Wall -Wextra -std=c99 $< -o $@
 
 # Create ISO
-$(ISO): $(KERNEL) $(LIMINE_DIR)
+$(ISO): $(KERNEL) $(LIMINE_DIR)/limine
 	@echo "Creating bootable ISO..."
 	rm -rf $(ISO_ROOT)
 	mkdir -p $(ISO_ROOT)/boot
@@ -166,7 +167,7 @@ $(ISO): $(KERNEL) $(LIMINE_DIR)
 		$(ISO_ROOT) -o $(ISO)
 	
 	# Install Limine for hybrid boot
-	$(LIMINE_DIR)/bin/limine bios-install $(ISO) 2>/dev/null || true
+	$(LIMINE_DIR)/limine bios-install $(ISO) 2>/dev/null || true
 	
 	@echo ""
 	@echo "============================================"
