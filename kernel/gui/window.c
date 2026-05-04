@@ -2066,10 +2066,14 @@ static inline uint32_t *gui_draw_target(void) {
 }
 
 static inline void draw_image_pixel(int x, int y, uint32_t color) {
-  if ((color >> 24) != 0)
-    draw_pixel_alpha(x, y, color);
-  else
+  uint32_t alpha = color >> 24;
+
+  if (alpha == 0)
+    return;
+  if (alpha == 0xFF)
     draw_pixel(x, y, color);
+  else
+    draw_pixel_alpha(x, y, color);
 }
 
 static void gui_fill_rect_alpha(int x, int y, int w, int h, uint32_t color) {
