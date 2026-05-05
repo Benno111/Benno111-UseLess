@@ -14,6 +14,18 @@
 struct window;
 struct display;
 
+typedef struct gui_frame_profile {
+    uint64_t input_poll_us;
+    uint64_t net_poll_us;
+    uint64_t uart_key_us;
+    uint64_t queued_keys_us;
+    uint64_t mouse_us;
+    uint64_t compose_us;
+    uint64_t kernel_slice_us;
+    uint64_t wait_next_frame_us;
+    uint64_t total_us;
+} gui_frame_profile_t;
+
 /* Display */
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height, uint32_t pitch);
 struct display *gui_get_display(void);
@@ -24,6 +36,9 @@ int gui_needs_redraw(void);
 void gui_configure_gpu_rendering(int enabled);
 int gui_is_gpu_rendering_enabled(void);
 void gui_refresh_hardware_acceleration_policy(void);
+uint64_t gui_monotonic_us(void);
+void gui_desktop_frame_profiler_submit(const gui_frame_profile_t *profile);
+void gui_desktop_frame_profiler_reset(void);
 
 /* Window management */
 struct window *gui_create_window(const char *title, int x, int y, int w, int h);

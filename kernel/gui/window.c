@@ -7,6 +7,7 @@
 #include "build_uuid.h"
 #include "arch/arch.h"
 #include "desktop.h"         /* Desktop manager */
+#include "gui/gui.h"
 #include "drivers/wifi.h"
 #include "drivers/pci.h"
 #include "dock_icons.h"      /* Dock icons (PNG-based) */
@@ -13307,6 +13308,234 @@ static void draw_desktop(void) {
   }
 }
 
+/* ===================================================================== */
+/* Desktop Frame Profiler                                                */
+/* ===================================================================== */
+
+#define GUI_PROFILER_PANEL_W 372
+#define GUI_PROFILER_PANEL_H 170
+#define GUI_PROFILER_PANEL_MARGIN 16
+#define GUI_PROFILER_PANEL_ROW_H 16
+
+static gui_frame_profile_t g_desktop_frame_profile = {0};
+static int g_desktop_frame_profile_valid = 0;
+static uint32_t g_desktop_frame_profile_frame_no = 0;
+
+uint64_t gui_monotonic_us(void) {
+  uint64_t ticks;
+  uint64_t freq;
+
+  ticks = arch_timer_get_ticks();
+  freq = arch_timer_get_frequency();
+  if (!freq)
+    return arch_timer_get_ms() * 1000ULL;
+  return (ticks * 1000000ULL) / freq;
+}
+
+static void gui_profiler_format_u64(char *buf, size_t max, uint64_t value) {
+  size_t pos = 0;
+
+  if (!buf || max == 0)
+    return;
+
+  buf[0] = '\0';
+  do {
+    if (pos + 1 >= max)
+      return;
+    buf[pos++] = (char)('0' + (value % 10ULL));
+    value /= 10ULL;
+  } while (value > 0);
+
+  for (size_t i = 0; i < pos / 2; i++) {
+    char tmp = buf[i];
+    buf[i] = buf[pos - 1 - i];
+    buf[pos - 1 - i] = tmp;
+  }
+  buf[pos] = '\0';
+}
+
+static void gui_profiler_format_time(char *buf, size_t max, uint64_t us) {
+  size_t pos = 0;
+  uint64_t whole;
+  uint64_t frac;
+
+  if (!buf || max == 0)
+    return;
+
+  buf[0] = '\0';
+
+  if (us >= 1000ULL) {
+    whole = us / 1000ULL;
+    frac = us % 1000ULL;
+    if (whole >= 1000000000000000ULL) {
+      whole = 1000000000000000ULL - 1;
+      frac = 999;
+    }
+    gui_profiler_format_u64(buf, max, whole);
+    pos = 0;
+    while (buf[pos])
+      pos++;
+    if (pos + 5 >= max)
+      return;
+    buf[pos++] = '.';
+    buf[pos++] = (char)('0' + (char)(frac / 100ULL));
+    buf[pos++] = (char)('0' + (char)((frac / 10ULL) % 10ULL));
+    buf[pos++] = (char)('0' + (char)(frac % 10ULL));
+    buf[pos++] = ' ';
+    buf[pos++] = 'm';
+    buf[pos++] = 's';
+    buf[pos] = '\0';
+  } else {
+    gui_profiler_format_u64(buf, max, us);
+    pos = 0;
+    while (buf[pos])
+      pos++;
+    if (pos + 3 >= max)
+      return;
+    buf[pos++] = ' ';
+    buf[pos++] = 'u';
+    buf[pos++] = 's';
+    buf[pos] = '\0';
+  }
+}
+
+void gui_desktop_frame_profiler_reset(void) {
+  g_desktop_frame_profile.input_poll_us = 0;
+  g_desktop_frame_profile.net_poll_us = 0;
+  g_desktop_frame_profile.uart_key_us = 0;
+  g_desktop_frame_profile.queued_keys_us = 0;
+  g_desktop_frame_profile.mouse_us = 0;
+  g_desktop_frame_profile.compose_us = 0;
+  g_desktop_frame_profile.kernel_slice_us = 0;
+  g_desktop_frame_profile.wait_next_frame_us = 0;
+  g_desktop_frame_profile.total_us = 0;
+  g_desktop_frame_profile_valid = 0;
+  g_desktop_frame_profile_frame_no = 0;
+}
+
+void gui_desktop_frame_profiler_submit(const gui_frame_profile_t *profile) {
+  int panel_x;
+  int panel_y;
+
+  if (!profile)
+    return;
+
+  g_desktop_frame_profile = *profile;
+  g_desktop_frame_profile_valid = 1;
+  g_desktop_frame_profile_frame_no++;
+
+  panel_x = (int)primary_display.width - GUI_PROFILER_PANEL_W -
+            GUI_PROFILER_PANEL_MARGIN;
+  if (panel_x < GUI_PROFILER_PANEL_MARGIN)
+    panel_x = GUI_PROFILER_PANEL_MARGIN;
+  panel_y = GUI_PROFILER_PANEL_MARGIN;
+  gui_invalidate_rect(panel_x - 4, panel_y - 4, GUI_PROFILER_PANEL_W + 8,
+                      GUI_PROFILER_PANEL_H + 8);
+}
+
+static void gui_draw_desktop_frame_profiler(void) {
+  int panel_x;
+  int panel_y;
+  int panel_w = GUI_PROFILER_PANEL_W;
+  int panel_h = GUI_PROFILER_PANEL_H;
+  char time_buf[32];
+  char total_buf[32];
+  char frame_buf[32];
+  const uint32_t panel_bg = 0xE0161B24;
+  const uint32_t panel_border = 0x7A7EA7D8;
+  const uint32_t label_fg = 0xE5E7EB;
+  const uint32_t value_fg = 0xFFFFFF;
+  const uint32_t muted_fg = 0xA7B4C4;
+  int row_y;
+
+  if (!g_desktop_frame_profile_valid)
+    return;
+
+  panel_x = (int)primary_display.width - panel_w - GUI_PROFILER_PANEL_MARGIN;
+  if (panel_x < GUI_PROFILER_PANEL_MARGIN)
+    panel_x = GUI_PROFILER_PANEL_MARGIN;
+  panel_y = GUI_PROFILER_PANEL_MARGIN;
+
+  gui_fill_rect_alpha(panel_x, panel_y, panel_w, panel_h, panel_bg);
+  gui_draw_rect_outline(panel_x, panel_y, panel_w, panel_h, panel_border, 1);
+  gui_fill_rect_alpha(panel_x, panel_y, panel_w, 20, 0x24FFFFFF);
+
+  gui_draw_string(panel_x + 12, panel_y + 6, "Desktop Profiler", value_fg,
+                  0x00000000);
+  frame_buf[0] = '\0';
+  gui_profiler_format_u64(frame_buf + 7, sizeof(frame_buf) - 7,
+                          g_desktop_frame_profile_frame_no);
+  frame_buf[0] = 'F';
+  frame_buf[1] = 'r';
+  frame_buf[2] = 'a';
+  frame_buf[3] = 'm';
+  frame_buf[4] = 'e';
+  frame_buf[5] = ' ';
+  frame_buf[6] = '#';
+  gui_draw_string(panel_x + panel_w - 120, panel_y + 6, frame_buf, muted_fg,
+                  0x00000000);
+
+  row_y = panel_y + 28;
+
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.input_poll_us);
+  gui_draw_string(panel_x + 12, row_y, "input poll", label_fg, 0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.net_poll_us);
+  gui_draw_string(panel_x + 12, row_y, "network poll", label_fg,
+                  0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.uart_key_us);
+  gui_draw_string(panel_x + 12, row_y, "uart key", label_fg, 0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.queued_keys_us);
+  gui_draw_string(panel_x + 12, row_y, "queued keys", label_fg, 0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.mouse_us);
+  gui_draw_string(panel_x + 12, row_y, "mouse event", label_fg,
+                  0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.compose_us);
+  gui_draw_string(panel_x + 12, row_y, "compose", label_fg, 0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.kernel_slice_us);
+  gui_draw_string(panel_x + 12, row_y, "kernel slice", label_fg,
+                  0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  row_y += GUI_PROFILER_PANEL_ROW_H;
+  gui_profiler_format_time(time_buf, sizeof(time_buf),
+                           g_desktop_frame_profile.wait_next_frame_us);
+  gui_draw_string(panel_x + 12, row_y, "wait next frame", label_fg,
+                  0x00000000);
+  gui_draw_string(panel_x + 168, row_y, time_buf, value_fg, 0x00000000);
+
+  gui_profiler_format_time(total_buf, sizeof(total_buf),
+                           g_desktop_frame_profile.total_us);
+  gui_draw_string(panel_x + 12, panel_y + panel_h - 20, "total", label_fg,
+                  0x00000000);
+  gui_draw_string(panel_x + 168, panel_y + panel_h - 20, total_buf, value_fg,
+                  0x00000000);
+}
+
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color) {
   if (w <= 0 || h <= 0)
@@ -14076,6 +14305,7 @@ static void gui_draw_scene_layers(void) {
 
   draw_window_switcher_overlay();
   draw_secure_attention_overlay();
+  gui_draw_desktop_frame_profiler();
 }
 
 static uint32_t gui_contrast_title_color(uint32_t rgb) {
@@ -16030,6 +16260,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   } else {
     g_saved_backbuffer = primary_display.backbuffer;
   }
+  gui_desktop_frame_profiler_reset();
 
   /* Clear windows */
   for (int i = 0; i < MAX_WINDOWS; i++) {

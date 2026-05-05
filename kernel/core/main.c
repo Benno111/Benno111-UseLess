@@ -23,6 +23,7 @@
 #include "printk.h"
 #include "sched/sched.h"
 #include "types.h"
+#include "gui/gui.h"
 #include "gui/font.h"
 
 /* Kernel version */
@@ -66,6 +67,13 @@ static void seed_write_bytes(const char *prefix, const char *path, mode_t mode,
                              const uint8_t *data, size_t size);
 static void keyboard_handler(int key);
 static void keyboard_gui_handler(int key);
+static uint64_t profile_split_us(uint64_t *cursor_us) {
+  uint64_t now_us = gui_monotonic_us();
+  uint64_t delta_us = now_us - *cursor_us;
+
+  *cursor_us = now_us;
+  return delta_us;
+}
 static int gui_key_queue_pop(int *key_out);
 #ifdef ARCH_X86_64
 static void start_x86_64_bringup(void);
@@ -1436,6 +1444,7 @@ static void start_init_process(void) {
   int last_buttons = 0;
   uint64_t last_kernel_slice_ms = arch_timer_get_ms();
   const uint64_t KERNEL_SLICE_MS = 8; /* Kernel grants background runtime */
+  gui_frame_profile_t frame_profile = {0};
 
   {
     extern void mouse_get_position(int *x, int *y);
@@ -1449,10 +1458,26 @@ static void start_init_process(void) {
   }
 
   while (1) {
+    uint64_t frame_start_us = gui_monotonic_us();
+    uint64_t step_start_us = frame_start_us;
+
+    frame_profile.input_poll_us = 0;
+    frame_profile.net_poll_us = 0;
+    frame_profile.uart_key_us = 0;
+    frame_profile.queued_keys_us = 0;
+    frame_profile.mouse_us = 0;
+    frame_profile.compose_us = 0;
+    frame_profile.kernel_slice_us = 0;
+    frame_profile.wait_next_frame_us = 0;
+    frame_profile.total_us = 0;
+
     /* Poll input devices once per iteration. */
     input_poll();
+    frame_profile.input_poll_us = profile_split_us(&step_start_us);
+
     virtio_net_poll();
     vbox_net_poll();
+    frame_profile.net_poll_us = profile_split_us(&step_start_us);
 
     /* Poll for keyboard input from UART as well */
     extern int uart_getc_nonblock(void);
@@ -1462,6 +1487,7 @@ static void start_init_process(void) {
       /* Route to focused window */
       gui_handle_key_event(c);
     }
+    frame_profile.uart_key_us = profile_split_us(&step_start_us);
 
     {
       int queued_key;
@@ -1469,6 +1495,7 @@ static void start_init_process(void) {
         gui_handle_key_event(queued_key);
       }
     }
+    frame_profile.queued_keys_us = profile_split_us(&step_start_us);
 
     /* Get mouse state (updated by input_poll) */
     extern void mouse_get_position(int *x, int *y);
@@ -1498,19 +1525,24 @@ static void start_init_process(void) {
       last_my = my;
       last_buttons = mbuttons;
     }
+    frame_profile.mouse_us = profile_split_us(&step_start_us);
 
-    /* Redraw only when the compositor says something is pending. */
     if (gui_needs_redraw()) {
+      uint64_t compose_start_us = gui_monotonic_us();
       gui_compose(); /* Cursor is drawn inside compose, before blit */
+      frame_profile.compose_us = gui_monotonic_us() - compose_start_us;
     }
 
-    if (!gui_needs_redraw()) {
+    {
       uint64_t now_for_slice = arch_timer_get_ms();
       if (now_for_slice - last_kernel_slice_ms >= KERNEL_SLICE_MS) {
         extern int process_run_kernel_slice(void);
+        uint64_t slice_start_us = gui_monotonic_us();
         if (process_run_kernel_slice()) {
           last_kernel_slice_ms = now_for_slice;
         }
+        frame_profile.kernel_slice_us =
+            gui_monotonic_us() - slice_start_us;
       }
     }
 
@@ -1524,8 +1556,12 @@ static void start_init_process(void) {
     // But we should yield to be nice if not rendering
 
     /* Short yield - allows input polling without slowing mouse */
+    uint64_t wait_start_us = gui_monotonic_us();
     for (volatile int i = 0; i < 500; i++) {
     }
+    frame_profile.wait_next_frame_us = gui_monotonic_us() - wait_start_us;
+    frame_profile.total_us = gui_monotonic_us() - frame_start_us;
+    gui_desktop_frame_profiler_submit(&frame_profile);
   }
 }
 
