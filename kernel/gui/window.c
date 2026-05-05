@@ -13313,13 +13313,25 @@ static void draw_desktop(void) {
 /* ===================================================================== */
 
 #define GUI_PROFILER_PANEL_W 372
-#define GUI_PROFILER_PANEL_H 170
+#define GUI_PROFILER_PANEL_H 240
 #define GUI_PROFILER_PANEL_MARGIN 16
 #define GUI_PROFILER_PANEL_ROW_H 16
+#define GUI_PROFILER_NOTE_SLOTS 4
 
 static gui_frame_profile_t g_desktop_frame_profile = {0};
 static int g_desktop_frame_profile_valid = 0;
 static uint32_t g_desktop_frame_profile_frame_no = 0;
+static int g_desktop_frame_profile_note_count = 0;
+
+typedef struct gui_profiler_note {
+  char label[32];
+  uint64_t elapsed_us;
+  int valid;
+} gui_profiler_note_t;
+
+static gui_profiler_note_t g_desktop_frame_notes[GUI_PROFILER_NOTE_SLOTS];
+
+void gui_desktop_frame_profiler_clear_notes(void);
 
 uint64_t gui_monotonic_us(void) {
   uint64_t ticks;
@@ -13352,6 +13364,21 @@ static void gui_profiler_format_u64(char *buf, size_t max, uint64_t value) {
     buf[pos - 1 - i] = tmp;
   }
   buf[pos] = '\0';
+}
+
+static void gui_profiler_copy_label(char *dst, size_t dst_size,
+                                   const char *src) {
+  size_t i = 0;
+
+  if (!dst || dst_size == 0) return;
+  dst[0] = '\0';
+  if (!src) return;
+
+  while (src[i] && i + 1 < dst_size) {
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = '\0';
 }
 
 static void gui_profiler_format_time(char *buf, size_t max, uint64_t us) {
@@ -13411,6 +13438,60 @@ void gui_desktop_frame_profiler_reset(void) {
   g_desktop_frame_profile.total_us = 0;
   g_desktop_frame_profile_valid = 0;
   g_desktop_frame_profile_frame_no = 0;
+  gui_desktop_frame_profiler_clear_notes();
+}
+
+void gui_desktop_frame_profiler_clear_notes(void) {
+  int i;
+
+  for (i = 0; i < GUI_PROFILER_NOTE_SLOTS; i++) {
+    g_desktop_frame_notes[i].label[0] = '\0';
+    g_desktop_frame_notes[i].elapsed_us = 0;
+    g_desktop_frame_notes[i].valid = 0;
+  }
+  g_desktop_frame_profile_note_count = 0;
+}
+
+void gui_profiler_begin(gui_profiler_span_t *span, const char *label) {
+  if (!span)
+    return;
+
+  span->label = label;
+  span->start_us = gui_monotonic_us();
+  span->elapsed_us = 0;
+  span->active = 1;
+}
+
+uint64_t gui_profiler_end(gui_profiler_span_t *span) {
+  uint64_t elapsed_us;
+
+  if (!span || !span->active)
+    return 0;
+
+  elapsed_us = gui_monotonic_us() - span->start_us;
+  span->elapsed_us = elapsed_us;
+  span->active = 0;
+  return elapsed_us;
+}
+
+void gui_desktop_frame_profiler_note(const char *label, uint64_t elapsed_us) {
+  gui_profiler_note_t *note;
+  int slot;
+
+  if (!label || !label[0])
+    return;
+
+  slot = g_desktop_frame_profile_note_count;
+  if (slot >= GUI_PROFILER_NOTE_SLOTS)
+    slot = GUI_PROFILER_NOTE_SLOTS - 1;
+
+  note = &g_desktop_frame_notes[slot];
+  gui_profiler_copy_label(note->label, sizeof(note->label), label);
+  note->elapsed_us = elapsed_us;
+  note->valid = 1;
+
+  if (g_desktop_frame_profile_note_count < GUI_PROFILER_NOTE_SLOTS)
+    g_desktop_frame_profile_note_count++;
 }
 
 void gui_desktop_frame_profiler_submit(const gui_frame_profile_t *profile) {
@@ -13447,6 +13528,8 @@ static void gui_draw_desktop_frame_profiler(void) {
   const uint32_t value_fg = 0xFFFFFF;
   const uint32_t muted_fg = 0xA7B4C4;
   int row_y;
+  int note_y;
+  int i;
 
   if (!g_desktop_frame_profile_valid)
     return;
@@ -13534,6 +13617,26 @@ static void gui_draw_desktop_frame_profiler(void) {
                   0x00000000);
   gui_draw_string(panel_x + 168, panel_y + panel_h - 20, total_buf, value_fg,
                   0x00000000);
+
+  note_y = panel_y + 160;
+  if (g_desktop_frame_profile_note_count > 0) {
+    gui_draw_string(panel_x + 12, note_y, "custom measures", muted_fg,
+                    0x00000000);
+    note_y += GUI_PROFILER_PANEL_ROW_H;
+    for (i = 0; i < g_desktop_frame_profile_note_count &&
+                i < GUI_PROFILER_NOTE_SLOTS;
+         i++) {
+      if (!g_desktop_frame_notes[i].valid)
+        continue;
+      gui_profiler_format_time(time_buf, sizeof(time_buf),
+                               g_desktop_frame_notes[i].elapsed_us);
+      gui_draw_string(panel_x + 12, note_y, g_desktop_frame_notes[i].label,
+                      label_fg, 0x00000000);
+      gui_draw_string(panel_x + 168, note_y, time_buf, value_fg,
+                      0x00000000);
+      note_y += GUI_PROFILER_PANEL_ROW_H;
+    }
+  }
 }
 
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,

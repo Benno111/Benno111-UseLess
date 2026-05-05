@@ -1461,6 +1461,7 @@ static void start_init_process(void) {
     uint64_t frame_start_us = gui_monotonic_us();
     uint64_t step_start_us = frame_start_us;
 
+    gui_desktop_frame_profiler_clear_notes();
     frame_profile.input_poll_us = 0;
     frame_profile.net_poll_us = 0;
     frame_profile.uart_key_us = 0;

@@ -26,6 +26,13 @@ typedef struct gui_frame_profile {
     uint64_t total_us;
 } gui_frame_profile_t;
 
+typedef struct gui_profiler_span {
+    const char *label;
+    uint64_t start_us;
+    uint64_t elapsed_us;
+    int active;
+} gui_profiler_span_t;
+
 /* Display */
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height, uint32_t pitch);
 struct display *gui_get_display(void);
@@ -37,7 +44,11 @@ void gui_configure_gpu_rendering(int enabled);
 int gui_is_gpu_rendering_enabled(void);
 void gui_refresh_hardware_acceleration_policy(void);
 uint64_t gui_monotonic_us(void);
+void gui_profiler_begin(gui_profiler_span_t *span, const char *label);
+uint64_t gui_profiler_end(gui_profiler_span_t *span);
+void gui_desktop_frame_profiler_note(const char *label, uint64_t elapsed_us);
 void gui_desktop_frame_profiler_submit(const gui_frame_profile_t *profile);
+void gui_desktop_frame_profiler_clear_notes(void);
 void gui_desktop_frame_profiler_reset(void);
 
 /* Window management */
