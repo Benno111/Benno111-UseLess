@@ -15,6 +15,36 @@ BOOT_MANAGER_SYNC="${ROOT_DIR}/scripts/update-os-boot-manager.sh"
 echo "=== UEFI Demo OS Build Script ==="
 echo ""
 
+compress_iso() {
+    local iso_path="$1"
+    local compressed_path="${iso_path}.xz"
+
+    rm -f "$compressed_path"
+
+    if command -v xz >/dev/null 2>&1; then
+        xz -T0 -9e -k -f "$iso_path"
+        return 0
+    fi
+
+    local python_cmd=""
+    python_cmd="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+    if [ -n "$python_cmd" ]; then
+        "$python_cmd" - "$iso_path" "$compressed_path" <<'PY'
+import lzma
+import shutil
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "rb") as f_in, lzma.open(dst, "wb", preset=(lzma.PRESET_EXTREME | 9)) as f_out:
+    shutil.copyfileobj(f_in, f_out)
+PY
+        return 0
+    fi
+
+    echo "[WARN] xz/python3 not available; skipping ISO compression" >&2
+    return 0
+}
+
 # Create build directories
 mkdir -p "$BUILD_DIR"/{boot,lib,drivers,gui}
 
@@ -123,10 +153,15 @@ else
         "$ISO_ROOT" -o "$ISO_NAME"
 fi
 
+compress_iso "$ISO_NAME"
+
 echo ""
 echo "============================================"
 echo "  SUCCESS! Created: $ISO_NAME"
 echo "  Size: $(ls -lh $ISO_NAME | awk '{print $5}')"
+if [ -f "${ISO_NAME}.xz" ]; then
+    echo "  Compressed: $(ls -lh "${ISO_NAME}.xz" | awk '{print $5}')"
+fi
 echo "============================================"
 echo ""
 echo "To test in QEMU (UEFI):"

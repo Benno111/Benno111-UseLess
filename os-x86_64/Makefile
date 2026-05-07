@@ -168,11 +168,22 @@ $(ISO): $(KERNEL) $(LIMINE_DIR)/limine
 	
 	# Install Limine for hybrid boot
 	$(LIMINE_DIR)/limine bios-install $(ISO) 2>/dev/null || true
-	
+	@if command -v xz >/dev/null 2>&1; then \
+		xz -T0 -9e -k -f $(ISO); \
+	else \
+		py_cmd=$$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true); \
+		if [ -n "$$py_cmd" ]; then \
+			"$$py_cmd" -c "import lzma, shutil, sys; src, dst = sys.argv[1], sys.argv[2]; f_in = open(src, 'rb'); f_out = lzma.open(dst, 'wb', preset=(lzma.PRESET_EXTREME | 9)); shutil.copyfileobj(f_in, f_out); f_in.close(); f_out.close()" $(ISO) $(ISO).xz; \
+		else \
+			echo "[WARN] xz/python not available; skipping ISO compression"; \
+		fi; \
+	fi
+
 	@echo ""
 	@echo "============================================"
 	@echo "  ISO created: $(ISO)"
 	@echo "============================================"
+	@if [ -f $(ISO).xz ]; then echo "  Compressed: $$(ls -lh $(ISO).xz | awk '{print $$5}')"; fi
 	@echo ""
 	@echo "To test in QEMU:"
 	@echo "  make run"

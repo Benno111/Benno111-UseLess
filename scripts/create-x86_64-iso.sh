@@ -28,6 +28,36 @@ log() {
     echo -e "${GREEN}[X86_64-ISO]${NC} $1"
 }
 
+compress_iso() {
+    local iso_path="$1"
+    local compressed_path="${iso_path}.xz"
+
+    rm -f "$compressed_path"
+
+    if command -v xz >/dev/null 2>&1; then
+        xz -T0 -9e -k -f "$iso_path"
+        return 0
+    fi
+
+    local python_cmd=""
+    python_cmd="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+    if [ -n "$python_cmd" ]; then
+        "$python_cmd" - "$iso_path" "$compressed_path" <<'PY'
+import lzma
+import shutil
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "rb") as f_in, lzma.open(dst, "wb", preset=(lzma.PRESET_EXTREME | 9)) as f_out:
+    shutil.copyfileobj(f_in, f_out)
+PY
+        return 0
+    fi
+
+    echo "[WARN] xz/python3 not available; skipping ISO compression" >&2
+    return 0
+}
+
 link_or_copy() {
     local src="$1"
     local dst="$2"
@@ -213,6 +243,7 @@ xorriso -as mkisofs \
     -o "$ISO_PATH"
 
 "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
+compress_iso "$ISO_PATH"
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
@@ -252,6 +283,9 @@ require_iso_path "/install/system-image/IMAGE_INFO.txt"
 
 log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
+if [ -f "${ISO_PATH}.xz" ]; then
+    ls -lh "${ISO_PATH}.xz"
+fi
 echo ""
 log "BIOS VM test:  qemu-system-x86_64 -M q35 -m 512M -cdrom $ISO_PATH -serial stdio"
 log "UEFI VM test:  qemu-system-x86_64 -M q35 -m 512M -cdrom $ISO_PATH -bios /usr/share/OVMF/OVMF_CODE.fd -serial stdio"
