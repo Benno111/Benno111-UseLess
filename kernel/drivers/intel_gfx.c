@@ -46,88 +46,289 @@ static int intel_gfx_is_display_device(const pci_device_t *pci_dev) {
   return 1;
 }
 
-static int intel_gfx_is_ivybridge_device(uint16_t device_id) {
-  switch (device_id) {
-  case 0x0152:
-  case 0x0156:
-  case 0x015A:
-  case 0x0162:
-  case 0x0166:
-  case 0x016A:
-    return 1;
-  default:
+static int intel_gfx_device_id_in_list(uint16_t device_id,
+                                       const uint16_t *device_ids) {
+  if (!device_ids)
     return 0;
+  while (*device_ids) {
+    if (*device_ids == device_id)
+      return 1;
+    device_ids++;
   }
+  return 0;
+}
+
+static const uint16_t intel_gfx_ivybridge_ids[] = {
+    0x0152, 0x0156, 0x015A, 0x0162, 0x0166, 0x016A, 0};
+
+static const uint16_t intel_gfx_haswell_ids[] = {
+    0x0402, 0x0406, 0x040A, 0x040B, 0x040E, 0x0412, 0x0416, 0x041A, 0x041E,
+    0x0A02, 0x0A06, 0x0A0A, 0x0A0B, 0x0A0E, 0x0A16, 0x0A1E, 0x0C02, 0x0C06,
+    0x0C0A, 0x0C0B, 0x0C0E, 0x0D02, 0x0D06, 0x0D0A, 0x0D0B, 0x0D0E, 0};
+
+static const uint16_t intel_gfx_broadwell_ids[] = {
+    0x1602, 0x1606, 0x160A, 0x160B, 0x160D, 0x160E, 0x1612, 0x1616, 0x161A,
+    0x161B, 0x161D, 0x161E, 0x1622, 0x1626, 0x162A, 0x162B, 0x162D, 0x162E,
+    0x1632, 0x1636, 0x163A, 0x163B, 0x163D, 0x163E, 0};
+
+static const uint16_t intel_gfx_skylake_ids[] = {
+    0x1902, 0x1906, 0x190A, 0x190B, 0x190E, 0x1912, 0x1913, 0x1915, 0x1916,
+    0x1917, 0x191A, 0x191B, 0x191D, 0x191E, 0x1921, 0x1923, 0x1926, 0x1927,
+    0x192A, 0x192B, 0x192D, 0x1932, 0x193A, 0x193B, 0x193D, 0};
+
+static const uint16_t intel_gfx_kaby_lake_ids[] = {
+    0x5902, 0x5906, 0x5908, 0x590A, 0x590B, 0x590E, 0x5912, 0x5913, 0x5915,
+    0x5916, 0x5917, 0x591A, 0x591B, 0x591C, 0x591D, 0x591E, 0x5921, 0x5923,
+    0x5926, 0x5927, 0x593B, 0x87C0, 0};
+
+static const uint16_t intel_gfx_apollo_lake_ids[] = {
+    0x0A84, 0x1A84, 0x1A85, 0x5A84, 0x5A85, 0};
+
+static const uint16_t intel_gfx_gemini_lake_ids[] = {0x3184, 0x3185, 0};
+
+static const uint16_t intel_gfx_coffee_lake_ids[] = {
+    0x3E90, 0x3E91, 0x3E92, 0x3E93, 0x3E94, 0x3E96, 0x3E98, 0x3E99, 0x3E9A,
+    0x3E9B, 0x3E9C, 0x3EA0, 0x3EA1, 0x3EA2, 0x3EA3, 0x3EA4, 0x3EA5, 0x3EA6,
+    0x3EA7, 0x3EA8, 0x3EA9, 0x87CA, 0x9B21, 0x9BA0, 0x9BA2, 0x9BA4, 0x9BA5,
+    0x9BA8, 0x9BAA, 0x9BAB, 0x9BAC, 0x9BC0, 0x9BC2, 0x9BC4, 0x9BC5, 0x9BC6,
+    0x9BCA, 0x9BCB, 0x9BCC, 0x9BE6, 0x9BF6, 0};
+
+static const uint16_t intel_gfx_comet_lake_ids[] = {0x9BC5, 0x9BC8, 0};
+
+static const uint16_t intel_gfx_modern_xe_ids[] = {0x46A6, 0x46A8, 0x46D1, 0};
+
+static int intel_gfx_is_ivybridge_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_ivybridge_ids);
 }
 
 static int intel_gfx_is_haswell_device(uint16_t device_id) {
-  switch (device_id) {
-  case 0x0402:
-  case 0x0406:
-  case 0x040A:
-  case 0x0412:
-  case 0x0416:
-  case 0x041A:
-  case 0x0A02:
-  case 0x0A06:
-  case 0x0A0A:
-  case 0x0A12:
-  case 0x0A16:
-  case 0x0A1A:
-  case 0x0D22:
-  case 0x0D26:
-  case 0x0D2A:
-    return 1;
-  default:
-    return 0;
-  }
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_haswell_ids);
 }
 
-static int intel_gfx_is_2012_2013_supported(uint16_t device_id) {
+static int intel_gfx_is_broadwell_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_broadwell_ids);
+}
+
+static int intel_gfx_is_skylake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_skylake_ids);
+}
+
+static int intel_gfx_is_kaby_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_kaby_lake_ids);
+}
+
+static int intel_gfx_is_apollo_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_apollo_lake_ids);
+}
+
+static int intel_gfx_is_gemini_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_gemini_lake_ids);
+}
+
+static int intel_gfx_is_coffee_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_coffee_lake_ids);
+}
+
+static int intel_gfx_is_comet_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_comet_lake_ids);
+}
+
+static int intel_gfx_is_modern_xe_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_modern_xe_ids);
+}
+
+static int intel_gfx_is_supported_device_id(uint16_t device_id) {
+  return intel_gfx_is_ivybridge_device(device_id) ||
+         intel_gfx_is_haswell_device(device_id) ||
+         intel_gfx_is_broadwell_device(device_id) ||
+         intel_gfx_is_skylake_device(device_id) ||
+         intel_gfx_is_kaby_lake_device(device_id) ||
+         intel_gfx_is_apollo_lake_device(device_id) ||
+         intel_gfx_is_gemini_lake_device(device_id) ||
+         intel_gfx_is_coffee_lake_device(device_id) ||
+         intel_gfx_is_comet_lake_device(device_id) ||
+         intel_gfx_is_modern_xe_device(device_id);
+}
+
+static int intel_gfx_supports_gpu_rendering_device(uint16_t device_id) {
   return intel_gfx_is_ivybridge_device(device_id) ||
          intel_gfx_is_haswell_device(device_id);
 }
 
 static int intel_gfx_should_use_native_driver(uint16_t device_id) {
-  return intel_gfx_is_2012_2013_supported(device_id);
+  return intel_gfx_is_supported_device_id(device_id);
 }
 
 static const char *intel_gfx_detect_name(uint16_t device_id) {
   switch (device_id) {
   case 0x0152:
   case 0x0156:
+    return "Intel HD Graphics 2500";
   case 0x015A:
+    return "Intel HD Graphics";
   case 0x0162:
   case 0x0166:
-  case 0x016A:
     return "Intel HD Graphics 4000";
+  case 0x016A:
+    return "Intel HD Graphics P4000";
+  case 0x1602:
+  case 0x1606:
+  case 0x160A:
+  case 0x160B:
+  case 0x160D:
+  case 0x160E:
+  case 0x161B:
+  case 0x161D:
+  case 0x162D:
+  case 0x162E:
+  case 0x1632:
+  case 0x1636:
+  case 0x163A:
+  case 0x163B:
+  case 0x163D:
+  case 0x163E:
+    return "Intel HD Graphics";
+  case 0x1612:
+    return "Intel HD Graphics 5600";
+  case 0x1616:
+    return "Intel HD Graphics 5500";
+  case 0x161A:
+    return "Intel HD Graphics P5700";
+  case 0x161E:
+    return "Intel HD Graphics 5300";
+  case 0x1622:
+    return "Intel Iris Pro Graphics 6200";
+  case 0x1626:
+    return "Intel HD Graphics 6000";
+  case 0x162A:
+    return "Intel Iris Pro Graphics P6300";
+  case 0x162B:
+    return "Intel Iris Graphics 6100";
   case 0x0402:
   case 0x0406:
   case 0x040A:
+  case 0x040B:
+  case 0x040E:
   case 0x0412:
   case 0x0416:
   case 0x041A:
   case 0x0A02:
   case 0x0A06:
   case 0x0A0A:
-  case 0x0A12:
-  case 0x0A16:
-  case 0x0A1A:
-  case 0x0D22:
-  case 0x0D26:
-  case 0x0D2A:
+  case 0x0A0B:
+  case 0x0A0E:
+  case 0x0C02:
+  case 0x0C06:
+  case 0x0C0A:
+  case 0x0C0B:
+  case 0x0C0E:
+  case 0x0D02:
+  case 0x0D06:
+  case 0x0D0A:
+  case 0x0D0B:
+  case 0x0D0E:
     return "Intel HD Graphics 4600";
+  case 0x041E:
+    return "Intel HD Graphics 4400";
+  case 0x0A16:
+    return "Intel HD Graphics 4400";
+  case 0x0A1E:
+    return "Intel HD Graphics 4200";
+  case 0x0A26:
+    return "Intel HD Graphics 5000";
+  case 0x0A2E:
+    return "Intel Iris Graphics 5100";
+  case 0x0A12:
+  case 0x0A1A:
+    return "Intel HD Graphics 4600";
+  case 0x5927:
+    return "Intel Iris Plus Graphics 650";
+  case 0x5926:
+    return "Intel Iris Plus Graphics 640";
+  case 0x5923:
+    return "Intel HD Graphics 635";
+  case 0x5917:
+    return "Intel UHD Graphics 620";
   case 0x5916:
-  case 0x591B:
+  case 0x5921:
+    return "Intel HD Graphics 620";
+  case 0x591A:
+  case 0x591D:
+    return "Intel HD Graphics P630";
+  case 0x591E:
+    return "Intel HD Graphics 615";
+  case 0x591C:
+    return "Intel UHD Graphics 615";
   case 0x5912:
+  case 0x591B:
     return "Intel HD Graphics 630";
-  case 0x3E92:
-  case 0x3E9B:
+  case 0x593B:
+    return "Intel HD Graphics";
+  case 0x5902:
+  case 0x5906:
+  case 0x590B:
+    return "Intel HD Graphics 610";
+  case 0x5908:
+  case 0x590A:
+  case 0x590E:
+    return "Intel HD Graphics";
+  case 0x3184:
+    return "Intel UHD Graphics 605";
+  case 0x3185:
+    return "Intel UHD Graphics 600";
   case 0x3EA5:
-    return "Intel UHD Graphics 630";
+  case 0x3EA8:
+    return "Intel Iris Plus Graphics 655";
+  case 0x3EA6:
+    return "Intel Iris Plus Graphics 645";
+  case 0x3EA7:
+    return "Intel HD Graphics";
+  case 0x3EA2:
+    return "Intel UHD Graphics";
+  case 0x3E90:
+  case 0x3E93:
+  case 0x3E99:
+  case 0x3E9C:
+  case 0x3EA1:
+  case 0x9BA5:
+  case 0x9BA8:
+    return "Intel UHD Graphics 610";
+  case 0x3EA4:
+  case 0x9B21:
+  case 0x9BA0:
+  case 0x9BA2:
+  case 0x9BA4:
+  case 0x9BAA:
+  case 0x9BAB:
+  case 0x9BAC:
+    return "Intel UHD Graphics";
+  case 0x87CA:
+  case 0x3EA3:
+  case 0x9B41:
+  case 0x9BC0:
+  case 0x9BC2:
+  case 0x9BC4:
+  case 0x9BCA:
+  case 0x9BCB:
+  case 0x9BCC:
+    return "Intel UHD Graphics";
+  case 0x3E91:
+  case 0x3E92:
+  case 0x3E98:
+  case 0x3E9B:
   case 0x9BC5:
   case 0x9BC8:
-    return "Intel UHD Graphics (Comet Lake)";
+    return "Intel UHD Graphics 630";
+  case 0x3E96:
+  case 0x3E9A:
+  case 0x3E94:
+  case 0x9BC6:
+  case 0x9BE6:
+  case 0x9BF6:
+    return "Intel UHD Graphics P630";
+  case 0x3EA9:
+  case 0x3EA0:
+    return "Intel UHD Graphics 620";
   case 0x46A6:
   case 0x46A8:
   case 0x46D1:
@@ -318,7 +519,7 @@ int intel_gfx_init(pci_device_t *pci_dev) {
     intel_gfx_state.has_framebuffer = true;
     intel_gfx_state.framebuffer_fallback_active = true;
     intel_gfx_state.supports_gpu_rendering =
-        intel_gfx_is_2012_2013_supported(pci_dev->device_id);
+        intel_gfx_supports_gpu_rendering_device(pci_dev->device_id);
   } else if (fb || width || height || pitch) {
     printk(KERN_WARNING
            "IGFX: Ignoring invalid framebuffer handoff fb=%p %ux%u pitch=%u\n",
