@@ -1,11 +1,11 @@
 /*
  * OS8 - Intel Integrated Graphics Driver
  *
- * Conservative first-stage Intel graphics support:
+ * Conservative Intel graphics support:
  * - Detect Intel display-class PCI devices
- * - Enable PCI memory/bus mastering
- * - Map the MMIO BAR for later register work
  * - Reuse the bootloader-provided framebuffer for display output
+ * - Keep the driver fully initialized in framebuffer mode
+ * - Avoid unimplemented native modesetting paths that can crash boot
  */
 
 #include "drivers/intel_gfx.h"
@@ -226,21 +226,17 @@ static int intel_gfx_is_supported_device_id(uint16_t device_id) {
 
 static int intel_gfx_supports_gpu_rendering_device(uint16_t device_id) {
   /*
-   * Keep compositor acceleration constrained to the generations we have
-   * actually validated in this conservative bring-up path. Skylake and newer
-   * remain detected and framebuffer-compatible, but they do not get the GPU
-   * rendering flag until we have a real modesetting/3D path.
+   * The current Intel path is framebuffer-only. We keep the hook so the
+   * compositor can distinguish future hardware acceleration support, but the
+   * driver does not advertise GPU rendering yet.
    */
-  return intel_gfx_is_ivybridge_device(device_id) ||
-         intel_gfx_is_haswell_device(device_id) ||
-         intel_gfx_is_broadwell_device(device_id);
+  (void)device_id;
+  return 0;
 }
 
 static int intel_gfx_should_use_native_driver(uint16_t device_id) {
-  return intel_gfx_is_sandy_bridge_device(device_id) ||
-         intel_gfx_is_ivybridge_device(device_id) ||
-         intel_gfx_is_haswell_device(device_id) ||
-         intel_gfx_is_broadwell_device(device_id);
+  (void)device_id;
+  return 0;
 }
 
 static const char *intel_gfx_detect_name(uint16_t device_id) {
@@ -582,114 +578,22 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   uint32_t height = 0;
   uint32_t pitch = 0;
   int safe_framebuffer = 0;
-  int use_framebuffer_only_probe = 0;
 
   if (!intel_gfx_is_display_device(pci_dev))
     return -1;
   if (intel_gfx_state.initialized)
     return 0;
-  if (!intel_gfx_state.detected) {
-    intel_gfx_state.detected = true;
-    intel_gfx_state.device_id = pci_dev->device_id;
-    intel_gfx_state.irq = pci_dev->irq;
-    intel_gfx_state.supported_device =
-        intel_gfx_should_use_native_driver(pci_dev->device_id);
-  }
   if (!intel_gfx_is_supported_subclass(pci_dev)) {
     printk(KERN_WARNING "IGFX: Unsupported display subclass 0x%02x, skipping\n",
            pci_dev->subclass);
     return -1;
   }
-  if (!intel_gfx_should_use_native_driver(pci_dev->device_id)) {
-    extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
-    extern uint32_t fb_get_pitch(void);
-
-    fb_get_info(&fb, &width, &height);
-    pitch = fb_get_pitch();
-    safe_framebuffer = intel_gfx_framebuffer_is_sane(fb, width, height, pitch);
-    intel_gfx_state.framebuffer_fallback_active = safe_framebuffer;
-    intel_gfx_state.has_framebuffer = safe_framebuffer;
-
-    printk(KERN_INFO
-           "IGFX: %s (%04x:%04x) is not in the supported Intel GPU set; "
-           "keeping default framebuffer path\n",
-           intel_gfx_detect_name(pci_dev->device_id), pci_dev->vendor_id,
-           pci_dev->device_id);
-    if (safe_framebuffer) {
-      printk(KERN_INFO "IGFX: Boot framebuffer remains active at %ux%u pitch=%u\n",
-             width, height, pitch);
-    } else {
-      printk(KERN_WARNING
-             "IGFX: No safe boot framebuffer was reported; native Intel driver remains disabled\n");
-    }
-    return -1;
-  }
-  if (intel_gfx_state.probe_attempted && intel_gfx_state.init_failed)
-    return -1;
-
-  {
-    uint16_t detected_device_id = intel_gfx_state.device_id;
-    uint32_t detected_irq = intel_gfx_state.irq;
-    intel_gfx_state = (intel_gfx_state_t){0};
-    intel_gfx_state.detected = true;
-    intel_gfx_state.device_id = detected_device_id;
-    intel_gfx_state.irq = detected_irq;
-    intel_gfx_state.supported_device =
-        intel_gfx_should_use_native_driver(detected_device_id);
-  }
-  intel_gfx_state.probe_attempted = true;
-
-  /*
-   * On x86 bring-up, touching Intel display PCI command/BAR state too early can
-   * disrupt the firmware framebuffer and crash startup. Keep the probe read-only
-   * there and reuse only the bootloader framebuffer until a real modesetting
-   * path exists.
-   */
-#if defined(ARCH_X86_64) || defined(ARCH_X86)
-  use_framebuffer_only_probe = 1;
-#endif
-
-  if (!use_framebuffer_only_probe) {
-    pci_enable_device(pci_dev);
-    intel_gfx_state.mmio_base = intel_gfx_read_bar(pci_dev, PCI_BAR0);
-    intel_gfx_state.aperture_base = intel_gfx_read_bar(pci_dev, PCI_BAR2);
-  }
-
-  if (!intel_gfx_mmio_bar_is_sane(intel_gfx_state.mmio_base)) {
-    if (intel_gfx_state.mmio_base) {
-      printk(KERN_WARNING "IGFX: Ignoring unsafe MMIO BAR0=0x%llx\n",
-             (unsigned long long)intel_gfx_state.mmio_base);
-    }
-    intel_gfx_state.mmio_base = 0;
-  }
-
-  if (!intel_gfx_mmio_bar_is_sane(intel_gfx_state.aperture_base)) {
-    if (intel_gfx_state.aperture_base) {
-      printk(KERN_WARNING "IGFX: Ignoring unsafe aperture BAR2=0x%llx\n",
-             (unsigned long long)intel_gfx_state.aperture_base);
-    }
-    intel_gfx_state.aperture_base = 0;
-  }
-
-  if (intel_gfx_state.mmio_base) {
-#if defined(ARCH_X86_64) || defined(ARCH_X86)
-    printk(KERN_INFO "IGFX: MMIO BAR present at 0x%llx, deferred on x86 bring-up "
-                     "path\n",
-           (unsigned long long)intel_gfx_state.mmio_base);
-#else
-    if (vmm_map_range(intel_gfx_state.mmio_base, intel_gfx_state.mmio_base,
-                      INTEL_GFX_MMIO_MAP_SIZE, VM_DEVICE) == 0) {
-      intel_gfx_state.mmio =
-          (volatile uint8_t *)(uintptr_t)intel_gfx_state.mmio_base;
-      intel_gfx_state.mmio_mapped = true;
-    } else {
-      printk(KERN_WARNING "IGFX: Failed to map MMIO BAR0=0x%llx\n",
-             (unsigned long long)intel_gfx_state.mmio_base);
-      intel_gfx_state.mmio_base = 0;
-    }
-#endif
-  }
-
+  intel_gfx_state = (intel_gfx_state_t){0};
+  intel_gfx_state.detected = true;
+  intel_gfx_state.device_id = pci_dev->device_id;
+  intel_gfx_state.irq = pci_dev->irq;
+  intel_gfx_state.supported_device =
+      intel_gfx_is_supported_device_id(pci_dev->device_id);
   extern void fb_get_info(uint32_t **buffer, uint32_t *width, uint32_t *height);
   extern uint32_t fb_get_pitch(void);
 
@@ -697,54 +601,38 @@ int intel_gfx_init(pci_device_t *pci_dev) {
   pitch = fb_get_pitch();
   safe_framebuffer = intel_gfx_framebuffer_is_sane(fb, width, height, pitch);
 
-  if (safe_framebuffer) {
-    intel_gfx_state.width = width;
-    intel_gfx_state.height = height;
-    intel_gfx_state.pitch = pitch;
-    intel_gfx_state.has_framebuffer = true;
-    intel_gfx_state.framebuffer_fallback_active = true;
-    intel_gfx_state.supports_gpu_rendering =
-        intel_gfx_supports_gpu_rendering_device(pci_dev->device_id);
-  } else if (fb || width || height || pitch) {
+  if (!safe_framebuffer) {
     printk(KERN_WARNING
            "IGFX: Ignoring invalid framebuffer handoff fb=%p %ux%u pitch=%u\n",
            fb, width, height, pitch);
-  }
-
-  if (!intel_gfx_state.has_framebuffer && !intel_gfx_state.mmio_base) {
     intel_gfx_state.init_failed = true;
-    printk(KERN_WARNING
-           "IGFX: No safe framebuffer or MMIO path available, driver disabled\n");
     return -1;
   }
 
   intel_gfx_state.initialized = true;
+  intel_gfx_state.has_framebuffer = true;
+  intel_gfx_state.framebuffer_fallback_active = true;
+  intel_gfx_state.supports_gpu_rendering = false;
+  intel_gfx_state.width = width;
+  intel_gfx_state.height = height;
+  intel_gfx_state.pitch = pitch;
+  intel_gfx_state.mmio_base = 0;
+  intel_gfx_state.aperture_base = 0;
+  intel_gfx_state.mmio = NULL;
+  intel_gfx_state.mmio_mapped = false;
+  intel_gfx_state.probe_attempted = true;
 
   printk(KERN_INFO "IGFX: %s detected (%04x:%04x) at %02x:%02x.%x\n",
          intel_gfx_detect_name(pci_dev->device_id), pci_dev->vendor_id,
          pci_dev->device_id, pci_dev->bus, pci_dev->slot, pci_dev->func);
-  if (use_framebuffer_only_probe) {
-    printk(KERN_INFO "IGFX: Using framebuffer-only probe on x86 startup path\n");
-  }
-  printk(KERN_INFO "IGFX: MMIO BAR0=0x%llx aperture BAR2=0x%llx IRQ=%u\n",
-         (unsigned long long)intel_gfx_state.mmio_base,
-         (unsigned long long)intel_gfx_state.aperture_base,
-         intel_gfx_state.irq);
-
-  if (intel_gfx_state.has_framebuffer) {
-    printk(KERN_INFO "IGFX: Using boot framebuffer %ux%u pitch=%u\n",
-           intel_gfx_state.width, intel_gfx_state.height, intel_gfx_state.pitch);
-    if (intel_gfx_state.supports_gpu_rendering) {
-      printk(KERN_INFO
-             "IGFX: Enabling compositor GPU rendering path for 2012-2013 Intel GPU\n");
-    } else {
-      printk(KERN_INFO
-             "IGFX: Leaving compositor in framebuffer mode for this Intel GPU generation\n");
-    }
-  } else if (intel_gfx_state.mmio_base) {
-    printk(KERN_INFO "IGFX: Running in conservative MMIO-only mode\n");
+  printk(KERN_INFO "IGFX: Framebuffer video mode active %ux%u pitch=%u\n",
+         intel_gfx_state.width, intel_gfx_state.height, intel_gfx_state.pitch);
+  if (intel_gfx_state.supported_device) {
+    printk(KERN_INFO
+           "IGFX: Intel GPU generation recognized; native modesetting remains unimplemented\n");
   } else {
-    printk(KERN_WARNING "IGFX: No active framebuffer available yet\n");
+    printk(KERN_INFO
+           "IGFX: Intel GPU compatible only through framebuffer handoff\n");
   }
 
   return 0;
