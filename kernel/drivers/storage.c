@@ -1832,6 +1832,12 @@ int storage_disk_is_removable(int index) {
          storage_disks[index].kind == STORAGE_KIND_CDROM;
 }
 
+uint32_t storage_get_disk_capacity_mib(int index) {
+  if (index < 0 || index >= storage_disk_count)
+    return 0;
+  return storage_disks[index].capacity_mib;
+}
+
 int storage_get_disk_location(int index, char *buf, int max) {
   if (!buf || max <= 0 || index < 0 || index >= storage_disk_count)
     return -1;

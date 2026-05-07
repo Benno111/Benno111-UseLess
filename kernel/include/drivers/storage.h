@@ -50,6 +50,7 @@ const char *storage_kind_name(storage_kind_t kind);
 int storage_get_disk_count(void);
 int storage_get_disk_kind(int index);
 int storage_disk_is_removable(int index);
+uint32_t storage_get_disk_capacity_mib(int index);
 int storage_get_disk_location(int index, char *buf, int max);
 int storage_get_disk_index_by_location(const char *location);
 int storage_read_block(int disk_index, uint32_t lba, void *buffer,

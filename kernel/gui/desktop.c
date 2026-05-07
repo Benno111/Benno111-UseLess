@@ -34,6 +34,7 @@ extern void gui_open_image_viewer(const char *path);
 extern void gui_open_notepad(const char *path);
 extern void gui_set_window_userdata(struct window *win, void *data);
 extern int gui_draw_system_app_icon(const char *app_id, int x, int y, int size);
+void desktop_mark_dirty(int x, int y, int w, int h);
 
 /* External terminal functions */
 struct terminal; /* Forward declare */
@@ -140,6 +141,12 @@ static int desktop_selected_count = 0;
 static int desktop_last_click_x = 0;
 static int desktop_last_click_y = 0;
 static uint64_t desktop_last_click_time = 0;
+static int desktop_drag_candidate_idx = -1;
+static int desktop_drag_active = 0;
+static int desktop_drag_anchor_x = 0;
+static int desktop_drag_anchor_y = 0;
+static int desktop_drag_offset_x = 0;
+static int desktop_drag_offset_y = 0;
 
 /* Context menu */
 static context_menu_t ctx_menu = {0};
@@ -402,6 +409,116 @@ static int desktop_has_selected_virtual_icon(void) {
       return 1;
   }
   return 0;
+}
+
+static void desktop_clear_drag_state(void) {
+  desktop_drag_candidate_idx = -1;
+  desktop_drag_active = 0;
+  desktop_drag_anchor_x = 0;
+  desktop_drag_anchor_y = 0;
+  desktop_drag_offset_x = 0;
+  desktop_drag_offset_y = 0;
+}
+
+static void desktop_snap_icon_to_grid(desktop_icon_t *icon) {
+  int snapped_x;
+  int snapped_y;
+
+  if (!icon)
+    return;
+
+  snapped_x = ((icon->x - DESKTOP_START_X + DESKTOP_ICON_SPACING / 2) /
+               DESKTOP_ICON_SPACING) *
+              DESKTOP_ICON_SPACING + DESKTOP_START_X;
+  snapped_y = ((icon->y - DESKTOP_START_Y + DESKTOP_ICON_SPACING / 2) /
+               DESKTOP_ICON_SPACING) *
+              DESKTOP_ICON_SPACING + DESKTOP_START_Y;
+
+  if (snapped_x < DESKTOP_START_X)
+    snapped_x = DESKTOP_START_X;
+  if (snapped_y < DESKTOP_START_Y)
+    snapped_y = DESKTOP_START_Y;
+  icon->x = snapped_x;
+  icon->y = snapped_y;
+  icon->grid_x = snapped_x / DESKTOP_ICON_SPACING;
+  icon->grid_y = snapped_y / DESKTOP_ICON_SPACING;
+}
+
+static void desktop_begin_drag(desktop_icon_t *icon, int x, int y) {
+  if (!icon || icon->is_virtual) {
+    desktop_clear_drag_state();
+    return;
+  }
+
+  desktop_drag_candidate_idx = (int)(icon - desktop_icons);
+  desktop_drag_active = 0;
+  desktop_drag_anchor_x = x;
+  desktop_drag_anchor_y = y;
+  desktop_drag_offset_x = x - icon->x;
+  desktop_drag_offset_y = y - icon->y;
+}
+
+void desktop_update_drag(int x, int y, int left_held) {
+  desktop_icon_t *icon;
+  int dx;
+  int dy;
+  int old_x;
+  int old_y;
+  int old_w;
+  int old_h;
+
+  if (desktop_drag_candidate_idx < 0)
+    return;
+  if (!left_held) {
+    desktop_clear_drag_state();
+    return;
+  }
+
+  icon = &desktop_icons[desktop_drag_candidate_idx];
+  dx = x - desktop_drag_anchor_x;
+  dy = y - desktop_drag_anchor_y;
+  if (!desktop_drag_active) {
+    if (dx < 0)
+      dx = -dx;
+    if (dy < 0)
+      dy = -dy;
+    if (dx < 6 && dy < 6)
+      return;
+    desktop_drag_active = 1;
+  }
+
+  old_x = icon->x - 4;
+  old_y = icon->y - 4;
+  old_w = DESKTOP_ICON_SIZE + 8;
+  old_h = DESKTOP_ICON_SIZE + DESKTOP_LABEL_HEIGHT + 8;
+  desktop_mark_dirty(old_x, old_y, old_w, old_h);
+  icon->x = x - desktop_drag_offset_x;
+  icon->y = y - desktop_drag_offset_y;
+  if (icon->x < DESKTOP_START_X - 8)
+    icon->x = DESKTOP_START_X - 8;
+  if (icon->y < DESKTOP_START_Y)
+    icon->y = DESKTOP_START_Y;
+  icon->grid_x = icon->x / DESKTOP_ICON_SPACING;
+  icon->grid_y = icon->y / DESKTOP_ICON_SPACING;
+  desktop_mark_dirty(icon->x - 4, icon->y - 4, old_w, old_h);
+}
+
+void desktop_release_drag(int x, int y) {
+  if (desktop_drag_candidate_idx < 0)
+    return;
+
+  if (desktop_drag_active) {
+    desktop_icon_t *icon = &desktop_icons[desktop_drag_candidate_idx];
+    desktop_mark_dirty(icon->x - 4, icon->y - 4, DESKTOP_ICON_SIZE + 8,
+                       DESKTOP_ICON_SIZE + DESKTOP_LABEL_HEIGHT + 8);
+    desktop_snap_icon_to_grid(icon);
+    desktop_mark_dirty(icon->x - 4, icon->y - 4, DESKTOP_ICON_SIZE + 8,
+                       DESKTOP_ICON_SIZE + DESKTOP_LABEL_HEIGHT + 8);
+  }
+
+  (void)x;
+  (void)y;
+  desktop_clear_drag_state();
 }
 
 static int desktop_try_open_dir(const char *path) {
@@ -1714,6 +1831,7 @@ void desktop_clear_selection(void) {
 int desktop_handle_click(int x, int y, int button, int shift_held) {
   /* Right click - context menu */
   if (button == 2) { /* Right button */
+    desktop_clear_drag_state();
     desktop_icon_t *icon = desktop_icon_at(x, y);
     if (icon) {
       if (!icon->selected) {
@@ -1739,9 +1857,11 @@ int desktop_handle_click(int x, int y, int button, int shift_held) {
     if (icon) {
 
       desktop_select_icon(icon, shift_held);
+      desktop_begin_drag(icon, x, y);
     } else {
       /* Clicked on empty space */
       desktop_clear_selection();
+      desktop_clear_drag_state();
     }
 
     return 1;

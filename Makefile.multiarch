@@ -189,6 +189,9 @@ BOOTMANAGER_OBJECTS := $(patsubst $(BOOTMANAGER_DIR)/%.c,$(BUILD_DIR)/bootmanage
 DRIVER_OBJECTS := $(patsubst $(DRIVERS_DIR)/%.c,$(BUILD_DIR)/drivers/%.o,$(DRIVER_SOURCES))
 CODE_HASH_INPUTS := $(sort $(KERNEL_SOURCES_C) $(BOOTMANAGER_SOURCES_C) $(KERNEL_SOURCES_ASM) $(DRIVER_SOURCES) $(ROOT_DIR)/Makefile.multiarch)
 BUILD_METADATA_HEADER := $(GENERATED_DIR)/build_uuid.h
+BUILD_NUMBER ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
+BUILD_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+BUILD_COMPILE_TIME ?= $(shell date -u +'%Y-%m-%d %H:%M:%SZ')
 ALL_OBJECTS := $(KERNEL_OBJECTS) $(BOOTMANAGER_OBJECTS) $(DRIVER_OBJECTS)
 ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 
@@ -346,6 +349,9 @@ $(BUILD_METADATA_HEADER): $(CODE_HASH_INPUTS)
 		printf '%s\n' '#define BUILD_UUID_H'; \
 		printf '#define BUILD_CODE_HASH "%s"\n' "$$CODE_HASH"; \
 		printf '#define BUILD_UUID "%s"\n' "$$BUILD_UUID"; \
+		printf '#define BUILD_NUMBER "%s"\n' "$(BUILD_NUMBER)"; \
+		printf '#define BUILD_BRANCH "%s"\n' "$(BUILD_BRANCH)"; \
+		printf '#define BUILD_COMPILE_TIME "%s"\n' "$(BUILD_COMPILE_TIME)"; \
 		printf '%s\n' '#endif'; \
 	} > $(BUILD_METADATA_HEADER)
 

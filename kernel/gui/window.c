@@ -381,6 +381,13 @@ static int installer_disk_indices[8];
 static int partition_manager_partition_count = 0;
 static int partition_manager_selected_partition = 0;
 static char partition_manager_labels[8][96];
+static int disk_imager_selected_disk = -1;
+static int disk_imager_selected_partition = 0;
+static char disk_imager_status[128] = "Select a disk to image.";
+static char disk_imager_disk_label[128] = "";
+static char disk_imager_partition_label[160] = "";
+static char disk_imager_disk_path[256] = "";
+static char disk_imager_partition_path[256] = "";
 static int window_switcher_frames = 0;
 static char window_switcher_title[64] = "No windows";
 static int secure_attention_open = 0;
@@ -3735,7 +3742,8 @@ typedef enum gui_app_kind {
   GUI_APP_SNAKE,
   GUI_APP_HELP,
   GUI_APP_BROWSER,
-  GUI_APP_APPSTORE
+  GUI_APP_APPSTORE,
+  GUI_APP_DISK_IMAGER
 } gui_app_kind_t;
 
 static int window_matches_app_kind(const struct window *win,
@@ -3772,6 +3780,9 @@ static int window_matches_app_kind(const struct window *win,
   case GUI_APP_APPSTORE:
     return win->title[0] == 'A' && win->title[1] == 'p' &&
            win->title[2] == 'p' && win->title[3] == ' ';
+  case GUI_APP_DISK_IMAGER:
+    return win->title[0] == 'D' && win->title[1] == 'i' &&
+           win->title[2] == 's';
   }
   return 0;
 }
@@ -3848,6 +3859,8 @@ static const system_app_seed_t app_catalog_seed[] = {
     {"help", "Help", "Help.app", GUI_APP_HELP, 0, 1},
     {"browser", "Browser", "Browser.app", GUI_APP_BROWSER, 0, 1},
     {"appstore", "App Store", "App Store.app", GUI_APP_APPSTORE, 1, 0},
+    {"diskimager", "Disk Imager", "Disk Imager.app", GUI_APP_DISK_IMAGER, 0,
+     1},
 };
 
 #define APP_CATALOG_SEED_COUNT                                                \
@@ -3959,6 +3972,8 @@ static const uint32_t *icon_data_for_kind(gui_app_kind_t kind) {
   case GUI_APP_BROWSER:
   case GUI_APP_APPSTORE:
     return dock_icon_folder;
+  case GUI_APP_DISK_IMAGER:
+    return dock_icon_settings;
   }
   return dock_icon_terminal;
 }
@@ -3985,6 +4000,8 @@ static uint32_t icon_color_for_kind(gui_app_kind_t kind) {
     return 0x0EA5E9;
   case GUI_APP_APPSTORE:
     return 0x7C3AED;
+  case GUI_APP_DISK_IMAGER:
+    return 0x2563EB;
   }
   return 0x3B82F6;
 }
@@ -4014,6 +4031,8 @@ static const char *kind_to_string(gui_app_kind_t kind) {
     return "browser";
   case GUI_APP_APPSTORE:
     return "appstore";
+  case GUI_APP_DISK_IMAGER:
+    return "diskimager";
   }
   return "terminal";
 }
@@ -4039,6 +4058,8 @@ static gui_app_kind_t kind_from_string(const char *kind) {
     return GUI_APP_BROWSER;
   if (str_cmp(kind, "appstore") == 0)
     return GUI_APP_APPSTORE;
+  if (str_cmp(kind, "diskimager") == 0)
+    return GUI_APP_DISK_IMAGER;
   return GUI_APP_TERMINAL;
 }
 
@@ -7014,6 +7035,9 @@ int gui_launch_app_by_id(const char *app_id) {
   case GUI_APP_APPSTORE:
     gui_create_window("App Store", spawn_x + 40, spawn_y + 30, 520, 390);
     break;
+  case GUI_APP_DISK_IMAGER:
+    gui_create_window("Disk Imager", spawn_x + 50, spawn_y + 40, 620, 440);
+    break;
   }
 
   spawn_x = (spawn_x + 40) % 250 + 80;
@@ -9323,6 +9347,386 @@ static void partition_manager_refresh_partitions(void) {
     partition_manager_selected_partition = 0;
 }
 
+static void disk_imager_set_status(const char *msg) {
+  str_copy_safe(disk_imager_status, msg ? msg : "", sizeof(disk_imager_status));
+}
+
+static void disk_imager_sanitize_component(const char *src, char *dst, int max) {
+  int idx = 0;
+
+  if (!dst || max <= 0)
+    return;
+  dst[0] = '\0';
+  if (!src)
+    return;
+
+  for (int i = 0; src[i] && idx < max - 1; i++) {
+    char c = src[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+      dst[idx++] = c;
+    } else {
+      dst[idx++] = '_';
+    }
+  }
+  dst[idx] = '\0';
+}
+
+static void disk_imager_append_path(char *path, int max, const char *piece) {
+  int idx = 0;
+
+  if (!path || max <= 0 || !piece)
+    return;
+  while (path[idx] && idx < max - 1)
+    idx++;
+  for (int i = 0; piece[i] && idx < max - 1; i++)
+    path[idx++] = piece[i];
+  path[idx] = '\0';
+}
+
+static void disk_imager_build_backup_path(int disk_index, int partition_index,
+                                          int partition_mode, char *path,
+                                          int max) {
+  char location[64];
+  char label[128];
+  char component[128];
+
+  if (!path || max <= 0)
+    return;
+  str_copy_safe(path, "/Backups/", max);
+
+  if (disk_index >= 0 && storage_get_disk_location(disk_index, location,
+                                                   sizeof(location)) == 0) {
+    disk_imager_sanitize_component(location, component, sizeof(component));
+  } else {
+    component[0] = '\0';
+  }
+
+  if (partition_mode) {
+    storage_partition_kind_t kind = STORAGE_PARTITION_UNKNOWN;
+    uint32_t start_lba = 0;
+    uint32_t sector_count = 0;
+
+    if (disk_index >= 0 &&
+        storage_get_partition_info(disk_index, partition_index, &kind, label,
+                                   sizeof(label), &start_lba, &sector_count) ==
+            0) {
+      char label_component[128];
+      (void)kind;
+      (void)start_lba;
+      (void)sector_count;
+      disk_imager_sanitize_component(label, label_component,
+                                     sizeof(label_component));
+      disk_imager_append_path(path, max, "part-");
+      disk_imager_append_path(path, max, component[0] ? component : "disk");
+      disk_imager_append_path(path, max, "-");
+      disk_imager_append_path(path, max,
+                              label_component[0] ? label_component : "part");
+      disk_imager_append_path(path, max, ".img");
+      return;
+    }
+  }
+
+  disk_imager_append_path(path, max, "disk-");
+  disk_imager_append_path(path, max, component[0] ? component : "disk");
+  disk_imager_append_path(path, max, ".img");
+}
+
+static void disk_imager_refresh_state(void) {
+  int disk_count = storage_get_disk_count();
+
+  if (disk_count <= 0) {
+    disk_imager_selected_disk = -1;
+    disk_imager_selected_partition = 0;
+    disk_imager_disk_label[0] = '\0';
+    disk_imager_partition_label[0] = '\0';
+    disk_imager_disk_path[0] = '\0';
+    disk_imager_partition_path[0] = '\0';
+    disk_imager_set_status("No storage disks detected.");
+    return;
+  }
+
+  if (disk_imager_selected_disk < 0)
+    disk_imager_selected_disk = installer_selected_disk_index();
+  if (disk_imager_selected_disk < 0 || disk_imager_selected_disk >= disk_count)
+    disk_imager_selected_disk = 0;
+
+  if (storage_describe_disk(disk_imager_selected_disk, disk_imager_disk_label,
+                            sizeof(disk_imager_disk_label)) != 0) {
+    str_copy_safe(disk_imager_disk_label, "Unknown disk",
+                  sizeof(disk_imager_disk_label));
+  }
+
+  {
+    int partition_count = storage_get_partition_count(disk_imager_selected_disk);
+    if (partition_count <= 0) {
+      disk_imager_selected_partition = 0;
+      str_copy_safe(disk_imager_partition_label, "No partitions on disk",
+                    sizeof(disk_imager_partition_label));
+    } else {
+      if (disk_imager_selected_partition < 0)
+        disk_imager_selected_partition = 0;
+      if (disk_imager_selected_partition >= partition_count)
+        disk_imager_selected_partition = partition_count - 1;
+      if (storage_describe_partition(disk_imager_selected_disk,
+                                     disk_imager_selected_partition,
+                                     disk_imager_partition_label,
+                                     sizeof(disk_imager_partition_label)) != 0) {
+        str_copy_safe(disk_imager_partition_label, "Partition unavailable",
+                      sizeof(disk_imager_partition_label));
+      }
+    }
+  }
+
+  disk_imager_build_backup_path(disk_imager_selected_disk, 0, 0,
+                                disk_imager_disk_path,
+                                sizeof(disk_imager_disk_path));
+  disk_imager_build_backup_path(disk_imager_selected_disk,
+                                disk_imager_selected_partition, 1,
+                                disk_imager_partition_path,
+                                sizeof(disk_imager_partition_path));
+  if (disk_imager_status[0] == '\0')
+    disk_imager_set_status("Ready.");
+}
+
+static int disk_imager_write_range(int disk_index, uint32_t start_lba,
+                                   uint32_t sector_count, const char *path) {
+  uint8_t sector[512];
+  struct file *file;
+  uint32_t disk_capacity;
+
+  if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
+    return -1;
+
+  disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
+  if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
+    return -1;
+
+  file = vfs_open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (!file)
+    return -1;
+
+  for (uint32_t i = 0; i < sector_count; i++) {
+    if (storage_read_block(disk_index, start_lba + i, sector, sizeof(sector)) !=
+        0) {
+      vfs_close(file);
+      return -1;
+    }
+    if (vfs_write(file, (const char *)sector, sizeof(sector)) !=
+        (ssize_t)sizeof(sector)) {
+      vfs_close(file);
+      return -1;
+    }
+  }
+
+  vfs_close(file);
+  return 0;
+}
+
+static int disk_imager_read_range(int disk_index, uint32_t start_lba,
+                                  uint32_t sector_count, const char *path) {
+  uint8_t sector[512];
+  struct file *file;
+  uint32_t disk_capacity;
+
+  if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
+    return -1;
+
+  disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
+  if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
+    return -1;
+
+  file = vfs_open(path, O_RDONLY, 0);
+  if (!file)
+    return -1;
+
+  for (uint32_t i = 0; i < sector_count; i++) {
+    ssize_t read_len = vfs_read(file, (char *)sector, sizeof(sector));
+    if (read_len < 0) {
+      vfs_close(file);
+      return -1;
+    }
+    if (read_len < (ssize_t)sizeof(sector)) {
+      for (size_t j = (size_t)read_len; j < sizeof(sector); j++)
+        sector[j] = 0;
+    }
+    if (storage_write_block(disk_index, start_lba + i, sector, sizeof(sector)) !=
+        0) {
+      vfs_close(file);
+      return -1;
+    }
+    if (read_len == 0) {
+      for (uint32_t rest = i + 1; rest < sector_count; rest++) {
+        for (size_t j = 0; j < sizeof(sector); j++)
+          sector[j] = 0;
+        if (storage_write_block(disk_index, start_lba + rest, sector,
+                                sizeof(sector)) != 0) {
+          vfs_close(file);
+          return -1;
+        }
+      }
+      break;
+    }
+  }
+
+  vfs_close(file);
+  return 0;
+}
+
+static int disk_imager_backup_disk(void) {
+  uint32_t sectors;
+
+  if (disk_imager_selected_disk < 0)
+    return -1;
+  sectors = storage_get_disk_capacity_mib(disk_imager_selected_disk) * 2048U;
+  if (sectors == 0)
+    return -1;
+  return disk_imager_write_range(disk_imager_selected_disk, 0, sectors,
+                                 disk_imager_disk_path);
+}
+
+static int disk_imager_restore_disk(void) {
+  uint32_t sectors;
+
+  if (disk_imager_selected_disk < 0)
+    return -1;
+  sectors = storage_get_disk_capacity_mib(disk_imager_selected_disk) * 2048U;
+  if (sectors == 0)
+    return -1;
+  return disk_imager_read_range(disk_imager_selected_disk, 0, sectors,
+                                disk_imager_disk_path);
+}
+
+static int disk_imager_backup_partition(void) {
+  uint32_t start_lba = 0;
+  uint32_t sector_count = 0;
+  storage_partition_kind_t kind = STORAGE_PARTITION_UNKNOWN;
+  char label[160];
+
+  if (disk_imager_selected_disk < 0)
+    return -1;
+  if (storage_get_partition_info(disk_imager_selected_disk,
+                                 disk_imager_selected_partition, &kind, label,
+                                 sizeof(label), &start_lba, &sector_count) !=
+      0)
+    return -1;
+  (void)kind;
+  return disk_imager_write_range(disk_imager_selected_disk, start_lba,
+                                 sector_count, disk_imager_partition_path);
+}
+
+static int disk_imager_restore_partition(void) {
+  uint32_t start_lba = 0;
+  uint32_t sector_count = 0;
+  storage_partition_kind_t kind = STORAGE_PARTITION_UNKNOWN;
+  char label[160];
+
+  if (disk_imager_selected_disk < 0)
+    return -1;
+  if (storage_get_partition_info(disk_imager_selected_disk,
+                                 disk_imager_selected_partition, &kind, label,
+                                 sizeof(label), &start_lba, &sector_count) !=
+      0)
+    return -1;
+  (void)kind;
+  return disk_imager_read_range(disk_imager_selected_disk, start_lba,
+                                sector_count, disk_imager_partition_path);
+}
+
+static void open_disk_imager_window(int x, int y) {
+  disk_imager_refresh_state();
+  if (disk_imager_selected_disk < 0)
+    disk_imager_selected_disk = installer_selected_disk_index();
+  if (disk_imager_selected_disk < 0 && storage_get_disk_count() > 0)
+    disk_imager_selected_disk = 0;
+  if (disk_imager_selected_partition < 0)
+    disk_imager_selected_partition = 0;
+  vfs_mkdir("/Backups", 0755);
+  gui_create_window("Disk Imager", x, y, 620, 440);
+}
+
+static void draw_disk_imager_window(int content_x, int content_y, int content_w,
+                                    int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
+  int list_x = content_x + 18;
+  int list_y = content_y + 78;
+  int list_w = (content_w - 54) / 2;
+  int list_h = content_h - 166;
+  int right_x = list_x + list_w + 18;
+  int row_h = 24;
+  int disk_count = storage_get_disk_count();
+  int partition_count = 0;
+
+  disk_imager_refresh_state();
+  if (disk_imager_selected_disk >= 0)
+    partition_count = storage_get_partition_count(disk_imager_selected_disk);
+
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->app_bg);
+  gui_draw_rect(content_x + 12, content_y + 12, content_w - 24, 56,
+                theme->card);
+  gui_draw_string(content_x + 24, content_y + 24, "Disk Imager", theme->app_fg,
+                  theme->card);
+  gui_draw_string(content_x + 24, content_y + 44,
+                  "Backup or restore a whole disk or a partition to a raw image.",
+                  theme->app_muted, theme->card);
+
+  gui_draw_rect(list_x, list_y, list_w, list_h, theme->card);
+  gui_draw_rect(right_x, list_y, list_w, list_h, theme->card);
+  gui_draw_string(list_x + 12, list_y + 12, "Disks", 0x89B4FA, theme->card);
+  gui_draw_string(right_x + 12, list_y + 12, "Partitions", 0x89B4FA,
+                  theme->card);
+
+  for (int i = 0; i < disk_count && i < 6; i++) {
+    int row_y = list_y + 36 + i * 28;
+    uint32_t row_bg = (i == disk_imager_selected_disk) ? theme->file_row_selected
+                                                       : theme->surface_alt;
+    char row_label[160];
+    if (storage_describe_disk(i, row_label, sizeof(row_label)) != 0)
+      str_copy_safe(row_label, "Unknown disk", sizeof(row_label));
+    gui_draw_rect(list_x + 10, row_y, list_w - 20, row_h, row_bg);
+    gui_draw_string(list_x + 18, row_y + 5, row_label, theme->app_fg, row_bg);
+  }
+
+  for (int i = 0; i < partition_count && i < 6; i++) {
+    int row_y = list_y + 36 + i * 28;
+    uint32_t row_bg =
+        (i == disk_imager_selected_partition) ? theme->file_row_selected
+                                              : theme->surface_alt;
+    gui_draw_rect(right_x + 10, row_y, list_w - 20, row_h, row_bg);
+    gui_draw_string(right_x + 18, row_y + 5, partition_manager_labels[i],
+                    theme->app_fg, row_bg);
+  }
+
+  gui_draw_string(content_x + 24, content_y + content_h - 108, "Disk image:",
+                  0x93C5FD, theme->card);
+  gui_draw_string(content_x + 116, content_y + content_h - 108,
+                  disk_imager_disk_path, theme->app_fg, theme->card);
+  gui_draw_string(content_x + 24, content_y + content_h - 86, "Partition image:",
+                  0x93C5FD, theme->card);
+  gui_draw_string(content_x + 116, content_y + content_h - 86,
+                  disk_imager_partition_path, theme->app_fg, theme->card);
+  gui_draw_string(content_x + 24, content_y + content_h - 64, "Status:",
+                  0x93C5FD, theme->card);
+  gui_draw_string(content_x + 92, content_y + content_h - 64,
+                  disk_imager_status, theme->accent, theme->card);
+
+  gui_draw_rect(content_x + 24, content_y + content_h - 44, 104, 28, 0x2563EB);
+  gui_draw_string(content_x + 40, content_y + content_h - 35, "Backup Disk",
+                  0xFFFFFF, 0x2563EB);
+  gui_draw_rect(content_x + 136, content_y + content_h - 44, 104, 28, 0x0F766E);
+  gui_draw_string(content_x + 150, content_y + content_h - 35, "Restore Disk",
+                  0xFFFFFF, 0x0F766E);
+  gui_draw_rect(content_x + 248, content_y + content_h - 44, 116, 28, 0x1D4ED8);
+  gui_draw_string(content_x + 263, content_y + content_h - 35, "Backup Part",
+                  0xFFFFFF, 0x1D4ED8);
+  gui_draw_rect(content_x + 372, content_y + content_h - 44, 116, 28, 0x7C2D12);
+  gui_draw_string(content_x + 386, content_y + content_h - 35, "Restore Part",
+                  0xFFFFFF, 0x7C2D12);
+  gui_draw_rect(content_x + 496, content_y + content_h - 44, 84, 28, 0x4B5563);
+  gui_draw_string(content_x + 512, content_y + content_h - 35, "Refresh",
+                  0xFFFFFF, 0x4B5563);
+}
+
 static void open_partition_manager_window(int x, int y) {
   installer_refresh_disk_inventory();
   partition_manager_refresh_partitions();
@@ -10547,6 +10951,18 @@ static void draw_window(struct window *win) {
                     theme->about_card);
     gui_draw_string(left_col_x + 90, col_y + 98, gpu_status, theme->accent,
                     theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 118, "Build #:",
+                    theme->about_subtext, theme->about_card);
+    gui_draw_string(left_col_x + 90, col_y + 118, BUILD_NUMBER, theme->accent,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 138, "Branch:", theme->about_subtext,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 90, col_y + 138, BUILD_BRANCH, theme->accent,
+                    theme->about_card);
+    gui_draw_string(left_col_x + 14, col_y + 158, "Compiled:",
+                    theme->about_subtext, theme->about_card);
+    gui_draw_string(left_col_x + 90, col_y + 158, BUILD_COMPILE_TIME,
+                    theme->accent, theme->about_card);
 
     gui_draw_rect(right_col_x, col_y, col_w, info_h, theme->about_card);
     gui_draw_rect(right_col_x, col_y, col_w, 3, theme->accent);
@@ -10850,6 +11266,9 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 40, panel_y + 135, "Devices", 0xF2F2F2, 0x111111);
       gui_draw_rect(panel_x + 138, panel_y + 126, 96, 30, 0x111111);
       gui_draw_string(panel_x + 172, panel_y + 135, "Files", 0xF2F2F2, 0x111111);
+      gui_draw_rect(panel_x + 242, panel_y + 126, 112, 30, 0x111111);
+      gui_draw_string(panel_x + 266, panel_y + 135, "Disk Imager", 0xF2F2F2,
+                      0x111111);
     } else if (settings_active_tab == 3) {
       int preview_x = panel_x;
       int preview_y = panel_y + 72;
@@ -12816,6 +13235,9 @@ static void draw_system_app_icon_kind(gui_app_kind_t kind, int x, int y,
     break;
   case GUI_APP_APPSTORE:
     draw_icon_appstore(x, y, size);
+    break;
+  case GUI_APP_DISK_IMAGER:
+    draw_icon_settings(x, y, size);
     break;
   }
 }
@@ -15258,7 +15680,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
     dragging_window = 0;
     resizing_window = 0;
     resize_edge = RESIZE_NONE;
+    if (desktop_session_active())
+      desktop_release_drag(x, y);
   }
+
+  if (desktop_session_active() && left_held && !dragging_window &&
+      !resizing_window)
+    desktop_update_drag(x, y, left_held);
 
   /* Handle desktop right-click (context menu) - check BEFORE left_click gate */
   if (desktop_session_active() && right_click) {
@@ -15747,6 +16175,13 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
               y < row_y + 30) {
             gui_create_file_manager_path(win->x + 26, win->y + 26, "/");
             str_copy_safe(settings_status, "Opened file manager.",
+                          sizeof(settings_status));
+            break;
+          }
+          if (x >= panel_x + 242 && x < panel_x + 354 && y >= row_y &&
+              y < row_y + 30) {
+            gui_create_window("Disk Imager", win->x + 34, win->y + 34, 620, 440);
+            str_copy_safe(settings_status, "Opened disk imager.",
                           sizeof(settings_status));
             break;
           }
@@ -16300,6 +16735,98 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           str_copy_safe(partition_manager_status,
                         "Opened File Manager for disk-related files.",
                         sizeof(partition_manager_status));
+          return;
+        }
+      }
+
+      if (win->title[0] == 'D' && win->title[1] == 'i' &&
+          win->title[2] == 's' && win->title[3] == 'k') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_w = win->width - BORDER_WIDTH * 2;
+        int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+        int list_x = content_x + 18;
+        int list_y = content_y + 78;
+        int list_w = (content_w - 54) / 2;
+        int right_x = list_x + list_w + 18;
+        int disk_count = storage_get_disk_count();
+        int partition_count;
+
+        disk_imager_refresh_state();
+        partition_count = disk_imager_selected_disk >= 0
+                              ? storage_get_partition_count(
+                                    disk_imager_selected_disk)
+                              : 0;
+
+        for (int i = 0; i < disk_count && i < 6; i++) {
+          int row_y = list_y + 36 + i * 28;
+          if (x >= list_x + 10 && x < list_x + list_w - 10 && y >= row_y &&
+              y < row_y + 24) {
+            disk_imager_selected_disk = i;
+            disk_imager_selected_partition = 0;
+            disk_imager_set_status("Disk selected.");
+            return;
+          }
+        }
+
+        partition_count = disk_imager_selected_disk >= 0
+                              ? storage_get_partition_count(
+                                    disk_imager_selected_disk)
+                              : 0;
+        for (int i = 0; i < partition_count && i < 6; i++) {
+          int row_y = list_y + 36 + i * 28;
+          if (x >= right_x + 10 && x < right_x + list_w - 10 &&
+              y >= row_y && y < row_y + 24) {
+            disk_imager_selected_partition = i;
+            disk_imager_set_status("Partition selected.");
+            return;
+          }
+        }
+
+        if (x >= content_x + 24 && x < content_x + 128 &&
+            y >= content_y + content_h - 44 && y < content_y + content_h - 16) {
+          if (disk_imager_backup_disk() == 0) {
+            disk_imager_set_status("Disk image created successfully.");
+          } else {
+            disk_imager_set_status("Disk backup failed.");
+          }
+          return;
+        }
+
+        if (x >= content_x + 136 && x < content_x + 240 &&
+            y >= content_y + content_h - 44 && y < content_y + content_h - 16) {
+          if (disk_imager_restore_disk() == 0) {
+            disk_imager_set_status("Disk image restored successfully.");
+          } else {
+            disk_imager_set_status("Disk restore failed.");
+          }
+          return;
+        }
+
+        if (x >= content_x + 248 && x < content_x + 364 &&
+            y >= content_y + content_h - 44 && y < content_y + content_h - 16) {
+          if (disk_imager_backup_partition() == 0) {
+            disk_imager_set_status("Partition image created successfully.");
+          } else {
+            disk_imager_set_status("Partition backup failed.");
+          }
+          return;
+        }
+
+        if (x >= content_x + 372 && x < content_x + 488 &&
+            y >= content_y + content_h - 44 && y < content_y + content_h - 16) {
+          if (disk_imager_restore_partition() == 0) {
+            disk_imager_set_status("Partition image restored successfully.");
+          } else {
+            disk_imager_set_status("Partition restore failed.");
+          }
+          return;
+        }
+
+        if (x >= content_x + 496 && x < content_x + 580 &&
+            y >= content_y + content_h - 44 && y < content_y + content_h - 16) {
+          disk_imager_refresh_state();
+          disk_imager_set_status("Disk inventory refreshed.");
           return;
         }
       }
