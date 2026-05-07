@@ -61,6 +61,9 @@ static int intel_gfx_device_id_in_list(uint16_t device_id,
 static const uint16_t intel_gfx_ivybridge_ids[] = {
     0x0152, 0x0156, 0x015A, 0x0162, 0x0166, 0x016A, 0};
 
+static const uint16_t intel_gfx_sandy_bridge_ids[] = {
+    0x0102, 0x0106, 0x010A, 0x0112, 0x0116, 0x0122, 0x0126, 0};
+
 static const uint16_t intel_gfx_haswell_ids[] = {
     0x0402, 0x0406, 0x040A, 0x040B, 0x040E, 0x0412, 0x0416, 0x041A, 0x041E,
     0x0A02, 0x0A06, 0x0A0A, 0x0A0B, 0x0A0E, 0x0A16, 0x0A1E, 0x0C02, 0x0C06,
@@ -70,6 +73,12 @@ static const uint16_t intel_gfx_broadwell_ids[] = {
     0x1602, 0x1606, 0x160A, 0x160B, 0x160D, 0x160E, 0x1612, 0x1616, 0x161A,
     0x161B, 0x161D, 0x161E, 0x1622, 0x1626, 0x162A, 0x162B, 0x162D, 0x162E,
     0x1632, 0x1636, 0x163A, 0x163B, 0x163D, 0x163E, 0};
+
+static const uint16_t intel_gfx_bay_trail_ids[] = {
+    0x0155, 0x0157, 0x0F30, 0x0F31, 0x0F32, 0x0F33, 0};
+
+static const uint16_t intel_gfx_cherryview_ids[] = {
+    0x22B0, 0x22B1, 0x22B2, 0x22B3, 0};
 
 static const uint16_t intel_gfx_skylake_ids[] = {
     0x1902, 0x1906, 0x190A, 0x190B, 0x190E, 0x1912, 0x1913, 0x1915, 0x1916,
@@ -86,6 +95,28 @@ static const uint16_t intel_gfx_apollo_lake_ids[] = {
 
 static const uint16_t intel_gfx_gemini_lake_ids[] = {0x3184, 0x3185, 0};
 
+static const uint16_t intel_gfx_ice_lake_ids[] = {
+    0x8A50, 0x8A51, 0x8A52, 0x8A53, 0x8A54, 0x8A56, 0x8A57, 0x8A58, 0x8A59,
+    0x8A5A, 0x8A5B, 0x8A5C, 0x8A5D, 0x8A70, 0x8A71, 0};
+
+static const uint16_t intel_gfx_tiger_lake_ids[] = {
+    0x9A40, 0x9A49, 0x9A59, 0x9A60, 0x9A68, 0x9A70, 0x9A78, 0};
+
+static const uint16_t intel_gfx_rocket_lake_ids[] = {
+    0x4C8A, 0x4C8B, 0x4C90, 0x4C9A, 0};
+
+static const uint16_t intel_gfx_jasper_lake_ids[] = {
+    0x4E51, 0x4E55, 0x4E57, 0x4E61, 0x4E71, 0};
+
+static const uint16_t intel_gfx_elkhart_lake_ids[] = {
+    0x4541, 0x4551, 0x4555, 0x4557, 0x4571, 0};
+
+static const uint16_t intel_gfx_alder_lake_ids[] = {
+    0x4626, 0x4628, 0x462A, 0x4680, 0x4682, 0x4688, 0x468A, 0x468B, 0x4690,
+    0x4692, 0x4693, 0x46A0, 0x46A1, 0x46A2, 0x46A3, 0x46A6, 0x46A8, 0x46AA,
+    0x46B0, 0x46B1, 0x46B2, 0x46B3, 0x46C0, 0x46C1, 0x46C2, 0x46C3, 0x46D0,
+    0x46D1, 0x46D2, 0x46D3, 0x46D4, 0xA721, 0};
+
 static const uint16_t intel_gfx_coffee_lake_ids[] = {
     0x3E90, 0x3E91, 0x3E92, 0x3E93, 0x3E94, 0x3E96, 0x3E98, 0x3E99, 0x3E9A,
     0x3E9B, 0x3E9C, 0x3EA0, 0x3EA1, 0x3EA2, 0x3EA3, 0x3EA4, 0x3EA5, 0x3EA6,
@@ -95,10 +126,12 @@ static const uint16_t intel_gfx_coffee_lake_ids[] = {
 
 static const uint16_t intel_gfx_comet_lake_ids[] = {0x9BC5, 0x9BC8, 0};
 
-static const uint16_t intel_gfx_modern_xe_ids[] = {0x46A6, 0x46A8, 0x46D1, 0};
-
 static int intel_gfx_is_ivybridge_device(uint16_t device_id) {
   return intel_gfx_device_id_in_list(device_id, intel_gfx_ivybridge_ids);
+}
+
+static int intel_gfx_is_sandy_bridge_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_sandy_bridge_ids);
 }
 
 static int intel_gfx_is_haswell_device(uint16_t device_id) {
@@ -107,6 +140,14 @@ static int intel_gfx_is_haswell_device(uint16_t device_id) {
 
 static int intel_gfx_is_broadwell_device(uint16_t device_id) {
   return intel_gfx_device_id_in_list(device_id, intel_gfx_broadwell_ids);
+}
+
+static int intel_gfx_is_bay_trail_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_bay_trail_ids);
+}
+
+static int intel_gfx_is_cherryview_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_cherryview_ids);
 }
 
 static int intel_gfx_is_skylake_device(uint16_t device_id) {
@@ -125,6 +166,30 @@ static int intel_gfx_is_gemini_lake_device(uint16_t device_id) {
   return intel_gfx_device_id_in_list(device_id, intel_gfx_gemini_lake_ids);
 }
 
+static int intel_gfx_is_ice_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_ice_lake_ids);
+}
+
+static int intel_gfx_is_tiger_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_tiger_lake_ids);
+}
+
+static int intel_gfx_is_rocket_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_rocket_lake_ids);
+}
+
+static int intel_gfx_is_jasper_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_jasper_lake_ids);
+}
+
+static int intel_gfx_is_elkhart_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_elkhart_lake_ids);
+}
+
+static int intel_gfx_is_alder_lake_device(uint16_t device_id) {
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_alder_lake_ids);
+}
+
 static int intel_gfx_is_coffee_lake_device(uint16_t device_id) {
   return intel_gfx_device_id_in_list(device_id, intel_gfx_coffee_lake_ids);
 }
@@ -134,17 +199,26 @@ static int intel_gfx_is_comet_lake_device(uint16_t device_id) {
 }
 
 static int intel_gfx_is_modern_xe_device(uint16_t device_id) {
-  return intel_gfx_device_id_in_list(device_id, intel_gfx_modern_xe_ids);
+  return intel_gfx_device_id_in_list(device_id, intel_gfx_alder_lake_ids);
 }
 
 static int intel_gfx_is_supported_device_id(uint16_t device_id) {
-  return intel_gfx_is_ivybridge_device(device_id) ||
+  return intel_gfx_is_sandy_bridge_device(device_id) ||
+         intel_gfx_is_ivybridge_device(device_id) ||
          intel_gfx_is_haswell_device(device_id) ||
          intel_gfx_is_broadwell_device(device_id) ||
+         intel_gfx_is_bay_trail_device(device_id) ||
+         intel_gfx_is_cherryview_device(device_id) ||
          intel_gfx_is_skylake_device(device_id) ||
          intel_gfx_is_kaby_lake_device(device_id) ||
          intel_gfx_is_apollo_lake_device(device_id) ||
          intel_gfx_is_gemini_lake_device(device_id) ||
+         intel_gfx_is_ice_lake_device(device_id) ||
+         intel_gfx_is_tiger_lake_device(device_id) ||
+         intel_gfx_is_rocket_lake_device(device_id) ||
+         intel_gfx_is_jasper_lake_device(device_id) ||
+         intel_gfx_is_elkhart_lake_device(device_id) ||
+         intel_gfx_is_alder_lake_device(device_id) ||
          intel_gfx_is_coffee_lake_device(device_id) ||
          intel_gfx_is_comet_lake_device(device_id) ||
          intel_gfx_is_modern_xe_device(device_id);
@@ -161,6 +235,15 @@ static int intel_gfx_should_use_native_driver(uint16_t device_id) {
 
 static const char *intel_gfx_detect_name(uint16_t device_id) {
   switch (device_id) {
+  case 0x0102:
+  case 0x0106:
+  case 0x010A:
+    return "Intel HD Graphics 2000";
+  case 0x0112:
+  case 0x0116:
+  case 0x0122:
+  case 0x0126:
+    return "Intel HD Graphics 3000";
   case 0x0152:
   case 0x0156:
     return "Intel HD Graphics 2500";
@@ -204,6 +287,19 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
     return "Intel Iris Pro Graphics P6300";
   case 0x162B:
     return "Intel Iris Graphics 6100";
+  case 0x0155:
+  case 0x0157:
+  case 0x0F30:
+  case 0x0F31:
+  case 0x0F32:
+  case 0x0F33:
+    return "Intel HD Graphics";
+  case 0x22B0:
+  case 0x22B2:
+  case 0x22B3:
+    return "Intel HD Graphics";
+  case 0x22B1:
+    return "Intel HD Graphics XXX";
   case 0x0402:
   case 0x0406:
   case 0x040A:
@@ -279,6 +375,81 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
     return "Intel UHD Graphics 605";
   case 0x3185:
     return "Intel UHD Graphics 600";
+  case 0x8A50:
+  case 0x8A57:
+  case 0x8A59:
+  case 0x8A5B:
+  case 0x8A5D:
+  case 0x8A70:
+  case 0x8A71:
+    return "Intel HD Graphics";
+  case 0x8A56:
+  case 0x8A58:
+    return "Intel UHD Graphics";
+  case 0x8A51:
+  case 0x8A52:
+  case 0x8A53:
+  case 0x8A54:
+  case 0x8A5A:
+  case 0x8A5C:
+    return "Intel Iris Plus Graphics";
+  case 0x9A40:
+  case 0x9A49:
+    return "Intel Iris Xe Graphics";
+  case 0x9A59:
+  case 0x9A60:
+  case 0x9A68:
+  case 0x9A70:
+  case 0x9A78:
+    return "Intel UHD Graphics";
+  case 0x4C8A:
+    return "Intel UHD Graphics 750";
+  case 0x4C8B:
+    return "Intel UHD Graphics 730";
+  case 0x4C90:
+  case 0x4C9A:
+    return "Intel UHD Graphics P750";
+  case 0x4E51:
+  case 0x4E55:
+  case 0x4E57:
+  case 0x4E61:
+  case 0x4E71:
+    return "Intel UHD Graphics";
+  case 0x4541:
+  case 0x4551:
+  case 0x4555:
+  case 0x4557:
+  case 0x4571:
+    return "Intel UHD Graphics";
+  case 0x4626:
+  case 0x4628:
+  case 0x462A:
+  case 0x4680:
+  case 0x4682:
+  case 0x4688:
+  case 0x468A:
+  case 0x468B:
+  case 0x4690:
+  case 0x4692:
+  case 0x4693:
+  case 0x46A0:
+  case 0x46A1:
+  case 0x46A2:
+  case 0x46A3:
+  case 0x46B0:
+  case 0x46B1:
+  case 0x46B2:
+  case 0x46B3:
+  case 0x46C0:
+  case 0x46C1:
+  case 0x46C2:
+  case 0x46C3:
+  case 0x46D0:
+  case 0x46D2:
+  case 0x46D3:
+  case 0x46D4:
+  case 0xA721:
+    return "Intel UHD Graphics";
   case 0x3EA5:
   case 0x3EA8:
     return "Intel Iris Plus Graphics 655";
@@ -334,6 +505,7 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
     return "Intel UHD Graphics 620";
   case 0x46A6:
   case 0x46A8:
+  case 0x46AA:
   case 0x46D1:
     return "Intel Iris Xe Graphics";
   default:
