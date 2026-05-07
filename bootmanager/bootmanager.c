@@ -1,7 +1,7 @@
 /*
  * OS8 - Boot Manager
  *
- * Configurable boot with splash screen and boot target selection.
+ * Configurable boot with text logging and boot target selection.
  */
 
 #include "bootmanager.h"
@@ -25,7 +25,7 @@ static struct boot_config boot_cfg = {
     .version = 1,
     .timeout_seconds = BOOT_TIMEOUT_DEFAULT,
     .default_target = BOOT_TARGET_KERNEL,
-    .show_splash = true,
+    .show_splash = false,
     .verbose_boot = false,
     .debug_mode = false,
     .kernel_cmdline = "console=ttyS0 rootwait",
@@ -60,17 +60,6 @@ static int str_contains_token(const char *haystack, const char *needle) {
     i++;
   }
   return 0;
-}
-
-static const char *splash_logo[] = {"", "Starting OS8",
-                                    "        ARM64 Operating System", "",
-                                    NULL};
-
-static void draw_splash_text(void) {
-  printk("\n");
-  for (int i = 0; splash_logo[i] != NULL; i++)
-    printk("%s\n", splash_logo[i]);
-  printk("\n");
 }
 
 static void draw_progress_bar(int percent) {
@@ -118,12 +107,17 @@ void boot_set_progress_callback(progress_callback_t cb) {
 }
 
 void boot_report_progress(const char *stage, int percent) {
-  if (boot_cfg.show_splash) {
-    draw_progress_bar(percent);
-    if (boot_cfg.verbose_boot)
-      printk("  %s", stage);
-    printk("\n");
+  if (stage && stage[0]) {
+    if (percent >= 0)
+      printk(KERN_INFO "BOOT: %-32s %3d%%\n", stage, percent);
+    else
+      printk(KERN_INFO "BOOT: %s\n", stage);
+  } else {
+    printk(KERN_INFO "BOOT: progress %d%%\n", percent);
   }
+
+  if (boot_cfg.verbose_boot)
+    draw_progress_bar(percent);
 
   if (boot_progress_cb)
     boot_progress_cb(stage, percent);
@@ -153,9 +147,6 @@ int boot_show_menu(void) {
 
 void boot_init(void) {
   printk(KERN_INFO "BOOT: Initializing boot manager\n");
-
-  if (boot_cfg.show_splash)
-    draw_splash_text();
 
   boot_add_entry("OS8", boot_cfg.default_kernel,
                  boot_cfg.kernel_cmdline);

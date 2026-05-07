@@ -2844,26 +2844,9 @@ void gui_init(void) {
   img_viewer.x = (screen_width - img_viewer.width) / 2;
   img_viewer.y = (screen_height - img_viewer.height) / 2;
 
-  /* Initialize USB (xHCI/EHCI) for keyboard input - with visual progress */
-  /* Yellow marker = starting USB init */
-  fb_fill_rect(190, 10, 50, 10, 0xFFFFFF00);
-  fb_swap_buffers();
-
-  /* Orange marker = starting xHCI init */
-  fb_fill_rect(250, 10, 50, 10, 0xFFFF9900);
-  fb_swap_buffers();
+  /* Initialize USB (xHCI/EHCI) for keyboard input without splash visuals. */
   usb_xhci_init();
-  /* Green marker = xHCI init done */
-  fb_fill_rect(310, 10, 50, 10, 0xFF00FF00);
-  fb_swap_buffers();
-
-  /* Magenta marker = starting EHCI init */
-  fb_fill_rect(370, 10, 50, 10, 0xFFFF00FF);
-  fb_swap_buffers();
   usb_ehci_init();
-  /* Cyan marker = EHCI init done */
-  fb_fill_rect(430, 10, 50, 10, 0xFF00FFFF);
-  fb_swap_buffers();
 
   /* Show terminal and file manager as demo */
   terminal.visible = 1;

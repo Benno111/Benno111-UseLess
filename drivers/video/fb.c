@@ -73,8 +73,6 @@ static struct {
     bool initialized;
 } framebuffer = {0};
 
-extern int boot_should_show_splash(void);
-
 static uint32_t fb_blend_rgb(uint32_t dst, uint32_t src, uint8_t alpha) {
     uint32_t inv = 255 - (uint32_t)alpha;
     uint32_t dr = (dst >> 16) & 0xFF;
@@ -204,73 +202,109 @@ static void fb_draw_image_scaled(int x, int y, int w, int h,
 }
 
 /* ===================================================================== */
-/* Boot Splash Screen */
+/* Boot Log Screen */
 /* ===================================================================== */
+
+static void fb_draw_wrapped_text(int x, int y, int max_chars, const char *text,
+                                 uint32_t fg, uint32_t bg, int max_lines) {
+    char line[128];
+    int line_len = 0;
+    int lines_drawn = 0;
+
+    if (!text || max_chars <= 0 || max_lines <= 0)
+        return;
+    if (max_chars > (int)sizeof(line) - 1)
+        max_chars = (int)sizeof(line) - 1;
+
+    for (size_t i = 0;; i++) {
+        char c = text[i];
+        int flush = 0;
+
+        if (c == '\0' || c == '\n' || line_len >= max_chars) {
+            flush = 1;
+        } else {
+            line[line_len++] = c;
+        }
+
+        if (flush) {
+            line[line_len] = '\0';
+            fb_draw_string(x, y + lines_drawn * 8, line, fg, bg);
+            lines_drawn++;
+            line_len = 0;
+            if (lines_drawn >= max_lines || c == '\0')
+                break;
+            if (c != '\0' && c != '\n' && line_len < max_chars)
+                line[line_len++] = c;
+        }
+    }
+}
+
+void fb_show_boot_log(void) {
+    char log_buf[4096];
+    size_t log_size;
+    size_t log_offset;
+    size_t copied;
+    int text_x;
+    int text_y;
+    int max_chars;
+    int max_lines;
+    int panel_x;
+    int panel_y;
+    int panel_w;
+    int panel_h;
+
+    if (!framebuffer.initialized)
+        return;
+
+    fb_clear(0x0B1020);
+    fb_fill_rect(24, 24, (int)framebuffer.width - 48,
+                 (int)framebuffer.height - 48, 0x111827);
+    fb_fill_rect(24, 24, (int)framebuffer.width - 48, 2, 0x4F46E5);
+    fb_fill_rect(24, 24, 2, (int)framebuffer.height - 48, 0x4F46E5);
+    fb_fill_rect(24, (int)framebuffer.height - 26, (int)framebuffer.width - 48,
+                 2, 0x4F46E5);
+
+    fb_draw_string(40, 40, "OS8 BOOT LOG", 0xFFFFFF, 0x111827);
+    fb_draw_string(40, 58, "Visible startup log, no splash screen", 0x93C5FD,
+                   0x111827);
+
+    panel_x = 40;
+    panel_y = 88;
+    panel_w = (int)framebuffer.width - 80;
+    panel_h = (int)framebuffer.height - 128;
+    if (panel_w < 80 || panel_h < 80)
+        return;
+
+    fb_fill_rect(panel_x, panel_y, panel_w, panel_h, 0x0F172A);
+    fb_fill_rect(panel_x, panel_y, panel_w, 1, 0x334155);
+    fb_fill_rect(panel_x, panel_y, 1, panel_h, 0x334155);
+
+    log_size = printk_log_size();
+    log_offset = log_size > sizeof(log_buf) - 1
+                     ? log_size - (sizeof(log_buf) - 1)
+                     : 0;
+    copied = printk_log_read(log_buf, log_offset, sizeof(log_buf) - 1);
+    log_buf[copied] = '\0';
+
+    text_x = panel_x + 16;
+    text_y = panel_y + 16;
+    max_chars = (panel_w - 32) / 8;
+    max_lines = (panel_h - 32) / 8;
+    if (max_chars < 8 || max_lines < 4)
+        return;
+
+    fb_draw_wrapped_text(text_x, text_y, max_chars, log_buf, 0xC7D2FE,
+                         0x0F172A, max_lines);
+}
 
 void fb_show_splash(void)
 {
-    const media_image_t *logo;
-
-    if (!framebuffer.initialized) return;
-    
-    /* Dark blue background */
-    fb_clear(0x1E1E2E);
-
-    logo = boot_splash_get_logo();
-    if (logo && logo->width && logo->height) {
-        uint32_t max_w = framebuffer.width * 2 / 5;
-        uint32_t max_h = framebuffer.height / 3;
-        uint32_t draw_w = max_w;
-        uint32_t draw_h = (logo->height * draw_w) / logo->width;
-        int text_x;
-        int text_y;
-
-        if (draw_h > max_h) {
-            draw_h = max_h;
-            draw_w = (logo->width * draw_h) / logo->height;
-        }
-        if (!draw_w)
-            draw_w = logo->width;
-        if (!draw_h)
-            draw_h = logo->height;
-
-        fb_draw_image_scaled((int)(framebuffer.width - draw_w) / 2,
-                             (int)(framebuffer.height - draw_h) / 2 - 10,
-                             (int)draw_w, (int)draw_h, logo);
-        text_x = ((int)framebuffer.width - 80) / 2;
-        text_y = ((int)framebuffer.height + (int)draw_h) / 2 + 18;
-        fb_draw_string(text_x, text_y,
-                       "Booting...", 0xCDD6F4, 0x1E1E2E);
-        return;
-    }
-
-    /* Fallback if the PNG cache is not ready yet. */
-    {
-        int cx = framebuffer.width / 2;
-        int cy = framebuffer.height / 2 - 50;
-
-        fb_fill_rect(cx - 60, cy - 30, 120, 60, 0x89B4FA);
-        fb_draw_string(cx - 28, cy - 4, "OS8", 0xFFFFFF, 0x89B4FA);
-        fb_draw_string(cx - 60, cy + 50, "ARM64 Operating System", 0xCDD6F4,
-                       0x1E1E2E);
-        fb_draw_string(cx - 40, cy + 70, "Booting...", 0x808080, 0x1E1E2E);
-    }
+    fb_show_boot_log();
 }
 
 void fb_show_x86_64_bringup_screen(void)
 {
-    if (!framebuffer.initialized) return;
-
-    fb_clear(0x101820);
-
-    fb_draw_string(40, 40, "OS8", 0xFFFFFF, 0x101820);
-    fb_draw_string(40, 64, "x86_64 bring-up mode", 0x89B4FA, 0x101820);
-    fb_draw_string(40, 104, "Kernel started successfully.", 0xA6E3A1, 0x101820);
-    fb_draw_string(40, 128, "Framebuffer is active.", 0xCDD6F4, 0x101820);
-    fb_draw_string(40, 152, "GUI/input stack is temporarily disabled", 0xF9E2AF, 0x101820);
-    fb_draw_string(40, 176, "until native x86_64 startup is stabilized.", 0xF9E2AF, 0x101820);
-    fb_draw_string(40, 216, "Serial log should continue on COM1.", 0x94E2D5, 0x101820);
-    fb_draw_string(40, 240, "System is halted in a safe idle loop.", 0x808080, 0x101820);
+    fb_show_boot_log();
 }
 
 /* ===================================================================== */
@@ -311,10 +345,7 @@ int fb_init(void)
         printk(KERN_INFO "FB: Using Limine framebuffer %ux%u at 0x%lx\n",
                framebuffer.width, framebuffer.height,
                (unsigned long)framebuffer.buffer);
-        boot_splash_prepare();
-        if (boot_should_show_splash()) {
-            fb_show_splash();
-        }
+        fb_show_boot_log();
         return 0;
     }
 
@@ -335,8 +366,6 @@ int fb_init(void)
     
     /* Clear to dark blue */
     fb_clear(0x1E1E2E);
-    boot_splash_prepare();
-    
     /* Configure QEMU ramfb to display our framebuffer */
 #ifndef ARCH_X86_64
     extern int ramfb_init(uint32_t *framebuffer, uint32_t width, uint32_t height);
@@ -347,10 +376,7 @@ int fb_init(void)
     }
 #endif
     
-    /* Show boot splash */
-    if (boot_should_show_splash()) {
-        fb_show_splash();
-    }
+    fb_show_boot_log();
     
     printk(KERN_INFO "FB: Initialization complete\n");
     

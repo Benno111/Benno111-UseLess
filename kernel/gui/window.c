@@ -2372,7 +2372,10 @@ static int gui_draw_embedded_logo(int x, int y, int w, int h) {
   return 0;
 }
 
-static void gui_wait_for_boot_splash(uint64_t duration_ms) {
+void gui_wait_for_boot_splash(uint64_t duration_ms) {
+  (void)duration_ms;
+  return;
+
   uint64_t start_ms = arch_timer_get_ms();
   uint64_t last_ms = start_ms;
   uint32_t stalled_loops = 0;
@@ -2498,7 +2501,11 @@ static void gui_draw_boot_logo_stamp(const media_image_t *logo, int center_x,
   }
 }
 
-static void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
+void gui_play_old_boot_sequence(uint32_t width, uint32_t height) {
+  (void)width;
+  (void)height;
+  return;
+
   const media_image_t *boot_logo = boot_splash_get_logo();
   int stage_scale;
   int stage_w;
@@ -16313,7 +16320,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
              uint32_t pitch) {
   printk(KERN_INFO "GUI: Initializing windowing system\n");
-  extern int boot_should_show_splash(void);
 
   if (gui_is_installer_mode()) {
     installer_has_run = 0;
@@ -16337,18 +16343,6 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   input_set_mouse_bounds((int)width, (int)height);
   mouse_x = (int)width / 2;
   mouse_y = (int)height / 2;
-
-  /* ============================================= */
-  /* LOADING SCREEN - Show during initialization  */
-  /* ============================================= */
-
-  if (boot_should_show_splash()) {
-    gui_play_old_boot_sequence(width, height);
-  }
-
-  /* ============================================= */
-  /* END LOADING SCREEN                           */
-  /* ============================================= */
 
   /* Register input callbacks */
   extern void input_set_gui_key_callback(void (*callback)(int key));

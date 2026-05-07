@@ -166,8 +166,14 @@ static void halt(void) {
 /* ========== Direct Screen Test ========== */
 
 /* Draw directly to framebuffer without any library functions */
-static void direct_screen_test(void *fb_addr, uint64_t width, uint64_t height,
-                               uint64_t pitch) {
+void direct_screen_test(void *fb_addr, uint64_t width, uint64_t height,
+                        uint64_t pitch) {
+    (void)fb_addr;
+    (void)width;
+    (void)height;
+    (void)pitch;
+    return;
+
   volatile uint8_t *fb = (volatile uint8_t *)fb_addr;
 
   serial_puts("Drawing test pattern...\n");
@@ -228,6 +234,57 @@ static void direct_screen_test(void *fb_addr, uint64_t width, uint64_t height,
   /* S */
   for (int i = 0; i < 20; i++)
     text_row[text_x + i] = 0xFF00FFFF;
+}
+
+static void draw_boot_log_panel(void) {
+  const char *lines[] = {
+      "Kernel entry point reached",
+      "Limine base revision verified",
+      "Framebuffer acquired",
+      "Initializing framebuffer",
+      "Initializing GUI",
+      "Starting main loop",
+      NULL};
+
+  if (!g_fb_ptr || !g_fb_width || !g_fb_height)
+    return;
+  if (g_fb_width < 80 || g_fb_height < 80)
+    return;
+
+  for (uint32_t py = 0; py < g_fb_height; py++) {
+    volatile uint32_t *row =
+        (volatile uint32_t *)((uint8_t *)g_fb_ptr + py * g_fb_pitch);
+    for (uint32_t px = 0; px < g_fb_width; px++) {
+      row[px] = 0xFF0B1020;
+    }
+  }
+
+  for (uint32_t px = 24; px + 24 < g_fb_width; px++) {
+    volatile uint32_t *top =
+        (volatile uint32_t *)((uint8_t *)g_fb_ptr + 24 * g_fb_pitch);
+    volatile uint32_t *bottom =
+        (volatile uint32_t *)((uint8_t *)g_fb_ptr +
+                               (g_fb_height - 26) * g_fb_pitch);
+    top[px] = 0xFF4F46E5;
+    bottom[px] = 0xFF4F46E5;
+  }
+
+  for (uint32_t py = 24; py + 24 < g_fb_height; py++) {
+    volatile uint32_t *left =
+        (volatile uint32_t *)((uint8_t *)g_fb_ptr + py * g_fb_pitch);
+    left[24] = 0xFF4F46E5;
+    left[g_fb_width - 25] = 0xFF4F46E5;
+  }
+
+  font_draw_string(40, 40, "OS8 BOOT LOG", 0xFFFFFFFF);
+  font_draw_string(40, 64, "Visible startup log, no splash screen",
+                   0xFF93C5FD);
+
+  for (int i = 0; lines[i] != NULL; i++) {
+    font_draw_string(40, 104 + (i * 20), lines[i], 0xFFC7D2FE);
+  }
+
+  fb_swap_buffers();
 }
 
 /* ========== Kernel Main ========== */
@@ -323,33 +380,13 @@ void _start(void) {
     }
   }
 
-  /* First: Direct screen test to verify framebuffer works */
-  serial_puts("Starting direct framebuffer test...\n");
-  direct_screen_test(fb->address, fb->width, fb->height, fb->pitch);
-
-  /* Visual checkpoint: RED = starting fb_init */
-  {
-    volatile uint32_t *row = (volatile uint32_t *)((uint8_t *)fb->address + 10 * fb->pitch);
-    for (int i = 0; i < 50; i++) row[10 + i] = 0xFFFF0000;
-  }
-
   serial_puts("Initializing framebuffer...\n");
   fb_init(fb->address, fb->width, fb->height, fb->pitch);
-
-  /* Visual checkpoint: GREEN = fb_init done, starting gui_init */
-  {
-    volatile uint32_t *row = (volatile uint32_t *)((uint8_t *)fb->address + 10 * fb->pitch);
-    for (int i = 0; i < 50; i++) row[70 + i] = 0xFF00FF00;
-  }
+  font_init();
+  draw_boot_log_panel();
 
   serial_puts("Initializing GUI...\n");
   gui_init();
-
-  /* Visual checkpoint: BLUE = gui_init done, starting main loop */
-  {
-    volatile uint32_t *row = (volatile uint32_t *)((uint8_t *)fb->address + 10 * fb->pitch);
-    for (int i = 0; i < 50; i++) row[130 + i] = 0xFF0000FF;
-  }
 
   /* Enable interrupts globally - REQUIRED for USB/PS2 to work! */
   serial_puts("Enabling interrupts...\n");

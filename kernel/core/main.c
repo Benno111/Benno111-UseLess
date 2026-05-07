@@ -470,7 +470,7 @@ static void start_x86_64_bringup(void) {
   extern int fb_init(void);
   extern const char *limine_get_kernel_cmdline(void);
   extern void boot_parse_cmdline(const char *cmdline);
-  extern void fb_show_x86_64_bringup_screen(void);
+  extern void fb_show_boot_log(void);
 
   boot_parse_cmdline(limine_get_kernel_cmdline());
 
@@ -478,7 +478,7 @@ static void start_x86_64_bringup(void) {
     panic("Failed to initialize framebuffer on x86_64!");
   }
 
-  fb_show_x86_64_bringup_screen();
+  fb_show_boot_log();
 
   printk(KERN_INFO "x86_64: initializing ACPI tables\n");
   acpi_init(limine_get_rsdp());
@@ -1295,7 +1295,7 @@ static void init_subsystems(void *dtb) {
   wifi_init();
 
   if (fb_buffer) {
-    /* Keep the splash visible while drivers load, then render the desktop/login UI. */
+    /* Refresh the framebuffer-backed desktop after the early boot log screen. */
     gui_compose();
     gui_draw_cursor();
     printk(KERN_INFO "  GUI desktop ready!\n");
@@ -1390,10 +1390,9 @@ static int gui_key_queue_pop(int *key_out) {
 }
 
 static void start_init_process(void) {
-  /* x86_64 still relies on a kernel-driven desktop loop for stability. */
 #ifdef ARCH_X86_64
   printk(KERN_INFO
-         "x86_64: skipping /sbin/init spawn, using kernel desktop loop\n");
+         "x86_64: keeping the desktop loop for now; /sbin/init stays on the ARM64 userspace path\n");
 #else
   /* Create and start init process asynchronously */
   printk(KERN_INFO "Spawning /sbin/init...\n");

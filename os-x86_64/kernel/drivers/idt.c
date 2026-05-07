@@ -4,6 +4,9 @@
 
 #include "../include/idt.h"
 
+extern void serial_puts(const char *s);
+extern void serial_puthex(uint64_t val);
+
 #define PIC1_CMD 0x20
 #define PIC1_DATA 0x21
 #define PIC2_CMD 0xA0
@@ -38,7 +41,80 @@ typedef struct {
 static idt_entry_t idt[256];
 static isr_handler_t isr_handlers[256];
 
-static void idt_handle_irq(uint8_t irq, interrupt_frame_t *frame) {
+static void halt_forever(void) {
+  for (;;) {
+    __asm__ volatile("cli; hlt");
+  }
+}
+
+static void __attribute__((no_caller_saved_registers))
+idt_panic_exception(uint8_t vector, interrupt_frame_t *frame,
+                    uint64_t error_code, int has_error_code) {
+  uint64_t cr2 = 0;
+
+  serial_puts("\n[EXCEPTION] Unhandled CPU exception vector=");
+  serial_puthex(vector);
+  serial_puts(" rip=");
+  serial_puthex(frame ? frame->rip : 0);
+  if (has_error_code) {
+    serial_puts(" err=");
+    serial_puthex(error_code);
+  }
+  if (vector == 14) {
+    __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+    serial_puts(" cr2=");
+    serial_puthex(cr2);
+  }
+  serial_puts("\n");
+  halt_forever();
+}
+
+#define DEFINE_EXCEPTION_HANDLER_NOERR(n)                                      \
+  __attribute__((interrupt)) static void isr_exc##n(interrupt_frame_t *frame) {\
+    idt_panic_exception((uint8_t)(n), frame, 0, 0);                            \
+  }
+
+#define DEFINE_EXCEPTION_HANDLER_ERR(n)                                        \
+  __attribute__((interrupt)) static void isr_exc##n(interrupt_frame_t *frame,  \
+                                                    uint64_t error_code) {     \
+    idt_panic_exception((uint8_t)(n), frame, error_code, 1);                   \
+  }
+
+DEFINE_EXCEPTION_HANDLER_NOERR(0)
+DEFINE_EXCEPTION_HANDLER_NOERR(1)
+DEFINE_EXCEPTION_HANDLER_NOERR(2)
+DEFINE_EXCEPTION_HANDLER_NOERR(3)
+DEFINE_EXCEPTION_HANDLER_NOERR(4)
+DEFINE_EXCEPTION_HANDLER_NOERR(5)
+DEFINE_EXCEPTION_HANDLER_NOERR(6)
+DEFINE_EXCEPTION_HANDLER_NOERR(7)
+DEFINE_EXCEPTION_HANDLER_ERR(8)
+DEFINE_EXCEPTION_HANDLER_NOERR(9)
+DEFINE_EXCEPTION_HANDLER_ERR(10)
+DEFINE_EXCEPTION_HANDLER_ERR(11)
+DEFINE_EXCEPTION_HANDLER_ERR(12)
+DEFINE_EXCEPTION_HANDLER_ERR(13)
+DEFINE_EXCEPTION_HANDLER_ERR(14)
+DEFINE_EXCEPTION_HANDLER_NOERR(15)
+DEFINE_EXCEPTION_HANDLER_NOERR(16)
+DEFINE_EXCEPTION_HANDLER_ERR(17)
+DEFINE_EXCEPTION_HANDLER_NOERR(18)
+DEFINE_EXCEPTION_HANDLER_NOERR(19)
+DEFINE_EXCEPTION_HANDLER_NOERR(20)
+DEFINE_EXCEPTION_HANDLER_NOERR(21)
+DEFINE_EXCEPTION_HANDLER_NOERR(22)
+DEFINE_EXCEPTION_HANDLER_NOERR(23)
+DEFINE_EXCEPTION_HANDLER_NOERR(24)
+DEFINE_EXCEPTION_HANDLER_NOERR(25)
+DEFINE_EXCEPTION_HANDLER_NOERR(26)
+DEFINE_EXCEPTION_HANDLER_NOERR(27)
+DEFINE_EXCEPTION_HANDLER_NOERR(28)
+DEFINE_EXCEPTION_HANDLER_NOERR(29)
+DEFINE_EXCEPTION_HANDLER_ERR(30)
+DEFINE_EXCEPTION_HANDLER_NOERR(31)
+
+static void __attribute__((no_caller_saved_registers))
+idt_handle_irq(uint8_t irq, interrupt_frame_t *frame) {
   uint8_t vector = (uint8_t)(0x20 + irq);
   if (isr_handlers[vector]) {
     isr_handlers[vector](frame);
@@ -86,9 +162,7 @@ __attribute__((interrupt)) static void isr_default(interrupt_frame_t *frame) {
 }
 
 void idt_register_handler(uint8_t vector, isr_handler_t handler) {
-  if (vector < 256) {
-    isr_handlers[vector] = handler;
-  }
+  isr_handlers[vector] = handler;
 }
 
 void idt_init(void) {
@@ -96,6 +170,40 @@ void idt_init(void) {
     idt_set_gate((uint8_t)i, isr_default);
     isr_handlers[i] = 0;
   }
+
+  /* CPU exception vectors 0x00 - 0x1F */
+  idt_set_gate(0x00, isr_exc0);
+  idt_set_gate(0x01, isr_exc1);
+  idt_set_gate(0x02, isr_exc2);
+  idt_set_gate(0x03, isr_exc3);
+  idt_set_gate(0x04, isr_exc4);
+  idt_set_gate(0x05, isr_exc5);
+  idt_set_gate(0x06, isr_exc6);
+  idt_set_gate(0x07, isr_exc7);
+  idt_set_gate(0x08, isr_exc8);
+  idt_set_gate(0x09, isr_exc9);
+  idt_set_gate(0x0A, isr_exc10);
+  idt_set_gate(0x0B, isr_exc11);
+  idt_set_gate(0x0C, isr_exc12);
+  idt_set_gate(0x0D, isr_exc13);
+  idt_set_gate(0x0E, isr_exc14);
+  idt_set_gate(0x0F, isr_exc15);
+  idt_set_gate(0x10, isr_exc16);
+  idt_set_gate(0x11, isr_exc17);
+  idt_set_gate(0x12, isr_exc18);
+  idt_set_gate(0x13, isr_exc19);
+  idt_set_gate(0x14, isr_exc20);
+  idt_set_gate(0x15, isr_exc21);
+  idt_set_gate(0x16, isr_exc22);
+  idt_set_gate(0x17, isr_exc23);
+  idt_set_gate(0x18, isr_exc24);
+  idt_set_gate(0x19, isr_exc25);
+  idt_set_gate(0x1A, isr_exc26);
+  idt_set_gate(0x1B, isr_exc27);
+  idt_set_gate(0x1C, isr_exc28);
+  idt_set_gate(0x1D, isr_exc29);
+  idt_set_gate(0x1E, isr_exc30);
+  idt_set_gate(0x1F, isr_exc31);
 
   /* IRQ vectors 0x20 - 0x2F */
   idt_set_gate(0x20, isr_irq0);

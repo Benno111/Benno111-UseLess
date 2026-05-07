@@ -63,6 +63,7 @@ void gui_draw_line(int x0, int y0, int x1, int y1, uint32_t color);
 void gui_draw_circle(int cx, int cy, int r, uint32_t color, bool filled);
 void gui_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg);
 void gui_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg);
+void fb_show_boot_log(void);
 
 /* Input */
 void gui_handle_mouse_event(int x, int y, int buttons);
