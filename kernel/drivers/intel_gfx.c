@@ -252,6 +252,9 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
   case 0x5916:
   case 0x5921:
     return "Intel HD Graphics 620";
+  case 0x1916:
+  case 0x1921:
+    return "Intel HD Graphics 520";
   case 0x591A:
   case 0x591D:
     return "Intel HD Graphics P630";
