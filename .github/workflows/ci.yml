@@ -93,7 +93,7 @@ jobs:
           name: os CI Draft
           body_path: release_notes.md
           draft: False ##Auto-draft is not working, so we set it to false and update the release with the files
-          prerelease: true
+          prerelease: False ## Set to true if you want to mark this release as a prerelease
           files: |
             image/os8-x86_64.iso
             image/os8-x86_64.iso.xz
