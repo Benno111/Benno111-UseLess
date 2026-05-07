@@ -51,8 +51,11 @@ jobs:
       - name: Verify release files
         run: |
           set -euxo pipefail
-          ls -lh image/os8-x86_64.iso
+          ls -lh image/os8-x86_64.iso*
           file image/os8-x86_64.iso
+          if [ -f image/os8-x86_64.iso.xz ]; then
+            file image/os8-x86_64.iso.xz
+          fi
           ##ls -lh image/os8-x86_64-installer.iso
           ##file image/os8-x86_64-installer.iso
 
@@ -72,6 +75,7 @@ jobs:
           ## Bootable Media
 
           - \`os8-x86_64.iso\`
+          - \`os8-x86_64.iso.xz\`
           - \`os8-x86_64-installer.iso\`
 
           ## Branch
@@ -92,6 +96,7 @@ jobs:
           prerelease: true
           files: |
             image/os8-x86_64.iso
+            image/os8-x86_64.iso.xz
             image/os8-x86_64-installer.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
