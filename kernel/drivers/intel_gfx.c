@@ -237,7 +237,10 @@ static int intel_gfx_supports_gpu_rendering_device(uint16_t device_id) {
 }
 
 static int intel_gfx_should_use_native_driver(uint16_t device_id) {
-  return intel_gfx_is_supported_device_id(device_id);
+  return intel_gfx_is_sandy_bridge_device(device_id) ||
+         intel_gfx_is_ivybridge_device(device_id) ||
+         intel_gfx_is_haswell_device(device_id) ||
+         intel_gfx_is_broadwell_device(device_id);
 }
 
 static const char *intel_gfx_detect_name(uint16_t device_id) {
