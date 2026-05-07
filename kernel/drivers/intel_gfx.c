@@ -225,7 +225,15 @@ static int intel_gfx_is_supported_device_id(uint16_t device_id) {
 }
 
 static int intel_gfx_supports_gpu_rendering_device(uint16_t device_id) {
-  return intel_gfx_is_supported_device_id(device_id);
+  /*
+   * Keep compositor acceleration constrained to the generations we have
+   * actually validated in this conservative bring-up path. Skylake and newer
+   * remain detected and framebuffer-compatible, but they do not get the GPU
+   * rendering flag until we have a real modesetting/3D path.
+   */
+  return intel_gfx_is_ivybridge_device(device_id) ||
+         intel_gfx_is_haswell_device(device_id) ||
+         intel_gfx_is_broadwell_device(device_id);
 }
 
 static int intel_gfx_should_use_native_driver(uint16_t device_id) {
