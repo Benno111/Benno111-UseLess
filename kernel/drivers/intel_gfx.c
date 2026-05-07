@@ -225,8 +225,7 @@ static int intel_gfx_is_supported_device_id(uint16_t device_id) {
 }
 
 static int intel_gfx_supports_gpu_rendering_device(uint16_t device_id) {
-  return intel_gfx_is_ivybridge_device(device_id) ||
-         intel_gfx_is_haswell_device(device_id);
+  return intel_gfx_is_supported_device_id(device_id);
 }
 
 static int intel_gfx_should_use_native_driver(uint16_t device_id) {
@@ -299,7 +298,7 @@ static const char *intel_gfx_detect_name(uint16_t device_id) {
   case 0x22B3:
     return "Intel HD Graphics";
   case 0x22B1:
-    return "Intel HD Graphics XXX";
+    return "Intel HD Graphics";
   case 0x0402:
   case 0x0406:
   case 0x040A:
