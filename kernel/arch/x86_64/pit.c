@@ -91,8 +91,15 @@ uint64_t pit_get_ticks(void)
 
 void pit_sleep(uint32_t ms)
 {
-    uint64_t target = pit_ticks + ms;
-    while (pit_ticks < target) {
+    if (ms == 0)
+        return;
+
+    /*
+     * Sleep against the architecture timer API so callers operate in true
+     * milliseconds regardless of the underlying PIT tick rate.
+     */
+    uint64_t deadline_ms = arch_timer_get_ms() + (uint64_t)ms;
+    while (arch_timer_get_ms() < deadline_ms) {
         arch_idle();
     }
 }
