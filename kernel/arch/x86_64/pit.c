@@ -91,7 +91,14 @@ uint64_t pit_get_ticks(void)
 
 void pit_sleep(uint32_t ms)
 {
-    uint64_t target = pit_ticks + ms;
+    /*
+     * pit_ticks advances at TIMER_HZ, not at 1 KHz, so convert milliseconds
+     * to ticks with rounding up to avoid sleeping shorter than requested.
+     */
+    uint64_t ticks_to_wait = ((uint64_t)ms * TIMER_HZ + 999ULL) / 1000ULL;
+    if (ticks_to_wait == 0)
+        ticks_to_wait = 1;
+    uint64_t target = pit_ticks + ticks_to_wait;
     while (pit_ticks < target) {
         arch_idle();
     }
