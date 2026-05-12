@@ -520,8 +520,13 @@ static void start_x86_64_bringup(void) {
 
 static void populate_seed_filesystem(void) {
   populate_seed_tree_at("");
-  populate_installer_payload();
+  /*
+   * Import any staged image before creating the in-memory installer payload.
+   * Otherwise the generated /install/system-image is immediately discovered
+   * and copied back into /, making setup do a large duplicate tree copy.
+   */
   import_staged_system_image();
+  populate_installer_payload();
 }
 
 static int build_seed_path(char *dst, size_t dst_size, const char *prefix,
