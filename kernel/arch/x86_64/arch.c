@@ -137,7 +137,6 @@ void arch_irq_init(void)
 /* Timer Management */
 /* ===================================================================== */
 
-static uint64_t timer_ticks = 0;
 static uint64_t timer_frequency = 100; /* PIT scheduler tick frequency */
 
 void arch_timer_init(void)
@@ -149,7 +148,8 @@ void arch_timer_init(void)
 
 uint64_t arch_timer_get_ticks(void)
 {
-    return timer_ticks;
+    extern uint64_t pit_get_ticks(void);
+    return pit_get_ticks();
 }
 
 uint64_t arch_timer_get_frequency(void)
@@ -159,12 +159,12 @@ uint64_t arch_timer_get_frequency(void)
 
 uint64_t arch_timer_get_ms(void)
 {
-    return (timer_ticks * 1000) / timer_frequency;
+    return (arch_timer_get_ticks() * 1000) / timer_frequency;
 }
 
 void arch_timer_tick(void)
 {
-    timer_ticks++;
+    /* PIT owns the x86_64 scheduler tick counter. */
 }
 
 /* ===================================================================== */
