@@ -5,6 +5,7 @@
  */
 
 #include "types.h"
+#include "gui/font.h"
 #include "media/media.h"
 #include "printk.h"
 #include "mm/vmm.h"
@@ -94,22 +95,30 @@ static uint32_t fb_blend_rgb(uint32_t dst, uint32_t src, uint8_t alpha) {
 
 void fb_clear(uint32_t color)
 {
+    uint32_t stride;
+
     if (!framebuffer.initialized) return;
+
+    stride = framebuffer.pitch ? (framebuffer.pitch / 4) : framebuffer.width;
     
     for (uint32_t y = 0; y < framebuffer.height; y++) {
         for (uint32_t x = 0; x < framebuffer.width; x++) {
-            framebuffer.buffer[y * framebuffer.width + x] = color;
+            framebuffer.buffer[y * stride + x] = color;
         }
     }
 }
 
 void fb_put_pixel(int x, int y, uint32_t color)
 {
+    uint32_t stride;
+
     if (!framebuffer.initialized) return;
     if (x < 0 || x >= (int)framebuffer.width) return;
     if (y < 0 || y >= (int)framebuffer.height) return;
+
+    stride = framebuffer.pitch ? (framebuffer.pitch / 4) : framebuffer.width;
     
-    framebuffer.buffer[y * framebuffer.width + x] = color;
+    framebuffer.buffer[y * stride + x] = color;
 }
 
 void fb_fill_rect(int x, int y, int w, int h, uint32_t color)
@@ -121,33 +130,16 @@ void fb_fill_rect(int x, int y, int w, int h, uint32_t color)
     }
 }
 
-/* Simple 8x8 font for boot messages */
-static const uint8_t font_8x8[128][8] = {
-    ['A'] = {0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00},
-    ['B'] = {0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00},
-    ['C'] = {0x3C, 0x66, 0x60, 0x60, 0x60, 0x66, 0x3C, 0x00},
-    ['D'] = {0x78, 0x6C, 0x66, 0x66, 0x66, 0x6C, 0x78, 0x00},
-    ['E'] = {0x7E, 0x60, 0x60, 0x7C, 0x60, 0x60, 0x7E, 0x00},
-    ['F'] = {0x7E, 0x60, 0x60, 0x7C, 0x60, 0x60, 0x60, 0x00},
-    ['G'] = {0x3C, 0x66, 0x60, 0x6E, 0x66, 0x66, 0x3C, 0x00},
-    ['H'] = {0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00},
-    ['I'] = {0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00},
-    ['O'] = {0x3C, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00},
-    ['S'] = {0x3C, 0x66, 0x70, 0x3C, 0x0E, 0x66, 0x3C, 0x00},
-    ['V'] = {0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00},
-    ['-'] = {0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00},
-    ['i'] = {0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00},
-    ['b'] = {0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00},
-    [' '] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-};
-
 void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg)
 {
-    if (c < 0 || c > 127) c = ' ';
+    const uint8_t *glyph;
+
+    if ((unsigned char)c < 32 || c == 127) c = ' ';
+    glyph = font_data[(unsigned char)c];
     
-    for (int row = 0; row < 8; row++) {
-        uint8_t line = font_8x8[(int)c][row];
-        for (int col = 0; col < 8; col++) {
+    for (int row = 0; row < FONT_HEIGHT; row++) {
+        uint8_t line = glyph[row];
+        for (int col = 0; col < FONT_WIDTH; col++) {
             uint32_t color = (line & (0x80 >> col)) ? fg : bg;
             fb_put_pixel(x + col, y + row, color);
         }
@@ -158,7 +150,7 @@ void fb_draw_string(int x, int y, const char *str, uint32_t fg, uint32_t bg)
 {
     while (*str) {
         fb_draw_char(x, y, *str++, fg, bg);
-        x += 8;
+        x += FONT_WIDTH;
     }
 }
 
@@ -228,7 +220,7 @@ static void fb_draw_wrapped_text(int x, int y, int max_chars, const char *text,
 
         if (flush) {
             line[line_len] = '\0';
-            fb_draw_string(x, y + lines_drawn * 8, line, fg, bg);
+            fb_draw_string(x, y + lines_drawn * (FONT_HEIGHT + 2), line, fg, bg);
             lines_drawn++;
             line_len = 0;
             if (lines_drawn >= max_lines || c == '\0')
@@ -288,8 +280,8 @@ void fb_show_boot_log(void) {
 
     text_x = panel_x + 16;
     text_y = panel_y + 16;
-    max_chars = (panel_w - 32) / 8;
-    max_lines = (panel_h - 32) / 8;
+    max_chars = (panel_w - 32) / FONT_WIDTH;
+    max_lines = (panel_h - 32) / (FONT_HEIGHT + 2);
     if (max_chars < 8 || max_lines < 4)
         return;
 
