@@ -343,7 +343,7 @@ void x86_64_boot_init_idt(void) {
     set_idt_gate(128, isr128);
 }
 
-static void x86_64_boot_install_idt(void) {
+void x86_64_install_exception_handlers(void) {
     struct idt_descriptor64 idtr;
     x86_64_boot_init_idt();
     idtr.limit = (uint16_t)(sizeof(idt64) - 1);
@@ -526,7 +526,7 @@ void limine_entry_main(void) {
     serial_puts("\n\n=== OS8 ===\n");
     serial_puts("Kernel entry point reached!\n");
 
-    x86_64_boot_install_idt();
+    x86_64_install_exception_handlers();
     serial_puts("Boot IDT installed\n");
 
     /* Verify base revision was accepted */

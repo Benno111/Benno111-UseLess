@@ -21,6 +21,8 @@
 #define ICW1_ICW4       0x01
 #define ICW4_8086       0x01
 
+extern void x86_64_install_exception_handlers(void);
+
 static inline uint8_t pic_inb(uint16_t port)
 {
     uint8_t value;
@@ -129,6 +131,8 @@ void arch_irq_restore(unsigned long flags)
 
 void arch_irq_init(void)
 {
+    x86_64_install_exception_handlers();
+    printk(KERN_INFO "x86_64: IDT loaded for exceptions and IRQs\n");
     printk(KERN_INFO "x86_64: Initializing legacy PIC for bring-up\n");
     pic_init();
 }
