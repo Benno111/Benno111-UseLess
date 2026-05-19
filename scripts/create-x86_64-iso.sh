@@ -122,7 +122,7 @@ resolve_limine_tool() {
     require_cmd cc
 
     if ! tool_runs "$host_tool"; then
-        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy" >&2
         cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
         ensure_executable "$host_tool"
     fi
