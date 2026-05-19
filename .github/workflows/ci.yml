@@ -26,6 +26,7 @@ jobs:
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
             dosfstools \
+            fdisk \
             mtools \
             qemu-system-x86 \
             qemu-system-arm \
@@ -47,10 +48,14 @@ jobs:
           export BUILD_COMPILE_TIME="$(date -u +'%Y-%m-%d %H:%M:%SZ')"
           make -f Makefile.multiarch ARCH=x86_64 image
 
-      ##- name: Build x86_64 Installer ISO
-        ##run: |
-        ##  set -euxo pipefail
-        ##  make -f Makefile.multiarch ARCH=x86_64 installer-image
+      - name: Build x86_64 Installer ISO
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          export BUILD_COMPILE_TIME="$(date -u +'%Y-%m-%d %H:%M:%SZ')"
+          make -f Makefile.multiarch ARCH=x86_64 installer-image
 
       - name: Verify release files
         run: |
@@ -60,8 +65,12 @@ jobs:
           if [ -f image/os8-x86_64.iso.xz ]; then
             file image/os8-x86_64.iso.xz
           fi
-          ##ls -lh image/os8-x86_64-installer.iso
-          ##file image/os8-x86_64-installer.iso
+          ls -lh image/os8-x86_64-installer.iso image/os8-x86_64-system.img
+          file image/os8-x86_64-installer.iso
+          file image/os8-x86_64-system.img
+          if [ -f image/os8-x86_64-installer.iso.xz ]; then
+            file image/os8-x86_64-installer.iso.xz
+          fi
 
       - name: Generate release notes
         run: |
