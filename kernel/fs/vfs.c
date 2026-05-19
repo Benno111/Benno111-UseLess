@@ -93,6 +93,53 @@ static void path_copy(char *dst, const char *src, int max) {
   dst[i] = '\0';
 }
 
+static size_t path_length(const char *path) {
+  size_t len = 0;
+
+  if (!path)
+    return 0;
+  while (path[len])
+    len++;
+  return len;
+}
+
+static int vfs_ensure_parent_dirs(const char *path) {
+  char current[PATH_MAX];
+  size_t len;
+  size_t last_slash = 0;
+
+  if (!path || path[0] != '/')
+    return -EINVAL;
+
+  len = path_length(path);
+  if (len >= sizeof(current))
+    return -EINVAL;
+
+  for (size_t i = 1; i < len; i++) {
+    if (path[i] == '/')
+      last_slash = i;
+  }
+  if (last_slash == 0)
+    return 0;
+
+  current[0] = '/';
+  current[1] = '\0';
+  for (size_t i = 1; i < last_slash; i++) {
+    if (path[i] == '/') {
+      current[i] = '\0';
+      if (i > 1)
+        vfs_mkdir(current, 0755);
+    }
+    current[i] = path[i];
+    current[i + 1] = '\0';
+  }
+
+  current[last_slash] = '\0';
+  if (last_slash > 1)
+    vfs_mkdir(current, 0755);
+  return 0;
+}
+
 static void vfs_free_dentry_chain(struct dentry *dentry) {
   while (dentry && dentry != root_dentry) {
     struct dentry *parent = dentry->d_parent;
@@ -568,6 +615,42 @@ ssize_t vfs_write(struct file *file, const char *buf, size_t count) {
   if (!file->f_op || !file->f_op->write)
     return -EINVAL;
   return file->f_op->write(file, buf, count, &file->f_pos);
+}
+
+int vfs_save_file(const char *path, const void *data, size_t size,
+                  uint32_t flags) {
+  struct file *file;
+  int open_flags = O_WRONLY | O_CREAT;
+  size_t total = 0;
+
+  if (!path || path[0] == '\0' || (!data && size > 0))
+    return -EINVAL;
+  if (size > 0x7fffffffU)
+    return -EFBIG;
+
+  if (flags & VFS_SAVE_CREATE_PARENTS)
+    vfs_ensure_parent_dirs(path);
+
+  if (flags & VFS_SAVE_APPEND)
+    open_flags |= O_APPEND;
+  else
+    open_flags |= O_TRUNC;
+
+  file = vfs_open(path, open_flags, 0644);
+  if (!file)
+    return -ENOENT;
+
+  while (total < size) {
+    ssize_t written = vfs_write(file, (const char *)data + total, size - total);
+    if (written <= 0) {
+      vfs_close(file);
+      return -EIO;
+    }
+    total += (size_t)written;
+  }
+
+  vfs_close(file);
+  return (int)total;
 }
 
 loff_t vfs_lseek(struct file *file, loff_t offset, int whence) {

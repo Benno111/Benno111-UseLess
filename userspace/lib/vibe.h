@@ -300,4 +300,54 @@ static inline void vibe_print_size(kapi_t *k, uint64_t bytes) {
     }
 }
 
+// ============ Files and Disks ============
+
+static inline int vibe_save_file(kapi_t *k, const char *path, const void *data,
+                                 size_t size, uint32_t flags) {
+    if (!k || !k->save_file) return -1;
+    return k->save_file(path, data, size, flags);
+}
+
+static inline int vibe_disk_count(kapi_t *k) {
+    if (!k || !k->disk_count) return 0;
+    return k->disk_count();
+}
+
+static inline int vibe_disk_info(kapi_t *k, int disk_index,
+                                 os8_disk_info_t *info) {
+    if (!k || !k->disk_info) return -1;
+    return k->disk_info(disk_index, info);
+}
+
+static inline int vibe_partition_count(kapi_t *k, int disk_index) {
+    if (!k || !k->partition_count) return 0;
+    return k->partition_count(disk_index);
+}
+
+static inline int vibe_partition_info(kapi_t *k, int disk_index,
+                                      int partition_index,
+                                      os8_partition_info_t *info) {
+    if (!k || !k->partition_info) return -1;
+    return k->partition_info(disk_index, partition_index, info);
+}
+
+static inline int vibe_partition_create(kapi_t *k, int disk_index,
+                                        uint32_t kind, uint32_t size_mib) {
+    if (!k || !k->partition_create) return -1;
+    return k->partition_create(disk_index, kind, size_mib);
+}
+
+static inline int vibe_partition_update(kapi_t *k, int disk_index,
+                                        int partition_index, uint32_t kind,
+                                        uint32_t size_mib) {
+    if (!k || !k->partition_update) return -1;
+    return k->partition_update(disk_index, partition_index, kind, size_mib);
+}
+
+static inline int vibe_partition_delete(kapi_t *k, int disk_index,
+                                        int partition_index) {
+    if (!k || !k->partition_delete) return -1;
+    return k->partition_delete(disk_index, partition_index);
+}
+
 #endif

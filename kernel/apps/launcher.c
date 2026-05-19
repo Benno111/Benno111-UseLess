@@ -6,6 +6,8 @@
 
 #include "apps/kapi.h"
 #include "arch/arch.h"
+#include "drivers/storage.h"
+#include "fs/vfs.h"
 #include "printk.h"
 #include "mm/kmalloc.h"
 #include "core/process.h"
@@ -287,6 +289,82 @@ static int kapi_rename(const char *old, const char *new) {
     return -1;
 }
 
+static int kapi_save_file(const char *path, const void *data, size_t size,
+                          uint32_t flags) {
+    uint32_t vfs_flags = 0;
+
+    if (flags & OS8_SAVE_CREATE_PARENTS)
+        vfs_flags |= VFS_SAVE_CREATE_PARENTS;
+    if (flags & OS8_SAVE_APPEND)
+        vfs_flags |= VFS_SAVE_APPEND;
+    return vfs_save_file(path, data, size, vfs_flags);
+}
+
+static int kapi_disk_count(void) {
+    return storage_get_disk_count();
+}
+
+static int kapi_disk_info(int disk_index, os8_disk_info_t *info) {
+    if (!info)
+        return -1;
+    if (disk_index < 0 || disk_index >= storage_get_disk_count())
+        return -1;
+
+    info->location[0] = '\0';
+    storage_get_disk_location(disk_index, info->location,
+                              (int)sizeof(info->location));
+    info->capacity_mib = storage_get_disk_capacity_mib(disk_index);
+    info->removable = storage_disk_is_removable(disk_index);
+    info->writable = storage_disk_supports_partition_writes(disk_index);
+    return 0;
+}
+
+static int kapi_partition_count(int disk_index) {
+    return storage_get_partition_count(disk_index);
+}
+
+static int kapi_partition_info(int disk_index, int partition_index,
+                               os8_partition_info_t *info) {
+    storage_partition_kind_t kind;
+    uint32_t start_lba;
+    uint32_t sector_count;
+
+    if (!info)
+        return -1;
+    if (storage_get_partition_info(disk_index, partition_index, &kind,
+                                   info->label, (int)sizeof(info->label),
+                                   &start_lba, &sector_count) != 0)
+        return -1;
+
+    info->kind = (uint32_t)kind;
+    info->start_lba = start_lba;
+    info->sector_count = sector_count;
+    info->size_mib = sector_count / 2048U;
+    if (info->size_mib == 0 && sector_count > 0)
+        info->size_mib = 1;
+    return 0;
+}
+
+static int kapi_partition_create(int disk_index, uint32_t kind,
+                                 uint32_t size_mib) {
+    if (kind < OS8_PARTITION_EFI || kind > OS8_PARTITION_SWAP)
+        return -1;
+    return storage_create_partition(disk_index, (storage_partition_kind_t)kind,
+                                    size_mib);
+}
+
+static int kapi_partition_update(int disk_index, int partition_index,
+                                 uint32_t kind, uint32_t size_mib) {
+    if (kind < OS8_PARTITION_EFI || kind > OS8_PARTITION_SWAP)
+        return -1;
+    return storage_update_partition(disk_index, partition_index,
+                                    (storage_partition_kind_t)kind, size_mib);
+}
+
+static int kapi_partition_delete(int disk_index, int partition_index) {
+    return storage_delete_partition(disk_index, partition_index);
+}
+
 static void kapi_exit(int status) {
     printk(KERN_INFO "[APP] Exit with status %d\n", status);
     /* Return to kernel - in real userspace, this would terminate the process */
@@ -397,7 +475,7 @@ void kapi_init(kapi_t *api) {
     char *p = (char *)api;
     for (size_t i = 0; i < sizeof(kapi_t); i++) p[i] = 0;
     
-    api->version = 1;
+    api->version = 2;
 
     /* Console I/O - in order per vibe.h */
     api->putc = kapi_putc;
@@ -587,6 +665,16 @@ void kapi_init(kapi_t *api) {
     api->dma_copy_2d = stub_dma_2d;
     api->dma_fb_copy = stub_dma_fb;
     api->dma_fill = stub_dma_fill;
+
+    /* Persistent file and disk APIs */
+    api->save_file = kapi_save_file;
+    api->disk_count = kapi_disk_count;
+    api->disk_info = kapi_disk_info;
+    api->partition_count = kapi_partition_count;
+    api->partition_info = kapi_partition_info;
+    api->partition_create = kapi_partition_create;
+    api->partition_update = kapi_partition_update;
+    api->partition_delete = kapi_partition_delete;
 
     printk(KERN_INFO "[KAPI] Kernel API initialized (fb=%dx%d)\\n", api->fb_width, api->fb_height);
     printk(KERN_INFO "[KAPI] fb_base = 0x%lx\\n", (unsigned long)(uintptr_t)api->fb_base);
