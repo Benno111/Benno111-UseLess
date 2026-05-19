@@ -38,6 +38,7 @@ jobs:
             lld \
             llvm \
             nasm
+          sudo apt-get install -y 7zip || sudo apt-get install -y p7zip-full
 
       - name: Build x86_64 ISO
         env:
@@ -71,6 +72,8 @@ jobs:
           if [ -f image/os8-x86_64-installer.iso.xz ]; then
             file image/os8-x86_64-installer.iso.xz
           fi
+          ls -lh image/os8-x86_64-installer.iso.7z
+          file image/os8-x86_64-installer.iso.7z
 
       - name: Generate release notes
         run: |
@@ -90,6 +93,7 @@ jobs:
           - \`os8-x86_64.iso\`
           - \`os8-x86_64.iso.xz\`
           - \`os8-x86_64-installer.iso\`
+          - \`os8-x86_64-installer.iso.7z\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -111,5 +115,6 @@ jobs:
             image/os8-x86_64.iso
             image/os8-x86_64.iso.xz
             image/os8-x86_64-installer.iso
+            image/os8-x86_64-installer.iso.7z
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
