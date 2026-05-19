@@ -526,6 +526,10 @@ static int storage_ide_read_atapi_packet(uint16_t io_base, uint8_t drive_select,
                                          uint32_t lba, void *buffer) {
   int status;
   uint16_t *words = (uint16_t *)buffer;
+  uint16_t byte_count;
+  uint16_t words_reported;
+  uint16_t words_to_copy;
+  uint16_t words_to_discard;
   uint8_t packet[12] = {0};
 
   if (!buffer)
@@ -559,8 +563,21 @@ static int storage_ide_read_atapi_packet(uint16_t io_base, uint8_t drive_select,
   if (status < 0 || (status & 0x01))
     return -1;
 
-  for (int i = 0; i < 1024; i++)
+  byte_count = (uint16_t)inb(io_base + 4) |
+               ((uint16_t)inb(io_base + 5) << 8);
+  if (byte_count == 0)
+    byte_count = 2048;
+
+  words_reported = (uint16_t)((byte_count + 1U) / 2U);
+  words_to_copy = words_reported > 1024 ? 1024 : words_reported;
+  words_to_discard = words_reported > 1024 ? (uint16_t)(words_reported - 1024) : 0;
+
+  for (uint16_t i = 0; i < words_to_copy; i++)
     words[i] = inw(io_base);
+  for (uint16_t i = words_to_copy; i < 1024; i++)
+    words[i] = 0;
+  for (uint16_t i = 0; i < words_to_discard; i++)
+    (void)inw(io_base);
 
   return 0;
 }

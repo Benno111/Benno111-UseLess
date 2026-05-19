@@ -107,7 +107,7 @@ static void iso_trim_name(char *dst, int max, const uint8_t *src, int len,
 }
 
 static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
-  uint8_t desc[ISO_BLOCK_SIZE];
+  uint8_t *desc;
   int saw_primary = 0;
 
   if (!info)
@@ -120,12 +120,20 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
   info->has_primary = 0;
   info->has_joliet = 0;
 
+  desc = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!desc)
+    return -1;
+
   for (uint32_t lba = 16; lba < 64; lba++) {
-    if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0)
+    if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0) {
+      kfree(desc);
       return -1;
+    }
     if (desc[1] != 'C' || desc[2] != 'D' || desc[3] != '0' || desc[4] != '0' ||
-        desc[5] != '1')
+        desc[5] != '1') {
+      kfree(desc);
       return -1;
+    }
     if (desc[0] == 1 && !saw_primary) {
       info->primary_root_extent = iso_le32(&desc[158]);
       info->primary_root_size = iso_le32(&desc[166]);
@@ -136,12 +144,14 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
       info->joliet_root_size = iso_le32(&desc[166]);
       info->has_joliet = 1;
     } else if (desc[0] == 255) {
+      kfree(desc);
       return saw_primary ? 0 : -1;
     }
     if ((lba & 3U) == 3U)
       iso_cooperative_yield();
   }
 
+  kfree(desc);
   return saw_primary ? 0 : -1;
 }
 
@@ -157,20 +167,6 @@ static void iso_ensure_parent_dirs(const char *path) {
     if (i > 0 && path[i] == '/')
       vfs_mkdir(partial, 0755);
   }
-}
-
-static int iso_write_file(const char *path, const uint8_t *data, size_t size) {
-  struct file *f;
-  ssize_t written;
-
-  iso_ensure_parent_dirs(path);
-  vfs_unlink(path);
-  f = vfs_open(path, O_CREAT | O_WRONLY, 0644);
-  if (!f)
-    return -1;
-  written = vfs_write(f, (const char *)data, size);
-  vfs_close(f);
-  return (written < 0) ? -1 : 0;
 }
 
 static int iso_remove_tree_callback(void *ctx, const char *name, int len,
@@ -240,53 +236,76 @@ static int iso_clear_destination(const char *dst_root) {
 
 static int iso_copy_file_from_extent(int disk_index, uint32_t extent,
                                      uint32_t file_size, const char *dst_path) {
-  uint8_t *data;
-  uint8_t sector[ISO_BLOCK_SIZE];
+  uint8_t *sector;
+  struct file *f;
   uint32_t remaining = file_size;
   uint32_t lba = extent;
-  uint32_t offset = 0;
 
-  data = kmalloc(file_size ? file_size : 1, GFP_KERNEL);
-  if (!data)
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector)
     return -1;
+
+  iso_ensure_parent_dirs(dst_path);
+  vfs_unlink(dst_path);
+  f = vfs_open(dst_path, O_CREAT | O_WRONLY, 0644);
+  if (!f) {
+    kfree(sector);
+    return -1;
+  }
 
   while (remaining > 0) {
     uint32_t chunk = remaining > ISO_BLOCK_SIZE ? ISO_BLOCK_SIZE : remaining;
+    ssize_t written;
+
     if (storage_read_block(disk_index, lba++, sector, ISO_BLOCK_SIZE) != 0) {
-      kfree(data);
+      vfs_close(f);
+      kfree(sector);
       return -1;
     }
-    for (uint32_t i = 0; i < chunk; i++)
-      data[offset + i] = sector[i];
-    offset += chunk;
+
+    written = vfs_write(f, (const char *)sector, chunk);
+    if (written != (ssize_t)chunk) {
+      vfs_close(f);
+      kfree(sector);
+      return -1;
+    }
+
     remaining -= chunk;
     if ((lba & 3U) == 0U)
       iso_cooperative_yield();
   }
 
-  if (iso_write_file(dst_path, data, file_size) != 0) {
-    kfree(data);
-    return -1;
-  }
-  kfree(data);
+  vfs_close(f);
+  kfree(sector);
   return 0;
 }
 
 static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size,
                                   const char *dst_root, int joliet) {
   uint8_t *dir_data;
-  uint8_t sector[ISO_BLOCK_SIZE];
+  uint8_t *sector;
   uint32_t sector_count = (size + ISO_BLOCK_SIZE - 1) / ISO_BLOCK_SIZE;
   uint32_t total_size = sector_count * ISO_BLOCK_SIZE;
   uint32_t pos = 0;
   int copied_entries = 0;
 
-  dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
-  if (!dir_data)
+  if (sector_count > 0x10000U)
     return -1;
+  if (sector_count != 0 && total_size / sector_count != ISO_BLOCK_SIZE)
+    return -1;
+
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector)
+    return -1;
+  dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!dir_data) {
+    kfree(sector);
+    return -1;
+  }
 
   for (uint32_t i = 0; i < sector_count; i++) {
     if (storage_read_block(disk_index, extent + i, sector, ISO_BLOCK_SIZE) != 0) {
+      kfree(sector);
       kfree(dir_data);
       return -1;
     }
@@ -295,6 +314,8 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
     if ((i & 3U) == 3U)
       iso_cooperative_yield();
   }
+
+  kfree(sector);
 
   while (pos < size) {
     uint8_t record_len = dir_data[pos];
