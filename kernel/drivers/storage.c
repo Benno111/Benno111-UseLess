@@ -102,6 +102,43 @@ static storage_ahci_port_ctx_t storage_ahci_ports[STORAGE_MAX_DISKS];
 static storage_nvme_ctx_t storage_nvme_contexts[STORAGE_MAX_DISKS];
 static storage_ide_atapi_ctx_t storage_ide_atapi_contexts[4];
 
+#if defined(ARCH_X86_64)
+#define STORAGE_X86_64_KERNEL_VIRT_BASE 0xFFFFFFFF80000000ULL
+#define STORAGE_X86_64_KERNEL_PHYS_BASE 0x100000ULL
+extern uint64_t limine_get_hhdm_offset(void);
+#endif
+
+static phys_addr_t storage_dma_addr(const void *ptr) {
+  uintptr_t addr;
+  phys_addr_t paddr;
+
+  if (!ptr)
+    return 0;
+
+  addr = (uintptr_t)ptr;
+
+#if defined(ARCH_X86_64)
+  if (addr >= STORAGE_X86_64_KERNEL_VIRT_BASE)
+    return STORAGE_X86_64_KERNEL_PHYS_BASE +
+           (phys_addr_t)(addr - STORAGE_X86_64_KERNEL_VIRT_BASE);
+
+  {
+    uint64_t hhdm = limine_get_hhdm_offset();
+    if (hhdm && addr >= hhdm)
+      return (phys_addr_t)(addr - hhdm);
+  }
+#endif
+
+  paddr = vmm_virt_to_phys((virt_addr_t)(uintptr_t)ptr);
+  if (paddr)
+    return paddr;
+
+  if ((uintptr_t)ptr >= PHYS_OFFSET)
+    return virt_to_phys((void *)ptr);
+
+  return (phys_addr_t)(uintptr_t)ptr;
+}
+
 static void storage_copy_string(char *dst, const char *src, int max) {
   int i = 0;
   if (!dst || max <= 0)
@@ -792,6 +829,13 @@ typedef struct {
   ahci_prdt_entry_t prdt[1];
 } __attribute__((packed)) ahci_cmd_table_t;
 
+static void storage_set_prdt_addr(ahci_prdt_entry_t *prdt, const void *buffer) {
+  phys_addr_t paddr = storage_dma_addr(buffer);
+
+  prdt->dba = (uint32_t)(paddr & 0xFFFFFFFFULL);
+  prdt->dbau = (uint32_t)(paddr >> 32);
+}
+
 static int storage_ahci_port_wait_ready(storage_ahci_port_ctx_t *ctx) {
   volatile uint32_t *port;
   uint64_t deadline;
@@ -844,10 +888,14 @@ static void storage_ahci_setup_port(storage_ahci_port_ctx_t *ctx) {
     return;
   port = (volatile uint32_t *)ctx->port_mmio;
   storage_ahci_port_stop(ctx);
-  port[0x00 / 4] = (uint32_t)(uintptr_t)ctx->command_list;
-  port[0x04 / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->command_list) >> 32);
-  port[0x08 / 4] = (uint32_t)(uintptr_t)ctx->rfis;
-  port[0x0C / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->rfis) >> 32);
+  {
+    phys_addr_t command_list = storage_dma_addr(ctx->command_list);
+    phys_addr_t rfis = storage_dma_addr(ctx->rfis);
+    port[0x00 / 4] = (uint32_t)(command_list & 0xFFFFFFFFULL);
+    port[0x04 / 4] = (uint32_t)(command_list >> 32);
+    port[0x08 / 4] = (uint32_t)(rfis & 0xFFFFFFFFULL);
+    port[0x0C / 4] = (uint32_t)(rfis >> 32);
+  }
   port[0x10 / 4] = 0xFFFFFFFF;
   for (int i = 0; i < (int)sizeof(ctx->command_list); i++)
     ctx->command_list[i] = 0;
@@ -858,9 +906,11 @@ static void storage_ahci_setup_port(storage_ahci_port_ctx_t *ctx) {
   header = (ahci_cmd_header_t *)ctx->command_list;
   header[0].flags = 5;
   header[0].prdtl = 1;
-  header[0].ctba = (uint32_t)(uintptr_t)ctx->command_table;
-  header[0].ctbau =
-      (uint32_t)(((uint64_t)(uintptr_t)ctx->command_table) >> 32);
+  {
+    phys_addr_t command_table = storage_dma_addr(ctx->command_table);
+    header[0].ctba = (uint32_t)(command_table & 0xFFFFFFFFULL);
+    header[0].ctbau = (uint32_t)(command_table >> 32);
+  }
   storage_ahci_port_start(ctx);
 }
 
@@ -898,8 +948,7 @@ static int storage_ahci_issue(storage_ahci_port_ctx_t *ctx, uint8_t command,
   fis->lba5 = (uint8_t)((lba >> 40) & 0xFF);
   fis->countl = (uint8_t)(count & 0xFF);
   fis->counth = (uint8_t)((count >> 8) & 0xFF);
-  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
-  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  storage_set_prdt_addr(&table->prdt[0], buffer);
   table->prdt[0].dbc_i =
       (uint32_t)(count * AHCI_SECTOR_SIZE - 1) | (1U << 31);
   port[0x10 / 4] = 0xFFFFFFFF;
@@ -953,8 +1002,7 @@ static int storage_ahci_issue_atapi(storage_ahci_port_ctx_t *ctx, uint32_t lba,
   table->acmd[7] = (uint8_t)((blocks >> 8) & 0xFF);
   table->acmd[8] = (uint8_t)(blocks & 0xFF);
 
-  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
-  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  storage_set_prdt_addr(&table->prdt[0], buffer);
   table->prdt[0].dbc_i = (uint32_t)(blocks * 2048U - 1U) | (1U << 31);
 
   port[0x10 / 4] = 0xFFFFFFFF;
