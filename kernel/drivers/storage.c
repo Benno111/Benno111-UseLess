@@ -992,7 +992,9 @@ static int storage_ahci_issue_atapi(storage_ahci_port_ctx_t *ctx, uint32_t lba,
   fis->fis_type = 0x27;
   fis->pmport_c = 1U << 7;
   fis->command = 0xA0;
-  fis->lba1 = 0x08;
+  /* ATA PACKET byte count is cylinder low/high. Request one 2048-byte CD sector. */
+  fis->lba1 = 0x00;
+  fis->lba2 = 0x08;
 
   table->acmd[0] = 0xA8;
   table->acmd[2] = (uint8_t)((lba >> 24) & 0xFF);
