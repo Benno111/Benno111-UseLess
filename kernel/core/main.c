@@ -27,8 +27,8 @@
 #include "gui/font.h"
 
 /* Kernel version */
-#define OS_VERSION_MAJOR 0
-#define OS_VERSION_MINOR 5
+#define OS_VERSION_MAJOR 8
+#define OS_VERSION_MINOR 0
 #define OS_VERSION_PATCH 0
 
 /* External symbols from linker script */
