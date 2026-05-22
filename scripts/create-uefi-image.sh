@@ -79,7 +79,7 @@ resolve_limine_tool() {
     require_cmd cc
 
     if ! tool_runs "$host_tool"; then
-        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy" >&2
         cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
         ensure_executable "$host_tool"
     fi
@@ -197,7 +197,7 @@ mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/installer-state.txt" ::/System/installer-stat
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
 
-"$LIMINE_TOOL" bios-install --force-mbr "$IMAGE_PATH" || {
+"$LIMINE_TOOL" bios-install "$IMAGE_PATH" || {
     echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
     exit 1
 }

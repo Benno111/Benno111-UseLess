@@ -48,6 +48,8 @@ static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride);
 static uint32_t gui_contrast_title_color(uint32_t rgb);
+static void draw_rounded_rect(int x, int y, int w, int h, int r,
+                              uint32_t color);
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color);
 static void draw_filled_circle(int cx, int cy, int r, uint32_t color);
@@ -3875,6 +3877,7 @@ static int dock_loaded = 0;
 
 typedef enum {
   STARTUP_FLOW_NONE = 0,
+  STARTUP_FLOW_COMPLETING_INSTALL,
   STARTUP_FLOW_SETUP_ACCOUNT,
   STARTUP_FLOW_LOGIN
 } startup_flow_t;
@@ -3900,6 +3903,8 @@ static char startup_input_password[32] = "";
 static int startup_active_field = 0;
 static char startup_status[96] = "";
 static struct window *startup_window = NULL;
+static uint64_t startup_completion_started_ms = 0;
+static uint64_t startup_completion_deadline_ms = 0;
 
 static int account_role_is_admin(void) {
   return str_cmp(account_role, "admin") == 0;
@@ -6020,6 +6025,19 @@ static void installer_clear_first_boot_setup_flag(void) {
   installer_refresh_bootloader_state("", 0);
 }
 
+static int installer_first_boot_setup_pending(void) {
+  char manifest[192];
+  char value[16];
+
+  if (read_text_file("/System/installer-state.txt", manifest, sizeof(manifest)) <
+      0)
+    return 0;
+  if (manifest_get_value(manifest, "first_boot_setup", value, sizeof(value)) !=
+      0)
+    return 0;
+  return value[0] == '1';
+}
+
 static void mask_secret(const char *src, char *dst, int max) {
   int idx = 0;
   if (!dst || max <= 0)
@@ -6350,19 +6368,23 @@ static void seed_all_system_apps_once(void) {
 
 static void startup_open_modal_window(void) {
   int setup_active = startup_setup_account_active();
-  int win_w = setup_active ? (int)primary_display.width : 520;
-  int win_h = setup_active ? (int)primary_display.height : 280;
-  int win_x = setup_active ? 0 : ((int)primary_display.width - win_w) / 2;
-  int win_y = setup_active ? 0 : ((int)primary_display.height - win_h) / 2;
+  int completion_active = startup_flow == STARTUP_FLOW_COMPLETING_INSTALL;
+  int full_screen = setup_active || completion_active;
+  int win_w = full_screen ? (int)primary_display.width : 520;
+  int win_h = full_screen ? (int)primary_display.height : 280;
+  int win_x = full_screen ? 0 : ((int)primary_display.width - win_w) / 2;
+  int win_y = full_screen ? 0 : ((int)primary_display.height - win_h) / 2;
   const char *title = startup_setup_welcome_active()
                           ? "Welcome"
                           : startup_setup_storage_active()
                                 ? "Prepare Storage"
                           : startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
                                 ? "Setup Account"
+                          : completion_active
+                                ? "Completing Installation"
                           : "Login";
 
-  if (setup_active) {
+  if (full_screen) {
     desktop_hide_context_menu();
     secure_attention_open = 0;
     startup_close_other_windows();
@@ -6395,6 +6417,16 @@ static void startup_begin_login_flow(const char *message, int preserve_username)
   startup_open_modal_window();
 }
 
+static void startup_begin_first_boot_completion(void) {
+  session_authenticated = 0;
+  startup_flow = STARTUP_FLOW_COMPLETING_INSTALL;
+  startup_completion_started_ms = arch_timer_get_ms();
+  startup_completion_deadline_ms = startup_completion_started_ms + 1800;
+  set_startup_status("Completing installation from the installed disk.");
+  startup_close_other_windows();
+  startup_open_modal_window();
+}
+
 static void ensure_startup_flow(void) {
   int needs_account_setup = 0;
   int setup_complete = 0;
@@ -6413,6 +6445,14 @@ static void ensure_startup_flow(void) {
     extern int storage_get_disk_count(void);
     live_disk_boot = boot_is_live_media() || boot_is_usb_boot();
     storage_ready = live_disk_boot || storage_get_disk_count() > 0;
+  }
+
+  if (startup_flow == STARTUP_FLOW_COMPLETING_INSTALL)
+    return;
+
+  if (!live_disk_boot && installer_first_boot_setup_pending()) {
+    startup_begin_first_boot_completion();
+    return;
   }
 
   load_account_state();
@@ -6487,6 +6527,31 @@ static void complete_startup_auth(void) {
   }
   seed_all_system_apps_once();
   desktop_refresh();
+}
+
+static void startup_process_first_boot_completion(void) {
+  if (startup_flow != STARTUP_FLOW_COMPLETING_INSTALL)
+    return;
+
+  if (!startup_completion_deadline_ms)
+    startup_completion_deadline_ms = arch_timer_get_ms() + 1800;
+  if (arch_timer_get_ms() < startup_completion_deadline_ms)
+    return;
+
+  set_startup_status("Finalizing installed system configuration.");
+  runtime_sync_boot_storage_to_live();
+  ensure_user_storage_dirs();
+  seed_all_system_apps_once();
+  save_setup_state(0, 1);
+  installer_clear_first_boot_setup_flag();
+  startup_completion_started_ms = 0;
+  startup_completion_deadline_ms = 0;
+  startup_flow = STARTUP_FLOW_NONE;
+  if (startup_window) {
+    gui_destroy_window(startup_window);
+    startup_window = NULL;
+  }
+  ensure_startup_flow();
 }
 
 static void submit_startup_flow(void) {
@@ -8035,15 +8100,15 @@ static int installer_finalize_install(void) {
   }
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed system image; first boot will run setup",
+  str_copy_safe(summary, "Installed system image; final setup runs after reboot",
                 sizeof(summary));
   installer_log("install complete");
   installer_log("selected hard disk now contains the bootable system image");
-  installer_log("first boot will prompt for account creation");
+  installer_log("first HDD boot will complete OS configuration");
   installer_progress_current_item[0] = '\0';
   installer_set_progress_state(
       100, "Ready To Reboot", summary,
-      "Installation complete. Sync finished and automatic reboot is armed.");
+      "Rebooting to the hard disk for the final installation phase.");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_show_restart_screen = 1;
@@ -8187,6 +8252,93 @@ static void installer_process_background_install(void) {
   }
 }
 
+static int installer_stage_value(int start, int end) {
+  int done = installer_progress_done;
+
+  if (done <= start)
+    return 0;
+  if (done >= end)
+    return 100;
+  return ((done - start) * 100) / (end - start);
+}
+
+static void draw_installation_stage_bar(int x, int y, int w, int h,
+                                        int percent) {
+  int fill_w;
+
+  if (percent < 0)
+    percent = 0;
+  if (percent > 100)
+    percent = 100;
+
+  draw_rounded_rect(x, y, w, h, h / 2, 0x050505);
+  fill_w = (w * percent) / 100;
+  if (fill_w > 0)
+    draw_rounded_rect(x, y, fill_w < h ? h : fill_w, h, h / 2, 0xA6A6A6);
+}
+
+static void draw_installation_stage_layout(int content_x, int content_y,
+                                           int content_w, int content_h,
+                                           int copy_percent,
+                                           int expand_percent,
+                                           int configure_percent,
+                                           int complete_percent) {
+  int card_w = content_w > 660 ? 604 : content_w - 48;
+  int card_h = 482;
+  int card_x;
+  int card_y;
+  int text_x;
+  int bar_x;
+  int bar_w;
+  int row_y;
+  int top_r = 0x9A;
+  int top_g = 0xF7;
+  int top_b = 0xEE;
+  int bottom_r = 0x08;
+  int bottom_g = 0x78;
+  int bottom_b = 0xB8;
+
+  if (card_w < 360)
+    card_w = content_w - 24;
+  if (card_h > content_h - 56)
+    card_h = content_h - 56;
+
+  card_x = content_x + (content_w - card_w) / 2;
+  card_y = content_y + (content_h - card_h) / 2;
+  text_x = card_x + 36;
+  bar_x = card_x + 30;
+  bar_w = card_w - 72;
+
+  for (int y = 0; y < content_h; y++) {
+    int denom = content_h > 1 ? content_h - 1 : 1;
+    uint32_t r = (uint32_t)(top_r + ((bottom_r - top_r) * y) / denom);
+    uint32_t g = (uint32_t)(top_g + ((bottom_g - top_g) * y) / denom);
+    uint32_t b = (uint32_t)(top_b + ((bottom_b - top_b) * y) / denom);
+    gui_draw_rect(content_x, content_y + y, content_w, 1,
+                  (r << 16) | (g << 8) | b);
+  }
+
+  gui_fill_rect_alpha(card_x + 6, card_y + 8, card_w, card_h, 0x22000000);
+  draw_rounded_rect(card_x, card_y, card_w, card_h, 18, 0xF6F6F6);
+
+  row_y = card_y + 30;
+  gui_draw_string(text_x, row_y, "Copying OS files...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 64, bar_w, 10, copy_percent);
+
+  row_y += 108;
+  gui_draw_string(text_x, row_y, "Expanding Files...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, expand_percent);
+
+  row_y += 108;
+  gui_draw_string(text_x, row_y, "Configuring OS...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, configure_percent);
+
+  row_y += 112;
+  gui_draw_string(text_x, row_y, "Completing installation...", 0x000000,
+                  0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, complete_percent);
+}
+
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
   const gui_theme_palette_t *theme = gui_theme_palette();
@@ -8195,6 +8347,23 @@ static void draw_installer_window(int content_x, int content_y, int content_w,
     installer_page = INSTALLER_PAGE_COMPLETE;
   else if (installer_active)
     installer_page = INSTALLER_PAGE_PROGRESS;
+
+  if (installer_page == INSTALLER_PAGE_PROGRESS ||
+      installer_page == INSTALLER_PAGE_COMPLETE) {
+    int copy_percent = installer_stage_value(18, 74);
+    int expand_percent = installer_stage_value(74, 92);
+    int configure_percent = installer_stage_value(92, 98);
+
+    if (installer_page == INSTALLER_PAGE_COMPLETE) {
+      copy_percent = 100;
+      expand_percent = 100;
+      configure_percent = 100;
+    }
+    draw_installation_stage_layout(content_x, content_y, content_w, content_h,
+                                   copy_percent, expand_percent,
+                                   configure_percent, 0);
+    return;
+  }
 
   {
     int panel_x = content_x + 20;
@@ -8450,6 +8619,26 @@ static void draw_startup_auth_window(struct window *win, int content_x,
           : (startup_account_system_ready() ? "Login" : "Starting...");
 
   (void)win;
+  if (startup_flow == STARTUP_FLOW_COMPLETING_INSTALL) {
+    int complete_percent = 0;
+    uint64_t now = arch_timer_get_ms();
+    if (startup_completion_started_ms && startup_completion_deadline_ms &&
+        startup_completion_deadline_ms > startup_completion_started_ms) {
+      uint64_t total =
+          startup_completion_deadline_ms - startup_completion_started_ms;
+      uint64_t elapsed =
+          now > startup_completion_started_ms
+              ? now - startup_completion_started_ms
+              : 0;
+      if (elapsed > total)
+        elapsed = total;
+      complete_percent = (int)((elapsed * 100) / total);
+    }
+    draw_installation_stage_layout(content_x, content_y, content_w, content_h,
+                                   100, 100, 100, complete_percent);
+    return;
+  }
+
   settings_account_list_init(&startup_accounts);
   if (startup_setup_account_active()) {
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
@@ -14860,6 +15049,7 @@ void gui_compose(void) {
   int draw_h;
 
   g_frame_count++;
+  startup_process_first_boot_completion();
   if (!startup_setup_account_active())
     installer_process_background_install();
   update_main_menu_power_animation();

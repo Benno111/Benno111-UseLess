@@ -8,6 +8,30 @@
 #ifndef OS8_APP_API_H
 #define OS8_APP_API_H
 
+#define OS8_SAVE_CREATE_PARENTS 0x00000001u
+#define OS8_SAVE_APPEND         0x00000002u
+
+#define OS8_PARTITION_UNKNOWN 0u
+#define OS8_PARTITION_EFI     1u
+#define OS8_PARTITION_SYSTEM  2u
+#define OS8_PARTITION_DATA    3u
+#define OS8_PARTITION_SWAP    4u
+
+typedef struct os8_disk_info {
+    char location[24];
+    uint32_t capacity_mib;
+    int removable;
+    int writable;
+} os8_disk_info_t;
+
+typedef struct os8_partition_info {
+    uint32_t kind;
+    char label[32];
+    uint32_t start_lba;
+    uint32_t sector_count;
+    uint32_t size_mib;
+} os8_partition_info_t;
+
 typedef struct kapi {
     uint32_t version;
 
@@ -210,6 +234,19 @@ typedef struct kapi {
 
     /* Input polling */
     void (*input_poll)(void);
+
+    /* Persistent file and disk APIs */
+    int (*save_file)(const char *path, const void *data, size_t size,
+                     uint32_t flags);
+    int (*disk_count)(void);
+    int (*disk_info)(int disk_index, os8_disk_info_t *info);
+    int (*partition_count)(int disk_index);
+    int (*partition_info)(int disk_index, int partition_index,
+                          os8_partition_info_t *info);
+    int (*partition_create)(int disk_index, uint32_t kind, uint32_t size_mib);
+    int (*partition_update)(int disk_index, int partition_index,
+                            uint32_t kind, uint32_t size_mib);
+    int (*partition_delete)(int disk_index, int partition_index);
 } kapi_t;
 
 typedef int (*app_main_fn)(kapi_t *api, int argc, char **argv);

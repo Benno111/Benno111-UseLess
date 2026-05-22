@@ -58,6 +58,34 @@ PY
     return 0
 }
 
+compress_installer_7z() {
+    local iso_path="$1"
+    local archive_path="${iso_path}.7z"
+
+    case "$(basename "$iso_path")" in
+        *installer*.iso) ;;
+        *) return 0 ;;
+    esac
+
+    rm -f "$archive_path"
+
+    if ! command -v 7z >/dev/null 2>&1; then
+        echo "[WARN] 7z not available; skipping installer 7z archive" >&2
+        return 0
+    fi
+
+    log "Creating maximum-compression installer archive: $archive_path"
+    7z a \
+        -t7z \
+        -mx=9 \
+        -m0=lzma2 \
+        -mfb=273 \
+        -md=512m \
+        -ms=on \
+        "$archive_path" \
+        "$iso_path"
+}
+
 link_or_copy() {
     local src="$1"
     local dst="$2"
@@ -122,7 +150,7 @@ resolve_limine_tool() {
     require_cmd cc
 
     if ! tool_runs "$host_tool"; then
-        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy" >&2
         cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
         ensure_executable "$host_tool"
     fi
@@ -244,6 +272,7 @@ xorriso -as mkisofs \
 
 "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
 compress_iso "$ISO_PATH"
+compress_installer_7z "$ISO_PATH"
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
@@ -285,6 +314,9 @@ log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
 if [ -f "${ISO_PATH}.xz" ]; then
     ls -lh "${ISO_PATH}.xz"
+fi
+if [ -f "${ISO_PATH}.7z" ]; then
+    ls -lh "${ISO_PATH}.7z"
 fi
 echo ""
 log "BIOS VM test:  qemu-system-x86_64 -M q35 -m 512M -cdrom $ISO_PATH -serial stdio"

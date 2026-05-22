@@ -66,6 +66,10 @@
 #define O_DIRECTORY     0x10000
 #define O_CLOEXEC       0x80000
 
+/* vfs_save_file flags */
+#define VFS_SAVE_CREATE_PARENTS 0x00000001u
+#define VFS_SAVE_APPEND         0x00000002u
+
 /* ===================================================================== */
 /* Seek constants */
 /* ===================================================================== */
@@ -316,6 +320,12 @@ ssize_t vfs_read(struct file *file, char *buf, size_t count);
  * vfs_write - Write to a file
  */
 ssize_t vfs_write(struct file *file, const char *buf, size_t count);
+
+/**
+ * vfs_save_file - Create, replace, or append a complete file in one call
+ */
+int vfs_save_file(const char *path, const void *data, size_t size,
+                  uint32_t flags);
 
 /**
  * vfs_lseek - Seek in a file

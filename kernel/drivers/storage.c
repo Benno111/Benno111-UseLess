@@ -102,6 +102,43 @@ static storage_ahci_port_ctx_t storage_ahci_ports[STORAGE_MAX_DISKS];
 static storage_nvme_ctx_t storage_nvme_contexts[STORAGE_MAX_DISKS];
 static storage_ide_atapi_ctx_t storage_ide_atapi_contexts[4];
 
+#if defined(ARCH_X86_64)
+#define STORAGE_X86_64_KERNEL_VIRT_BASE 0xFFFFFFFF80000000ULL
+#define STORAGE_X86_64_KERNEL_PHYS_BASE 0x100000ULL
+extern uint64_t limine_get_hhdm_offset(void);
+#endif
+
+static phys_addr_t storage_dma_addr(const void *ptr) {
+  uintptr_t addr;
+  phys_addr_t paddr;
+
+  if (!ptr)
+    return 0;
+
+  addr = (uintptr_t)ptr;
+
+#if defined(ARCH_X86_64)
+  if (addr >= STORAGE_X86_64_KERNEL_VIRT_BASE)
+    return STORAGE_X86_64_KERNEL_PHYS_BASE +
+           (phys_addr_t)(addr - STORAGE_X86_64_KERNEL_VIRT_BASE);
+
+  {
+    uint64_t hhdm = limine_get_hhdm_offset();
+    if (hhdm && addr >= hhdm)
+      return (phys_addr_t)(addr - hhdm);
+  }
+#endif
+
+  paddr = vmm_virt_to_phys((virt_addr_t)(uintptr_t)ptr);
+  if (paddr)
+    return paddr;
+
+  if ((uintptr_t)ptr >= PHYS_OFFSET)
+    return virt_to_phys((void *)ptr);
+
+  return (phys_addr_t)(uintptr_t)ptr;
+}
+
 static void storage_copy_string(char *dst, const char *src, int max) {
   int i = 0;
   if (!dst || max <= 0)
@@ -526,6 +563,10 @@ static int storage_ide_read_atapi_packet(uint16_t io_base, uint8_t drive_select,
                                          uint32_t lba, void *buffer) {
   int status;
   uint16_t *words = (uint16_t *)buffer;
+  uint16_t byte_count;
+  uint16_t words_reported;
+  uint16_t words_to_copy;
+  uint16_t words_to_discard;
   uint8_t packet[12] = {0};
 
   if (!buffer)
@@ -559,8 +600,21 @@ static int storage_ide_read_atapi_packet(uint16_t io_base, uint8_t drive_select,
   if (status < 0 || (status & 0x01))
     return -1;
 
-  for (int i = 0; i < 1024; i++)
+  byte_count = (uint16_t)inb(io_base + 4) |
+               ((uint16_t)inb(io_base + 5) << 8);
+  if (byte_count == 0)
+    byte_count = 2048;
+
+  words_reported = (uint16_t)((byte_count + 1U) / 2U);
+  words_to_copy = words_reported > 1024 ? 1024 : words_reported;
+  words_to_discard = words_reported > 1024 ? (uint16_t)(words_reported - 1024) : 0;
+
+  for (uint16_t i = 0; i < words_to_copy; i++)
     words[i] = inw(io_base);
+  for (uint16_t i = words_to_copy; i < 1024; i++)
+    words[i] = 0;
+  for (uint16_t i = 0; i < words_to_discard; i++)
+    (void)inw(io_base);
 
   return 0;
 }
@@ -775,6 +829,13 @@ typedef struct {
   ahci_prdt_entry_t prdt[1];
 } __attribute__((packed)) ahci_cmd_table_t;
 
+static void storage_set_prdt_addr(ahci_prdt_entry_t *prdt, const void *buffer) {
+  phys_addr_t paddr = storage_dma_addr(buffer);
+
+  prdt->dba = (uint32_t)(paddr & 0xFFFFFFFFULL);
+  prdt->dbau = (uint32_t)(paddr >> 32);
+}
+
 static int storage_ahci_port_wait_ready(storage_ahci_port_ctx_t *ctx) {
   volatile uint32_t *port;
   uint64_t deadline;
@@ -827,10 +888,14 @@ static void storage_ahci_setup_port(storage_ahci_port_ctx_t *ctx) {
     return;
   port = (volatile uint32_t *)ctx->port_mmio;
   storage_ahci_port_stop(ctx);
-  port[0x00 / 4] = (uint32_t)(uintptr_t)ctx->command_list;
-  port[0x04 / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->command_list) >> 32);
-  port[0x08 / 4] = (uint32_t)(uintptr_t)ctx->rfis;
-  port[0x0C / 4] = (uint32_t)(((uint64_t)(uintptr_t)ctx->rfis) >> 32);
+  {
+    phys_addr_t command_list = storage_dma_addr(ctx->command_list);
+    phys_addr_t rfis = storage_dma_addr(ctx->rfis);
+    port[0x00 / 4] = (uint32_t)(command_list & 0xFFFFFFFFULL);
+    port[0x04 / 4] = (uint32_t)(command_list >> 32);
+    port[0x08 / 4] = (uint32_t)(rfis & 0xFFFFFFFFULL);
+    port[0x0C / 4] = (uint32_t)(rfis >> 32);
+  }
   port[0x10 / 4] = 0xFFFFFFFF;
   for (int i = 0; i < (int)sizeof(ctx->command_list); i++)
     ctx->command_list[i] = 0;
@@ -841,9 +906,11 @@ static void storage_ahci_setup_port(storage_ahci_port_ctx_t *ctx) {
   header = (ahci_cmd_header_t *)ctx->command_list;
   header[0].flags = 5;
   header[0].prdtl = 1;
-  header[0].ctba = (uint32_t)(uintptr_t)ctx->command_table;
-  header[0].ctbau =
-      (uint32_t)(((uint64_t)(uintptr_t)ctx->command_table) >> 32);
+  {
+    phys_addr_t command_table = storage_dma_addr(ctx->command_table);
+    header[0].ctba = (uint32_t)(command_table & 0xFFFFFFFFULL);
+    header[0].ctbau = (uint32_t)(command_table >> 32);
+  }
   storage_ahci_port_start(ctx);
 }
 
@@ -881,8 +948,7 @@ static int storage_ahci_issue(storage_ahci_port_ctx_t *ctx, uint8_t command,
   fis->lba5 = (uint8_t)((lba >> 40) & 0xFF);
   fis->countl = (uint8_t)(count & 0xFF);
   fis->counth = (uint8_t)((count >> 8) & 0xFF);
-  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
-  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  storage_set_prdt_addr(&table->prdt[0], buffer);
   table->prdt[0].dbc_i =
       (uint32_t)(count * AHCI_SECTOR_SIZE - 1) | (1U << 31);
   port[0x10 / 4] = 0xFFFFFFFF;
@@ -926,7 +992,9 @@ static int storage_ahci_issue_atapi(storage_ahci_port_ctx_t *ctx, uint32_t lba,
   fis->fis_type = 0x27;
   fis->pmport_c = 1U << 7;
   fis->command = 0xA0;
-  fis->lba1 = 0x08;
+  /* ATA PACKET byte count is cylinder low/high. Request one 2048-byte CD sector. */
+  fis->lba1 = 0x00;
+  fis->lba2 = 0x08;
 
   table->acmd[0] = 0xA8;
   table->acmd[2] = (uint8_t)((lba >> 24) & 0xFF);
@@ -936,8 +1004,7 @@ static int storage_ahci_issue_atapi(storage_ahci_port_ctx_t *ctx, uint32_t lba,
   table->acmd[7] = (uint8_t)((blocks >> 8) & 0xFF);
   table->acmd[8] = (uint8_t)(blocks & 0xFF);
 
-  table->prdt[0].dba = (uint32_t)(uintptr_t)buffer;
-  table->prdt[0].dbau = (uint32_t)(((uint64_t)(uintptr_t)buffer) >> 32);
+  storage_set_prdt_addr(&table->prdt[0], buffer);
   table->prdt[0].dbc_i = (uint32_t)(blocks * 2048U - 1U) | (1U << 31);
 
   port[0x10 / 4] = 0xFFFFFFFF;

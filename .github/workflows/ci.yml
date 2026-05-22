@@ -26,6 +26,7 @@ jobs:
             gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
             dosfstools \
+            fdisk \
             mtools \
             qemu-system-x86 \
             qemu-system-arm \
@@ -37,6 +38,7 @@ jobs:
             lld \
             llvm \
             nasm
+          sudo apt-get install -y 7zip || sudo apt-get install -y p7zip-full
 
       - name: Build x86_64 ISO
         env:
@@ -47,10 +49,14 @@ jobs:
           export BUILD_COMPILE_TIME="$(date -u +'%Y-%m-%d %H:%M:%SZ')"
           make -f Makefile.multiarch ARCH=x86_64 image
 
-      ##- name: Build x86_64 Installer ISO
-        ##run: |
-        ##  set -euxo pipefail
-        ##  make -f Makefile.multiarch ARCH=x86_64 installer-image
+      - name: Build x86_64 Installer ISO
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          export BUILD_COMPILE_TIME="$(date -u +'%Y-%m-%d %H:%M:%SZ')"
+          make -f Makefile.multiarch ARCH=x86_64 installer-image
 
       - name: Verify release files
         run: |
@@ -60,8 +66,14 @@ jobs:
           if [ -f image/os8-x86_64.iso.xz ]; then
             file image/os8-x86_64.iso.xz
           fi
-          ##ls -lh image/os8-x86_64-installer.iso
-          ##file image/os8-x86_64-installer.iso
+          ls -lh image/os8-x86_64-installer.iso image/os8-x86_64-system.img
+          file image/os8-x86_64-installer.iso
+          file image/os8-x86_64-system.img
+          if [ -f image/os8-x86_64-installer.iso.xz ]; then
+            file image/os8-x86_64-installer.iso.xz
+          fi
+          ls -lh image/os8-x86_64-installer.iso.7z
+          file image/os8-x86_64-installer.iso.7z
 
       - name: Generate release notes
         run: |
@@ -81,6 +93,7 @@ jobs:
           - \`os8-x86_64.iso\`
           - \`os8-x86_64.iso.xz\`
           - \`os8-x86_64-installer.iso\`
+          - \`os8-x86_64-installer.iso.7z\`
 
           ## Branch
           - \`${{ github.ref_name }}\`
@@ -102,5 +115,6 @@ jobs:
             image/os8-x86_64.iso
             image/os8-x86_64.iso.xz
             image/os8-x86_64-installer.iso
+            image/os8-x86_64-installer.iso.7z
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
