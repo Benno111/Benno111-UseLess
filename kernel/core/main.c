@@ -995,12 +995,14 @@ static void populate_installer_payload(void) {
   if (installer_mode) {
     seed_make_dir("", "/setup");
     seed_make_dir("", "/setup/boot");
+    seed_make_dir("", "/setup/bootimage");
     seed_make_dir("", "/setup/EFI");
     seed_make_dir("", "/setup/EFI/BOOT");
     seed_make_dir("", "/setup/limine");
     seed_make_dir("", "/setup/install");
     seed_make_dir("", "/setup/install/system-image");
     ensure_boot_payload_dirs("/setup");
+    ensure_boot_payload_dirs("/setup/bootimage");
     ensure_boot_payload_dirs("/setup/install/system-image");
     populate_seed_tree_at("/setup/install/system-image");
   }
@@ -1031,6 +1033,31 @@ static void populate_installer_payload(void) {
                            installer_payload_bootx64_efi,
                            bootx64_efi_size) != 0 ||
         media_install_text_file("/setup/SETUP_INFO.txt", setup_info) != 0)) ||
+      (installer_mode &&
+       (media_install_file("/setup/bootimage/boot/main.sys", kernel_image,
+                           kernel_size) != 0 ||
+        media_install_file("/setup/bootimage/boot/bootloader.sys", kernel_image,
+                           kernel_size) != 0 ||
+        media_install_text_file("/setup/bootimage/limine.conf",
+                                installer_limine_cfg) != 0 ||
+        media_install_text_file("/setup/bootimage/boot/limine.conf",
+                                installer_limine_cfg) != 0 ||
+        media_install_text_file("/setup/bootimage/limine/limine.conf",
+                                installer_limine_cfg) != 0 ||
+        media_install_text_file("/setup/bootimage/EFI/BOOT/limine.conf",
+                                installer_limine_cfg) != 0 ||
+        media_install_file("/setup/bootimage/boot/limine-bios.sys",
+                           installer_payload_limine_bios_sys,
+                           limine_bios_sys_size) != 0 ||
+        media_install_file("/setup/bootimage/boot/limine-bios-cd.bin",
+                           installer_payload_limine_bios_cd_bin,
+                           limine_bios_cd_size) != 0 ||
+        media_install_file("/setup/bootimage/boot/limine-uefi-cd.bin",
+                           installer_payload_limine_uefi_cd_bin,
+                           limine_uefi_cd_size) != 0 ||
+        media_install_file("/setup/bootimage/EFI/BOOT/BOOTX64.EFI",
+                           installer_payload_bootx64_efi,
+                           bootx64_efi_size) != 0)) ||
       media_install_file("/install/system-image/boot/main.sys", kernel_image,
                          kernel_size) != 0 ||
       media_install_file("/install/system-image/boot/bootloader.sys",
