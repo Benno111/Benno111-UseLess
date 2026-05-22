@@ -7695,6 +7695,11 @@ static int installer_copy_system_image_to_root(const char *target_root,
                                   "system image") != 0) {
     return -1;
   }
+  if (installer_payload_file_exists("/setup/bootimage/boot/main.sys") &&
+      installer_copy_tree_to_root("/setup/bootimage", target_root, copied_files,
+                                  failed_files, "boot image") != 0) {
+    return -1;
+  }
   return installer_copy_boot_aliases(target_root, copied_files, failed_files);
 }
 
