@@ -101,6 +101,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 require_file "$KERNEL_PATH"
 require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
+require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
+require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy
@@ -179,6 +181,10 @@ mcopy -i "$MTOOLS_IMAGE" "$KERNEL_PATH" ::/boot/bootloader.sys
 mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine-bios.sys
 mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/boot/limine-bios.sys
 mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine/limine-bios.sys
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios-cd.bin" ::/boot/limine-bios-cd.bin
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios-cd.bin" ::/limine/limine-bios-cd.bin
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-uefi-cd.bin" ::/boot/limine-uefi-cd.bin
+mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-uefi-cd.bin" ::/limine/limine-uefi-cd.bin
 mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/limine.conf
 mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/boot/limine.conf
