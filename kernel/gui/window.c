@@ -7685,6 +7685,7 @@ static int installer_copy_tree_to_root(const char *src_root, const char *dst_roo
                                        const char *log_label);
 static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
                                        int *failed_files);
+static int installer_payload_file_exists(const char *path);
 
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
