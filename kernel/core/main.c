@@ -1141,6 +1141,13 @@ static void populate_installer_payload(void) {
     return;
   }
 
+  if (installer_mode &&
+      copy_tree_to_prefix("/setup/bootimage", "/setup/install/system-image",
+                          0, 0) != 0) {
+    printk(KERN_ERR "INSTALL: failed to mirror boot files into staged system image\n");
+    return;
+  }
+
   printk(KERN_INFO "INSTALL: bundled system image payload seeded in RAMFS\n");
   if (installer_mode)
     printk(KERN_INFO "INSTALL: setup media exposed at /setup/\n");
