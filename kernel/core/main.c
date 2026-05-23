@@ -1142,6 +1142,13 @@ static void populate_installer_payload(void) {
   }
 
   if (installer_mode &&
+      copy_tree_to_prefix("/setup/bootimage", "/install/system-image", 0, 0) !=
+          0) {
+    printk(KERN_ERR "INSTALL: failed to mirror boot files into live system image\n");
+    return;
+  }
+
+  if (installer_mode &&
       copy_tree_to_prefix("/setup/bootimage", "/setup/install/system-image",
                           0, 0) != 0) {
     printk(KERN_ERR "INSTALL: failed to mirror boot files into staged system image\n");
