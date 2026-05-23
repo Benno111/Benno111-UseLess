@@ -1033,31 +1033,6 @@ static void populate_installer_payload(void) {
                            installer_payload_bootx64_efi,
                            bootx64_efi_size) != 0 ||
         media_install_text_file("/setup/SETUP_INFO.txt", setup_info) != 0)) ||
-      (installer_mode &&
-       (media_install_file("/setup/bootimage/boot/main.sys", kernel_image,
-                           kernel_size) != 0 ||
-        media_install_file("/setup/bootimage/boot/bootloader.sys", kernel_image,
-                           kernel_size) != 0 ||
-        media_install_text_file("/setup/bootimage/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_text_file("/setup/bootimage/boot/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_text_file("/setup/bootimage/limine/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_text_file("/setup/bootimage/EFI/BOOT/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_file("/setup/bootimage/boot/limine-bios.sys",
-                           installer_payload_limine_bios_sys,
-                           limine_bios_sys_size) != 0 ||
-        media_install_file("/setup/bootimage/boot/limine-bios-cd.bin",
-                           installer_payload_limine_bios_cd_bin,
-                           limine_bios_cd_size) != 0 ||
-        media_install_file("/setup/bootimage/boot/limine-uefi-cd.bin",
-                           installer_payload_limine_uefi_cd_bin,
-                           limine_uefi_cd_size) != 0 ||
-        media_install_file("/setup/bootimage/EFI/BOOT/BOOTX64.EFI",
-                           installer_payload_bootx64_efi,
-                           bootx64_efi_size) != 0)) ||
       media_install_file("/install/system-image/boot/main.sys", kernel_image,
                          kernel_size) != 0 ||
       media_install_file("/install/system-image/boot/bootloader.sys",
@@ -1142,14 +1117,14 @@ static void populate_installer_payload(void) {
   }
 
   if (installer_mode &&
-      copy_tree_to_prefix("/setup/bootimage", "/install/system-image", 0, 0) !=
+      copy_tree_to_prefix("/install/system-image", "/setup/bootimage", 0, 0) !=
           0) {
-    printk(KERN_ERR "INSTALL: failed to mirror boot files into live system image\n");
+    printk(KERN_ERR "INSTALL: failed to mirror boot files into setup bootimage\n");
     return;
   }
 
   if (installer_mode &&
-      copy_tree_to_prefix("/setup/bootimage", "/setup/install/system-image",
+      copy_tree_to_prefix("/install/system-image", "/setup/install/system-image",
                           0, 0) != 0) {
     printk(KERN_ERR "INSTALL: failed to mirror boot files into staged system image\n");
     return;
