@@ -1019,33 +1019,7 @@ static void populate_installer_payload(void) {
     populate_seed_tree_at("/setup/install/system-image");
   }
 
-  int payload_seed_failed =
-      (installer_mode &&
-       (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
-            0 ||
-        media_install_file("/setup/boot/bootloader.sys", kernel_image,
-                           kernel_size) != 0 ||
-        media_install_text_file("/setup/limine.conf", installer_limine_cfg) !=
-            0 ||
-        media_install_text_file("/setup/boot/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_text_file("/setup/limine/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_text_file("/setup/EFI/BOOT/limine.conf",
-                                installer_limine_cfg) != 0 ||
-        media_install_file("/setup/boot/limine-bios.sys",
-                           installer_payload_limine_bios_sys,
-                           limine_bios_sys_size) != 0 ||
-        media_install_file("/setup/boot/limine-bios-cd.bin",
-                           installer_payload_limine_bios_cd_bin,
-                           limine_bios_cd_size) != 0 ||
-        media_install_file("/setup/boot/limine-uefi-cd.bin",
-                           installer_payload_limine_uefi_cd_bin,
-                           limine_uefi_cd_size) != 0 ||
-        media_install_file("/setup/EFI/BOOT/BOOTX64.EFI",
-                           installer_payload_bootx64_efi,
-                           bootx64_efi_size) != 0 ||
-        media_install_text_file("/setup/SETUP_INFO.txt", setup_info) != 0)) ||
+  int install_seed_failed =
       media_install_file("/install/system-image/boot/main.sys", kernel_image,
                          kernel_size) != 0 ||
       media_install_file("/install/system-image/boot/bootloader.sys",
@@ -1085,8 +1059,38 @@ static void populate_installer_payload(void) {
       media_install_text_file("/install/system-image/System/mbr-boot.cfg",
                               installed_mbr_boot_cfg) != 0 ||
       media_install_text_file("/install/system-image/IMAGE_INFO.txt",
-                              image_info) != 0 ||
-      (installer_mode &&
+                              image_info) != 0;
+  if (install_seed_failed) {
+    printk(KERN_ERR "INSTALL: failed to seed install disk payload\n");
+    return;
+  }
+
+  if (installer_mode &&
+      (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
+           0 ||
+       media_install_file("/setup/boot/bootloader.sys", kernel_image,
+                          kernel_size) != 0 ||
+       media_install_text_file("/setup/limine.conf", installer_limine_cfg) !=
+           0 ||
+       media_install_text_file("/setup/boot/limine.conf",
+                               installer_limine_cfg) != 0 ||
+       media_install_text_file("/setup/limine/limine.conf",
+                               installer_limine_cfg) != 0 ||
+       media_install_text_file("/setup/EFI/BOOT/limine.conf",
+                               installer_limine_cfg) != 0 ||
+       media_install_file("/setup/boot/limine-bios.sys",
+                          installer_payload_limine_bios_sys,
+                          limine_bios_sys_size) != 0 ||
+       media_install_file("/setup/boot/limine-bios-cd.bin",
+                          installer_payload_limine_bios_cd_bin,
+                          limine_bios_cd_size) != 0 ||
+       media_install_file("/setup/boot/limine-uefi-cd.bin",
+                          installer_payload_limine_uefi_cd_bin,
+                          limine_uefi_cd_size) != 0 ||
+       media_install_file("/setup/EFI/BOOT/BOOTX64.EFI",
+                          installer_payload_bootx64_efi,
+                          bootx64_efi_size) != 0 ||
+       media_install_text_file("/setup/SETUP_INFO.txt", setup_info) != 0 ||
        (media_install_file("/setup/install/system-image/boot/main.sys",
                            kernel_image, kernel_size) != 0 ||
         media_install_file("/setup/install/system-image/boot/bootloader.sys",
@@ -1100,14 +1104,14 @@ static void populate_installer_payload(void) {
         media_install_text_file("/setup/install/system-image/EFI/BOOT/limine.conf",
                                 installed_limine_cfg) != 0 ||
         media_install_file("/setup/install/system-image/boot/limine-bios.sys",
-                           installer_payload_limine_bios_sys,
-                           limine_bios_sys_size) != 0 ||
+                          installer_payload_limine_bios_sys,
+                          limine_bios_sys_size) != 0 ||
         media_install_file("/setup/install/system-image/boot/limine-bios-cd.bin",
-                           installer_payload_limine_bios_cd_bin,
-                           limine_bios_cd_size) != 0 ||
+                          installer_payload_limine_bios_cd_bin,
+                          limine_bios_cd_size) != 0 ||
         media_install_file("/setup/install/system-image/boot/limine-uefi-cd.bin",
-                           installer_payload_limine_uefi_cd_bin,
-                           limine_uefi_cd_size) != 0 ||
+                          installer_payload_limine_uefi_cd_bin,
+                          limine_uefi_cd_size) != 0 ||
         media_install_text_file("/setup/install/system-image/INSTALLERS.TXT",
                                 installers_txt) != 0 ||
         media_install_text_file("/setup/install/system-image/BOOTABLE.CFG",
@@ -1129,8 +1133,7 @@ static void populate_installer_payload(void) {
                                 installed_mbr_boot_cfg) != 0 ||
         media_install_text_file("/setup/install/system-image/IMAGE_INFO.txt",
                                 image_info) != 0 ||
-        media_install_text_file("/setup/INSTALLERS.TXT", installers_txt) != 0));
-  if (payload_seed_failed) {
+        media_install_text_file("/setup/INSTALLERS.TXT", installers_txt) != 0))) {
     printk(KERN_ERR "INSTALL: failed to seed setup media payload\n");
     return;
   }
