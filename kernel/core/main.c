@@ -1019,7 +1019,8 @@ static void populate_installer_payload(void) {
     populate_seed_tree_at("/setup/install/system-image");
   }
 
-  if ((installer_mode &&
+  int payload_seed_failed =
+      (installer_mode &&
        (media_install_file("/setup/boot/main.sys", kernel_image, kernel_size) !=
             0 ||
         media_install_file("/setup/boot/bootloader.sys", kernel_image,
@@ -1128,7 +1129,8 @@ static void populate_installer_payload(void) {
                                 installed_mbr_boot_cfg) != 0 ||
         media_install_text_file("/setup/install/system-image/IMAGE_INFO.txt",
                                 image_info) != 0 ||
-        media_install_text_file("/setup/INSTALLERS.TXT", installers_txt) != 0)) {
+        media_install_text_file("/setup/INSTALLERS.TXT", installers_txt) != 0));
+  if (payload_seed_failed) {
     printk(KERN_ERR "INSTALL: failed to seed setup media payload\n");
     return;
   }
