@@ -862,6 +862,12 @@ void refresh_external_storage_views(void) {
     if (kind == STORAGE_KIND_CDROM) {
       build_seed_path(media_root, sizeof(media_root), "/Media", location);
       seed_make_dir("", media_root);
+      if (vfs_mount(location, media_root, "iso9660", 0, NULL) == 0) {
+        printk(KERN_INFO "STORAGE: mounted CD-ROM '%s' on '%s'\n", location,
+               media_root);
+        copy_tree_to_prefix(media_root, external_root, 0, 0);
+        continue;
+      }
       if (iso9660_copy_to_ramfs(location, media_root) == 0) {
         copy_tree_to_prefix(media_root, external_root, 0, 0);
         continue;
@@ -1218,6 +1224,8 @@ static void init_subsystems(void *dtb) {
   printk(KERN_INFO "  Initializing RamFS...\n");
   extern int ramfs_init(void);
   ramfs_init();
+  extern int iso9660_init(void);
+  iso9660_init();
 
   /* Mount root filesystem */
   printk(KERN_INFO "  Mounting root filesystem...\n");
