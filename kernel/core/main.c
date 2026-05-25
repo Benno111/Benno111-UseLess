@@ -965,6 +965,12 @@ static void populate_installer_payload(void) {
       "active_partition=System\n"
       "loader=limine\n"
       "source=installed-system\n";
+  static const char *installers_txt =
+      "OS8 Installer Types\n"
+      "\n"
+      "1. Graphical Installer\n"
+      "   Boot menu entry: \"OS8 Graphical Installer\"\n"
+      "   Use this for the normal desktop installer flow.\n";
   static const char *setup_info =
       "OS8 Installer Media\n"
       "\n"
@@ -1060,6 +1066,8 @@ static void populate_installer_payload(void) {
       media_install_file("/install/system-image/boot/limine-uefi-cd.bin",
                          installer_payload_limine_uefi_cd_bin,
                          limine_uefi_cd_size) != 0 ||
+      media_install_text_file("/install/system-image/INSTALLERS.TXT",
+                              installers_txt) != 0 ||
       media_install_text_file("/install/system-image/BOOTABLE.CFG",
                               installed_bootable_cfg) != 0 ||
       media_install_text_file("/install/system-image/EFI/BOOT/BOOTABLE.CFG",
@@ -1099,6 +1107,8 @@ static void populate_installer_payload(void) {
         media_install_file("/setup/install/system-image/boot/limine-uefi-cd.bin",
                            installer_payload_limine_uefi_cd_bin,
                            limine_uefi_cd_size) != 0 ||
+        media_install_text_file("/setup/install/system-image/INSTALLERS.TXT",
+                                installers_txt) != 0 ||
         media_install_text_file("/setup/install/system-image/BOOTABLE.CFG",
                                 installed_bootable_cfg) != 0 ||
         media_install_text_file(
@@ -1117,7 +1127,8 @@ static void populate_installer_payload(void) {
         media_install_text_file("/setup/install/system-image/System/mbr-boot.cfg",
                                 installed_mbr_boot_cfg) != 0 ||
         media_install_text_file("/setup/install/system-image/IMAGE_INFO.txt",
-                                image_info) != 0))) {
+                                image_info) != 0 ||
+        media_install_text_file("/setup/INSTALLERS.TXT", installers_txt) != 0)) {
     printk(KERN_ERR "INSTALL: failed to seed setup media payload\n");
     return;
   }
