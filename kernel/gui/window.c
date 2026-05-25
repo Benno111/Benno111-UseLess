@@ -7680,6 +7680,7 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static const char *installer_system_image_root_path(void);
+static int installer_system_image_is_archive(const char *path);
 static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
                                        int *copied_files, int *failed_files,
                                        const char *log_label);
@@ -7691,9 +7692,23 @@ static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
   const char *installer_system_image_root = installer_system_image_root_path();
-  if (installer_copy_tree_to_root(installer_system_image_root, target_root,
-                                  copied_files, failed_files,
-                                  "system image") != 0) {
+  if (installer_system_image_is_archive(installer_system_image_root)) {
+    uint8_t *archive_data = NULL;
+    size_t archive_size = 0;
+    int ret;
+
+    if (media_load_file(installer_system_image_root, &archive_data,
+                        &archive_size) != 0) {
+      return -1;
+    }
+    ret = media_zip_extract_to_root(archive_data, archive_size, target_root,
+                                    copied_files, failed_files);
+    media_free_file(archive_data);
+    if (ret != 0)
+      return -1;
+  } else if (installer_copy_tree_to_root(installer_system_image_root,
+                                         target_root, copied_files,
+                                         failed_files, "system image") != 0) {
     return -1;
   }
   return installer_copy_boot_aliases(target_root, copied_files, failed_files);
@@ -7709,6 +7724,17 @@ static int installer_payload_file_exists(const char *path) {
     return 0;
   vfs_close(f);
   return 1;
+}
+
+static int installer_system_image_is_archive(const char *path) {
+  size_t len = 0;
+
+  if (!path)
+    return 0;
+  while (path[len])
+    len++;
+  return (len >= 4 && path[len - 4] == '.' && path[len - 3] == 'z' &&
+          path[len - 2] == 'i' && path[len - 1] == 'p');
 }
 
 static int installer_payload_any_file_exists(const char **paths, int count) {
@@ -7753,6 +7779,17 @@ static int installer_count_tree_files(const char *src_root) {
 
   if (!src_root || !src_root[0])
     return 0;
+  if (installer_system_image_is_archive(src_root)) {
+    uint8_t *archive_data = NULL;
+    size_t archive_size = 0;
+    int count;
+
+    if (media_load_file(src_root, &archive_data, &archive_size) != 0)
+      return 0;
+    count = media_zip_count_files(archive_data, archive_size);
+    media_free_file(archive_data);
+    return (count > 0) ? count : 0;
+  }
   dir = vfs_open(src_root, O_RDONLY, 0);
   if (!dir)
     return 0;
@@ -7772,48 +7809,14 @@ static int installer_boot_alias_copy_count(const char *target_root) {
   return installer_payload_file_exists(boot_bios_path) ? 3 : 0;
 }
 
-static int installer_score_system_image_root(const char *root) {
-  static const char *boot_suffixes[] = {
-      "/boot",
-      "/boot/main.sys",
-      "/boot/bootloader.sys",
-      "/boot/limine-bios.sys",
-      "/boot/limine-bios-cd.bin",
-      "/boot/limine-uefi-cd.bin",
-      "/boot/limine.conf",
-      "/boot/BOOTABLE.CFG",
-  };
-  char probe[192];
-  int score = 0;
-
-  if (!root || !root[0])
-    return -1;
-
-  for (int i = 0; i < (int)(sizeof(boot_suffixes) / sizeof(boot_suffixes[0]));
-       i++) {
-    str_copy_safe(probe, root, sizeof(probe));
-    installer_append_to_buf(probe, sizeof(probe), boot_suffixes[i]);
-    if (installer_payload_file_exists(probe))
-      score++;
-  }
-  return score;
-}
-
 static const char *installer_system_image_root_path(void) {
-  static const char *roots[] = {"/install/system-image",
-                                "/setup/install/system-image"};
-  int best_score = -1;
-  const char *best_root = "/install/system-image";
-
-  for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
-    int score = installer_score_system_image_root(roots[i]);
-    if (score > best_score) {
-      best_score = score;
-      best_root = roots[i];
-    }
-  }
-
-  return best_root;
+  if (installer_payload_file_exists("/install/system-image.zip"))
+    return "/install/system-image.zip";
+  if (installer_payload_file_exists("/setup/install/system-image.zip"))
+    return "/setup/install/system-image.zip";
+  if (installer_payload_file_exists("/install/system-image"))
+    return "/install/system-image";
+  return "/setup/install/system-image";
 }
 
 static int installer_validate_system_image_payload(void) {
@@ -7840,6 +7843,48 @@ static int installer_validate_system_image_payload(void) {
   const char *payload_root = installer_system_image_root_path();
   char full_path[192];
   char msg[320];
+
+  if (installer_system_image_is_archive(payload_root)) {
+    uint8_t *archive_data = NULL;
+    size_t archive_size = 0;
+
+    if (media_load_file(payload_root, &archive_data, &archive_size) != 0) {
+      str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), payload_root);
+      installer_log(msg);
+      return -1;
+    }
+
+    for (int i = 0;
+         i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
+         i++) {
+      if (media_zip_has_entry(archive_data, archive_size,
+                              required_suffixes[i]))
+        continue;
+      str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), payload_root);
+      installer_append_to_buf(msg, sizeof(msg), required_suffixes[i]);
+      installer_log(msg);
+      media_free_file(archive_data);
+      return -1;
+    }
+
+    for (int i = 0;
+         i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
+         i++) {
+      if (media_zip_has_entry(archive_data, archive_size,
+                              limine_cfg_suffixes[i])) {
+        media_free_file(archive_data);
+        return 0;
+      }
+    }
+
+    str_copy_safe(msg, "install payload missing: no Limine config in archive",
+                  sizeof(msg));
+    installer_log(msg);
+    media_free_file(archive_data);
+    return -1;
+  }
 
   for (int i = 0;
        i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));

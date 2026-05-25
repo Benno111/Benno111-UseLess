@@ -938,8 +938,8 @@ static void populate_installer_payload(void) {
   static const char *image_info =
       "OS8 System Image\n"
       "\n"
-      "This installer boot seeds a bundled system image at\n"
-      "/install/system-image so the GUI installer can copy it to disk.\n";
+      "This installer boot seeds a bundled system image archive at\n"
+      "/install/system-image.zip so the GUI installer can copy it to disk.\n";
   static const char *installed_bootable_cfg =
       "bootable=1\n"
       "loader=limine\n"
@@ -975,7 +975,7 @@ static void populate_installer_payload(void) {
       "OS8 Installer Media\n"
       "\n"
       "This directory mirrors the bootable installer media contents while\n"
-      "running in setup mode.\n";
+      "running in setup mode, including the ZIP archive payload.\n";
   const uint8_t *kernel_image;
   size_t kernel_size;
   size_t bootx64_efi_size;
@@ -1150,6 +1150,35 @@ static void populate_installer_payload(void) {
                           0, 0) != 0) {
     printk(KERN_ERR "INSTALL: failed to mirror boot files into staged system image\n");
     return;
+  }
+
+  {
+    uint8_t *archive_data = NULL;
+    size_t archive_size = 0;
+
+    if (media_zip_pack_tree("/install/system-image", &archive_data,
+                            &archive_size) != 0 ||
+        media_install_file("/install/system-image.zip", archive_data,
+                           archive_size) != 0) {
+      media_free_file(archive_data);
+      printk(KERN_ERR "INSTALL: failed to package install disk archive\n");
+      return;
+    }
+    media_free_file(archive_data);
+
+    if (installer_mode) {
+      archive_data = NULL;
+      archive_size = 0;
+      if (media_zip_pack_tree("/setup/install/system-image", &archive_data,
+                              &archive_size) != 0 ||
+          media_install_file("/setup/install/system-image.zip", archive_data,
+                             archive_size) != 0) {
+        media_free_file(archive_data);
+        printk(KERN_ERR "INSTALL: failed to package setup archive\n");
+        return;
+      }
+      media_free_file(archive_data);
+    }
   }
 
   printk(KERN_INFO "INSTALL: bundled system image payload seeded in RAMFS\n");
