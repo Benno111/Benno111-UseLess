@@ -603,7 +603,7 @@ sealed class ThemeEditorForm : Form
         var settingsText = Color.FromArgb((int)current.Colors[10]);
         var settingsSubtext = Color.FromArgb((int)current.Colors[11]);
         using var titleFont = new Font(Font.FontFamily, 11f, FontStyle.Bold);
-        using var bodyFont = Font;
+        using var bodyFont = new Font(Font.FontFamily, 10f, FontStyle.Regular);
         using var smallFont = new Font(Font.FontFamily, 8.5f, FontStyle.Regular);
 
         g.Clear(Color.FromArgb(0x10, 0x14, 0x1C));
