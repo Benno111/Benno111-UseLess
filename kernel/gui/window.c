@@ -25,6 +25,9 @@
 #include "types.h"
 
 #define GUI_DISPLAY_CONFIG_PATH "/System/display.cfg"
+#define GUI_THEME_CONFIG_PATH "/System/theme.cfg"
+#define GUI_THEME_DARK_PATH "/System/theme-dark.cfg"
+#define GUI_THEME_LIGHT_PATH "/System/theme-light.cfg"
 
 struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
@@ -237,7 +240,7 @@ typedef struct {
   uint32_t file_subtext;
 } gui_theme_palette_t;
 
-static const gui_theme_palette_t g_theme_dark = {
+static gui_theme_palette_t g_theme_dark = {
     0x1A1A2E, 0xE4E4E7, 0xA1A1AA, 0x6366F1, 0xEC4899, 0x27272A, 0x1F2937,
     0x252535, 0x52525B, 0xFFFDFEFF, 0x90FFFFFF, 0x4A4E6A8A, 0x3F3D4A5D,
     0x18324860, 0x142A3442, 0x34FFFFFF, 0x50313C4E, 0x5A34383F, 0x50323338,
@@ -249,7 +252,7 @@ static const gui_theme_palette_t g_theme_dark = {
     0x171A24, 0x111827, 0x1F2937, 0x111827, 0x0F172A, 0x111827, 0x172033,
     0x0F172A, 0x111827, 0x1D4ED8, 0xFFFFFF, 0x94A3B8};
 
-static const gui_theme_palette_t g_theme_light = {
+static gui_theme_palette_t g_theme_light = {
     0xF4F7FB, 0x172033, 0x5F6E82, 0x2563EB, 0xDB2777, 0xE9EEF5, 0xF6F9FC,
     0xFFFFFF, 0xC9D4E5, 0x1A2535, 0x70486A8C, 0xD9E7F4FA, 0xC8D8E7F1,
     0x60FFFFFF, 0x4CEAF1F7, 0x88FFFFFF, 0x708BA0B5, 0x3CE7EDF6, 0x30D7DFEA,
@@ -270,6 +273,272 @@ static const gui_theme_palette_t *gui_theme_palette(void) {
 static void gui_set_theme_mode(gui_theme_mode_t mode) {
   g_theme_mode = mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT : GUI_THEME_DARK;
   compositor_mark_full_redraw();
+}
+
+static const char *gui_theme_mode_name(gui_theme_mode_t mode) {
+  return mode == GUI_THEME_LIGHT ? "Light" : "Dark";
+}
+
+static int gui_theme_mode_from_text(const char *text) {
+  if (!text)
+    return -1;
+  if (str_cmp(text, "light") == 0 || str_cmp(text, "Light") == 0)
+    return GUI_THEME_LIGHT;
+  if (str_cmp(text, "dark") == 0 || str_cmp(text, "Dark") == 0)
+    return GUI_THEME_DARK;
+  return -1;
+}
+
+static gui_theme_palette_t *gui_active_theme_palette(void) {
+  return g_theme_mode == GUI_THEME_LIGHT ? &g_theme_light : &g_theme_dark;
+}
+
+static uint32_t *gui_theme_slot_ptr(gui_theme_palette_t *palette, int slot) {
+  if (!palette)
+    return NULL;
+  switch (slot) {
+  case 0:
+    return &palette->app_bg;
+  case 1:
+    return &palette->app_fg;
+  case 2:
+    return &palette->accent;
+  case 3:
+    return &palette->accent_soft;
+  case 4:
+    return &palette->surface;
+  case 5:
+    return &palette->surface_alt;
+  case 6:
+    return &palette->card;
+  case 7:
+    return &palette->border;
+  case 8:
+    return &palette->settings_bg;
+  case 9:
+    return &palette->settings_panel;
+  case 10:
+    return &palette->settings_text;
+  case 11:
+    return &palette->settings_subtext;
+  default:
+    return NULL;
+  }
+}
+
+static uint32_t gui_theme_slot_value(const gui_theme_palette_t *palette, int slot) {
+  if (!palette)
+    return 0;
+  switch (slot) {
+  case 0:
+    return palette->app_bg;
+  case 1:
+    return palette->app_fg;
+  case 2:
+    return palette->accent;
+  case 3:
+    return palette->accent_soft;
+  case 4:
+    return palette->surface;
+  case 5:
+    return palette->surface_alt;
+  case 6:
+    return palette->card;
+  case 7:
+    return palette->border;
+  case 8:
+    return palette->settings_bg;
+  case 9:
+    return palette->settings_panel;
+  case 10:
+    return palette->settings_text;
+  case 11:
+    return palette->settings_subtext;
+  default:
+    return 0;
+  }
+}
+
+static uint32_t gui_parse_hex_color(const char *text) {
+  uint32_t value = 0;
+
+  if (!text)
+    return 0;
+  if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+    text += 2;
+  if (*text == '#')
+    text++;
+
+  while (*text) {
+    char c = *text++;
+    uint32_t digit;
+
+    if (c >= '0' && c <= '9')
+      digit = (uint32_t)(c - '0');
+    else if (c >= 'a' && c <= 'f')
+      digit = 10U + (uint32_t)(c - 'a');
+    else if (c >= 'A' && c <= 'F')
+      digit = 10U + (uint32_t)(c - 'A');
+    else
+      break;
+
+    value = (value << 4) | digit;
+  }
+
+  return value & 0x00FFFFFFU;
+}
+
+static void gui_append_hex_color(char *buf, int max, int *idx, uint32_t value) {
+  static const char hex[] = "0123456789ABCDEF";
+
+  if (!buf || !idx || max <= 0)
+    return;
+
+  if (*idx < max - 1)
+    buf[(*idx)++] = '0';
+  if (*idx < max - 1)
+    buf[(*idx)++] = 'x';
+  for (int shift = 20; shift >= 0 && *idx < max - 1; shift -= 4)
+    buf[(*idx)++] = hex[(value >> shift) & 0xF];
+}
+
+static int gui_load_theme_palette(const char *path, gui_theme_palette_t *palette) {
+  uint8_t *manifest_data = NULL;
+  size_t manifest_size = 0;
+  char manifest[768];
+  char value[32];
+  static const char *keys[] = {
+      "app_bg",      "app_fg",      "accent",      "accent_soft",
+      "surface",     "surface_alt", "card",        "border",
+      "settings_bg", "settings_panel", "settings_text", "settings_subtext",
+  };
+  uint32_t *slots[] = {
+      &palette->app_bg,      &palette->app_fg,      &palette->accent,
+      &palette->accent_soft,  &palette->surface,     &palette->surface_alt,
+      &palette->card,         &palette->border,      &palette->settings_bg,
+      &palette->settings_panel, &palette->settings_text,
+      &palette->settings_subtext,
+  };
+
+  if (!path || !palette)
+    return -1;
+  if (media_load_file(path, &manifest_data, &manifest_size) != 0)
+    return -1;
+  if (!manifest_data || manifest_size == 0 || manifest_size >= sizeof(manifest)) {
+    media_free_file(manifest_data);
+    return -1;
+  }
+
+  for (size_t i = 0; i < manifest_size; i++)
+    manifest[i] = (char)manifest_data[i];
+  manifest[manifest_size] = '\0';
+  media_free_file(manifest_data);
+
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    if (manifest_get_value(manifest, keys[i], value, sizeof(value)) == 0 &&
+        value[0]) {
+      *slots[i] = gui_parse_hex_color(value);
+    }
+  }
+
+  return 0;
+}
+
+static void gui_save_theme_palette(const char *path,
+                                   const gui_theme_palette_t *palette) {
+  char manifest[768];
+  int idx = 0;
+  static const char *keys[] = {
+      "app_bg",      "app_fg",      "accent",      "accent_soft",
+      "surface",     "surface_alt", "card",        "border",
+      "settings_bg", "settings_panel", "settings_text", "settings_subtext",
+  };
+  uint32_t values[] = {
+      palette->app_bg,      palette->app_fg,      palette->accent,
+      palette->accent_soft,  palette->surface,     palette->surface_alt,
+      palette->card,         palette->border,      palette->settings_bg,
+      palette->settings_panel, palette->settings_text,
+      palette->settings_subtext,
+  };
+
+  if (!path || !palette)
+    return;
+
+  vfs_mkdir("/System", 0755);
+
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    const char *key = keys[i];
+    while (*key && idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = *key++;
+    if (idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = '=';
+    gui_append_hex_color(manifest, (int)sizeof(manifest), &idx, values[i]);
+    if (idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = '\n';
+  }
+  if (idx < (int)sizeof(manifest))
+    manifest[idx] = '\0';
+  else
+    manifest[sizeof(manifest) - 1] = '\0';
+
+  media_install_text_file(path, manifest);
+}
+
+static int gui_load_saved_theme(void) {
+  char manifest[64];
+  char mode[16];
+  uint8_t *data = NULL;
+  size_t size = 0;
+
+  if (gui_load_theme_palette(GUI_THEME_DARK_PATH, &g_theme_dark) != 0) {
+  }
+  if (gui_load_theme_palette(GUI_THEME_LIGHT_PATH, &g_theme_light) != 0) {
+  }
+
+  if (media_load_file(GUI_THEME_CONFIG_PATH, &data, &size) == 0 && data &&
+      size > 0 && size < sizeof(manifest)) {
+    for (size_t i = 0; i < size; i++)
+      manifest[i] = (char)data[i];
+    manifest[size] = '\0';
+    if (manifest_get_value(manifest, "mode", mode, sizeof(mode)) == 0) {
+      int parsed = gui_theme_mode_from_text(mode);
+      if (parsed >= 0)
+        g_theme_mode = (gui_theme_mode_t)parsed;
+    }
+    media_free_file(data);
+  } else if (data) {
+    media_free_file(data);
+  }
+
+  return 0;
+}
+
+static void gui_save_theme_preference(void) {
+  char manifest[64];
+  int idx = 0;
+
+  vfs_mkdir("/System", 0755);
+  for (const char *p = "mode="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (const char *p = gui_theme_mode_name(g_theme_mode); *p &&
+       idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  if (idx < (int)sizeof(manifest) - 1)
+    manifest[idx++] = '\n';
+  if (idx < (int)sizeof(manifest))
+    manifest[idx] = '\0';
+  else
+    manifest[sizeof(manifest) - 1] = '\0';
+  media_install_text_file(GUI_THEME_CONFIG_PATH, manifest);
+  gui_save_theme_palette(g_theme_mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT_PATH
+                                                         : GUI_THEME_DARK_PATH,
+                         gui_theme_palette());
+}
+
+static void gui_save_active_theme_palette(void) {
+  gui_save_theme_palette(g_theme_mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT_PATH
+                                                         : GUI_THEME_DARK_PATH,
+                         gui_theme_palette());
 }
 
 /* UI Theme Colors - mapped through current palette */
@@ -713,11 +982,31 @@ static int mouse_x = 512, mouse_y = 384;
 static int mouse_buttons = 0;
 static int settings_active_tab = 0;
 static char settings_status[96] = "Tune your desktop experience.";
+static int settings_theme_active_slot = 2;
 static char settings_user_new_name[32] = "";
 static char settings_user_new_password[32] = "";
 static char settings_user_selected[32] = "";
 static int settings_user_new_role_idx = 1;
 static int settings_user_active_field = 0;
+
+static const char *settings_theme_slots[] = {
+    "App BG",       "App FG",       "Accent",      "Accent Soft",
+    "Surface",      "Surface Alt",  "Card",        "Border",
+    "Settings BG",  "Settings Panel","Settings Text","Settings Subtext",
+};
+
+static const uint32_t settings_theme_chips[] = {
+    0x0B1020, 0x111827, 0x1F2937, 0x334155, 0x475569, 0x64748B,
+    0x94A3B8, 0xCBD5E1, 0xE2E8F0, 0xF8FAFC, 0x2563EB, 0x3B82F6,
+    0x14B8A6, 0x22C55E, 0xF59E0B, 0xEF4444, 0xDB2777, 0x8B5CF6,
+    0xFDE68A, 0xF9A8D4, 0xA6E3A1, 0x93C5FD, 0xF5F5F5, 0x1E293B,
+};
+
+#define SETTINGS_THEME_SLOT_COUNT \
+  ((int)(sizeof(settings_theme_slots) / sizeof(settings_theme_slots[0])))
+
+#define SETTINGS_THEME_CHIP_COUNT \
+  ((int)(sizeof(settings_theme_chips) / sizeof(settings_theme_chips[0])))
 
 typedef struct {
   uint16_t width;
@@ -769,6 +1058,14 @@ static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
                                             uint32_t *width,
                                             uint32_t *height,
                                             uint32_t *pitch);
+static int gui_theme_mode_from_text(const char *text);
+static const char *gui_theme_mode_name(gui_theme_mode_t mode);
+static gui_theme_palette_t *gui_active_theme_palette(void);
+static uint32_t *gui_theme_slot_ptr(gui_theme_palette_t *palette, int slot);
+static uint32_t gui_theme_slot_value(const gui_theme_palette_t *palette, int slot);
+static int gui_load_theme_palette(const char *path, gui_theme_palette_t *palette);
+static void gui_save_theme_palette(const char *path,
+                                   const gui_theme_palette_t *palette);
 static void ensure_gui_app_dirs(void);
 static int settings_add_user_account(void);
 static int settings_remove_selected_user_account(void);
@@ -808,7 +1105,7 @@ static const char *settings_default_status_message(int page) {
   case 2:
     return "Inspect storage and disk tools.";
   case 3:
-    return "Adjust wallpapers, blur, and graphics.";
+    return "Build and save the current desktop theme.";
   case 4:
     return "Backup tools are not available yet.";
   case 5:
@@ -821,6 +1118,116 @@ static const char *settings_default_status_message(int page) {
     return "Recovery tools and reset actions.";
   default:
     return "System build and environment details.";
+  }
+}
+
+static void theme_builder_apply_slot_color(int slot, uint32_t color) {
+  gui_theme_palette_t *palette = gui_active_theme_palette();
+  uint32_t *target = gui_theme_slot_ptr(palette, slot);
+
+  if (!target)
+    return;
+  *target = color & 0x00FFFFFFU;
+  compositor_mark_full_redraw();
+}
+
+static void theme_builder_save_current_theme(void) {
+  gui_save_theme_preference();
+  str_copy_safe(settings_status, "Theme saved to /System/theme.cfg.",
+                sizeof(settings_status));
+}
+
+static void draw_theme_builder_window(int content_x, int content_y,
+                                      int content_w, int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
+  int preview_x = content_x + 14;
+  int preview_y = content_y + 14;
+  int preview_w = content_w - 28;
+  int preview_h = 102;
+  int slots_x = content_x + 14;
+  int slots_y = preview_y + preview_h + 14;
+  int slot_gap = 8;
+  int slot_w = (content_w - 28 - slot_gap * 3) / 4;
+  int slot_h = 40;
+  int chips_x = content_x + 14;
+  int chips_y = slots_y + ((slot_h + slot_gap) * 3) + 14;
+  int chip_gap = 8;
+  int chip_w = 32;
+  int chip_h = 26;
+  int chip_cols = 6;
+  int title_bg = theme->settings_panel;
+  int selected_slot = settings_theme_active_slot;
+
+  if (selected_slot < 0 || selected_slot >= SETTINGS_THEME_SLOT_COUNT)
+    selected_slot = 0;
+
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->settings_bg);
+  gui_draw_string(content_x + 14, content_y + 12, "Theme Builder",
+                  theme->settings_text, theme->settings_bg);
+  gui_draw_string(content_x + 14, content_y + 30,
+                  "Pick a slot, preview the palette, then save it to disk.",
+                  theme->settings_subtext, theme->settings_bg);
+
+  gui_draw_rect(preview_x, preview_y, preview_w, preview_h, title_bg);
+  gui_draw_rect(preview_x, preview_y, preview_w, 3, theme->accent);
+  gui_draw_string(preview_x + 12, preview_y + 10, "Live Preview",
+                  theme->settings_text, title_bg);
+  gui_draw_string(preview_x + 12, preview_y + 28,
+                  gui_theme_mode_name(g_theme_mode), theme->accent_soft, title_bg);
+  gui_draw_string(preview_x + 12, preview_y + 48,
+                  "The palette below edits the active mode in memory.",
+                  theme->settings_subtext, title_bg);
+  gui_draw_rect(preview_x + preview_w - 196, preview_y + 12, 52, 26,
+                g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+  gui_draw_string(preview_x + preview_w - 186, preview_y + 20, "Light",
+                  0xFFFFFF, g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+  gui_draw_rect(preview_x + preview_w - 136, preview_y + 12, 52, 26,
+                g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+  gui_draw_string(preview_x + preview_w - 126, preview_y + 20, "Dark",
+                  0xFFFFFF, g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+  gui_draw_rect(preview_x + preview_w - 74, preview_y + 12, 60, 26, 0x2563EB);
+  gui_draw_string(preview_x + preview_w - 62, preview_y + 20, "Save",
+                  0xFFFFFF, 0x2563EB);
+
+  gui_draw_rect(preview_x + 12, preview_y + 64, preview_w - 24, 24,
+                theme->surface_alt);
+  gui_draw_string(preview_x + 24, preview_y + 71,
+                  settings_theme_slots[selected_slot], theme->app_fg,
+                  theme->surface_alt);
+  gui_draw_string(preview_x + preview_w - 230, preview_y + 71,
+                  "Selected slot", theme->app_muted, theme->surface_alt);
+
+  for (int i = 0; i < SETTINGS_THEME_SLOT_COUNT; i++) {
+    int col = i % 4;
+    int row = i / 4;
+    int sx = slots_x + col * (slot_w + slot_gap);
+    int sy = slots_y + row * (slot_h + slot_gap);
+    uint32_t color = gui_theme_slot_value(theme, i);
+    uint32_t text_color = gui_contrast_title_color(color);
+    uint32_t outline = i == selected_slot ? theme->accent : theme->border;
+
+    gui_draw_rect(sx, sy, slot_w, slot_h, color);
+    gui_draw_rect_outline(sx, sy, slot_w, slot_h, outline, i == selected_slot ? 2 : 1);
+    gui_draw_string(sx + 8, sy + 8, settings_theme_slots[i], text_color, color);
+    gui_draw_string(sx + 8, sy + 22, "click to edit", text_color, color);
+  }
+
+  gui_draw_rect(chips_x, chips_y - 4, preview_w, 24, theme->surface_alt);
+  gui_draw_string(chips_x + 12, chips_y + 4, "Color chips", theme->app_fg,
+                  theme->surface_alt);
+  gui_draw_string(chips_x + 118, chips_y + 4,
+                  "Click a chip to update the selected slot.",
+                  theme->app_muted, theme->surface_alt);
+
+  for (int i = 0; i < SETTINGS_THEME_CHIP_COUNT; i++) {
+    int col = i % chip_cols;
+    int row = i / chip_cols;
+    int cx = chips_x + col * (chip_w + chip_gap);
+    int cy = chips_y + 28 + row * (chip_h + chip_gap);
+    uint32_t color = settings_theme_chips[i];
+
+    gui_draw_rect(cx, cy, chip_w, chip_h, color);
+    gui_draw_rect_outline(cx, cy, chip_w, chip_h, theme->border, 1);
   }
 }
 
@@ -11563,7 +11970,7 @@ static void draw_window(struct window *win) {
 
       preview_y += 104;
       gui_draw_rect(panel_x, preview_y, panel_w, 104, 0x252535);
-      gui_draw_string(panel_x + 16, preview_y + 12, "Visual effects", 0x89B4FA,
+      gui_draw_string(panel_x + 16, preview_y + 12, "Theme & effects", 0x89B4FA,
                       0x252535);
       gui_draw_string(panel_x + 16, preview_y + 30, gpu_status, 0xFFFFFF, 0x252535);
       gui_draw_string(panel_x + 16, preview_y + 46, g_gpu_backend_name, 0xCBD5E1,
@@ -11592,13 +11999,7 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 170, preview_y + 79, "Dark Mode", 0xFFFFFF,
                       g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
       gui_draw_system_button(panel_x + 260, preview_y + 72, 150, 22,
-                             gui_partial_redraw_clear_debug_enabled()
-                                 ? "Clear Test On"
-                                 : "Test Dirty Rects",
-                             gui_partial_redraw_clear_debug_enabled()
-                                 ? GUI_BUTTON_DANGER
-                                 : GUI_BUTTON_NEUTRAL,
-                             1, gui_partial_redraw_clear_debug_enabled());
+                             "Open Builder", GUI_BUTTON_PRIMARY, 1, 0);
 
       resolution_card_y = preview_y + 116;
       gui_draw_rect(panel_x, resolution_card_y, panel_w, 96, 0x252535);
@@ -12441,6 +12842,12 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
            win->title[2] == 'o') {
     draw_clock_widget(content_x, content_y, content_w, content_h, THEME_BG);
+  }
+
+  /* Theme Builder */
+  else if (win->title[0] == 'T' && win->title[1] == 'h' &&
+           win->title[2] == 'e') {
+    draw_theme_builder_window(content_x, content_y, content_w, content_h);
   }
 
   /* Background Settings Window */
@@ -16253,6 +16660,91 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         break;
       }
 
+      /* Handle clicks inside Theme Builder window */
+      if (win->title[0] == 'T' && win->title[1] == 'h' &&
+          win->title[2] == 'e') {
+        int content_x = win->x + BORDER_WIDTH;
+        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
+        int content_w = win->width - BORDER_WIDTH * 2;
+        int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
+        int preview_x = content_x + 14;
+        int preview_y = content_y + 14;
+        int preview_w = content_w - 28;
+        int preview_h = 102;
+        int slot_gap = 8;
+        int slot_w = (content_w - 28 - slot_gap * 3) / 4;
+        int slot_h = 40;
+        int slots_x = content_x + 14;
+        int slots_y = preview_y + preview_h + 14;
+        int chips_x = content_x + 14;
+        int chips_y = slots_y + ((slot_h + slot_gap) * 3) + 14;
+        int chip_gap = 8;
+        int chip_w = 32;
+        int chip_h = 26;
+        int chip_cols = 6;
+        int light_x = preview_x + preview_w - 196;
+        int dark_x = preview_x + preview_w - 136;
+        int save_x = preview_x + preview_w - 74;
+        int button_y = preview_y + 12;
+        int i;
+
+        if (x >= light_x && x < light_x + 52 && y >= button_y &&
+            y < button_y + 26) {
+          gui_save_active_theme_palette();
+          gui_set_theme_mode(GUI_THEME_LIGHT);
+          gui_save_theme_preference();
+          str_copy_safe(settings_status, "Light palette selected and saved.",
+                        sizeof(settings_status));
+          break;
+        }
+        if (x >= dark_x && x < dark_x + 52 && y >= button_y &&
+            y < button_y + 26) {
+          gui_save_active_theme_palette();
+          gui_set_theme_mode(GUI_THEME_DARK);
+          gui_save_theme_preference();
+          str_copy_safe(settings_status, "Dark palette selected and saved.",
+                        sizeof(settings_status));
+          break;
+        }
+        if (x >= save_x && x < save_x + 60 && y >= button_y &&
+            y < button_y + 26) {
+          theme_builder_save_current_theme();
+          break;
+        }
+
+        for (i = 0; i < SETTINGS_THEME_SLOT_COUNT; i++) {
+          int col = i % 4;
+          int row = i / 4;
+          int sx = slots_x + col * (slot_w + slot_gap);
+          int sy = slots_y + row * (slot_h + slot_gap);
+
+          if (x >= sx && x < sx + slot_w && y >= sy && y < sy + slot_h) {
+            settings_theme_active_slot = i;
+            str_copy_safe(settings_status, settings_theme_slots[i],
+                          sizeof(settings_status));
+            break;
+          }
+        }
+        if (i < SETTINGS_THEME_SLOT_COUNT)
+          break;
+
+        for (i = 0; i < SETTINGS_THEME_CHIP_COUNT; i++) {
+          int col = i % chip_cols;
+          int row = i / chip_cols;
+          int cx = chips_x + col * (chip_w + chip_gap);
+          int cy = chips_y + 28 + row * (chip_h + chip_gap);
+
+          if (x >= cx && x < cx + chip_w && y >= cy && y < cy + chip_h) {
+            theme_builder_apply_slot_color(settings_theme_active_slot,
+                                           settings_theme_chips[i]);
+            str_copy_safe(settings_status, "Theme slot updated.",
+                          sizeof(settings_status));
+            break;
+          }
+        }
+        break;
+      }
+
       /* Handle clicks inside Background Settings window */
       if (win->title[0] == 'B' && win->title[1] == 'a' &&
           win->title[2] == 'c') {
@@ -16445,23 +16937,26 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
           if (x >= panel_x + 16 && x < panel_x + 126 && y >= theme_button_y &&
               y < theme_button_y + 22) {
+            gui_save_active_theme_palette();
             gui_set_theme_mode(GUI_THEME_LIGHT);
+            gui_save_theme_preference();
             str_copy_safe(settings_status, "Light mode applied.",
                           sizeof(settings_status));
             break;
           }
           if (x >= panel_x + 136 && x < panel_x + 246 && y >= theme_button_y &&
               y < theme_button_y + 22) {
+            gui_save_active_theme_palette();
             gui_set_theme_mode(GUI_THEME_DARK);
+            gui_save_theme_preference();
             str_copy_safe(settings_status, "Dark mode applied.",
                           sizeof(settings_status));
             break;
           }
           if (x >= panel_x + 260 && x < panel_x + 410 && y >= theme_button_y &&
               y < theme_button_y + 22) {
-            gui_start_partial_redraw_clear_debug();
-            str_copy_safe(settings_status,
-                          "Partial redraw clear test armed briefly.",
+            gui_create_window("Theme Builder", win->x + 36, win->y + 28, 680, 500);
+            str_copy_safe(settings_status, "Opened the theme builder window.",
                           sizeof(settings_status));
             break;
           }
@@ -17097,6 +17592,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   }
 
   gui_apply_saved_boot_resolution(&framebuffer, &width, &height, &pitch);
+  gui_load_saved_theme();
 
   primary_display.framebuffer = framebuffer;
   primary_display.width = width;
