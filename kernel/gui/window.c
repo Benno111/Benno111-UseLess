@@ -26,8 +26,8 @@
 
 #define GUI_DISPLAY_CONFIG_PATH "/System/display.cfg"
 #define GUI_THEME_CONFIG_PATH "/System/theme.cfg"
-#define GUI_THEME_DARK_PATH "/System/theme-dark.cfg"
-#define GUI_THEME_LIGHT_PATH "/System/theme-light.cfg"
+#define GUI_THEME_DARK_PATH "/assets/themes/dark.theme"
+#define GUI_THEME_LIGHT_PATH "/assets/themes/light.theme"
 
 struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
@@ -530,15 +530,6 @@ static void gui_save_theme_preference(void) {
   else
     manifest[sizeof(manifest) - 1] = '\0';
   media_install_text_file(GUI_THEME_CONFIG_PATH, manifest);
-  gui_save_theme_palette(g_theme_mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT_PATH
-                                                         : GUI_THEME_DARK_PATH,
-                         gui_theme_palette());
-}
-
-static void gui_save_active_theme_palette(void) {
-  gui_save_theme_palette(g_theme_mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT_PATH
-                                                         : GUI_THEME_DARK_PATH,
-                         gui_theme_palette());
 }
 
 /* UI Theme Colors - mapped through current palette */
@@ -1105,7 +1096,7 @@ static const char *settings_default_status_message(int page) {
   case 2:
     return "Inspect storage and disk tools.";
   case 3:
-    return "Build and save the current desktop theme.";
+    return "Edit shipped theme presets with the Windows Theme Editor.";
   case 4:
     return "Backup tools are not available yet.";
   case 5:
@@ -1162,7 +1153,7 @@ static void draw_theme_builder_window(int content_x, int content_y,
     selected_slot = 0;
 
   gui_draw_rect(content_x, content_y, content_w, content_h, theme->settings_bg);
-  gui_draw_string(content_x + 14, content_y + 12, "Theme Builder",
+  gui_draw_string(content_x + 14, content_y + 12, "Theme Presets",
                   theme->settings_text, theme->settings_bg);
   gui_draw_string(content_x + 14, content_y + 30,
                   "Pick a slot, preview the palette, then save it to disk.",
@@ -11970,7 +11961,7 @@ static void draw_window(struct window *win) {
 
       preview_y += 104;
       gui_draw_rect(panel_x, preview_y, panel_w, 104, 0x252535);
-      gui_draw_string(panel_x + 16, preview_y + 12, "Theme & effects", 0x89B4FA,
+      gui_draw_string(panel_x + 16, preview_y + 12, "Visual effects", 0x89B4FA,
                       0x252535);
       gui_draw_string(panel_x + 16, preview_y + 30, gpu_status, 0xFFFFFF, 0x252535);
       gui_draw_string(panel_x + 16, preview_y + 46, g_gpu_backend_name, 0xCBD5E1,
@@ -11999,7 +11990,13 @@ static void draw_window(struct window *win) {
       gui_draw_string(panel_x + 170, preview_y + 79, "Dark Mode", 0xFFFFFF,
                       g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
       gui_draw_system_button(panel_x + 260, preview_y + 72, 150, 22,
-                             "Open Builder", GUI_BUTTON_PRIMARY, 1, 0);
+                             gui_partial_redraw_clear_debug_enabled()
+                                 ? "Clear Test On"
+                                 : "Test Dirty Rects",
+                             gui_partial_redraw_clear_debug_enabled()
+                                 ? GUI_BUTTON_DANGER
+                                 : GUI_BUTTON_NEUTRAL,
+                             1, gui_partial_redraw_clear_debug_enabled());
 
       resolution_card_y = preview_y + 116;
       gui_draw_rect(panel_x, resolution_card_y, panel_w, 96, 0x252535);
@@ -12842,12 +12839,6 @@ static void draw_window(struct window *win) {
   else if (win->title[0] == 'C' && win->title[1] == 'l' &&
            win->title[2] == 'o') {
     draw_clock_widget(content_x, content_y, content_w, content_h, THEME_BG);
-  }
-
-  /* Theme Builder */
-  else if (win->title[0] == 'T' && win->title[1] == 'h' &&
-           win->title[2] == 'e') {
-    draw_theme_builder_window(content_x, content_y, content_w, content_h);
   }
 
   /* Background Settings Window */
@@ -16660,91 +16651,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         break;
       }
 
-      /* Handle clicks inside Theme Builder window */
-      if (win->title[0] == 'T' && win->title[1] == 'h' &&
-          win->title[2] == 'e') {
-        int content_x = win->x + BORDER_WIDTH;
-        int content_y = win->y + BORDER_WIDTH + TITLEBAR_HEIGHT;
-        int content_w = win->width - BORDER_WIDTH * 2;
-        int content_h = win->height - BORDER_WIDTH * 2 - TITLEBAR_HEIGHT;
-        int preview_x = content_x + 14;
-        int preview_y = content_y + 14;
-        int preview_w = content_w - 28;
-        int preview_h = 102;
-        int slot_gap = 8;
-        int slot_w = (content_w - 28 - slot_gap * 3) / 4;
-        int slot_h = 40;
-        int slots_x = content_x + 14;
-        int slots_y = preview_y + preview_h + 14;
-        int chips_x = content_x + 14;
-        int chips_y = slots_y + ((slot_h + slot_gap) * 3) + 14;
-        int chip_gap = 8;
-        int chip_w = 32;
-        int chip_h = 26;
-        int chip_cols = 6;
-        int light_x = preview_x + preview_w - 196;
-        int dark_x = preview_x + preview_w - 136;
-        int save_x = preview_x + preview_w - 74;
-        int button_y = preview_y + 12;
-        int i;
-
-        if (x >= light_x && x < light_x + 52 && y >= button_y &&
-            y < button_y + 26) {
-          gui_save_active_theme_palette();
-          gui_set_theme_mode(GUI_THEME_LIGHT);
-          gui_save_theme_preference();
-          str_copy_safe(settings_status, "Light palette selected and saved.",
-                        sizeof(settings_status));
-          break;
-        }
-        if (x >= dark_x && x < dark_x + 52 && y >= button_y &&
-            y < button_y + 26) {
-          gui_save_active_theme_palette();
-          gui_set_theme_mode(GUI_THEME_DARK);
-          gui_save_theme_preference();
-          str_copy_safe(settings_status, "Dark palette selected and saved.",
-                        sizeof(settings_status));
-          break;
-        }
-        if (x >= save_x && x < save_x + 60 && y >= button_y &&
-            y < button_y + 26) {
-          theme_builder_save_current_theme();
-          break;
-        }
-
-        for (i = 0; i < SETTINGS_THEME_SLOT_COUNT; i++) {
-          int col = i % 4;
-          int row = i / 4;
-          int sx = slots_x + col * (slot_w + slot_gap);
-          int sy = slots_y + row * (slot_h + slot_gap);
-
-          if (x >= sx && x < sx + slot_w && y >= sy && y < sy + slot_h) {
-            settings_theme_active_slot = i;
-            str_copy_safe(settings_status, settings_theme_slots[i],
-                          sizeof(settings_status));
-            break;
-          }
-        }
-        if (i < SETTINGS_THEME_SLOT_COUNT)
-          break;
-
-        for (i = 0; i < SETTINGS_THEME_CHIP_COUNT; i++) {
-          int col = i % chip_cols;
-          int row = i / chip_cols;
-          int cx = chips_x + col * (chip_w + chip_gap);
-          int cy = chips_y + 28 + row * (chip_h + chip_gap);
-
-          if (x >= cx && x < cx + chip_w && y >= cy && y < cy + chip_h) {
-            theme_builder_apply_slot_color(settings_theme_active_slot,
-                                           settings_theme_chips[i]);
-            str_copy_safe(settings_status, "Theme slot updated.",
-                          sizeof(settings_status));
-            break;
-          }
-        }
-        break;
-      }
-
       /* Handle clicks inside Background Settings window */
       if (win->title[0] == 'B' && win->title[1] == 'a' &&
           win->title[2] == 'c') {
@@ -16937,7 +16843,6 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
 
           if (x >= panel_x + 16 && x < panel_x + 126 && y >= theme_button_y &&
               y < theme_button_y + 22) {
-            gui_save_active_theme_palette();
             gui_set_theme_mode(GUI_THEME_LIGHT);
             gui_save_theme_preference();
             str_copy_safe(settings_status, "Light mode applied.",
@@ -16946,17 +16851,9 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           }
           if (x >= panel_x + 136 && x < panel_x + 246 && y >= theme_button_y &&
               y < theme_button_y + 22) {
-            gui_save_active_theme_palette();
             gui_set_theme_mode(GUI_THEME_DARK);
             gui_save_theme_preference();
             str_copy_safe(settings_status, "Dark mode applied.",
-                          sizeof(settings_status));
-            break;
-          }
-          if (x >= panel_x + 260 && x < panel_x + 410 && y >= theme_button_y &&
-              y < theme_button_y + 22) {
-            gui_create_window("Theme Builder", win->x + 36, win->y + 28, 680, 500);
-            str_copy_safe(settings_status, "Opened the theme builder window.",
                           sizeof(settings_status));
             break;
           }
