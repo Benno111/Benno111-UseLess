@@ -129,6 +129,15 @@ sealed class ThemeDocument
     public static string FormatHexColor(uint color) => $"{color & 0x00FFFFFFu:X6}";
 }
 
+sealed class ThemePreviewPanel : Panel
+{
+    public ThemePreviewPanel()
+    {
+        DoubleBuffered = true;
+        ResizeRedraw = true;
+    }
+}
+
 sealed class ThemeEditorForm : Form
 {
     private readonly ComboBox themePicker = new();
@@ -136,7 +145,7 @@ sealed class ThemeEditorForm : Form
     private readonly ComboBox modeBox = new();
     private readonly TableLayoutPanel slotsTable = new();
     private readonly Label statusLabel = new();
-    private readonly Panel preview = new();
+    private readonly ThemePreviewPanel preview = new();
     private readonly Button saveButton = new();
     private readonly Button reloadButton = new();
     private readonly Button openButton = new();
@@ -236,6 +245,7 @@ sealed class ThemeEditorForm : Form
         preview.Height = 220;
         preview.Margin = new Padding(0, 18, 0, 0);
         preview.Paint += Preview_Paint;
+        preview.Resize += (_, _) => preview.Invalidate();
         left.Controls.Add(preview);
 
         var rightHeader = new Panel { Dock = DockStyle.Top, Height = 92 };
@@ -579,35 +589,129 @@ sealed class ThemeEditorForm : Form
 
     private void Preview_Paint(object? sender, PaintEventArgs e)
     {
-        e.Graphics.Clear(Color.FromArgb(0x10, 0x14, 0x1C));
+        var g = e.Graphics;
+        var bounds = preview.ClientRectangle;
         var bg = Color.FromArgb((int)current.Colors[0]);
         var fg = Color.FromArgb((int)current.Colors[1]);
         var accent = Color.FromArgb((int)current.Colors[2]);
+        var accentSoft = Color.FromArgb((int)current.Colors[3]);
+        var surface = Color.FromArgb((int)current.Colors[4]);
+        var surfaceAlt = Color.FromArgb((int)current.Colors[5]);
         var card = Color.FromArgb((int)current.Colors[6]);
+        var border = Color.FromArgb((int)current.Colors[7]);
+        var settingsPanel = Color.FromArgb((int)current.Colors[9]);
+        var settingsText = Color.FromArgb((int)current.Colors[10]);
+        var settingsSubtext = Color.FromArgb((int)current.Colors[11]);
         using var titleFont = new Font(Font.FontFamily, 11f, FontStyle.Bold);
+        using var bodyFont = Font;
+        using var smallFont = new Font(Font.FontFamily, 8.5f, FontStyle.Regular);
 
-        using (var brush = new SolidBrush(bg))
-            e.Graphics.FillRectangle(brush, 12, 12, preview.Width - 24, preview.Height - 24);
-        using (var cardBrush = new SolidBrush(card))
-            e.Graphics.FillRectangle(cardBrush, 24, 24, preview.Width - 48, 150);
+        g.Clear(Color.FromArgb(0x10, 0x14, 0x1C));
+        if (bounds.Width < 20 || bounds.Height < 20)
+            return;
+
+        var outer = Rectangle.Inflate(bounds, -12, -12);
+        using (var outerBrush = new SolidBrush(bg))
+            g.FillRectangle(outerBrush, outer);
+        using (var outerBorder = new Pen(border))
+            g.DrawRectangle(outerBorder, outer);
+
+        var sidebar = new Rectangle(outer.X + 10, outer.Y + 10, 118, outer.Height - 20);
+        var content = new Rectangle(sidebar.Right + 10, outer.Y + 10,
+                                    outer.Right - sidebar.Right - 20, outer.Height - 20);
+
+        using (var sidebarBrush = new SolidBrush(settingsPanel))
+            g.FillRectangle(sidebarBrush, sidebar);
         using (var accentBrush = new SolidBrush(accent))
-            e.Graphics.FillRectangle(accentBrush, 24, 24, 8, 150);
-        using (var fgBrush = new SolidBrush(fg))
+            g.FillRectangle(accentBrush, sidebar.X, sidebar.Y, 5, sidebar.Height);
+
+        using (var textBrush = new SolidBrush(settingsText))
+        using (var mutedBrush = new SolidBrush(settingsSubtext))
         {
-            e.Graphics.DrawString(current.Name, titleFont, fgBrush, 44, 40);
-            e.Graphics.DrawString($"Mode: {current.Mode}", Font, fgBrush, 44, 70);
-            e.Graphics.DrawString("Preview card", Font, fgBrush, 44, 100);
+            g.DrawString("Theme Editor", titleFont, textBrush, sidebar.X + 12, sidebar.Y + 12);
+            g.DrawString(current.Name, bodyFont, textBrush, sidebar.X + 12, sidebar.Y + 38);
+            g.DrawString($"Mode: {current.Mode}", smallFont, mutedBrush, sidebar.X + 12, sidebar.Y + 58);
+            g.DrawString("Live preview", smallFont, mutedBrush, sidebar.X + 12, sidebar.Y + 76);
         }
 
+        for (var i = 0; i < 3; i++)
+        {
+            var y = sidebar.Bottom - 84 + i * 22;
+            var chipColor = Color.FromArgb((int)current.Colors[i + 2]);
+            using var chipBrush = new SolidBrush(chipColor);
+            using var chipTextBrush = new SolidBrush(GetContrastTextColor(chipColor));
+            g.FillRectangle(chipBrush, sidebar.X + 12, y, 92, 16);
+            g.DrawRectangle(Pens.White, sidebar.X + 12, y, 92, 16);
+            g.DrawString(ThemeDocument.Keys[i + 2], smallFont, chipTextBrush,
+                sidebar.X + 16, y + 2);
+        }
+
+        using (var headerBrush = new SolidBrush(surface))
+            g.FillRectangle(headerBrush, content.X, content.Y, content.Width, 38);
+        using (var headerBorder = new Pen(border))
+            g.DrawRectangle(headerBorder, content.X, content.Y, content.Width, 38);
+
+        using (var accentBrush = new SolidBrush(accent))
+            g.FillRectangle(accentBrush, content.X, content.Y, 6, 38);
+        using (var headerTextBrush = new SolidBrush(fg))
+        using (var mutedBrush = new SolidBrush(settingsSubtext))
+        {
+            g.DrawString("Desktop preview", titleFont, headerTextBrush, content.X + 14, content.Y + 10);
+            g.DrawString("Buttons, surfaces, and cards update from the active preset.",
+                smallFont, mutedBrush, content.X + 136, content.Y + 13);
+        }
+
+        var cardRect = new Rectangle(content.X + 14, content.Y + 52, content.Width - 28, 100);
+        using (var cardBrush = new SolidBrush(card))
+            g.FillRectangle(cardBrush, cardRect);
+        using (var cardBorder = new Pen(border))
+            g.DrawRectangle(cardBorder, cardRect);
+
+        using (var accentSoftBrush = new SolidBrush(accentSoft))
+            g.FillRectangle(accentSoftBrush, cardRect.X, cardRect.Y, 8, cardRect.Height);
+        using (var cardTextBrush = new SolidBrush(fg))
+        using (var cardMutedBrush = new SolidBrush(settingsSubtext))
+        {
+            g.DrawString("Active window", titleFont, cardTextBrush, cardRect.X + 16, cardRect.Y + 14);
+            g.DrawString("A brighter accent and readable text should stand out here.",
+                smallFont, cardMutedBrush, cardRect.X + 16, cardRect.Y + 38);
+        }
+
+        DrawButton(g, new Rectangle(cardRect.X + 16, cardRect.Bottom - 30, 72, 20),
+            accent, GetContrastTextColor(accent), "Primary");
+        DrawButton(g, new Rectangle(cardRect.X + 96, cardRect.Bottom - 30, 72, 20),
+            surfaceAlt, fg, "Neutral");
+
+        var swatchY = cardRect.Bottom + 14;
         for (var i = 0; i < ThemeDocument.Keys.Length; i++)
         {
             var row = i / 4;
             var col = i % 4;
-            var x = 44 + col * 48;
-            var y = 130 + row * 18;
-            using var swatch = new SolidBrush(Color.FromArgb((int)current.Colors[i]));
-            e.Graphics.FillRectangle(swatch, x, y, 18, 12);
-            e.Graphics.DrawRectangle(Pens.White, x, y, 18, 12);
+            var x = content.X + 14 + col * 72;
+            var y = swatchY + row * 28;
+            var swatchColor = Color.FromArgb((int)current.Colors[i]);
+            using var swatchBrush = new SolidBrush(swatchColor);
+            using var swatchTextBrush = new SolidBrush(GetContrastTextColor(swatchColor));
+            g.FillRectangle(swatchBrush, x, y, 64, 18);
+            g.DrawRectangle(Pens.White, x, y, 64, 18);
+            g.DrawString(ThemeDocument.Keys[i], smallFont, swatchTextBrush, x + 4, y + 2);
         }
+    }
+
+    private static void DrawButton(Graphics g, Rectangle rect, Color fill, Color text, string label)
+    {
+        using var fillBrush = new SolidBrush(fill);
+        using var textBrush = new SolidBrush(text);
+        using var outlinePen = new Pen(Color.FromArgb(0xFF, 0x00, 0x00, 0x00));
+
+        g.FillRectangle(fillBrush, rect);
+        g.DrawRectangle(outlinePen, rect);
+        g.DrawString(label, SystemFonts.DefaultFont, textBrush, rect.X + 8, rect.Y + 2);
+    }
+
+    private static Color GetContrastTextColor(Color color)
+    {
+        var luminance = (color.R * 299 + color.G * 587 + color.B * 114) / 1000;
+        return luminance >= 140 ? Color.FromArgb(0x17, 0x20, 0x33) : Color.White;
     }
 }
