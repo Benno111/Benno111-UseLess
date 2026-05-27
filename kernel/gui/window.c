@@ -7683,22 +7683,24 @@ static void installer_log_clear(void) {
 }
 
 static void installer_log_append_path(const char *path, const char *line) {
-  char existing[4096];
-  int idx = 0;
+  struct file *f;
+  int len = 0;
 
   if (!path || !line || !path[0])
     return;
 
-  existing[0] = '\0';
-  read_text_file(path, existing, sizeof(existing));
-  while (existing[idx] && idx < (int)sizeof(existing) - 1)
-    idx++;
-  for (int i = 0; line[i] && idx < (int)sizeof(existing) - 1; i++)
-    existing[idx++] = line[i];
-  if (idx < (int)sizeof(existing) - 1)
-    existing[idx++] = '\n';
-  existing[idx] = '\0';
-  write_text_file(path, existing);
+  while (line[len])
+    len++;
+
+  installer_ensure_parent_dirs(path);
+  f = vfs_open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+  if (!f)
+    return;
+
+  if (len > 0)
+    vfs_write(f, line, (size_t)len);
+  vfs_write(f, "\n", 1);
+  vfs_close(f);
 }
 
 static void installer_log_send_to_host(const char *line) {
