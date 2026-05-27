@@ -7654,6 +7654,7 @@ typedef struct {
 
 static char installer_log_buffer[4096];
 static char installer_log_target_root[256];
+static int installer_log_depth = 0;
 
 static void installer_append_to_buf(char *buf, int max, const char *text) {
   int idx = 0;
@@ -7724,6 +7725,10 @@ static void installer_log(const char *line) {
     installer_log_buffer[idx++] = '\n';
   installer_log_buffer[idx] = '\0';
 
+  if (installer_log_depth > 0)
+    return;
+
+  installer_log_depth++;
   installer_log_append_path("/System/install.log", line);
   if (installer_log_target_root[0]) {
     char target_log[320];
@@ -7731,6 +7736,7 @@ static void installer_log(const char *line) {
     installer_append_to_buf(target_log, sizeof(target_log), "/install.log");
     installer_log_append_path(target_log, line);
   }
+  installer_log_depth--;
 }
 
 static void installer_normalize_path(const char *src, char *dst, int max) {
