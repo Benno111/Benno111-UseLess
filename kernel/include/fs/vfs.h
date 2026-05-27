@@ -124,6 +124,7 @@
 #define EROFS           30
 #define EMLINK          31
 #define EPIPE           32
+#define ENAMETOOLONG    36
 #define ENOSYS          38
 #define ENOTEMPTY       39
 
