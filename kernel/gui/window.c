@@ -3626,8 +3626,12 @@ static void gui_open_installer_window(void) {
     }
   }
 
-  win_w = (int)primary_display.width - 80;
-  win_h = (int)primary_display.height - 80;
+  win_w = (int)primary_display.width - 220;
+  win_h = (int)primary_display.height - 160;
+  if (win_w < 760)
+    win_w = (int)primary_display.width - 40;
+  if (win_h < 520)
+    win_h = (int)primary_display.height - 40;
   if (win_w < 640)
     win_w = (int)primary_display.width;
   if (win_h < 420)
@@ -8552,6 +8556,7 @@ static int installer_finalize_install(void) {
   int selected_disk_index;
   int user_partition_result = 0;
   int install_partition_result = 0;
+  int raw_disk_image_install = installer_system_disk_image_path() != NULL;
 
   extern int storage_prepare_user_partition(int disk_index);
   extern int storage_ensure_install_partitions(int disk_index);
@@ -8564,23 +8569,27 @@ static int installer_finalize_install(void) {
     installer_log("install failed: target disk index unavailable");
     return -1;
   }
-  install_partition_result =
-      storage_ensure_install_partitions(selected_disk_index);
-  if (install_partition_result < 0) {
-    installer_log("install failed: could not prepare boot partitions");
-    return -1;
-  } else if (install_partition_result > 0) {
-    installer_log("prepared EFI/system boot partitions for the target disk");
-  }
+  if (!raw_disk_image_install) {
+    install_partition_result =
+        storage_ensure_install_partitions(selected_disk_index);
+    if (install_partition_result < 0) {
+      installer_log("install failed: could not prepare boot partitions");
+      return -1;
+    } else if (install_partition_result > 0) {
+      installer_log("prepared EFI/system boot partitions for the target disk");
+    }
 
-  user_partition_result =
-      storage_prepare_user_partition(selected_disk_index);
-  if (user_partition_result > 0) {
-    installer_log("created HDD user data partition for first boot");
-  } else if (user_partition_result == 0) {
-    installer_log("user data partition already present or not required");
+    user_partition_result =
+        storage_prepare_user_partition(selected_disk_index);
+    if (user_partition_result > 0) {
+      installer_log("created HDD user data partition for first boot");
+    } else if (user_partition_result == 0) {
+      installer_log("user data partition already present or not required");
+    } else {
+      installer_log("warning: could not prepare HDD user data partition");
+    }
   } else {
-    installer_log("warning: could not prepare HDD user data partition");
+    installer_log("raw disk image install complete; keeping on-disk partition layout unchanged");
   }
 
   if (installer_write_target_config() != 0) {
