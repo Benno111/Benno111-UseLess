@@ -1,5 +1,6 @@
 #include "drivers/storage.h"
 #include "arch/arch.h"
+#include "fs/vfs.h"
 #include "mm/vmm.h"
 #include "printk.h"
 
@@ -1594,6 +1595,64 @@ int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size) {
   if (storage_fixup_bios_boot_disk(disk_index) != 0)
     return -1;
 
+  return 0;
+}
+
+int storage_write_disk_image_file(int disk_index, const char *path) {
+  struct file *file;
+  uint8_t sector[STORAGE_SECTOR_SIZE];
+  uint64_t disk_sectors;
+  uint64_t image_sectors;
+  loff_t file_size;
+
+  if (disk_index < 0 || disk_index >= storage_disk_count || !path || !path[0])
+    return -1;
+  if (storage_disks[disk_index].kind == STORAGE_KIND_CDROM)
+    return -1;
+
+  file = vfs_open(path, O_RDONLY, 0);
+  if (!file)
+    return -1;
+
+  file_size = vfs_lseek(file, 0, SEEK_END);
+  if (file_size <= 0) {
+    vfs_close(file);
+    return -1;
+  }
+  if (vfs_lseek(file, 0, SEEK_SET) < 0) {
+    vfs_close(file);
+    return -1;
+  }
+
+  disk_sectors = (uint64_t)storage_disks[disk_index].capacity_mib * 2048ULL;
+  image_sectors = ((uint64_t)file_size + (STORAGE_SECTOR_SIZE - 1)) /
+                  STORAGE_SECTOR_SIZE;
+  if (image_sectors > disk_sectors) {
+    vfs_close(file);
+    return -1;
+  }
+
+  for (uint64_t sector_index = 0; sector_index < image_sectors; sector_index++) {
+    ssize_t bytes_read = vfs_read(file, (char *)sector, STORAGE_SECTOR_SIZE);
+    if (bytes_read < 0) {
+      vfs_close(file);
+      return -1;
+    }
+    if (bytes_read == 0) {
+      vfs_close(file);
+      return -1;
+    }
+    for (size_t i = (size_t)bytes_read; i < STORAGE_SECTOR_SIZE; i++)
+      sector[i] = 0;
+    if (storage_disk_write_sector(disk_index, (uint32_t)sector_index, sector) != 0) {
+      vfs_close(file);
+      return -1;
+    }
+  }
+
+  vfs_close(file);
+  if (storage_fixup_bios_boot_disk(disk_index) != 0)
+    return -1;
   return 0;
 }
 

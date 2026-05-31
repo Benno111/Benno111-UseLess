@@ -8457,35 +8457,22 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
 
 static int installer_apply_system_disk_image(int disk_index) {
   const char *image_path = installer_system_disk_image_path();
-  uint8_t *image_data = NULL;
-  size_t image_size = 0;
   char msg[192];
-  extern int storage_write_disk_image(int disk_index, const uint8_t *data,
-                                      size_t size);
+  extern int storage_write_disk_image_file(int disk_index, const char *path);
   extern void refresh_external_storage_views(void);
 
   if (!image_path || disk_index < 0)
     return -1;
 
-  if (media_load_file(image_path, &image_data, &image_size) != 0 || !image_data ||
-      image_size == 0) {
-    str_copy_safe(msg, "install failed: could not load disk image ", sizeof(msg));
-    installer_append_to_buf(msg, sizeof(msg), image_path);
-    installer_log(msg);
-    return -1;
-  }
-
   str_copy_safe(msg, "writing raw system disk image from ", sizeof(msg));
   installer_append_to_buf(msg, sizeof(msg), image_path);
   installer_log(msg);
 
-  if (storage_write_disk_image(disk_index, image_data, image_size) != 0) {
-    media_free_file(image_data);
+  if (storage_write_disk_image_file(disk_index, image_path) != 0) {
     installer_log("install failed: raw disk image write failed");
     return -1;
   }
 
-  media_free_file(image_data);
   refresh_external_storage_views();
   installer_log("raw system disk image written to target disk");
   return 0;
