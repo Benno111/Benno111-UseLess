@@ -8335,6 +8335,20 @@ static int installer_validate_system_image_payload(void) {
   return -1;
 }
 
+static int installer_validate_raw_system_disk_image_payload(void) {
+  const char *image_path = installer_system_disk_image_path();
+  char msg[320];
+
+  if (image_path && installer_payload_file_exists(image_path))
+    return 0;
+
+  str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg),
+                          image_path ? image_path : "/install/system.img");
+  installer_log(msg);
+  return -1;
+}
+
 static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
                                        int *copied_files, int *failed_files,
                                        const char *log_label) {
@@ -8685,6 +8699,7 @@ static void installer_process_background_install(void) {
     return;
   case 2: {
     extern int storage_disk_supports_partition_writes(int disk_index);
+    const char *raw_image_path = installer_system_disk_image_path();
     int selected_disk_index = installer_selected_disk_index();
     if (selected_disk_index < 0) {
       installer_fail_background("Install blocked. No valid target disk is selected.",
@@ -8704,24 +8719,30 @@ static void installer_process_background_install(void) {
                                   sizeof(installer_update_root), "boot");
     str_copy_safe(installer_log_target_root, installer_target_root,
                   sizeof(installer_log_target_root));
-    if (installer_validate_system_image_payload() != 0) {
-      installer_fail_background("Install blocked. Boot files are missing from the installer image.",
-                                "install blocked: boot payload incomplete");
-      return;
-    }
-    installer_progress_total_files =
-        installer_count_tree_files(installer_system_image_root_path());
-    installer_progress_total_files +=
-        installer_boot_alias_copy_count(installer_target_root);
-    if (installer_progress_total_files <= 0)
+    if (raw_image_path) {
+      if (installer_validate_raw_system_disk_image_payload() != 0) {
+        installer_fail_background("Install blocked. Raw system disk image is missing from the installer image.",
+                                  "install blocked: raw system disk image payload missing");
+        return;
+      }
       installer_progress_total_files = 1;
-    installer_progress_processed_files = 0;
-    if (installer_system_disk_image_path()) {
-      installer_progress_total_files = 1;
+      installer_progress_processed_files = 0;
       installer_set_progress_state(
           18, "Validating Payload", "Preparing raw system disk image...",
           "Bootable disk image found. The installer will write it directly to the target disk.");
     } else {
+      if (installer_validate_system_image_payload() != 0) {
+        installer_fail_background("Install blocked. Boot files are missing from the installer image.",
+                                  "install blocked: boot payload incomplete");
+        return;
+      }
+      installer_progress_total_files =
+          installer_count_tree_files(installer_system_image_root_path());
+      installer_progress_total_files +=
+          installer_boot_alias_copy_count(installer_target_root);
+      if (installer_progress_total_files <= 0)
+        installer_progress_total_files = 1;
+      installer_progress_processed_files = 0;
       installer_set_progress_state(
           18, "Validating Payload", "Preparing extracted system image...",
           "Payload verified. Counting files before copy begins.");
