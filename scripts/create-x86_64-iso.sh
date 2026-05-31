@@ -2,7 +2,7 @@
 # Create a hybrid x86_64 ISO that boots via both BIOS and UEFI.
 # The resulting ISO can be attached to VMs directly or written to USB media.
 
-set -e
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${1:-build/x86_64}"
@@ -13,6 +13,8 @@ KERNEL_PATH="${BUILD_DIR}/kernel/os-x86_64.elf"
 BOOT_MANAGER_DIR="${BUILD_DIR}/boot-assets/os-boot-manager"
 BOOT_MANAGER_SYNC="${ROOT_DIR}/scripts/update-os-boot-manager.sh"
 X86_64_BOOT_ASSET_DIR="${ROOT_DIR}/os-x86_64"
+BOOT_FILES_SCRIPT="${ROOT_DIR}/scripts/build-install-boot-files.sh"
+SYSTEM_IMAGE_SCRIPT="${ROOT_DIR}/scripts/create-system-image.sh"
 BOOT_MANAGER_DIR="$("$BOOT_MANAGER_SYNC" "$BOOT_MANAGER_DIR")"
 LIMINE_BIN_DIR="${BOOT_MANAGER_DIR}/bin"
 LIMINE_SRC_DIR="${BOOT_MANAGER_DIR}"
@@ -20,6 +22,8 @@ LIMINE_TOOL_PATH="${LIMINE_SRC_DIR}/limine"
 LIMINE_CFG="${LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
 INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
+SYSTEM_IMAGE_ROOT="${SYSTEM_IMAGE_ROOT:-${BUILD_DIR}/system-image}"
+SYSTEM_IMAGE_ARCHIVE="${SYSTEM_IMAGE_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -178,81 +182,19 @@ mkdir -p "$IMAGE_DIR"
 rm -rf "$ISO_ROOT"
 
 log "Preparing ISO root at $ISO_ROOT"
-mkdir -p "$ISO_ROOT/boot"
-mkdir -p "$ISO_ROOT/EFI/BOOT"
-mkdir -p "$ISO_ROOT/limine"
-mkdir -p "$INSTALL_ROOT/boot"
-mkdir -p "$INSTALL_ROOT/EFI/BOOT"
-mkdir -p "$INSTALL_ROOT/limine"
+mkdir -p "$ISO_ROOT/install"
+
+BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$LIMINE_CFG" \
+    "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$ISO_ROOT"
+BOOT_LIMINE_CFG="$INSTALL_LIMINE_CFG" "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
+rm -rf "$INSTALL_ROOT"
+cp -R "$SYSTEM_IMAGE_ROOT" "$INSTALL_ROOT"
+cp "$SYSTEM_IMAGE_ARCHIVE" "$ISO_ROOT/install/system-image.zip"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
     cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
-    mkdir -p "$INSTALL_ROOT/assets"
-    cp -R "${BUILD_DIR}/assets"/. "$INSTALL_ROOT/assets/"
 fi
-
-# Keep both names so the ISO matches the embedded config and the repo's
-# existing naming used elsewhere.
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/main.sys"
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/bootloader.sys"
-cp "$LIMINE_CFG" "$ISO_ROOT/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/boot/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/limine/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/EFI/BOOT/limine.conf"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/main.sys"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/bootloader.sys"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/EFI/BOOT/limine.conf"
-cp "$LIMINE_BIN_DIR/limine-bios.sys" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$INSTALL_ROOT/EFI/BOOT/"
-
-cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
-
-cat > "$ISO_ROOT/INSTALLERS.TXT" <<EOF
-OS8 Installer Types
-
-1. Graphical Installer
-   Boot menu entry: "OS8 Graphical Installer"
-   Use this for the normal desktop installer flow.
-EOF
-
-cp "$ISO_ROOT/INSTALLERS.TXT" "$INSTALL_ROOT/INSTALLERS.TXT"
-
-cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
-OS8 System Image
-
-This ISO contains:
-- a graphical installer environment
-- a bundled system image payload at /install/system-image
-
-Primary payload files:
-- /install/system-image/boot/main.sys
-- /install/system-image/boot/bootloader.sys
-- /install/system-image/limine.conf
-- /install/system-image/boot/limine.conf
-- /install/system-image/limine/limine.conf
-- /install/system-image/EFI/BOOT/limine.conf
-- /install/system-image/boot/limine-bios.sys
-- /install/system-image/boot/limine-bios-cd.bin
-- /install/system-image/boot/limine-uefi-cd.bin
-- /install/system-image/EFI/BOOT/BOOTX64.EFI
-
-If present, repo assets are mirrored under:
-- /install/system-image/assets
-
-- /INSTALLERS.TXT
-
-The installer GUI boots from the top-level ISO files and installs the bundled
-desktop/system layout represented by this image payload.
-EOF
 
 ISO_PATH="${IMAGE_DIR}/${ISO_NAME}"
 rm -f "$ISO_PATH"
@@ -297,6 +239,7 @@ require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/INSTALLERS.TXT"
+require_iso_path "/install/system-image.zip"
 require_iso_path "/install/system-image/INSTALLERS.TXT"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"

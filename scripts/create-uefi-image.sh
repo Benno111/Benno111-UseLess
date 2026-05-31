@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create a BIOS+UEFI bootable MBR disk image for x86_64 without loop devices.
 
-set -e
+set -euo pipefail
 
 BUILD_DIR="${1:-build/x86_64}"
 IMAGE_DIR="${2:-image}"
@@ -12,10 +12,14 @@ KERNEL_PATH="${BUILD_DIR}/kernel/os-x86_64.elf"
 BOOT_MANAGER_DIR="${BUILD_DIR}/boot-assets/os-boot-manager"
 BOOT_MANAGER_SYNC="${ROOT_DIR}/scripts/update-os-boot-manager.sh"
 X86_64_BOOT_ASSET_DIR="${ROOT_DIR}/os-x86_64"
+BOOT_FILES_SCRIPT="${ROOT_DIR}/scripts/build-install-boot-files.sh"
+SYSTEM_IMAGE_SCRIPT="${ROOT_DIR}/scripts/create-system-image.sh"
 BOOT_MANAGER_DIR="$("$BOOT_MANAGER_SYNC" "$BOOT_MANAGER_DIR")"
 LIMINE_BIN_DIR="${BOOT_MANAGER_DIR}/bin"
 LIMINE_SRC_DIR="${BOOT_MANAGER_DIR}"
 LIMINE_TOOL_PATH="${LIMINE_SRC_DIR}/limine"
+SYSTEM_IMAGE_ROOT="${SYSTEM_IMAGE_ROOT:-${BUILD_DIR}/system-image}"
+SYSTEM_IMAGE_ARCHIVE="${SYSTEM_IMAGE_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -135,39 +139,14 @@ timeout: 0
     kernel_path: boot():/boot/main.sys
 EOF
 
-cat > "$TMP_DIR/bootable.cfg" <<'EOF'
-bootable=1
-loader=limine
-source=installer
-EOF
-
-cat > "$TMP_DIR/bios-bootable.cfg" <<'EOF'
-bootable=1
-scheme=mbr
-active_partition=System
-loader=limine
-source=installer
-EOF
-
-cat > "$TMP_DIR/installer-state.txt" <<'EOF'
-installed=1
-profile=system-image
-source=installer-iso
-EOF
-
-cat > "$TMP_DIR/efi-boot.cfg" <<'EOF'
-bootable=1
-loader=limine
-source=installer
-EOF
-
-cat > "$TMP_DIR/mbr-boot.cfg" <<'EOF'
-bootable=1
-scheme=mbr
-active_partition=System
-loader=limine
-source=installer
-EOF
+STAGING_ROOT="${TMP_DIR}/installer-root"
+rm -rf "$STAGING_ROOT"
+mkdir -p "$STAGING_ROOT/install"
+BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$TMP_DIR/limine.conf" \
+    "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$STAGING_ROOT"
+BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
+    "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
+cp "$SYSTEM_IMAGE_ARCHIVE" "$STAGING_ROOT/install/system-image.zip"
 
 log "Seeding UEFI boot files into FAT image"
 mmd -i "$MTOOLS_IMAGE" ::/EFI
@@ -175,27 +154,9 @@ mmd -i "$MTOOLS_IMAGE" ::/EFI/BOOT
 mmd -i "$MTOOLS_IMAGE" ::/boot
 mmd -i "$MTOOLS_IMAGE" ::/limine
 mmd -i "$MTOOLS_IMAGE" ::/System
+mmd -i "$MTOOLS_IMAGE" ::/install
 
-mcopy -i "$MTOOLS_IMAGE" "$KERNEL_PATH" ::/boot/main.sys
-mcopy -i "$MTOOLS_IMAGE" "$KERNEL_PATH" ::/boot/bootloader.sys
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine-bios.sys
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/boot/limine-bios.sys
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios.sys" ::/limine/limine-bios.sys
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios-cd.bin" ::/boot/limine-bios-cd.bin
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-bios-cd.bin" ::/limine/limine-bios-cd.bin
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-uefi-cd.bin" ::/boot/limine-uefi-cd.bin
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/limine-uefi-cd.bin" ::/limine/limine-uefi-cd.bin
-mcopy -i "$MTOOLS_IMAGE" "$LIMINE_BIN_DIR/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/limine.conf
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/boot/limine.conf
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/limine/limine.conf
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/limine.conf" ::/EFI/BOOT/limine.conf
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bootable.cfg" ::/BOOTABLE.CFG
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bootable.cfg" ::/EFI/BOOT/BOOTABLE.CFG
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/bios-bootable.cfg" ::/boot/BOOTABLE.CFG
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/installer-state.txt" ::/System/installer-state.txt
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/efi-boot.cfg" ::/System/efi-boot.cfg
-mcopy -i "$MTOOLS_IMAGE" "$TMP_DIR/mbr-boot.cfg" ::/System/mbr-boot.cfg
+mcopy -i "$MTOOLS_IMAGE" -s "$STAGING_ROOT"/* ::
 
 "$LIMINE_TOOL" bios-install "$IMAGE_PATH" || {
     echo "[ERROR] Failed to install Limine BIOS stages into $IMAGE_PATH" >&2
