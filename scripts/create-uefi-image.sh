@@ -142,9 +142,9 @@ EOF
 STAGING_ROOT="${TMP_DIR}/installer-root"
 rm -rf "$STAGING_ROOT"
 mkdir -p "$STAGING_ROOT/install"
-BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$TMP_DIR/limine.conf" \
+env BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$TMP_DIR/limine.conf" \
     bash "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$STAGING_ROOT"
-BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
+env BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
     bash "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
 cp "$SYSTEM_IMAGE_ARCHIVE" "$STAGING_ROOT/install/system-image.zip"
 

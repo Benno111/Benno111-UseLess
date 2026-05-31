@@ -162,7 +162,7 @@ extract_c_array "$ROOT_DIR/kernel/apps/embedded_apps.c" "shell_bin" "$OUTPUT_ROO
 extract_c_array "$ROOT_DIR/kernel/media/seed_mp3.inc" "_tmp_os_seed_mp3" "$OUTPUT_ROOT/sample.mp3" "$PYTHON_CMD"
 chmod 755 "$OUTPUT_ROOT/sbin/init" "$OUTPUT_ROOT/bin/login" "$OUTPUT_ROOT/bin/sh"
 
-BOOT_PROFILE=installed-system LIMINE_CFG_SOURCE="$BOOT_LIMINE_CFG" \
+env BOOT_PROFILE=installed-system LIMINE_CFG_SOURCE="$BOOT_LIMINE_CFG" \
     bash "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$OUTPUT_ROOT"
 
 log "Creating image archive $OUTPUT_ARCHIVE"
