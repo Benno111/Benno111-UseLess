@@ -20,6 +20,9 @@ LIMINE_SRC_DIR="${BOOT_MANAGER_DIR}"
 LIMINE_TOOL_PATH="${LIMINE_SRC_DIR}/limine"
 SYSTEM_IMAGE_ROOT="${SYSTEM_IMAGE_ROOT:-${BUILD_DIR}/system-image}"
 SYSTEM_IMAGE_ARCHIVE="${SYSTEM_IMAGE_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
+BOOT_PROFILE="${BOOT_PROFILE:-installed-system}"
+LIMINE_CFG_SOURCE="${LIMINE_CFG_SOURCE:-${ROOT_DIR}/os-x86_64/limine.conf}"
+INCLUDE_INSTALL_PAYLOAD="${INCLUDE_INSTALL_PAYLOAD:-}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -107,12 +110,21 @@ require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
+require_file "$LIMINE_CFG_SOURCE"
 require_cmd mkfs.fat
 require_cmd mmd
 require_cmd mcopy
 require_cmd sfdisk
 
-log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M)"
+if [ -z "$INCLUDE_INSTALL_PAYLOAD" ]; then
+    if [ "$BOOT_PROFILE" = "installer" ]; then
+        INCLUDE_INSTALL_PAYLOAD=1
+    else
+        INCLUDE_INSTALL_PAYLOAD=0
+    fi
+fi
+
+log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M, profile=${BOOT_PROFILE})"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" status=none
 
 PART_START_SECTORS=2048
@@ -126,25 +138,19 @@ printf 'label: dos\nlabel-id: 0x4f534e58\nunit: sectors\n\n%s,%s,0x0c,*\n' \
 
 mkfs.fat -F 32 --offset "$PART_START_SECTORS" -n OSNEXT64 "$IMAGE_PATH" >/dev/null
 
-cat > "$TMP_DIR/limine.conf" <<'EOF'
-# Limine Configuration File
-# OS8 x64
-
-timeout: 0
-
-/OS8
-    protocol: limine
-    kernel_path: boot():/boot/main.sys
-EOF
-
-STAGING_ROOT="${TMP_DIR}/installer-root"
+STAGING_ROOT="${TMP_DIR}/staging-root"
 rm -rf "$STAGING_ROOT"
-mkdir -p "$STAGING_ROOT/install"
-env BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$TMP_DIR/limine.conf" \
+mkdir -p "$STAGING_ROOT"
+if [ "$INCLUDE_INSTALL_PAYLOAD" = "1" ]; then
+    mkdir -p "$STAGING_ROOT/install"
+fi
+env BOOT_PROFILE="$BOOT_PROFILE" LIMINE_CFG_SOURCE="$LIMINE_CFG_SOURCE" \
     bash "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$STAGING_ROOT"
-env BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
-    bash "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
-cp "$SYSTEM_IMAGE_ARCHIVE" "$STAGING_ROOT/install/system-image.zip"
+if [ "$INCLUDE_INSTALL_PAYLOAD" = "1" ]; then
+    env BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
+        bash "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
+    cp "$SYSTEM_IMAGE_ARCHIVE" "$STAGING_ROOT/install/system-image.zip"
+fi
 LIMINE_TOOL="$(resolve_limine_tool)"
 
 log "Seeding UEFI boot files into FAT image"
