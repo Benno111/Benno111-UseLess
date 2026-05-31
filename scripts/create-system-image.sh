@@ -163,7 +163,7 @@ extract_c_array "$ROOT_DIR/kernel/media/seed_mp3.inc" "_tmp_os_seed_mp3" "$OUTPU
 chmod 755 "$OUTPUT_ROOT/sbin/init" "$OUTPUT_ROOT/bin/login" "$OUTPUT_ROOT/bin/sh"
 
 BOOT_PROFILE=installed-system LIMINE_CFG_SOURCE="$BOOT_LIMINE_CFG" \
-    "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$OUTPUT_ROOT"
+    bash "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$OUTPUT_ROOT"
 
 log "Creating image archive $OUTPUT_ARCHIVE"
 write_zip_archive "$OUTPUT_ROOT" "$OUTPUT_ARCHIVE" "$PYTHON_CMD"
