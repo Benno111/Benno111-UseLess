@@ -100,6 +100,7 @@ static int manifest_get_value(const char *manifest, const char *key, char *out,
                               int out_max);
 static uint64_t parse_u64(const char *text);
 static int installer_selected_disk_index(void);
+static void installer_fail_background(const char *status, const char *log_line);
 static void gui_flush_account_state_before_power_transition(void);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
@@ -626,6 +627,7 @@ static int installer_progress_total_files = 0;
 static int installer_progress_processed_files = 0;
 static int installer_install_journal_ready = 0;
 static int installer_install_journal_disk_index = -1;
+static int installer_target_disk_index = -1;
 static uint32_t installer_install_journal_next_lba = 0;
 static uint32_t installer_install_journal_last_lba = 0;
 static char installer_target_root[96];
@@ -7673,6 +7675,9 @@ static void installer_append_to_buf(char *buf, int max, const char *text) {
 }
 
 static int installer_selected_disk_index(void) {
+  if ((installer_active || installer_show_restart_screen) &&
+      installer_target_disk_index >= 0)
+    return installer_target_disk_index;
   installer_refresh_disk_inventory();
   if (installer_disk_count == 0)
     return -1;
@@ -8633,6 +8638,12 @@ static void installer_start_background_install(void) {
   installer_log_clear();
   refresh_external_storage_views();
   installer_refresh_disk_inventory();
+  installer_target_disk_index = installer_selected_disk_index();
+  if (installer_target_disk_index < 0) {
+    installer_fail_background("Install blocked. No valid target disk is selected.",
+                              "install blocked: selected target disk missing");
+    return;
+  }
   installer_has_run = 0;
   installer_show_restart_screen = 0;
   installer_active = 1;
@@ -8663,6 +8674,7 @@ static void installer_fail_background(const char *status, const char *log_line) 
   installer_active = 0;
   installer_phase = 0;
   installer_show_restart_screen = 0;
+  installer_target_disk_index = -1;
   installer_page = INSTALLER_PAGE_REVIEW;
   installer_set_status(status);
   if (log_line)
@@ -8874,7 +8886,8 @@ static void draw_installation_stage_layout(int content_x, int content_y,
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
   const gui_theme_palette_t *theme = gui_theme_palette();
-  installer_refresh_disk_inventory();
+  if (!installer_active && !installer_show_restart_screen)
+    installer_refresh_disk_inventory();
   if (installer_show_restart_screen)
     installer_page = INSTALLER_PAGE_COMPLETE;
   else if (installer_active)
@@ -17214,7 +17227,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int button_w = 140;
         int button_h = 34;
 
-        installer_refresh_disk_inventory();
+        if (!installer_active && !installer_show_restart_screen)
+          installer_refresh_disk_inventory();
 
         if (installer_show_restart_screen)
           installer_page = INSTALLER_PAGE_COMPLETE;
