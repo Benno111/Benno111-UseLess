@@ -8,7 +8,7 @@ BUILD_DIR="${1:-build/x86_64}"
 OUTPUT_ROOT="${2:-${BUILD_DIR}/system-image}"
 OUTPUT_ARCHIVE="${OUTPUT_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
 BOOT_FILES_SCRIPT="${ROOT_DIR}/scripts/build-install-boot-files.sh"
-BOOT_LIMINE_CFG="${BOOT_LIMINE_CFG:-${ROOT_DIR}/os-x86_64/limine.conf}"
+BOOT_LIMINE_CFG="${BOOT_LIMINE_CFG:-${ROOT_DIR}/os-x86_64/limine-installed.conf}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
