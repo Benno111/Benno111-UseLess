@@ -44,7 +44,8 @@ symbol_name = sys.argv[2]
 output_path = pathlib.Path(sys.argv[3])
 text = source_path.read_text(encoding="utf-8")
 pattern = re.compile(
-    r"const unsigned char\s+%s\[\]\s*=\s*\{(.*?)\};" % re.escape(symbol_name),
+    r"(?:const\s+)?(?:unsigned\s+char|uint8_t)\s+%s\[\]\s*=\s*\{(.*?)\};"
+    % re.escape(symbol_name),
     re.S,
 )
 match = pattern.search(text)
