@@ -176,8 +176,6 @@ require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
 require_cmd xorriso
 
-LIMINE_TOOL="$(resolve_limine_tool)"
-
 mkdir -p "$IMAGE_DIR"
 rm -rf "$ISO_ROOT"
 
@@ -191,6 +189,7 @@ env BOOT_LIMINE_CFG="$INSTALL_LIMINE_CFG" \
 rm -rf "$INSTALL_ROOT"
 cp -R "$SYSTEM_IMAGE_ROOT" "$INSTALL_ROOT"
 cp "$SYSTEM_IMAGE_ARCHIVE" "$ISO_ROOT/install/system-image.zip"
+LIMINE_TOOL="$(resolve_limine_tool)"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"

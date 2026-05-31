@@ -112,8 +112,6 @@ require_cmd mmd
 require_cmd mcopy
 require_cmd sfdisk
 
-LIMINE_TOOL="$(resolve_limine_tool)"
-
 log "Creating UEFI disk image: $IMAGE_PATH (${IMAGE_SIZE_MB}M)"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1M count="$IMAGE_SIZE_MB" status=none
 
@@ -147,6 +145,7 @@ env BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$TMP_DIR/limine.conf" \
 env BOOT_LIMINE_CFG="${ROOT_DIR}/os-x86_64/limine.conf" \
     bash "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
 cp "$SYSTEM_IMAGE_ARCHIVE" "$STAGING_ROOT/install/system-image.zip"
+LIMINE_TOOL="$(resolve_limine_tool)"
 
 log "Seeding UEFI boot files into FAT image"
 mmd -i "$MTOOLS_IMAGE" ::/EFI
