@@ -8093,6 +8093,8 @@ static int installer_copy_tree_to_root(const char *src_root, const char *dst_roo
 static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
                                        int *failed_files);
 static int installer_payload_file_exists(const char *path);
+static const char *installer_system_disk_image_path(void);
+static int installer_apply_system_disk_image(int disk_index);
 
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
@@ -8213,6 +8215,14 @@ static int installer_boot_alias_copy_count(const char *target_root) {
   installer_append_to_buf(boot_bios_path, sizeof(boot_bios_path),
                           "/boot/limine-bios.sys");
   return installer_payload_file_exists(boot_bios_path) ? 3 : 0;
+}
+
+static const char *installer_system_disk_image_path(void) {
+  if (installer_payload_file_exists("/install/system.img"))
+    return "/install/system.img";
+  if (installer_payload_file_exists("/setup/install/system.img"))
+    return "/setup/install/system.img";
+  return NULL;
 }
 
 static const char *installer_system_image_root_path(void) {
@@ -8439,6 +8449,42 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
   if (failed_files)
     *failed_files += failed;
   return failed == 0 ? 0 : -1;
+}
+
+static int installer_apply_system_disk_image(int disk_index) {
+  const char *image_path = installer_system_disk_image_path();
+  uint8_t *image_data = NULL;
+  size_t image_size = 0;
+  char msg[192];
+  extern int storage_write_disk_image(int disk_index, const uint8_t *data,
+                                      size_t size);
+  extern void refresh_external_storage_views(void);
+
+  if (!image_path || disk_index < 0)
+    return -1;
+
+  if (media_load_file(image_path, &image_data, &image_size) != 0 || !image_data ||
+      image_size == 0) {
+    str_copy_safe(msg, "install failed: could not load disk image ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), image_path);
+    installer_log(msg);
+    return -1;
+  }
+
+  str_copy_safe(msg, "writing raw system disk image from ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), image_path);
+  installer_log(msg);
+
+  if (storage_write_disk_image(disk_index, image_data, image_size) != 0) {
+    media_free_file(image_data);
+    installer_log("install failed: raw disk image write failed");
+    return -1;
+  }
+
+  media_free_file(image_data);
+  refresh_external_storage_views();
+  installer_log("raw system disk image written to target disk");
+  return 0;
 }
 
 static int installer_apply_system_image_payload(const char *target_root) {
@@ -8674,14 +8720,31 @@ static void installer_process_background_install(void) {
     if (installer_progress_total_files <= 0)
       installer_progress_total_files = 1;
     installer_progress_processed_files = 0;
-    installer_set_progress_state(
-        18, "Validating Payload", "Preparing extracted system image...",
-        "Payload verified. Counting files before copy begins.");
+    if (installer_system_disk_image_path()) {
+      installer_progress_total_files = 1;
+      installer_set_progress_state(
+          18, "Validating Payload", "Preparing raw system disk image...",
+          "Bootable disk image found. The installer will write it directly to the target disk.");
+    } else {
+      installer_set_progress_state(
+          18, "Validating Payload", "Preparing extracted system image...",
+          "Payload verified. Counting files before copy begins.");
+    }
     installer_phase = 3;
     return;
   }
   case 3:
-    if (installer_apply_system_image_payload(installer_target_root) != 0) {
+    if (installer_system_disk_image_path()) {
+      int selected_disk_index = installer_selected_disk_index();
+      if (installer_apply_system_disk_image(selected_disk_index) != 0) {
+        installer_fail_background("Install failed. Raw system disk image write failed.",
+                                  "install failed: raw system disk image write failed");
+        return;
+      }
+      installer_copied_files = 1;
+      installer_failed_files = 0;
+      installer_progress_processed_files = installer_progress_total_files;
+    } else if (installer_apply_system_image_payload(installer_target_root) != 0) {
       installer_fail_background("Install failed. Extracted system image copy failed.",
                                 "install failed: extracted system image copy failed");
       return;
