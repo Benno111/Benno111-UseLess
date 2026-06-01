@@ -14832,11 +14832,11 @@ static void draw_desktop(void) {
   /* Draw build info in the bottom-right corner above the dock. */
   {
 #ifdef ARCH_X86_64
-    const char *build_info = "OS 8 x86_64";
+    const char *build_info = "OS 8 x86_64 - TESTING ONLY";
 #elif defined(ARCH_X86)
-    const char *build_info = "OS 8 x86";
+    const char *build_info = "OS 8 x86 - TESTING ONLY";
 #else
-    const char *build_info = "OS 8 ARM64";
+    const char *build_info = "OS 8 ARM64 - TESTING ONLY";
 #endif
     int build_len = 0;
     int uuid_len = 0;
