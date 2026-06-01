@@ -32,7 +32,7 @@ def main():
         ("kernel/media/bootstrap_images/landscape.png", "bootstrap_landscape_png"),
         ("kernel/media/bootstrap_images/portrait.jpg", "bootstrap_portrait_jpg"),
         ("kernel/media/bootstrap_images/square.jpg", "bootstrap_square_jpg"),
-        ("assets/wallpapers/ducks.png", "bootstrap_ducks_png"),
+        ("assets/Wallpapers/ducks.png", "bootstrap_ducks_png"),
         ("kernel/media/bootstrap_images/default.jpg", "bootstrap_default_jpg"),
         ("kernel/media/bootstrap_images/nature.jpg", "bootstrap_nature_jpg"),
         ("kernel/media/bootstrap_images/city.jpg", "bootstrap_city_jpg"),
