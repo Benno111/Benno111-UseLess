@@ -10657,6 +10657,49 @@ static void disk_imager_set_status(const char *msg) {
   str_copy_safe(disk_imager_status, msg ? msg : "", sizeof(disk_imager_status));
 }
 
+static int disk_imager_capacity_sectors(int disk_index, uint32_t *out_sectors) {
+  uint64_t sectors;
+
+  if (!out_sectors)
+    return -1;
+  if (disk_index < 0)
+    return -1;
+
+  sectors = (uint64_t)storage_get_disk_capacity_mib(disk_index) * 2048ULL;
+  if (sectors == 0 || sectors > 0xFFFFFFFFULL)
+    return -1;
+
+  *out_sectors = (uint32_t)sectors;
+  return 0;
+}
+
+static int disk_imager_image_sector_count(const char *path, loff_t *out_file_size,
+                                          uint32_t *out_sector_count) {
+  struct file *file;
+  loff_t file_size;
+  uint64_t sectors;
+
+  if (!path || !path[0] || !out_file_size || !out_sector_count)
+    return -1;
+
+  file = vfs_open(path, O_RDONLY, 0);
+  if (!file)
+    return -1;
+
+  file_size = vfs_lseek(file, 0, SEEK_END);
+  vfs_close(file);
+  if (file_size <= 0)
+    return -1;
+
+  sectors = ((uint64_t)file_size + 511ULL) / 512ULL;
+  if (sectors == 0 || sectors > 0xFFFFFFFFULL)
+    return -1;
+
+  *out_file_size = file_size;
+  *out_sector_count = (uint32_t)sectors;
+  return 0;
+}
+
 static void disk_imager_sanitize_component(const char *src, char *dst, int max) {
   int idx = 0;
 
@@ -10800,6 +10843,7 @@ static int disk_imager_write_range(int disk_index, uint32_t start_lba,
   uint8_t sector[512];
   struct file *file;
   uint32_t disk_capacity;
+  extern void process_yield(void);
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
@@ -10808,9 +10852,14 @@ static int disk_imager_write_range(int disk_index, uint32_t start_lba,
     return -1;
   }
 
-  disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
-  if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
+  if (disk_imager_capacity_sectors(disk_index, &disk_capacity) != 0) {
+    disk_imager_set_status("Selected disk capacity is invalid for imaging.");
     return -1;
+  }
+  if ((uint64_t)start_lba + (uint64_t)sector_count > (uint64_t)disk_capacity) {
+    disk_imager_set_status("Requested backup range exceeds disk capacity.");
+    return -1;
+  }
 
   installer_ensure_parent_dirs(path);
   file = vfs_open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
@@ -10828,6 +10877,8 @@ static int disk_imager_write_range(int disk_index, uint32_t start_lba,
       vfs_close(file);
       return -1;
     }
+    if ((i & 127U) == 127U)
+      process_yield();
   }
 
   vfs_close(file);
@@ -10839,6 +10890,9 @@ static int disk_imager_read_range(int disk_index, uint32_t start_lba,
   uint8_t sector[512];
   struct file *file;
   uint32_t disk_capacity;
+  uint32_t image_sectors;
+  loff_t file_size;
+  extern void process_yield(void);
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
@@ -10847,9 +10901,26 @@ static int disk_imager_read_range(int disk_index, uint32_t start_lba,
     return -1;
   }
 
-  disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
-  if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
+  if (storage_get_disk_kind(disk_index) == STORAGE_KIND_CDROM) {
+    disk_imager_set_status("Optical media cannot be restored as block targets.");
     return -1;
+  }
+  if (disk_imager_capacity_sectors(disk_index, &disk_capacity) != 0) {
+    disk_imager_set_status("Selected disk capacity is invalid for imaging.");
+    return -1;
+  }
+  if ((uint64_t)start_lba + (uint64_t)sector_count > (uint64_t)disk_capacity) {
+    disk_imager_set_status("Requested restore range exceeds disk capacity.");
+    return -1;
+  }
+  if (disk_imager_image_sector_count(path, &file_size, &image_sectors) != 0) {
+    disk_imager_set_status("Disk image file is missing or invalid.");
+    return -1;
+  }
+  if (image_sectors > sector_count) {
+    disk_imager_set_status("Disk image is larger than the selected target range.");
+    return -1;
+  }
 
   file = vfs_open(path, O_RDONLY, 0);
   if (!file)
@@ -10882,6 +10953,8 @@ static int disk_imager_read_range(int disk_index, uint32_t start_lba,
       }
       break;
     }
+    if ((i & 127U) == 127U)
+      process_yield();
   }
 
   vfs_close(file);
@@ -10893,9 +10966,10 @@ static int disk_imager_backup_disk(void) {
 
   if (disk_imager_selected_disk < 0)
     return -1;
-  sectors = storage_get_disk_capacity_mib(disk_imager_selected_disk) * 2048U;
-  if (sectors == 0)
+  if (disk_imager_capacity_sectors(disk_imager_selected_disk, &sectors) != 0) {
+    disk_imager_set_status("Selected disk is too large or unavailable.");
     return -1;
+  }
   return disk_imager_write_range(disk_imager_selected_disk, 0, sectors,
                                  disk_imager_disk_path);
 }
@@ -10905,9 +10979,10 @@ static int disk_imager_restore_disk(void) {
 
   if (disk_imager_selected_disk < 0)
     return -1;
-  sectors = storage_get_disk_capacity_mib(disk_imager_selected_disk) * 2048U;
-  if (sectors == 0)
+  if (disk_imager_capacity_sectors(disk_imager_selected_disk, &sectors) != 0) {
+    disk_imager_set_status("Selected disk is too large or unavailable.");
     return -1;
+  }
   return disk_imager_read_range(disk_imager_selected_disk, 0, sectors,
                                 disk_imager_disk_path);
 }
