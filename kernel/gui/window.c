@@ -640,6 +640,7 @@ static char installer_progress_detail[160] =
     "The installer is waiting to start.";
 static char installer_progress_current_item[160] = "";
 static char installer_system_image_payload_path[96] = "";
+static char installer_boot_payload_path[96] = "";
 static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
@@ -8329,6 +8330,19 @@ static int installer_build_boot_fallback(const char *src_path, char *alt,
   return 0;
 }
 
+static int installer_str_equal(const char *a, const char *b) {
+  int i = 0;
+
+  if (!a || !b)
+    return 0;
+  while (a[i] && b[i]) {
+    if (a[i] != b[i])
+      return 0;
+    i++;
+  }
+  return a[i] == '\0' && b[i] == '\0';
+}
+
 static int installer_copy_file(const char *src_path, const char *dst_path) {
   uint8_t *data = NULL;
   size_t size = 0;
@@ -8466,10 +8480,14 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static const char *installer_system_image_root_path(void);
+static const char *installer_boot_payload_root_path(void);
 static int installer_system_image_is_archive(const char *path);
 static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
                                        int *copied_files, int *failed_files,
                                        const char *log_label);
+static int installer_copy_boot_payload_to_root(const char *target_root,
+                                               int *copied_files,
+                                               int *failed_files);
 static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
                                        int *failed_files);
 static int installer_payload_file_exists(const char *path);
@@ -8489,7 +8507,7 @@ static int installer_copy_system_image_to_root(const char *target_root,
                                          failed_files, "system image") != 0) {
     return -1;
   }
-  return installer_copy_boot_aliases(target_root, copied_files, failed_files);
+  return 0;
 }
 
 static int installer_payload_file_exists(const char *path) {
@@ -8612,6 +8630,28 @@ static void installer_select_system_image_payload(const char *path) {
                 sizeof(installer_system_image_payload_path));
 }
 
+static const char *installer_boot_payload_root_path(void) {
+  if (installer_boot_payload_path[0] &&
+      installer_payload_file_exists(installer_boot_payload_path))
+    return installer_boot_payload_path;
+  if (installer_payload_file_exists("/install/boot-files.zip"))
+    return "/install/boot-files.zip";
+  if (installer_payload_file_exists("/setup/bootimage.zip"))
+    return "/setup/bootimage.zip";
+  if (installer_payload_file_exists("/setup/bootimage"))
+    return "/setup/bootimage";
+  return installer_system_image_root_path();
+}
+
+static void installer_select_boot_payload(const char *path) {
+  if (!path || !path[0]) {
+    installer_boot_payload_path[0] = '\0';
+    return;
+  }
+  str_copy_safe(installer_boot_payload_path, path,
+                sizeof(installer_boot_payload_path));
+}
+
 static int installer_validate_system_image_candidate(const char *payload_root) {
   static const char *required_suffixes[] = {
       "/boot/main.sys",
@@ -8720,6 +8760,117 @@ static int installer_validate_system_image_payload(void) {
   return -1;
 }
 
+static int installer_validate_boot_payload_candidate(const char *payload_root) {
+  static const char *required_suffixes[] = {
+      "/boot/main.sys",
+      "/boot/bootloader.sys",
+      "/boot/limine-bios.sys",
+      "/boot/limine-bios-cd.bin",
+      "/boot/limine-uefi-cd.bin",
+      "/BOOTABLE.CFG",
+      "/boot/BOOTABLE.CFG",
+      "/EFI/BOOT/BOOTX64.EFI",
+      "/EFI/BOOT/BOOTABLE.CFG",
+      "/System/installer-state.txt",
+      "/System/efi-boot.cfg",
+      "/System/mbr-boot.cfg",
+  };
+  static const char *limine_cfg_suffixes[] = {
+      "/limine.conf",
+      "/boot/limine.conf",
+      "/limine/limine.conf",
+      "/EFI/BOOT/limine.conf",
+  };
+  char full_path[192];
+  char msg[320];
+
+  if (!payload_root || !payload_root[0])
+    return -1;
+
+  if (installer_system_image_is_archive(payload_root)) {
+    for (int i = 0;
+         i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
+         i++) {
+      if (media_zip_file_has_entry(payload_root, required_suffixes[i]))
+        continue;
+      str_copy_safe(msg, "boot archive unusable: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), payload_root);
+      installer_append_to_buf(msg, sizeof(msg), required_suffixes[i]);
+      installer_log(msg);
+      return -1;
+    }
+
+    for (int i = 0;
+         i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
+         i++) {
+      if (media_zip_file_has_entry(payload_root, limine_cfg_suffixes[i]))
+        return 0;
+    }
+
+    str_copy_safe(msg, "boot archive unusable: no Limine config in ",
+                  sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), payload_root);
+    installer_log(msg);
+    return -1;
+  }
+
+  for (int i = 0;
+       i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
+       i++) {
+    str_copy_safe(full_path, payload_root, sizeof(full_path));
+    installer_append_to_buf(full_path, sizeof(full_path), required_suffixes[i]);
+    if (installer_payload_file_exists(full_path))
+      continue;
+    str_copy_safe(msg, "boot payload missing: ", sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), full_path);
+    installer_log(msg);
+    return -1;
+  }
+
+  for (int i = 0;
+       i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
+       i++) {
+    str_copy_safe(full_path, payload_root, sizeof(full_path));
+    installer_append_to_buf(full_path, sizeof(full_path),
+                            limine_cfg_suffixes[i]);
+    if (installer_payload_file_exists(full_path))
+      return 0;
+  }
+
+  str_copy_safe(msg, "boot payload missing: no Limine config in ",
+                sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), payload_root);
+  installer_log(msg);
+  return -1;
+}
+
+static int installer_validate_boot_payload(void) {
+  static const char *payload_candidates[] = {
+      "/install/boot-files.zip",
+      "/setup/bootimage.zip",
+      "/setup/bootimage",
+      "/install/system-image.zip",
+      "/setup/install/system-image.zip",
+      "/install/system-image",
+      "/setup/install/system-image",
+  };
+
+  installer_select_boot_payload(NULL);
+  for (int i = 0;
+       i < (int)(sizeof(payload_candidates) / sizeof(payload_candidates[0]));
+       i++) {
+    if (!installer_payload_file_exists(payload_candidates[i]))
+      continue;
+    if (installer_validate_boot_payload_candidate(payload_candidates[i]) == 0) {
+      installer_select_boot_payload(payload_candidates[i]);
+      return 0;
+    }
+  }
+
+  installer_log("install payload missing: no usable boot payload found");
+  return -1;
+}
+
 static int installer_validate_raw_system_disk_image_payload(void) {
   const char *image_path = installer_system_disk_image_path();
   char msg[320];
@@ -8778,6 +8929,27 @@ static int installer_copy_tree_to_root(const char *src_root, const char *dst_roo
   if (failed_files)
     *failed_files += ctx.failed_files;
   return (ctx.copied_files > 0 && ctx.failed_files == 0) ? 0 : -1;
+}
+
+static int installer_copy_boot_payload_to_root(const char *target_root,
+                                               int *copied_files,
+                                               int *failed_files) {
+  const char *boot_payload_root = installer_boot_payload_root_path();
+
+  if (!boot_payload_root || !boot_payload_root[0])
+    return installer_copy_boot_aliases(target_root, copied_files, failed_files);
+
+  if (installer_system_image_is_archive(boot_payload_root)) {
+    if (media_zip_extract_file_to_root(boot_payload_root, target_root,
+                                       copied_files, failed_files) != 0)
+      return -1;
+  } else if (installer_copy_tree_to_root(boot_payload_root, target_root,
+                                         copied_files, failed_files,
+                                         "boot payload") != 0) {
+    return -1;
+  }
+
+  return installer_copy_boot_aliases(target_root, copied_files, failed_files);
 }
 
 static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
@@ -8882,9 +9054,21 @@ static int installer_apply_system_image_payload(const char *target_root) {
   int failed = 0;
   char msg[160];
   int idx = 0;
+  const char *system_payload_root = installer_system_image_root_path();
+  const char *boot_payload_root = installer_boot_payload_root_path();
 
   if (installer_copy_system_image_to_root(target_root, &copied, &failed) != 0) {
     installer_log("install failed: extracted system image copy failed");
+    return -1;
+  }
+  if (!installer_str_equal(boot_payload_root, system_payload_root) &&
+      installer_copy_boot_payload_to_root(target_root, &copied, &failed) != 0) {
+    installer_log("install failed: boot payload copy failed");
+    return -1;
+  }
+  if (installer_str_equal(boot_payload_root, system_payload_root) &&
+      installer_copy_boot_aliases(target_root, &copied, &failed) != 0) {
+    installer_log("install failed: boot alias copy failed");
     return -1;
   }
 
@@ -9046,6 +9230,7 @@ static void installer_start_background_install(void) {
   installer_update_root[0] = '\0';
   installer_progress_current_item[0] = '\0';
   installer_select_system_image_payload(NULL);
+  installer_select_boot_payload(NULL);
   installer_set_progress_state(2, "Preparing", "Preparing install...",
                                "Loading installer context and refreshing storage.");
   installer_log("starting system image install");
@@ -9124,13 +9309,19 @@ static void installer_process_background_install(void) {
           18, "Validating Payload", "Preparing raw system disk image...",
           "Bootable disk image found. The installer will write it directly to the target disk.");
     } else {
-      if (installer_validate_system_image_payload() != 0) {
+      if (installer_validate_system_image_payload() != 0 ||
+          installer_validate_boot_payload() != 0) {
         installer_fail_background("Install blocked. Boot files are missing from the installer image.",
                                   "install blocked: boot payload incomplete");
         return;
       }
       installer_progress_total_files =
           installer_count_tree_files(installer_system_image_root_path());
+      if (!installer_str_equal(installer_boot_payload_root_path(),
+                               installer_system_image_root_path())) {
+        installer_progress_total_files +=
+            installer_count_tree_files(installer_boot_payload_root_path());
+      }
       installer_progress_total_files +=
           installer_boot_alias_copy_count(installer_target_root);
       if (installer_progress_total_files <= 0)
