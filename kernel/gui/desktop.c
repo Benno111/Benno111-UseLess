@@ -611,6 +611,9 @@ static void desktop_open_removable_disk(const desktop_icon_t *icon) {
                                        "");
     if (desktop_try_open_dir(path) == 0)
       return;
+
+    gui_create_file_manager_path(200, 100, "/");
+    return;
   } else {
     refresh_external_storage_views();
   }

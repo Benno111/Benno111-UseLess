@@ -867,16 +867,13 @@ void refresh_external_storage_views(void) {
       if (vfs_mount(location, media_root, "iso9660", 0, NULL) == 0) {
         printk(KERN_INFO "STORAGE: mounted CD-ROM '%s' on '%s'\n", location,
                media_root);
-        copy_tree_to_prefix(media_root, external_root, 0, 0);
         continue;
       }
       if (iso9660_copy_to_ramfs(location, media_root) == 0) {
-        copy_tree_to_prefix(media_root, external_root, 0, 0);
         continue;
       }
       if (boot_is_installer_mode()) {
         copy_tree_to_prefix("/setup", media_root, 0, 0);
-        copy_tree_to_prefix("/setup", external_root, 0, 0);
         continue;
       }
     }
