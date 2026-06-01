@@ -8111,18 +8111,8 @@ static int installer_copy_system_image_to_root(const char *target_root,
                                                int *failed_files) {
   const char *installer_system_image_root = installer_system_image_root_path();
   if (installer_system_image_is_archive(installer_system_image_root)) {
-    uint8_t *archive_data = NULL;
-    size_t archive_size = 0;
-    int ret;
-
-    if (media_load_file(installer_system_image_root, &archive_data,
-                        &archive_size) != 0) {
-      return -1;
-    }
-    ret = media_zip_extract_to_root(archive_data, archive_size, target_root,
-                                    copied_files, failed_files);
-    media_free_file(archive_data);
-    if (ret != 0)
+    if (media_zip_extract_file_to_root(installer_system_image_root, target_root,
+                                       copied_files, failed_files) != 0)
       return -1;
   } else if (installer_copy_tree_to_root(installer_system_image_root,
                                          target_root, copied_files,
@@ -8198,14 +8188,7 @@ static int installer_count_tree_files(const char *src_root) {
   if (!src_root || !src_root[0])
     return 0;
   if (installer_system_image_is_archive(src_root)) {
-    uint8_t *archive_data = NULL;
-    size_t archive_size = 0;
-    int count;
-
-    if (media_load_file(src_root, &archive_data, &archive_size) != 0)
-      return 0;
-    count = media_zip_count_files(archive_data, archive_size);
-    media_free_file(archive_data);
+    int count = media_zip_count_file_entries(src_root);
     return (count > 0) ? count : 0;
   }
   dir = vfs_open(src_root, O_RDONLY, 0);
@@ -8287,43 +8270,29 @@ static int installer_validate_system_image_candidate(const char *payload_root) {
     return -1;
 
   if (installer_system_image_is_archive(payload_root)) {
-    uint8_t *archive_data = NULL;
-    size_t archive_size = 0;
-
-    if (media_load_file(payload_root, &archive_data, &archive_size) != 0) {
-      str_copy_safe(msg, "install payload missing: ", sizeof(msg));
-      installer_append_to_buf(msg, sizeof(msg), payload_root);
-      installer_log(msg);
-      return -1;
-    }
-
     for (int i = 0;
          i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
          i++) {
-      if (media_zip_has_entry(archive_data, archive_size, required_suffixes[i]))
+      if (media_zip_file_has_entry(payload_root, required_suffixes[i]))
         continue;
       str_copy_safe(msg, "install archive unusable: ", sizeof(msg));
       installer_append_to_buf(msg, sizeof(msg), payload_root);
       installer_append_to_buf(msg, sizeof(msg), required_suffixes[i]);
       installer_log(msg);
-      media_free_file(archive_data);
       return -1;
     }
 
     for (int i = 0;
          i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
          i++) {
-      if (media_zip_has_entry(archive_data, archive_size, limine_cfg_suffixes[i])) {
-        media_free_file(archive_data);
+      if (media_zip_file_has_entry(payload_root, limine_cfg_suffixes[i]))
         return 0;
-      }
     }
 
     str_copy_safe(msg, "install archive unusable: no Limine config in ",
                   sizeof(msg));
     installer_append_to_buf(msg, sizeof(msg), payload_root);
     installer_log(msg);
-    media_free_file(archive_data);
     return -1;
   }
 
