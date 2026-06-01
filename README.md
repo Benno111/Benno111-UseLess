@@ -96,6 +96,8 @@ Common targets:
 - `kernel` builds only the kernel
 - `sdk` exports app-facing headers under `build/sdk/include/`
 - `image` builds the bootable image or ISO
+- `system-image` builds the staged x86_64 install tree and `system-image.zip`
+- `install-boot-files` stages boot files into an existing `INSTALL_ROOT`
 - `installer-image` builds the x86_64 installer ISO
 - `qemu` runs the default emulator flow
 - `qemu-bios` runs BIOS boot where supported
@@ -150,6 +152,18 @@ This produces:
 image/os8-x86_64-installer.iso
 ```
 
+To build just the packaged OS image used by the installer:
+
+```sh
+make ARCH=x86_64 system-image
+```
+
+To stage boot files into an existing OS install root:
+
+```sh
+make ARCH=x86_64 install-boot-files INSTALL_ROOT=/path/to/os-root
+```
+
 ### x86_64 default image
 
 ```sh
@@ -180,12 +194,18 @@ make ARCH=arm64 qemu-uefi
 
 The x86_64 installer image is built around a Limine-booted GUI environment.
 
-At installer boot, the kernel now stages:
+The build now prepares the OS install payload ahead of time:
+
+- a staged install tree at `build/x86_64/system-image`
+- a packaged archive at `build/x86_64/system-image.zip`
+
+At installer boot, the media exposes:
 
 - a bundled system image under `/install/system-image`
+- a packaged archive at `/install/system-image.zip`
 - a setup-media mirror under `/setup/`
 
-The installer UI uses that staged payload to populate the selected install target.
+The installer UI prefers the packaged image archive and uses the staged tree as a compatible fallback.
 
 Important notes:
 
@@ -218,7 +238,7 @@ It also seeds demo files and embedded binaries such as:
 - sample media assets
 - example scripts and NanoLang samples
 
-The installer now stages that same baseline tree into the install payload so the installed system image is not just boot files.
+That same baseline tree is now built outside the kernel and packaged into the install payload so the installer can copy a real image instead of reconstructing the OS layout at runtime.
 
 ## Boot Images
 
@@ -228,6 +248,7 @@ The generated installer image includes:
 
 - top-level boot files used by the installer environment
 - a bundled install payload under `/install/system-image`
+- a packaged install archive at `/install/system-image.zip`
 
 The x86_64 build uses Limine configuration files from:
 

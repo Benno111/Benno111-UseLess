@@ -199,7 +199,7 @@ ALL_DEPFILES := $(ALL_OBJECTS:.o=.d)
 # Main Targets
 # ============================================================================
 
-.PHONY: all clean kernel sdk image installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
+.PHONY: all clean kernel sdk image system-image install-boot-files installer-image qemu qemu-bios qemu-uefi qemu-debug help assets
 
 all: kernel image
 	@echo "=========================================="
@@ -230,6 +230,8 @@ help:
 	@echo "  all      - Build kernel and image"
 	@echo "  kernel   - Build kernel only"
 	@echo "  image    - Create bootable image/ISO"
+	@echo "  system-image - Build the staged x86_64 install image and zip"
+	@echo "  install-boot-files - Stage boot files into INSTALL_ROOT"
 	@echo "  installer-image - Create x86_64 graphical installer ISO"
 	@echo "  sdk      - Export application headers into build/sdk/include"
 	@echo "  qemu     - Run in QEMU emulator"
@@ -419,11 +421,33 @@ else ifeq ($(ARCH),x86)
 	@echo "[IMAGE] Created: $(RAW_IMAGE)"
 endif
 
-installer-image: kernel
+system-image: kernel
+ifeq ($(ARCH),x86_64)
+	@echo "[IMAGE] Creating staged x86_64 system image..."
+	@bash ./scripts/create-system-image.sh $(BUILD_DIR)
+else
+	@echo "[IMAGE] system-image is currently supported only for ARCH=x86_64"
+	@exit 1
+endif
+
+install-boot-files: kernel
+ifeq ($(ARCH),x86_64)
+	@if [ -z "$(INSTALL_ROOT)" ]; then \
+		echo "[IMAGE] INSTALL_ROOT is required for install-boot-files"; \
+		exit 1; \
+	fi
+	@echo "[IMAGE] Staging boot files into $(INSTALL_ROOT)..."
+	@bash ./scripts/build-install-boot-files.sh $(BUILD_DIR) "$(INSTALL_ROOT)"
+else
+	@echo "[IMAGE] install-boot-files is currently supported only for ARCH=x86_64"
+	@exit 1
+endif
+
+installer-image: kernel system-image
 ifeq ($(ARCH),x86_64)
 	@echo "[IMAGE] Creating x86_64 installer ISO..."
 	@IMAGE_NAME=os8-x86_64-system.img bash ./scripts/create-uefi-image.sh $(BUILD_DIR) $(IMAGE_DIR)
-	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installer.conf" INSTALL_LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
+	@ISO_NAME=os8-x86_64-installer.iso LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installer.conf" INSTALL_LIMINE_CFG="$(X86_64_BOOT_ASSET_DIR)/limine-installed.conf" bash ./scripts/create-x86_64-iso.sh $(BUILD_DIR) $(IMAGE_DIR)
 	@cp "$(IMAGE_DIR)/os8-x86_64-system.img" "$(IMAGE_DIR)/os-x86_64-system.img"
 	@cp "$(IMAGE_DIR)/os8-x86_64-installer.iso" "$(IMAGE_DIR)/os-x86_64-installer.iso"
 	@echo "[IMAGE] Created: $(IMAGE_DIR)/os8-x86_64-installer.iso"

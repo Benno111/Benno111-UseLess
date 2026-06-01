@@ -25,6 +25,9 @@
 #include "types.h"
 
 #define GUI_DISPLAY_CONFIG_PATH "/System/display.cfg"
+#define GUI_THEME_CONFIG_PATH "/System/theme.cfg"
+#define GUI_THEME_DARK_PATH "/assets/themes/dark.theme"
+#define GUI_THEME_LIGHT_PATH "/assets/themes/light.theme"
 
 struct window *gui_create_file_manager(int x, int y);
 struct window *gui_create_file_manager_path(int x, int y, const char *path);
@@ -48,6 +51,8 @@ static void gui_draw_glass_panel(int x, int y, int w, int h, uint32_t tint,
                                  uint32_t glow, uint32_t border,
                                  int blur_stride);
 static uint32_t gui_contrast_title_color(uint32_t rgb);
+static void draw_rounded_rect(int x, int y, int w, int h, int r,
+                              uint32_t color);
 static void draw_top_rounded_rect_alpha(int x, int y, int w, int h, int r,
                                         uint32_t color);
 static void draw_filled_circle(int cx, int cy, int r, uint32_t color);
@@ -95,6 +100,7 @@ static int manifest_get_value(const char *manifest, const char *key, char *out,
                               int out_max);
 static uint64_t parse_u64(const char *text);
 static int installer_selected_disk_index(void);
+static void installer_fail_background(const char *status, const char *log_line);
 static void gui_flush_account_state_before_power_transition(void);
 static void str_copy_safe(char *dst, const char *src, int max);
 static int str_cmp(const char *s1, const char *s2);
@@ -235,7 +241,7 @@ typedef struct {
   uint32_t file_subtext;
 } gui_theme_palette_t;
 
-static const gui_theme_palette_t g_theme_dark = {
+static gui_theme_palette_t g_theme_dark = {
     0x1A1A2E, 0xE4E4E7, 0xA1A1AA, 0x6366F1, 0xEC4899, 0x27272A, 0x1F2937,
     0x252535, 0x52525B, 0xFFFDFEFF, 0x90FFFFFF, 0x4A4E6A8A, 0x3F3D4A5D,
     0x18324860, 0x142A3442, 0x34FFFFFF, 0x50313C4E, 0x5A34383F, 0x50323338,
@@ -247,7 +253,7 @@ static const gui_theme_palette_t g_theme_dark = {
     0x171A24, 0x111827, 0x1F2937, 0x111827, 0x0F172A, 0x111827, 0x172033,
     0x0F172A, 0x111827, 0x1D4ED8, 0xFFFFFF, 0x94A3B8};
 
-static const gui_theme_palette_t g_theme_light = {
+static gui_theme_palette_t g_theme_light = {
     0xF4F7FB, 0x172033, 0x5F6E82, 0x2563EB, 0xDB2777, 0xE9EEF5, 0xF6F9FC,
     0xFFFFFF, 0xC9D4E5, 0x1A2535, 0x70486A8C, 0xD9E7F4FA, 0xC8D8E7F1,
     0x60FFFFFF, 0x4CEAF1F7, 0x88FFFFFF, 0x708BA0B5, 0x3CE7EDF6, 0x30D7DFEA,
@@ -268,6 +274,263 @@ static const gui_theme_palette_t *gui_theme_palette(void) {
 static void gui_set_theme_mode(gui_theme_mode_t mode) {
   g_theme_mode = mode == GUI_THEME_LIGHT ? GUI_THEME_LIGHT : GUI_THEME_DARK;
   compositor_mark_full_redraw();
+}
+
+static const char *gui_theme_mode_name(gui_theme_mode_t mode) {
+  return mode == GUI_THEME_LIGHT ? "Light" : "Dark";
+}
+
+static int gui_theme_mode_from_text(const char *text) {
+  if (!text)
+    return -1;
+  if (str_cmp(text, "light") == 0 || str_cmp(text, "Light") == 0)
+    return GUI_THEME_LIGHT;
+  if (str_cmp(text, "dark") == 0 || str_cmp(text, "Dark") == 0)
+    return GUI_THEME_DARK;
+  return -1;
+}
+
+static gui_theme_palette_t *gui_active_theme_palette(void) {
+  return g_theme_mode == GUI_THEME_LIGHT ? &g_theme_light : &g_theme_dark;
+}
+
+static uint32_t *gui_theme_slot_ptr(gui_theme_palette_t *palette, int slot) {
+  if (!palette)
+    return NULL;
+  switch (slot) {
+  case 0:
+    return &palette->app_bg;
+  case 1:
+    return &palette->app_fg;
+  case 2:
+    return &palette->accent;
+  case 3:
+    return &palette->accent_soft;
+  case 4:
+    return &palette->surface;
+  case 5:
+    return &palette->surface_alt;
+  case 6:
+    return &palette->card;
+  case 7:
+    return &palette->border;
+  case 8:
+    return &palette->settings_bg;
+  case 9:
+    return &palette->settings_panel;
+  case 10:
+    return &palette->settings_text;
+  case 11:
+    return &palette->settings_subtext;
+  default:
+    return NULL;
+  }
+}
+
+static uint32_t gui_theme_slot_value(const gui_theme_palette_t *palette, int slot) {
+  if (!palette)
+    return 0;
+  switch (slot) {
+  case 0:
+    return palette->app_bg;
+  case 1:
+    return palette->app_fg;
+  case 2:
+    return palette->accent;
+  case 3:
+    return palette->accent_soft;
+  case 4:
+    return palette->surface;
+  case 5:
+    return palette->surface_alt;
+  case 6:
+    return palette->card;
+  case 7:
+    return palette->border;
+  case 8:
+    return palette->settings_bg;
+  case 9:
+    return palette->settings_panel;
+  case 10:
+    return palette->settings_text;
+  case 11:
+    return palette->settings_subtext;
+  default:
+    return 0;
+  }
+}
+
+static uint32_t gui_parse_hex_color(const char *text) {
+  uint32_t value = 0;
+
+  if (!text)
+    return 0;
+  if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+    text += 2;
+  if (*text == '#')
+    text++;
+
+  while (*text) {
+    char c = *text++;
+    uint32_t digit;
+
+    if (c >= '0' && c <= '9')
+      digit = (uint32_t)(c - '0');
+    else if (c >= 'a' && c <= 'f')
+      digit = 10U + (uint32_t)(c - 'a');
+    else if (c >= 'A' && c <= 'F')
+      digit = 10U + (uint32_t)(c - 'A');
+    else
+      break;
+
+    value = (value << 4) | digit;
+  }
+
+  return value & 0x00FFFFFFU;
+}
+
+static void gui_append_hex_color(char *buf, int max, int *idx, uint32_t value) {
+  static const char hex[] = "0123456789ABCDEF";
+
+  if (!buf || !idx || max <= 0)
+    return;
+
+  if (*idx < max - 1)
+    buf[(*idx)++] = '0';
+  if (*idx < max - 1)
+    buf[(*idx)++] = 'x';
+  for (int shift = 20; shift >= 0 && *idx < max - 1; shift -= 4)
+    buf[(*idx)++] = hex[(value >> shift) & 0xF];
+}
+
+static int gui_load_theme_palette(const char *path, gui_theme_palette_t *palette) {
+  uint8_t *manifest_data = NULL;
+  size_t manifest_size = 0;
+  char manifest[768];
+  char value[32];
+  static const char *keys[] = {
+      "app_bg",      "app_fg",      "accent",      "accent_soft",
+      "surface",     "surface_alt", "card",        "border",
+      "settings_bg", "settings_panel", "settings_text", "settings_subtext",
+  };
+  uint32_t *slots[] = {
+      &palette->app_bg,      &palette->app_fg,      &palette->accent,
+      &palette->accent_soft,  &palette->surface,     &palette->surface_alt,
+      &palette->card,         &palette->border,      &palette->settings_bg,
+      &palette->settings_panel, &palette->settings_text,
+      &palette->settings_subtext,
+  };
+
+  if (!path || !palette)
+    return -1;
+  if (media_load_file(path, &manifest_data, &manifest_size) != 0)
+    return -1;
+  if (!manifest_data || manifest_size == 0 || manifest_size >= sizeof(manifest)) {
+    media_free_file(manifest_data);
+    return -1;
+  }
+
+  for (size_t i = 0; i < manifest_size; i++)
+    manifest[i] = (char)manifest_data[i];
+  manifest[manifest_size] = '\0';
+  media_free_file(manifest_data);
+
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    if (manifest_get_value(manifest, keys[i], value, sizeof(value)) == 0 &&
+        value[0]) {
+      *slots[i] = gui_parse_hex_color(value);
+    }
+  }
+
+  return 0;
+}
+
+static void gui_save_theme_palette(const char *path,
+                                   const gui_theme_palette_t *palette) {
+  char manifest[768];
+  int idx = 0;
+  static const char *keys[] = {
+      "app_bg",      "app_fg",      "accent",      "accent_soft",
+      "surface",     "surface_alt", "card",        "border",
+      "settings_bg", "settings_panel", "settings_text", "settings_subtext",
+  };
+  uint32_t values[] = {
+      palette->app_bg,      palette->app_fg,      palette->accent,
+      palette->accent_soft,  palette->surface,     palette->surface_alt,
+      palette->card,         palette->border,      palette->settings_bg,
+      palette->settings_panel, palette->settings_text,
+      palette->settings_subtext,
+  };
+
+  if (!path || !palette)
+    return;
+
+  vfs_mkdir("/System", 0755);
+
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    const char *key = keys[i];
+    while (*key && idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = *key++;
+    if (idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = '=';
+    gui_append_hex_color(manifest, (int)sizeof(manifest), &idx, values[i]);
+    if (idx < (int)sizeof(manifest) - 1)
+      manifest[idx++] = '\n';
+  }
+  if (idx < (int)sizeof(manifest))
+    manifest[idx] = '\0';
+  else
+    manifest[sizeof(manifest) - 1] = '\0';
+
+  media_install_text_file(path, manifest);
+}
+
+static int gui_load_saved_theme(void) {
+  char manifest[64];
+  char mode[16];
+  uint8_t *data = NULL;
+  size_t size = 0;
+
+  if (gui_load_theme_palette(GUI_THEME_DARK_PATH, &g_theme_dark) != 0) {
+  }
+  if (gui_load_theme_palette(GUI_THEME_LIGHT_PATH, &g_theme_light) != 0) {
+  }
+
+  if (media_load_file(GUI_THEME_CONFIG_PATH, &data, &size) == 0 && data &&
+      size > 0 && size < sizeof(manifest)) {
+    for (size_t i = 0; i < size; i++)
+      manifest[i] = (char)data[i];
+    manifest[size] = '\0';
+    if (manifest_get_value(manifest, "mode", mode, sizeof(mode)) == 0) {
+      int parsed = gui_theme_mode_from_text(mode);
+      if (parsed >= 0)
+        g_theme_mode = (gui_theme_mode_t)parsed;
+    }
+    media_free_file(data);
+  } else if (data) {
+    media_free_file(data);
+  }
+
+  return 0;
+}
+
+static void gui_save_theme_preference(void) {
+  char manifest[64];
+  int idx = 0;
+
+  vfs_mkdir("/System", 0755);
+  for (const char *p = "mode="; *p && idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  for (const char *p = gui_theme_mode_name(g_theme_mode); *p &&
+       idx < (int)sizeof(manifest) - 1; p++)
+    manifest[idx++] = *p;
+  if (idx < (int)sizeof(manifest) - 1)
+    manifest[idx++] = '\n';
+  if (idx < (int)sizeof(manifest))
+    manifest[idx] = '\0';
+  else
+    manifest[sizeof(manifest) - 1] = '\0';
+  media_install_text_file(GUI_THEME_CONFIG_PATH, manifest);
 }
 
 /* UI Theme Colors - mapped through current palette */
@@ -364,6 +627,7 @@ static int installer_progress_total_files = 0;
 static int installer_progress_processed_files = 0;
 static int installer_install_journal_ready = 0;
 static int installer_install_journal_disk_index = -1;
+static int installer_target_disk_index = -1;
 static uint32_t installer_install_journal_next_lba = 0;
 static uint32_t installer_install_journal_last_lba = 0;
 static char installer_target_root[96];
@@ -373,6 +637,7 @@ static char installer_progress_stage[64] = "Ready";
 static char installer_progress_detail[160] =
     "The installer is waiting to start.";
 static char installer_progress_current_item[160] = "";
+static char installer_system_image_payload_path[96] = "";
 static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
@@ -711,11 +976,31 @@ static int mouse_x = 512, mouse_y = 384;
 static int mouse_buttons = 0;
 static int settings_active_tab = 0;
 static char settings_status[96] = "Tune your desktop experience.";
+static int settings_theme_active_slot = 2;
 static char settings_user_new_name[32] = "";
 static char settings_user_new_password[32] = "";
 static char settings_user_selected[32] = "";
 static int settings_user_new_role_idx = 1;
 static int settings_user_active_field = 0;
+
+static const char *settings_theme_slots[] = {
+    "App BG",       "App FG",       "Accent",      "Accent Soft",
+    "Surface",      "Surface Alt",  "Card",        "Border",
+    "Settings BG",  "Settings Panel","Settings Text","Settings Subtext",
+};
+
+static const uint32_t settings_theme_chips[] = {
+    0x0B1020, 0x111827, 0x1F2937, 0x334155, 0x475569, 0x64748B,
+    0x94A3B8, 0xCBD5E1, 0xE2E8F0, 0xF8FAFC, 0x2563EB, 0x3B82F6,
+    0x14B8A6, 0x22C55E, 0xF59E0B, 0xEF4444, 0xDB2777, 0x8B5CF6,
+    0xFDE68A, 0xF9A8D4, 0xA6E3A1, 0x93C5FD, 0xF5F5F5, 0x1E293B,
+};
+
+#define SETTINGS_THEME_SLOT_COUNT \
+  ((int)(sizeof(settings_theme_slots) / sizeof(settings_theme_slots[0])))
+
+#define SETTINGS_THEME_CHIP_COUNT \
+  ((int)(sizeof(settings_theme_chips) / sizeof(settings_theme_chips[0])))
 
 typedef struct {
   uint16_t width;
@@ -767,6 +1052,14 @@ static void gui_apply_saved_boot_resolution(uint32_t **framebuffer,
                                             uint32_t *width,
                                             uint32_t *height,
                                             uint32_t *pitch);
+static int gui_theme_mode_from_text(const char *text);
+static const char *gui_theme_mode_name(gui_theme_mode_t mode);
+static gui_theme_palette_t *gui_active_theme_palette(void);
+static uint32_t *gui_theme_slot_ptr(gui_theme_palette_t *palette, int slot);
+static uint32_t gui_theme_slot_value(const gui_theme_palette_t *palette, int slot);
+static int gui_load_theme_palette(const char *path, gui_theme_palette_t *palette);
+static void gui_save_theme_palette(const char *path,
+                                   const gui_theme_palette_t *palette);
 static void ensure_gui_app_dirs(void);
 static int settings_add_user_account(void);
 static int settings_remove_selected_user_account(void);
@@ -806,7 +1099,7 @@ static const char *settings_default_status_message(int page) {
   case 2:
     return "Inspect storage and disk tools.";
   case 3:
-    return "Adjust wallpapers, blur, and graphics.";
+    return "Edit shipped theme presets with the Windows Theme Editor.";
   case 4:
     return "Backup tools are not available yet.";
   case 5:
@@ -819,6 +1112,116 @@ static const char *settings_default_status_message(int page) {
     return "Recovery tools and reset actions.";
   default:
     return "System build and environment details.";
+  }
+}
+
+static void theme_builder_apply_slot_color(int slot, uint32_t color) {
+  gui_theme_palette_t *palette = gui_active_theme_palette();
+  uint32_t *target = gui_theme_slot_ptr(palette, slot);
+
+  if (!target)
+    return;
+  *target = color & 0x00FFFFFFU;
+  compositor_mark_full_redraw();
+}
+
+static void theme_builder_save_current_theme(void) {
+  gui_save_theme_preference();
+  str_copy_safe(settings_status, "Theme saved to /System/theme.cfg.",
+                sizeof(settings_status));
+}
+
+static void draw_theme_builder_window(int content_x, int content_y,
+                                      int content_w, int content_h) {
+  const gui_theme_palette_t *theme = gui_theme_palette();
+  int preview_x = content_x + 14;
+  int preview_y = content_y + 14;
+  int preview_w = content_w - 28;
+  int preview_h = 102;
+  int slots_x = content_x + 14;
+  int slots_y = preview_y + preview_h + 14;
+  int slot_gap = 8;
+  int slot_w = (content_w - 28 - slot_gap * 3) / 4;
+  int slot_h = 40;
+  int chips_x = content_x + 14;
+  int chips_y = slots_y + ((slot_h + slot_gap) * 3) + 14;
+  int chip_gap = 8;
+  int chip_w = 32;
+  int chip_h = 26;
+  int chip_cols = 6;
+  int title_bg = theme->settings_panel;
+  int selected_slot = settings_theme_active_slot;
+
+  if (selected_slot < 0 || selected_slot >= SETTINGS_THEME_SLOT_COUNT)
+    selected_slot = 0;
+
+  gui_draw_rect(content_x, content_y, content_w, content_h, theme->settings_bg);
+  gui_draw_string(content_x + 14, content_y + 12, "Theme Presets",
+                  theme->settings_text, theme->settings_bg);
+  gui_draw_string(content_x + 14, content_y + 30,
+                  "Pick a slot, preview the palette, then save it to disk.",
+                  theme->settings_subtext, theme->settings_bg);
+
+  gui_draw_rect(preview_x, preview_y, preview_w, preview_h, title_bg);
+  gui_draw_rect(preview_x, preview_y, preview_w, 3, theme->accent);
+  gui_draw_string(preview_x + 12, preview_y + 10, "Live Preview",
+                  theme->settings_text, title_bg);
+  gui_draw_string(preview_x + 12, preview_y + 28,
+                  gui_theme_mode_name(g_theme_mode), theme->accent_soft, title_bg);
+  gui_draw_string(preview_x + 12, preview_y + 48,
+                  "The palette below edits the active mode in memory.",
+                  theme->settings_subtext, title_bg);
+  gui_draw_rect(preview_x + preview_w - 196, preview_y + 12, 52, 26,
+                g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+  gui_draw_string(preview_x + preview_w - 186, preview_y + 20, "Light",
+                  0xFFFFFF, g_theme_mode == GUI_THEME_LIGHT ? 0x2563EB : 0x475569);
+  gui_draw_rect(preview_x + preview_w - 136, preview_y + 12, 52, 26,
+                g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+  gui_draw_string(preview_x + preview_w - 126, preview_y + 20, "Dark",
+                  0xFFFFFF, g_theme_mode == GUI_THEME_DARK ? 0x111827 : 0x475569);
+  gui_draw_rect(preview_x + preview_w - 74, preview_y + 12, 60, 26, 0x2563EB);
+  gui_draw_string(preview_x + preview_w - 62, preview_y + 20, "Save",
+                  0xFFFFFF, 0x2563EB);
+
+  gui_draw_rect(preview_x + 12, preview_y + 64, preview_w - 24, 24,
+                theme->surface_alt);
+  gui_draw_string(preview_x + 24, preview_y + 71,
+                  settings_theme_slots[selected_slot], theme->app_fg,
+                  theme->surface_alt);
+  gui_draw_string(preview_x + preview_w - 230, preview_y + 71,
+                  "Selected slot", theme->app_muted, theme->surface_alt);
+
+  for (int i = 0; i < SETTINGS_THEME_SLOT_COUNT; i++) {
+    int col = i % 4;
+    int row = i / 4;
+    int sx = slots_x + col * (slot_w + slot_gap);
+    int sy = slots_y + row * (slot_h + slot_gap);
+    uint32_t color = gui_theme_slot_value(theme, i);
+    uint32_t text_color = gui_contrast_title_color(color);
+    uint32_t outline = i == selected_slot ? theme->accent : theme->border;
+
+    gui_draw_rect(sx, sy, slot_w, slot_h, color);
+    gui_draw_rect_outline(sx, sy, slot_w, slot_h, outline, i == selected_slot ? 2 : 1);
+    gui_draw_string(sx + 8, sy + 8, settings_theme_slots[i], text_color, color);
+    gui_draw_string(sx + 8, sy + 22, "click to edit", text_color, color);
+  }
+
+  gui_draw_rect(chips_x, chips_y - 4, preview_w, 24, theme->surface_alt);
+  gui_draw_string(chips_x + 12, chips_y + 4, "Color chips", theme->app_fg,
+                  theme->surface_alt);
+  gui_draw_string(chips_x + 118, chips_y + 4,
+                  "Click a chip to update the selected slot.",
+                  theme->app_muted, theme->surface_alt);
+
+  for (int i = 0; i < SETTINGS_THEME_CHIP_COUNT; i++) {
+    int col = i % chip_cols;
+    int row = i / chip_cols;
+    int cx = chips_x + col * (chip_w + chip_gap);
+    int cy = chips_y + 28 + row * (chip_h + chip_gap);
+    uint32_t color = settings_theme_chips[i];
+
+    gui_draw_rect(cx, cy, chip_w, chip_h, color);
+    gui_draw_rect_outline(cx, cy, chip_w, chip_h, theme->border, 1);
   }
 }
 
@@ -3226,8 +3629,12 @@ static void gui_open_installer_window(void) {
     }
   }
 
-  win_w = (int)primary_display.width - 80;
-  win_h = (int)primary_display.height - 80;
+  win_w = (int)primary_display.width - 220;
+  win_h = (int)primary_display.height - 160;
+  if (win_w < 760)
+    win_w = (int)primary_display.width - 40;
+  if (win_h < 520)
+    win_h = (int)primary_display.height - 40;
   if (win_w < 640)
     win_w = (int)primary_display.width;
   if (win_h < 420)
@@ -3875,6 +4282,7 @@ static int dock_loaded = 0;
 
 typedef enum {
   STARTUP_FLOW_NONE = 0,
+  STARTUP_FLOW_COMPLETING_INSTALL,
   STARTUP_FLOW_SETUP_ACCOUNT,
   STARTUP_FLOW_LOGIN
 } startup_flow_t;
@@ -3900,6 +4308,8 @@ static char startup_input_password[32] = "";
 static int startup_active_field = 0;
 static char startup_status[96] = "";
 static struct window *startup_window = NULL;
+static uint64_t startup_completion_started_ms = 0;
+static uint64_t startup_completion_deadline_ms = 0;
 
 static int account_role_is_admin(void) {
   return str_cmp(account_role, "admin") == 0;
@@ -6020,6 +6430,19 @@ static void installer_clear_first_boot_setup_flag(void) {
   installer_refresh_bootloader_state("", 0);
 }
 
+static int installer_first_boot_setup_pending(void) {
+  char manifest[192];
+  char value[16];
+
+  if (read_text_file("/System/installer-state.txt", manifest, sizeof(manifest)) <
+      0)
+    return 0;
+  if (manifest_get_value(manifest, "first_boot_setup", value, sizeof(value)) !=
+      0)
+    return 0;
+  return value[0] == '1';
+}
+
 static void mask_secret(const char *src, char *dst, int max) {
   int idx = 0;
   if (!dst || max <= 0)
@@ -6350,19 +6773,23 @@ static void seed_all_system_apps_once(void) {
 
 static void startup_open_modal_window(void) {
   int setup_active = startup_setup_account_active();
-  int win_w = setup_active ? (int)primary_display.width : 520;
-  int win_h = setup_active ? (int)primary_display.height : 280;
-  int win_x = setup_active ? 0 : ((int)primary_display.width - win_w) / 2;
-  int win_y = setup_active ? 0 : ((int)primary_display.height - win_h) / 2;
+  int completion_active = startup_flow == STARTUP_FLOW_COMPLETING_INSTALL;
+  int full_screen = setup_active || completion_active;
+  int win_w = full_screen ? (int)primary_display.width : 520;
+  int win_h = full_screen ? (int)primary_display.height : 280;
+  int win_x = full_screen ? 0 : ((int)primary_display.width - win_w) / 2;
+  int win_y = full_screen ? 0 : ((int)primary_display.height - win_h) / 2;
   const char *title = startup_setup_welcome_active()
                           ? "Welcome"
                           : startup_setup_storage_active()
                                 ? "Prepare Storage"
                           : startup_flow == STARTUP_FLOW_SETUP_ACCOUNT
                                 ? "Setup Account"
+                          : completion_active
+                                ? "Completing Installation"
                           : "Login";
 
-  if (setup_active) {
+  if (full_screen) {
     desktop_hide_context_menu();
     secure_attention_open = 0;
     startup_close_other_windows();
@@ -6395,6 +6822,16 @@ static void startup_begin_login_flow(const char *message, int preserve_username)
   startup_open_modal_window();
 }
 
+static void startup_begin_first_boot_completion(void) {
+  session_authenticated = 0;
+  startup_flow = STARTUP_FLOW_COMPLETING_INSTALL;
+  startup_completion_started_ms = arch_timer_get_ms();
+  startup_completion_deadline_ms = startup_completion_started_ms + 1800;
+  set_startup_status("Completing installation from the installed disk.");
+  startup_close_other_windows();
+  startup_open_modal_window();
+}
+
 static void ensure_startup_flow(void) {
   int needs_account_setup = 0;
   int setup_complete = 0;
@@ -6413,6 +6850,14 @@ static void ensure_startup_flow(void) {
     extern int storage_get_disk_count(void);
     live_disk_boot = boot_is_live_media() || boot_is_usb_boot();
     storage_ready = live_disk_boot || storage_get_disk_count() > 0;
+  }
+
+  if (startup_flow == STARTUP_FLOW_COMPLETING_INSTALL)
+    return;
+
+  if (!live_disk_boot && installer_first_boot_setup_pending()) {
+    startup_begin_first_boot_completion();
+    return;
   }
 
   load_account_state();
@@ -6487,6 +6932,31 @@ static void complete_startup_auth(void) {
   }
   seed_all_system_apps_once();
   desktop_refresh();
+}
+
+static void startup_process_first_boot_completion(void) {
+  if (startup_flow != STARTUP_FLOW_COMPLETING_INSTALL)
+    return;
+
+  if (!startup_completion_deadline_ms)
+    startup_completion_deadline_ms = arch_timer_get_ms() + 1800;
+  if (arch_timer_get_ms() < startup_completion_deadline_ms)
+    return;
+
+  set_startup_status("Finalizing installed system configuration.");
+  runtime_sync_boot_storage_to_live();
+  ensure_user_storage_dirs();
+  seed_all_system_apps_once();
+  save_setup_state(0, 1);
+  installer_clear_first_boot_setup_flag();
+  startup_completion_started_ms = 0;
+  startup_completion_deadline_ms = 0;
+  startup_flow = STARTUP_FLOW_NONE;
+  if (startup_window) {
+    gui_destroy_window(startup_window);
+    startup_window = NULL;
+  }
+  ensure_startup_flow();
 }
 
 static void submit_startup_flow(void) {
@@ -7191,6 +7661,7 @@ typedef struct {
 
 static char installer_log_buffer[4096];
 static char installer_log_target_root[256];
+static int installer_log_depth = 0;
 
 static void installer_append_to_buf(char *buf, int max, const char *text) {
   int idx = 0;
@@ -7205,6 +7676,9 @@ static void installer_append_to_buf(char *buf, int max, const char *text) {
 }
 
 static int installer_selected_disk_index(void) {
+  if ((installer_active || installer_show_restart_screen) &&
+      installer_target_disk_index >= 0)
+    return installer_target_disk_index;
   installer_refresh_disk_inventory();
   if (installer_disk_count == 0)
     return -1;
@@ -7219,22 +7693,24 @@ static void installer_log_clear(void) {
 }
 
 static void installer_log_append_path(const char *path, const char *line) {
-  char existing[4096];
-  int idx = 0;
+  struct file *f;
+  int len = 0;
 
   if (!path || !line || !path[0])
     return;
 
-  existing[0] = '\0';
-  read_text_file(path, existing, sizeof(existing));
-  while (existing[idx] && idx < (int)sizeof(existing) - 1)
-    idx++;
-  for (int i = 0; line[i] && idx < (int)sizeof(existing) - 1; i++)
-    existing[idx++] = line[i];
-  if (idx < (int)sizeof(existing) - 1)
-    existing[idx++] = '\n';
-  existing[idx] = '\0';
-  write_text_file(path, existing);
+  while (line[len])
+    len++;
+
+  installer_ensure_parent_dirs(path);
+  f = vfs_open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+  if (!f)
+    return;
+
+  if (len > 0)
+    vfs_write(f, line, (size_t)len);
+  vfs_write(f, "\n", 1);
+  vfs_close(f);
 }
 
 static void installer_log_send_to_host(const char *line) {
@@ -7261,6 +7737,10 @@ static void installer_log(const char *line) {
     installer_log_buffer[idx++] = '\n';
   installer_log_buffer[idx] = '\0';
 
+  if (installer_log_depth > 0)
+    return;
+
+  installer_log_depth++;
   installer_log_append_path("/System/install.log", line);
   if (installer_log_target_root[0]) {
     char target_log[320];
@@ -7268,6 +7748,7 @@ static void installer_log(const char *line) {
     installer_append_to_buf(target_log, sizeof(target_log), "/install.log");
     installer_log_append_path(target_log, line);
   }
+  installer_log_depth--;
 }
 
 static void installer_normalize_path(const char *src, char *dst, int max) {
@@ -7615,19 +8096,27 @@ static int installer_copy_tree_callback(void *ctx, const char *name, int len,
 }
 
 static const char *installer_system_image_root_path(void);
+static int installer_system_image_is_archive(const char *path);
 static int installer_copy_tree_to_root(const char *src_root, const char *dst_root,
                                        int *copied_files, int *failed_files,
                                        const char *log_label);
 static int installer_copy_boot_aliases(const char *target_root, int *copied_files,
                                        int *failed_files);
+static int installer_payload_file_exists(const char *path);
+static const char *installer_system_disk_image_path(void);
+static int installer_apply_system_disk_image(int disk_index);
 
 static int installer_copy_system_image_to_root(const char *target_root,
                                                int *copied_files,
                                                int *failed_files) {
   const char *installer_system_image_root = installer_system_image_root_path();
-  if (installer_copy_tree_to_root(installer_system_image_root, target_root,
-                                  copied_files, failed_files,
-                                  "system image") != 0) {
+  if (installer_system_image_is_archive(installer_system_image_root)) {
+    if (media_zip_extract_file_to_root(installer_system_image_root, target_root,
+                                       copied_files, failed_files) != 0)
+      return -1;
+  } else if (installer_copy_tree_to_root(installer_system_image_root,
+                                         target_root, copied_files,
+                                         failed_files, "system image") != 0) {
     return -1;
   }
   return installer_copy_boot_aliases(target_root, copied_files, failed_files);
@@ -7643,6 +8132,17 @@ static int installer_payload_file_exists(const char *path) {
     return 0;
   vfs_close(f);
   return 1;
+}
+
+static int installer_system_image_is_archive(const char *path) {
+  size_t len = 0;
+
+  if (!path)
+    return 0;
+  while (path[len])
+    len++;
+  return (len >= 4 && path[len - 4] == '.' && path[len - 3] == 'z' &&
+          path[len - 2] == 'i' && path[len - 1] == 'p');
 }
 
 static int installer_payload_any_file_exists(const char **paths, int count) {
@@ -7687,6 +8187,10 @@ static int installer_count_tree_files(const char *src_root) {
 
   if (!src_root || !src_root[0])
     return 0;
+  if (installer_system_image_is_archive(src_root)) {
+    int count = media_zip_count_file_entries(src_root);
+    return (count > 0) ? count : 0;
+  }
   dir = vfs_open(src_root, O_RDONLY, 0);
   if (!dir)
     return 0;
@@ -7706,51 +8210,39 @@ static int installer_boot_alias_copy_count(const char *target_root) {
   return installer_payload_file_exists(boot_bios_path) ? 3 : 0;
 }
 
-static int installer_score_system_image_root(const char *root) {
-  static const char *boot_suffixes[] = {
-      "/boot",
-      "/boot/main.sys",
-      "/boot/bootloader.sys",
-      "/boot/limine-bios.sys",
-      "/boot/limine-bios-cd.bin",
-      "/boot/limine-uefi-cd.bin",
-      "/boot/limine.conf",
-      "/boot/BOOTABLE.CFG",
-  };
-  char probe[192];
-  int score = 0;
-
-  if (!root || !root[0])
-    return -1;
-
-  for (int i = 0; i < (int)(sizeof(boot_suffixes) / sizeof(boot_suffixes[0]));
-       i++) {
-    str_copy_safe(probe, root, sizeof(probe));
-    installer_append_to_buf(probe, sizeof(probe), boot_suffixes[i]);
-    if (installer_payload_file_exists(probe))
-      score++;
-  }
-  return score;
+static const char *installer_system_disk_image_path(void) {
+  if (installer_payload_file_exists("/install/system.img"))
+    return "/install/system.img";
+  if (installer_payload_file_exists("/setup/install/system.img"))
+    return "/setup/install/system.img";
+  return NULL;
 }
 
 static const char *installer_system_image_root_path(void) {
-  static const char *roots[] = {"/install/system-image",
-                                "/setup/install/system-image"};
-  int best_score = -1;
-  const char *best_root = "/install/system-image";
-
-  for (int i = 0; i < (int)(sizeof(roots) / sizeof(roots[0])); i++) {
-    int score = installer_score_system_image_root(roots[i]);
-    if (score > best_score) {
-      best_score = score;
-      best_root = roots[i];
-    }
-  }
-
-  return best_root;
+  if (installer_system_image_payload_path[0] &&
+      installer_payload_file_exists(installer_system_image_payload_path))
+    return installer_system_image_payload_path;
+  if (installer_payload_file_exists("/install/system-image"))
+    return "/install/system-image";
+  if (installer_payload_file_exists("/setup/install/system-image"))
+    return "/setup/install/system-image";
+  if (installer_payload_file_exists("/install/system-image.zip"))
+    return "/install/system-image.zip";
+  if (installer_payload_file_exists("/setup/install/system-image.zip"))
+    return "/setup/install/system-image.zip";
+  return "/setup/install/system-image";
 }
 
-static int installer_validate_system_image_payload(void) {
+static void installer_select_system_image_payload(const char *path) {
+  if (!path || !path[0]) {
+    installer_system_image_payload_path[0] = '\0';
+    return;
+  }
+  str_copy_safe(installer_system_image_payload_path, path,
+                sizeof(installer_system_image_payload_path));
+}
+
+static int installer_validate_system_image_candidate(const char *payload_root) {
   static const char *required_suffixes[] = {
       "/boot/main.sys",
       "/boot/bootloader.sys",
@@ -7771,9 +8263,38 @@ static int installer_validate_system_image_payload(void) {
       "/limine/limine.conf",
       "/EFI/BOOT/limine.conf",
   };
-  const char *payload_root = installer_system_image_root_path();
   char full_path[192];
   char msg[320];
+
+  if (!payload_root || !payload_root[0])
+    return -1;
+
+  if (installer_system_image_is_archive(payload_root)) {
+    for (int i = 0;
+         i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
+         i++) {
+      if (media_zip_file_has_entry(payload_root, required_suffixes[i]))
+        continue;
+      str_copy_safe(msg, "install archive unusable: ", sizeof(msg));
+      installer_append_to_buf(msg, sizeof(msg), payload_root);
+      installer_append_to_buf(msg, sizeof(msg), required_suffixes[i]);
+      installer_log(msg);
+      return -1;
+    }
+
+    for (int i = 0;
+         i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
+         i++) {
+      if (media_zip_file_has_entry(payload_root, limine_cfg_suffixes[i]))
+        return 0;
+    }
+
+    str_copy_safe(msg, "install archive unusable: no Limine config in ",
+                  sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), payload_root);
+    installer_log(msg);
+    return -1;
+  }
 
   for (int i = 0;
        i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
@@ -7798,8 +8319,47 @@ static int installer_validate_system_image_payload(void) {
       return 0;
   }
 
-  str_copy_safe(msg, "install payload missing: no Limine config in system image",
+  str_copy_safe(msg, "install payload missing: no Limine config in ",
                 sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), payload_root);
+  installer_log(msg);
+  return -1;
+}
+
+static int installer_validate_system_image_payload(void) {
+  static const char *payload_candidates[] = {
+      "/install/system-image",
+      "/setup/install/system-image",
+      "/install/system-image.zip",
+      "/setup/install/system-image.zip",
+  };
+
+  installer_select_system_image_payload(NULL);
+  for (int i = 0;
+       i < (int)(sizeof(payload_candidates) / sizeof(payload_candidates[0]));
+       i++) {
+    if (!installer_payload_file_exists(payload_candidates[i]))
+      continue;
+    if (installer_validate_system_image_candidate(payload_candidates[i]) == 0) {
+      installer_select_system_image_payload(payload_candidates[i]);
+      return 0;
+    }
+  }
+
+  installer_log("install payload missing: no usable system image payload found");
+  return -1;
+}
+
+static int installer_validate_raw_system_disk_image_payload(void) {
+  const char *image_path = installer_system_disk_image_path();
+  char msg[320];
+
+  if (image_path && installer_payload_file_exists(image_path))
+    return 0;
+
+  str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg),
+                          image_path ? image_path : "/install/system.img");
   installer_log(msg);
   return -1;
 }
@@ -7924,6 +8484,29 @@ static int installer_copy_boot_aliases(const char *target_root, int *copied_file
   return failed == 0 ? 0 : -1;
 }
 
+static int installer_apply_system_disk_image(int disk_index) {
+  const char *image_path = installer_system_disk_image_path();
+  char msg[192];
+  extern int storage_write_disk_image_file(int disk_index, const char *path);
+  extern void refresh_external_storage_views(void);
+
+  if (!image_path || disk_index < 0)
+    return -1;
+
+  str_copy_safe(msg, "writing raw system disk image from ", sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), image_path);
+  installer_log(msg);
+
+  if (storage_write_disk_image_file(disk_index, image_path) != 0) {
+    installer_log("install failed: raw disk image write failed");
+    return -1;
+  }
+
+  refresh_external_storage_views();
+  installer_log("raw system disk image written to target disk");
+  return 0;
+}
+
 static int installer_apply_system_image_payload(const char *target_root) {
   int copied = 0;
   int failed = 0;
@@ -7989,6 +8572,7 @@ static int installer_finalize_install(void) {
   int selected_disk_index;
   int user_partition_result = 0;
   int install_partition_result = 0;
+  int raw_disk_image_install = installer_system_disk_image_path() != NULL;
 
   extern int storage_prepare_user_partition(int disk_index);
   extern int storage_ensure_install_partitions(int disk_index);
@@ -8001,23 +8585,27 @@ static int installer_finalize_install(void) {
     installer_log("install failed: target disk index unavailable");
     return -1;
   }
-  install_partition_result =
-      storage_ensure_install_partitions(selected_disk_index);
-  if (install_partition_result < 0) {
-    installer_log("install failed: could not prepare boot partitions");
-    return -1;
-  } else if (install_partition_result > 0) {
-    installer_log("prepared EFI/system boot partitions for the target disk");
-  }
+  if (!raw_disk_image_install) {
+    install_partition_result =
+        storage_ensure_install_partitions(selected_disk_index);
+    if (install_partition_result < 0) {
+      installer_log("install failed: could not prepare boot partitions");
+      return -1;
+    } else if (install_partition_result > 0) {
+      installer_log("prepared EFI/system boot partitions for the target disk");
+    }
 
-  user_partition_result =
-      storage_prepare_user_partition(selected_disk_index);
-  if (user_partition_result > 0) {
-    installer_log("created HDD user data partition for first boot");
-  } else if (user_partition_result == 0) {
-    installer_log("user data partition already present or not required");
+    user_partition_result =
+        storage_prepare_user_partition(selected_disk_index);
+    if (user_partition_result > 0) {
+      installer_log("created HDD user data partition for first boot");
+    } else if (user_partition_result == 0) {
+      installer_log("user data partition already present or not required");
+    } else {
+      installer_log("warning: could not prepare HDD user data partition");
+    }
   } else {
-    installer_log("warning: could not prepare HDD user data partition");
+    installer_log("raw disk image install complete; keeping on-disk partition layout unchanged");
   }
 
   if (installer_write_target_config() != 0) {
@@ -8035,15 +8623,15 @@ static int installer_finalize_install(void) {
   }
 
   summary[0] = '\0';
-  str_copy_safe(summary, "Installed system image; first boot will run setup",
+  str_copy_safe(summary, "Installed system image; final setup runs after reboot",
                 sizeof(summary));
   installer_log("install complete");
   installer_log("selected hard disk now contains the bootable system image");
-  installer_log("first boot will prompt for account creation");
+  installer_log("first HDD boot will complete OS configuration");
   installer_progress_current_item[0] = '\0';
   installer_set_progress_state(
       100, "Ready To Reboot", summary,
-      "Installation complete. Sync finished and automatic reboot is armed.");
+      "Rebooting to the hard disk for the final installation phase.");
   installer_log("reboot scheduled in 3 seconds");
   installer_has_run = 1;
   installer_show_restart_screen = 1;
@@ -8060,6 +8648,12 @@ static void installer_start_background_install(void) {
   installer_log_clear();
   refresh_external_storage_views();
   installer_refresh_disk_inventory();
+  installer_target_disk_index = installer_selected_disk_index();
+  if (installer_target_disk_index < 0) {
+    installer_fail_background("Install blocked. No valid target disk is selected.",
+                              "install blocked: selected target disk missing");
+    return;
+  }
   installer_has_run = 0;
   installer_show_restart_screen = 0;
   installer_active = 1;
@@ -8081,6 +8675,7 @@ static void installer_start_background_install(void) {
   installer_efi_root[0] = '\0';
   installer_update_root[0] = '\0';
   installer_progress_current_item[0] = '\0';
+  installer_select_system_image_payload(NULL);
   installer_set_progress_state(2, "Preparing", "Preparing install...",
                                "Loading installer context and refreshing storage.");
   installer_log("starting system image install");
@@ -8090,6 +8685,7 @@ static void installer_fail_background(const char *status, const char *log_line) 
   installer_active = 0;
   installer_phase = 0;
   installer_show_restart_screen = 0;
+  installer_target_disk_index = -1;
   installer_page = INSTALLER_PAGE_REVIEW;
   installer_set_status(status);
   if (log_line)
@@ -8126,6 +8722,7 @@ static void installer_process_background_install(void) {
     return;
   case 2: {
     extern int storage_disk_supports_partition_writes(int disk_index);
+    const char *raw_image_path = installer_system_disk_image_path();
     int selected_disk_index = installer_selected_disk_index();
     if (selected_disk_index < 0) {
       installer_fail_background("Install blocked. No valid target disk is selected.",
@@ -8145,26 +8742,49 @@ static void installer_process_background_install(void) {
                                   sizeof(installer_update_root), "boot");
     str_copy_safe(installer_log_target_root, installer_target_root,
                   sizeof(installer_log_target_root));
-    if (installer_validate_system_image_payload() != 0) {
-      installer_fail_background("Install blocked. Boot files are missing from the installer image.",
-                                "install blocked: boot payload incomplete");
-      return;
-    }
-    installer_progress_total_files =
-        installer_count_tree_files(installer_system_image_root_path());
-    installer_progress_total_files +=
-        installer_boot_alias_copy_count(installer_target_root);
-    if (installer_progress_total_files <= 0)
+    if (raw_image_path) {
+      if (installer_validate_raw_system_disk_image_payload() != 0) {
+        installer_fail_background("Install blocked. Raw system disk image is missing from the installer image.",
+                                  "install blocked: raw system disk image payload missing");
+        return;
+      }
       installer_progress_total_files = 1;
-    installer_progress_processed_files = 0;
-    installer_set_progress_state(
-        18, "Validating Payload", "Preparing extracted system image...",
-        "Payload verified. Counting files before copy begins.");
+      installer_progress_processed_files = 0;
+      installer_set_progress_state(
+          18, "Validating Payload", "Preparing raw system disk image...",
+          "Bootable disk image found. The installer will write it directly to the target disk.");
+    } else {
+      if (installer_validate_system_image_payload() != 0) {
+        installer_fail_background("Install blocked. Boot files are missing from the installer image.",
+                                  "install blocked: boot payload incomplete");
+        return;
+      }
+      installer_progress_total_files =
+          installer_count_tree_files(installer_system_image_root_path());
+      installer_progress_total_files +=
+          installer_boot_alias_copy_count(installer_target_root);
+      if (installer_progress_total_files <= 0)
+        installer_progress_total_files = 1;
+      installer_progress_processed_files = 0;
+      installer_set_progress_state(
+          18, "Validating Payload", "Preparing extracted system image...",
+          "Payload verified. Counting files before copy begins.");
+    }
     installer_phase = 3;
     return;
   }
   case 3:
-    if (installer_apply_system_image_payload(installer_target_root) != 0) {
+    if (installer_system_disk_image_path()) {
+      int selected_disk_index = installer_selected_disk_index();
+      if (installer_apply_system_disk_image(selected_disk_index) != 0) {
+        installer_fail_background("Install failed. Raw system disk image write failed.",
+                                  "install failed: raw system disk image write failed");
+        return;
+      }
+      installer_copied_files = 1;
+      installer_failed_files = 0;
+      installer_progress_processed_files = installer_progress_total_files;
+    } else if (installer_apply_system_image_payload(installer_target_root) != 0) {
       installer_fail_background("Install failed. Extracted system image copy failed.",
                                 "install failed: extracted system image copy failed");
       return;
@@ -8187,14 +8807,119 @@ static void installer_process_background_install(void) {
   }
 }
 
+static int installer_stage_value(int start, int end) {
+  int done = installer_progress_done;
+
+  if (done <= start)
+    return 0;
+  if (done >= end)
+    return 100;
+  return ((done - start) * 100) / (end - start);
+}
+
+static void draw_installation_stage_bar(int x, int y, int w, int h,
+                                        int percent) {
+  int fill_w;
+
+  if (percent < 0)
+    percent = 0;
+  if (percent > 100)
+    percent = 100;
+
+  draw_rounded_rect(x, y, w, h, h / 2, 0x050505);
+  fill_w = (w * percent) / 100;
+  if (fill_w > 0)
+    draw_rounded_rect(x, y, fill_w < h ? h : fill_w, h, h / 2, 0xA6A6A6);
+}
+
+static void draw_installation_stage_layout(int content_x, int content_y,
+                                           int content_w, int content_h,
+                                           int copy_percent,
+                                           int expand_percent,
+                                           int configure_percent,
+                                           int complete_percent) {
+  int card_w = content_w > 660 ? 604 : content_w - 48;
+  int card_h = 482;
+  int card_x;
+  int card_y;
+  int text_x;
+  int bar_x;
+  int bar_w;
+  int row_y;
+  int top_r = 0x9A;
+  int top_g = 0xF7;
+  int top_b = 0xEE;
+  int bottom_r = 0x08;
+  int bottom_g = 0x78;
+  int bottom_b = 0xB8;
+
+  if (card_w < 360)
+    card_w = content_w - 24;
+  if (card_h > content_h - 56)
+    card_h = content_h - 56;
+
+  card_x = content_x + (content_w - card_w) / 2;
+  card_y = content_y + (content_h - card_h) / 2;
+  text_x = card_x + 36;
+  bar_x = card_x + 30;
+  bar_w = card_w - 72;
+
+  for (int y = 0; y < content_h; y++) {
+    int denom = content_h > 1 ? content_h - 1 : 1;
+    uint32_t r = (uint32_t)(top_r + ((bottom_r - top_r) * y) / denom);
+    uint32_t g = (uint32_t)(top_g + ((bottom_g - top_g) * y) / denom);
+    uint32_t b = (uint32_t)(top_b + ((bottom_b - top_b) * y) / denom);
+    gui_draw_rect(content_x, content_y + y, content_w, 1,
+                  (r << 16) | (g << 8) | b);
+  }
+
+  gui_fill_rect_alpha(card_x + 6, card_y + 8, card_w, card_h, 0x22000000);
+  draw_rounded_rect(card_x, card_y, card_w, card_h, 18, 0xF6F6F6);
+
+  row_y = card_y + 30;
+  gui_draw_string(text_x, row_y, "Copying OS files...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 64, bar_w, 10, copy_percent);
+
+  row_y += 108;
+  gui_draw_string(text_x, row_y, "Expanding Files...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, expand_percent);
+
+  row_y += 108;
+  gui_draw_string(text_x, row_y, "Configuring OS...", 0x000000, 0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, configure_percent);
+
+  row_y += 112;
+  gui_draw_string(text_x, row_y, "Completing installation...", 0x000000,
+                  0xF6F6F6);
+  draw_installation_stage_bar(bar_x, row_y + 72, bar_w, 8, complete_percent);
+}
+
 static void draw_installer_window(int content_x, int content_y, int content_w,
                                   int content_h) {
   const gui_theme_palette_t *theme = gui_theme_palette();
-  installer_refresh_disk_inventory();
+  if (!installer_active && !installer_show_restart_screen)
+    installer_refresh_disk_inventory();
   if (installer_show_restart_screen)
     installer_page = INSTALLER_PAGE_COMPLETE;
   else if (installer_active)
     installer_page = INSTALLER_PAGE_PROGRESS;
+
+  if (installer_page == INSTALLER_PAGE_PROGRESS ||
+      installer_page == INSTALLER_PAGE_COMPLETE) {
+    int copy_percent = installer_stage_value(18, 74);
+    int expand_percent = installer_stage_value(74, 92);
+    int configure_percent = installer_stage_value(92, 98);
+
+    if (installer_page == INSTALLER_PAGE_COMPLETE) {
+      copy_percent = 100;
+      expand_percent = 100;
+      configure_percent = 100;
+    }
+    draw_installation_stage_layout(content_x, content_y, content_w, content_h,
+                                   copy_percent, expand_percent,
+                                   configure_percent, 0);
+    return;
+  }
 
   {
     int panel_x = content_x + 20;
@@ -8450,6 +9175,26 @@ static void draw_startup_auth_window(struct window *win, int content_x,
           : (startup_account_system_ready() ? "Login" : "Starting...");
 
   (void)win;
+  if (startup_flow == STARTUP_FLOW_COMPLETING_INSTALL) {
+    int complete_percent = 0;
+    uint64_t now = arch_timer_get_ms();
+    if (startup_completion_started_ms && startup_completion_deadline_ms &&
+        startup_completion_deadline_ms > startup_completion_started_ms) {
+      uint64_t total =
+          startup_completion_deadline_ms - startup_completion_started_ms;
+      uint64_t elapsed =
+          now > startup_completion_started_ms
+              ? now - startup_completion_started_ms
+              : 0;
+      if (elapsed > total)
+        elapsed = total;
+      complete_percent = (int)((elapsed * 100) / total);
+    }
+    draw_installation_stage_layout(content_x, content_y, content_w, content_h,
+                                   100, 100, 100, complete_percent);
+    return;
+  }
+
   settings_account_list_init(&startup_accounts);
   if (startup_setup_account_active()) {
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
@@ -9497,11 +10242,16 @@ static int disk_imager_write_range(int disk_index, uint32_t start_lba,
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
+  if (storage_get_disk_kind(disk_index) == STORAGE_KIND_CDROM) {
+    disk_imager_set_status("Optical media cannot be imaged as 512-byte sectors.");
+    return -1;
+  }
 
   disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
   if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
     return -1;
 
+  installer_ensure_parent_dirs(path);
   file = vfs_open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (!file)
     return -1;
@@ -9531,6 +10281,10 @@ static int disk_imager_read_range(int disk_index, uint32_t start_lba,
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
+  if (!storage_disk_supports_partition_writes(disk_index)) {
+    disk_imager_set_status("Selected disk is not writable.");
+    return -1;
+  }
 
   disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
   if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
@@ -14860,6 +15614,7 @@ void gui_compose(void) {
   int draw_h;
 
   g_frame_count++;
+  startup_process_first_boot_completion();
   if (!startup_setup_account_active())
     installer_process_background_install();
   update_main_menu_power_animation();
@@ -16210,6 +16965,7 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           if (x >= panel_x + 16 && x < panel_x + 126 && y >= theme_button_y &&
               y < theme_button_y + 22) {
             gui_set_theme_mode(GUI_THEME_LIGHT);
+            gui_save_theme_preference();
             str_copy_safe(settings_status, "Light mode applied.",
                           sizeof(settings_status));
             break;
@@ -16217,15 +16973,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
           if (x >= panel_x + 136 && x < panel_x + 246 && y >= theme_button_y &&
               y < theme_button_y + 22) {
             gui_set_theme_mode(GUI_THEME_DARK);
+            gui_save_theme_preference();
             str_copy_safe(settings_status, "Dark mode applied.",
-                          sizeof(settings_status));
-            break;
-          }
-          if (x >= panel_x + 260 && x < panel_x + 410 && y >= theme_button_y &&
-              y < theme_button_y + 22) {
-            gui_start_partial_redraw_clear_debug();
-            str_copy_safe(settings_status,
-                          "Partial redraw clear test armed briefly.",
                           sizeof(settings_status));
             break;
           }
@@ -16498,7 +17247,8 @@ void gui_handle_mouse_event(int x, int y, int buttons) {
         int button_w = 140;
         int button_h = 34;
 
-        installer_refresh_disk_inventory();
+        if (!installer_active && !installer_show_restart_screen)
+          installer_refresh_disk_inventory();
 
         if (installer_show_restart_screen)
           installer_page = INSTALLER_PAGE_COMPLETE;
@@ -16861,6 +17611,7 @@ int gui_init(uint32_t *framebuffer, uint32_t width, uint32_t height,
   }
 
   gui_apply_saved_boot_resolution(&framebuffer, &width, &height, &pitch);
+  gui_load_saved_theme();
 
   primary_display.framebuffer = framebuffer;
   primary_display.width = width;

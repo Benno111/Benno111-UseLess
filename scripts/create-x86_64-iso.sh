@@ -2,7 +2,7 @@
 # Create a hybrid x86_64 ISO that boots via both BIOS and UEFI.
 # The resulting ISO can be attached to VMs directly or written to USB media.
 
-set -e
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${1:-build/x86_64}"
@@ -13,13 +13,18 @@ KERNEL_PATH="${BUILD_DIR}/kernel/os-x86_64.elf"
 BOOT_MANAGER_DIR="${BUILD_DIR}/boot-assets/os-boot-manager"
 BOOT_MANAGER_SYNC="${ROOT_DIR}/scripts/update-os-boot-manager.sh"
 X86_64_BOOT_ASSET_DIR="${ROOT_DIR}/os-x86_64"
+BOOT_FILES_SCRIPT="${ROOT_DIR}/scripts/build-install-boot-files.sh"
+SYSTEM_IMAGE_SCRIPT="${ROOT_DIR}/scripts/create-system-image.sh"
 BOOT_MANAGER_DIR="$("$BOOT_MANAGER_SYNC" "$BOOT_MANAGER_DIR")"
 LIMINE_BIN_DIR="${BOOT_MANAGER_DIR}/bin"
 LIMINE_SRC_DIR="${BOOT_MANAGER_DIR}"
 LIMINE_TOOL_PATH="${LIMINE_SRC_DIR}/limine"
 LIMINE_CFG="${LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
-INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine.conf}"
+INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine-installed.conf}"
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
+SYSTEM_IMAGE_ROOT="${SYSTEM_IMAGE_ROOT:-${BUILD_DIR}/system-image}"
+SYSTEM_IMAGE_ARCHIVE="${SYSTEM_IMAGE_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
+SYSTEM_DISK_IMAGE="${SYSTEM_DISK_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -56,6 +61,34 @@ PY
 
     echo "[WARN] xz/python3 not available; skipping ISO compression" >&2
     return 0
+}
+
+compress_installer_7z() {
+    local iso_path="$1"
+    local archive_path="${iso_path}.7z"
+
+    case "$(basename "$iso_path")" in
+        *installer*.iso) ;;
+        *) return 0 ;;
+    esac
+
+    rm -f "$archive_path"
+
+    if ! command -v 7z >/dev/null 2>&1; then
+        echo "[WARN] 7z not available; skipping installer 7z archive" >&2
+        return 0
+    fi
+
+    log "Creating maximum-compression installer archive: $archive_path"
+    7z a \
+        -t7z \
+        -mx=9 \
+        -m0=lzma2 \
+        -mfb=273 \
+        -md=512m \
+        -ms=on \
+        "$archive_path" \
+        "$iso_path"
 }
 
 link_or_copy() {
@@ -122,7 +155,7 @@ resolve_limine_tool() {
     require_cmd cc
 
     if ! tool_runs "$host_tool"; then
-        log "Bundled Limine host tool is not runnable on this platform; building a native copy"
+        log "Bundled Limine host tool is not runnable on this platform; building a native copy" >&2
         cc -g -O2 -pipe -Wall -Wextra -std=c99 "${LIMINE_SRC_DIR}/limine.c" -o "$host_tool"
         ensure_executable "$host_tool"
     fi
@@ -144,87 +177,28 @@ require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
 require_cmd xorriso
 
-LIMINE_TOOL="$(resolve_limine_tool)"
-
 mkdir -p "$IMAGE_DIR"
 rm -rf "$ISO_ROOT"
 
 log "Preparing ISO root at $ISO_ROOT"
-mkdir -p "$ISO_ROOT/boot"
-mkdir -p "$ISO_ROOT/EFI/BOOT"
-mkdir -p "$ISO_ROOT/limine"
-mkdir -p "$INSTALL_ROOT/boot"
-mkdir -p "$INSTALL_ROOT/EFI/BOOT"
-mkdir -p "$INSTALL_ROOT/limine"
+mkdir -p "$ISO_ROOT/install"
+
+env BOOT_PROFILE=installer LIMINE_CFG_SOURCE="$LIMINE_CFG" \
+    bash "$BOOT_FILES_SCRIPT" "$BUILD_DIR" "$ISO_ROOT"
+env BOOT_LIMINE_CFG="$INSTALL_LIMINE_CFG" \
+    bash "$SYSTEM_IMAGE_SCRIPT" "$BUILD_DIR" "$SYSTEM_IMAGE_ROOT"
+rm -rf "$INSTALL_ROOT"
+cp -R "$SYSTEM_IMAGE_ROOT" "$INSTALL_ROOT"
+cp "$SYSTEM_IMAGE_ARCHIVE" "$ISO_ROOT/install/system-image.zip"
+if [ -f "$SYSTEM_DISK_IMAGE" ]; then
+    cp "$SYSTEM_DISK_IMAGE" "$ISO_ROOT/install/system.img"
+fi
+LIMINE_TOOL="$(resolve_limine_tool)"
 
 if [ -d "${BUILD_DIR}/assets" ]; then
     mkdir -p "$ISO_ROOT/assets"
     cp -R "${BUILD_DIR}/assets"/. "$ISO_ROOT/assets/"
-    mkdir -p "$INSTALL_ROOT/assets"
-    cp -R "${BUILD_DIR}/assets"/. "$INSTALL_ROOT/assets/"
 fi
-
-# Keep both names so the ISO matches the embedded config and the repo's
-# existing naming used elsewhere.
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/main.sys"
-cp "$KERNEL_PATH" "$ISO_ROOT/boot/bootloader.sys"
-cp "$LIMINE_CFG" "$ISO_ROOT/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/boot/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/limine/limine.conf"
-cp "$LIMINE_CFG" "$ISO_ROOT/EFI/BOOT/limine.conf"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/main.sys"
-cp "$KERNEL_PATH" "$INSTALL_ROOT/boot/bootloader.sys"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/boot/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/limine/limine.conf"
-cp "$INSTALL_LIMINE_CFG" "$INSTALL_ROOT/EFI/BOOT/limine.conf"
-cp "$LIMINE_BIN_DIR/limine-bios.sys" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$INSTALL_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$INSTALL_ROOT/EFI/BOOT/"
-
-cp "$LIMINE_BIN_DIR/limine-bios.sys" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-bios-cd.bin" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/limine-uefi-cd.bin" "$ISO_ROOT/boot/"
-cp "$LIMINE_BIN_DIR/BOOTX64.EFI" "$ISO_ROOT/EFI/BOOT/"
-
-cat > "$ISO_ROOT/INSTALLERS.TXT" <<EOF
-OS8 Installer Types
-
-1. Graphical Installer
-   Boot menu entry: "OS8 Graphical Installer"
-   Use this for the normal desktop installer flow.
-EOF
-
-cp "$ISO_ROOT/INSTALLERS.TXT" "$INSTALL_ROOT/INSTALLERS.TXT"
-
-cat > "$INSTALL_ROOT/IMAGE_INFO.txt" <<EOF
-OS8 System Image
-
-This ISO contains:
-- a graphical installer environment
-- a bundled system image payload at /install/system-image
-
-Primary payload files:
-- /install/system-image/boot/main.sys
-- /install/system-image/boot/bootloader.sys
-- /install/system-image/limine.conf
-- /install/system-image/boot/limine.conf
-- /install/system-image/limine/limine.conf
-- /install/system-image/EFI/BOOT/limine.conf
-- /install/system-image/boot/limine-bios.sys
-- /install/system-image/boot/limine-bios-cd.bin
-- /install/system-image/boot/limine-uefi-cd.bin
-- /install/system-image/EFI/BOOT/BOOTX64.EFI
-
-If present, repo assets are mirrored under:
-- /install/system-image/assets
-
-- /INSTALLERS.TXT
-
-The installer GUI boots from the top-level ISO files and installs the bundled
-desktop/system layout represented by this image payload.
-EOF
 
 ISO_PATH="${IMAGE_DIR}/${ISO_NAME}"
 rm -f "$ISO_PATH"
@@ -244,6 +218,7 @@ xorriso -as mkisofs \
 
 "$LIMINE_TOOL" bios-install "$ISO_PATH" >/dev/null 2>&1 || true
 compress_iso "$ISO_PATH"
+compress_installer_7z "$ISO_PATH"
 
 log "Validating ISO contents..."
 ISO_CONTENTS_FILE="${ISO_ROOT}/iso-contents.txt"
@@ -268,6 +243,10 @@ require_iso_path "/limine.conf"
 require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/INSTALLERS.TXT"
+require_iso_path "/install/system-image.zip"
+if [ -f "$SYSTEM_DISK_IMAGE" ]; then
+    require_iso_path "/install/system.img"
+fi
 require_iso_path "/install/system-image/INSTALLERS.TXT"
 require_iso_path "/install/system-image/boot/main.sys"
 require_iso_path "/install/system-image/boot/bootloader.sys"
@@ -285,6 +264,9 @@ log "ISO created successfully: $ISO_PATH"
 ls -lh "$ISO_PATH"
 if [ -f "${ISO_PATH}.xz" ]; then
     ls -lh "${ISO_PATH}.xz"
+fi
+if [ -f "${ISO_PATH}.7z" ]; then
+    ls -lh "${ISO_PATH}.7z"
 fi
 echo ""
 log "BIOS VM test:  qemu-system-x86_64 -M q35 -m 512M -cdrom $ISO_PATH -serial stdio"

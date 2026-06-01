@@ -107,7 +107,7 @@ static void iso_trim_name(char *dst, int max, const uint8_t *src, int len,
 }
 
 static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
-  uint8_t desc[ISO_BLOCK_SIZE];
+  uint8_t *desc;
   int saw_primary = 0;
 
   if (!info)
@@ -120,12 +120,20 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
   info->has_primary = 0;
   info->has_joliet = 0;
 
+  desc = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!desc)
+    return -1;
+
   for (uint32_t lba = 16; lba < 64; lba++) {
-    if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0)
+    if (storage_read_block(disk_index, lba, desc, ISO_BLOCK_SIZE) != 0) {
+      kfree(desc);
       return -1;
+    }
     if (desc[1] != 'C' || desc[2] != 'D' || desc[3] != '0' || desc[4] != '0' ||
-        desc[5] != '1')
+        desc[5] != '1') {
+      kfree(desc);
       return -1;
+    }
     if (desc[0] == 1 && !saw_primary) {
       info->primary_root_extent = iso_le32(&desc[158]);
       info->primary_root_size = iso_le32(&desc[166]);
@@ -136,12 +144,14 @@ static int iso_find_volume_info(int disk_index, iso_volume_info_t *info) {
       info->joliet_root_size = iso_le32(&desc[166]);
       info->has_joliet = 1;
     } else if (desc[0] == 255) {
+      kfree(desc);
       return saw_primary ? 0 : -1;
     }
     if ((lba & 3U) == 3U)
       iso_cooperative_yield();
   }
 
+  kfree(desc);
   return saw_primary ? 0 : -1;
 }
 
@@ -157,20 +167,6 @@ static void iso_ensure_parent_dirs(const char *path) {
     if (i > 0 && path[i] == '/')
       vfs_mkdir(partial, 0755);
   }
-}
-
-static int iso_write_file(const char *path, const uint8_t *data, size_t size) {
-  struct file *f;
-  ssize_t written;
-
-  iso_ensure_parent_dirs(path);
-  vfs_unlink(path);
-  f = vfs_open(path, O_CREAT | O_WRONLY, 0644);
-  if (!f)
-    return -1;
-  written = vfs_write(f, (const char *)data, size);
-  vfs_close(f);
-  return (written < 0) ? -1 : 0;
 }
 
 static int iso_remove_tree_callback(void *ctx, const char *name, int len,
@@ -240,53 +236,76 @@ static int iso_clear_destination(const char *dst_root) {
 
 static int iso_copy_file_from_extent(int disk_index, uint32_t extent,
                                      uint32_t file_size, const char *dst_path) {
-  uint8_t *data;
-  uint8_t sector[ISO_BLOCK_SIZE];
+  uint8_t *sector;
+  struct file *f;
   uint32_t remaining = file_size;
   uint32_t lba = extent;
-  uint32_t offset = 0;
 
-  data = kmalloc(file_size ? file_size : 1, GFP_KERNEL);
-  if (!data)
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector)
     return -1;
+
+  iso_ensure_parent_dirs(dst_path);
+  vfs_unlink(dst_path);
+  f = vfs_open(dst_path, O_CREAT | O_WRONLY, 0644);
+  if (!f) {
+    kfree(sector);
+    return -1;
+  }
 
   while (remaining > 0) {
     uint32_t chunk = remaining > ISO_BLOCK_SIZE ? ISO_BLOCK_SIZE : remaining;
+    ssize_t written;
+
     if (storage_read_block(disk_index, lba++, sector, ISO_BLOCK_SIZE) != 0) {
-      kfree(data);
+      vfs_close(f);
+      kfree(sector);
       return -1;
     }
-    for (uint32_t i = 0; i < chunk; i++)
-      data[offset + i] = sector[i];
-    offset += chunk;
+
+    written = vfs_write(f, (const char *)sector, chunk);
+    if (written != (ssize_t)chunk) {
+      vfs_close(f);
+      kfree(sector);
+      return -1;
+    }
+
     remaining -= chunk;
     if ((lba & 3U) == 0U)
       iso_cooperative_yield();
   }
 
-  if (iso_write_file(dst_path, data, file_size) != 0) {
-    kfree(data);
-    return -1;
-  }
-  kfree(data);
+  vfs_close(f);
+  kfree(sector);
   return 0;
 }
 
 static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size,
                                   const char *dst_root, int joliet) {
   uint8_t *dir_data;
-  uint8_t sector[ISO_BLOCK_SIZE];
+  uint8_t *sector;
   uint32_t sector_count = (size + ISO_BLOCK_SIZE - 1) / ISO_BLOCK_SIZE;
   uint32_t total_size = sector_count * ISO_BLOCK_SIZE;
   uint32_t pos = 0;
   int copied_entries = 0;
 
-  dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
-  if (!dir_data)
+  if (sector_count > 0x10000U)
     return -1;
+  if (sector_count != 0 && total_size / sector_count != ISO_BLOCK_SIZE)
+    return -1;
+
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector)
+    return -1;
+  dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!dir_data) {
+    kfree(sector);
+    return -1;
+  }
 
   for (uint32_t i = 0; i < sector_count; i++) {
     if (storage_read_block(disk_index, extent + i, sector, ISO_BLOCK_SIZE) != 0) {
+      kfree(sector);
       kfree(dir_data);
       return -1;
     }
@@ -295,6 +314,8 @@ static int iso_copy_dir_recursive(int disk_index, uint32_t extent, uint32_t size
     if ((i & 3U) == 3U)
       iso_cooperative_yield();
   }
+
+  kfree(sector);
 
   while (pos < size) {
     uint8_t record_len = dir_data[pos];
@@ -416,3 +437,486 @@ int iso9660_copy_to_ramfs(const char *disk_location, const char *dst_root) {
 
   return -1;
 }
+
+/* ===================================================================== */
+/* Mountable ISO9660 tree */
+/* ===================================================================== */
+
+typedef struct iso9660_node {
+  char name[NAME_MAX + 1];
+  uint32_t extent;
+  uint32_t size;
+  int is_dir;
+  uint8_t *data;
+  struct iso9660_node *parent;
+  struct iso9660_node *children;
+  struct iso9660_node *next_sibling;
+} iso9660_node_t;
+
+static struct file_operations iso9660_dir_file_ops;
+static struct file_operations iso9660_reg_file_ops;
+static struct inode_operations iso9660_dir_inode_ops;
+
+static iso9660_node_t *iso9660_node_alloc(const char *name, int is_dir) {
+  iso9660_node_t *node = kmalloc(sizeof(*node), GFP_KERNEL);
+  if (!node)
+    return NULL;
+
+  for (int i = 0; i < (int)sizeof(*node); i++)
+    ((uint8_t *)node)[i] = 0;
+
+  if (name) {
+    int i = 0;
+    while (name[i] && i < NAME_MAX) {
+      node->name[i] = name[i];
+      i++;
+    }
+    node->name[i] = '\0';
+  }
+  node->is_dir = is_dir ? 1 : 0;
+  return node;
+}
+
+static void iso9660_node_add_child(iso9660_node_t *parent,
+                                   iso9660_node_t *child) {
+  if (!parent || !child)
+    return;
+  child->parent = parent;
+  child->next_sibling = parent->children;
+  parent->children = child;
+}
+
+static iso9660_node_t *iso9660_node_find_child(iso9660_node_t *parent,
+                                               const char *name) {
+  iso9660_node_t *child;
+
+  if (!parent || !name)
+    return NULL;
+
+  child = parent->children;
+  while (child) {
+    int i = 0;
+    while (child->name[i] && name[i] && child->name[i] == name[i])
+      i++;
+    if (child->name[i] == '\0' && name[i] == '\0')
+      return child;
+    child = child->next_sibling;
+  }
+
+  return NULL;
+}
+
+static void iso9660_node_free(iso9660_node_t *node) {
+  iso9660_node_t *child;
+
+  if (!node)
+    return;
+
+  child = node->children;
+  while (child) {
+    iso9660_node_t *next = child->next_sibling;
+    iso9660_node_free(child);
+    child = next;
+  }
+
+  if (node->data)
+    kfree(node->data);
+  kfree(node);
+}
+
+static int iso9660_copy_file_to_node(int disk_index, uint32_t extent,
+                                     uint32_t file_size,
+                                     iso9660_node_t *node) {
+  uint8_t *sector;
+  uint32_t remaining = file_size;
+  uint32_t lba = extent;
+  uint8_t *data = NULL;
+
+  if (!node)
+    return -1;
+
+  if (file_size > 0) {
+    data = kmalloc(file_size, GFP_KERNEL);
+    if (!data)
+      return -1;
+  }
+
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector) {
+    if (data)
+      kfree(data);
+    return -1;
+  }
+
+  while (remaining > 0) {
+    uint32_t chunk = remaining > ISO_BLOCK_SIZE ? ISO_BLOCK_SIZE : remaining;
+
+    if (storage_read_block(disk_index, lba++, sector, ISO_BLOCK_SIZE) != 0) {
+      kfree(sector);
+      if (data)
+        kfree(data);
+      return -1;
+    }
+
+    for (uint32_t i = 0; i < chunk; i++)
+      data[file_size - remaining + i] = sector[i];
+
+    remaining -= chunk;
+    if ((lba & 3U) == 0U)
+      iso_cooperative_yield();
+  }
+
+  kfree(sector);
+  node->data = data;
+  node->size = file_size;
+  return 0;
+}
+
+static int iso9660_build_tree_recursive(int disk_index, uint32_t extent,
+                                        uint32_t size, iso9660_node_t *parent,
+                                        int joliet) {
+  uint8_t *dir_data;
+  uint8_t *sector;
+  uint32_t sector_count = (size + ISO_BLOCK_SIZE - 1) / ISO_BLOCK_SIZE;
+  uint32_t total_size = sector_count * ISO_BLOCK_SIZE;
+  uint32_t pos = 0;
+
+  if (!parent || !parent->is_dir)
+    return -1;
+  if (sector_count > 0x10000U)
+    return -1;
+  if (sector_count != 0 && total_size / sector_count != ISO_BLOCK_SIZE)
+    return -1;
+
+  sector = kmalloc(ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!sector)
+    return -1;
+
+  dir_data = kmalloc(total_size ? total_size : ISO_BLOCK_SIZE, GFP_KERNEL);
+  if (!dir_data) {
+    kfree(sector);
+    return -1;
+  }
+
+  for (uint32_t i = 0; i < sector_count; i++) {
+    if (storage_read_block(disk_index, extent + i, sector, ISO_BLOCK_SIZE) != 0) {
+      kfree(sector);
+      kfree(dir_data);
+      return -1;
+    }
+    for (uint32_t j = 0; j < ISO_BLOCK_SIZE; j++)
+      dir_data[i * ISO_BLOCK_SIZE + j] = sector[j];
+    if ((i & 3U) == 3U)
+      iso_cooperative_yield();
+  }
+
+  kfree(sector);
+
+  while (pos < size) {
+    uint8_t record_len = dir_data[pos];
+    char name[NAME_MAX + 1];
+    uint32_t child_extent;
+    uint32_t child_size;
+    uint8_t flags;
+    uint8_t name_len;
+
+    if (record_len == 0) {
+      pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
+      continue;
+    }
+    if (record_len < 34) {
+      printk(KERN_WARNING
+             "ISO9660: invalid record length %u at offset %u while mounting\n",
+             record_len, pos);
+      pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
+      continue;
+    }
+    if (pos + record_len > total_size)
+      break;
+
+    name_len = dir_data[pos + 32];
+    if ((uint32_t)(33 + name_len) > record_len) {
+      printk(KERN_WARNING
+             "ISO9660: invalid name length %u at offset %u while mounting\n",
+             name_len, pos);
+      pos = ((pos / ISO_BLOCK_SIZE) + 1) * ISO_BLOCK_SIZE;
+      continue;
+    }
+
+    child_extent = iso_le32(&dir_data[pos + 2]);
+    child_size = iso_le32(&dir_data[pos + 10]);
+    flags = dir_data[pos + 25];
+    iso_trim_name(name, sizeof(name), &dir_data[pos + 33], name_len, joliet);
+
+    if (name[0] != '\0' &&
+        !(name[0] == '.' && name[1] == '\0') &&
+        !(name[0] == '.' && name[1] == '.' && name[2] == '\0')) {
+      iso9660_node_t *child = iso9660_node_alloc(name, (flags & 0x02) != 0);
+      if (!child) {
+        kfree(dir_data);
+        return -1;
+      }
+      child->extent = child_extent;
+      child->size = child_size;
+      iso9660_node_add_child(parent, child);
+
+      if (child->is_dir) {
+        if (iso9660_build_tree_recursive(disk_index, child_extent, child_size,
+                                         child, joliet) < 0) {
+          kfree(dir_data);
+          return -1;
+        }
+      } else if (iso9660_copy_file_to_node(disk_index, child_extent, child_size,
+                                           child) != 0) {
+        kfree(dir_data);
+        return -1;
+      }
+    }
+
+    pos += record_len;
+  }
+
+  kfree(dir_data);
+  return 0;
+}
+
+static int iso9660_name_length(const char *name) {
+  int len = 0;
+  if (!name)
+    return 0;
+  while (name[len])
+    len++;
+  return len;
+}
+
+static void iso9660_fill_inode(struct inode *inode, struct super_block *sb,
+                               iso9660_node_t *node) {
+  if (!inode || !sb || !node)
+    return;
+
+  inode->i_sb = sb;
+  inode->i_private = node;
+  inode->i_ino = node->extent ? node->extent : 1;
+  inode->i_mode = node->is_dir ? (S_IFDIR | 0555) : (S_IFREG | 0444);
+  inode->i_nlink = 1;
+  inode->i_size = node->size;
+  inode->i_blocks = 0;
+  inode->i_blksize = ISO_BLOCK_SIZE;
+  if (node->is_dir) {
+    inode->i_op = &iso9660_dir_inode_ops;
+    inode->i_fop = &iso9660_dir_file_ops;
+  } else {
+    inode->i_op = NULL;
+    inode->i_fop = &iso9660_reg_file_ops;
+  }
+}
+
+static ssize_t iso9660_read(struct file *file, char *buf, size_t count,
+                            loff_t *pos) {
+  iso9660_node_t *node;
+  size_t available;
+  size_t to_copy;
+
+  if (!file || !buf || !pos)
+    return -EINVAL;
+
+  node = (iso9660_node_t *)file->private_data;
+  if (!node || node->is_dir)
+    return -EISDIR;
+  if (*pos < 0)
+    return -EINVAL;
+  if (node->size == 0)
+    return 0;
+  if (!node->data)
+    return -EIO;
+  if ((uint32_t)*pos >= node->size)
+    return 0;
+
+  available = (size_t)(node->size - (uint32_t)*pos);
+  to_copy = count < available ? count : available;
+  for (size_t i = 0; i < to_copy; i++)
+    buf[i] = (char)node->data[(uint32_t)*pos + (uint32_t)i];
+  *pos += (loff_t)to_copy;
+  return (ssize_t)to_copy;
+}
+
+static int iso9660_readdir(struct file *file, void *ctx,
+                           int (*filldir)(void *, const char *, int, loff_t,
+                                          ino_t, unsigned)) {
+  iso9660_node_t *node;
+  iso9660_node_t *child;
+
+  if (!file || !filldir)
+    return -EINVAL;
+
+  node = (iso9660_node_t *)file->private_data;
+  if (!node || !node->is_dir)
+    return -ENOTDIR;
+
+  filldir(ctx, ".", 1, 0, 0, 4);
+  filldir(ctx, "..", 2, 0, 0, 4);
+  child = node->children;
+  while (child) {
+    filldir(ctx, child->name, iso9660_name_length(child->name), 0, child->extent,
+            child->is_dir ? 4 : 8);
+    child = child->next_sibling;
+  }
+  return 0;
+}
+
+static struct dentry *iso9660_lookup(struct inode *dir, struct dentry *dentry) {
+  iso9660_node_t *parent;
+  iso9660_node_t *child;
+  struct inode *inode;
+
+  if (!dir || !dentry || !dir->i_private)
+    return NULL;
+
+  parent = (iso9660_node_t *)dir->i_private;
+  child = iso9660_node_find_child(parent, dentry->d_name);
+  if (!child)
+    return NULL;
+
+  inode = kmalloc(sizeof(*inode), GFP_KERNEL);
+  if (!inode)
+    return NULL;
+  for (int i = 0; i < (int)sizeof(*inode); i++)
+    ((uint8_t *)inode)[i] = 0;
+
+  iso9660_fill_inode(inode, dir->i_sb, child);
+  dentry->d_inode = inode;
+  dentry->d_sb = dir->i_sb;
+  return dentry;
+}
+
+static struct super_block *iso9660_mount(struct file_system_type *fs_type,
+                                         int flags, const char *dev_name,
+                                         void *data) {
+  int disk_index;
+  iso_volume_info_t volume_info;
+  struct super_block *sb;
+  struct inode *root_inode;
+  struct dentry *root_dentry;
+  iso9660_node_t *root_node = NULL;
+
+  (void)flags;
+  (void)data;
+
+  if (!dev_name || dev_name[0] == '\0')
+    return NULL;
+
+  disk_index = storage_get_disk_index_by_location(dev_name);
+  if (disk_index < 0)
+    return NULL;
+  if (iso_find_volume_info(disk_index, &volume_info) != 0)
+    return NULL;
+
+  if (volume_info.has_joliet)
+    root_node = iso9660_node_alloc("", 1);
+  if (!root_node && volume_info.has_primary)
+    root_node = iso9660_node_alloc("", 1);
+  if (!root_node)
+    return NULL;
+
+  if (volume_info.has_joliet) {
+    if (iso9660_build_tree_recursive(disk_index, volume_info.joliet_root_extent,
+                                     volume_info.joliet_root_size, root_node,
+                                     1) == 0) {
+      goto built_tree;
+    }
+    iso9660_node_free(root_node);
+    root_node = iso9660_node_alloc("", 1);
+    if (!root_node)
+      return NULL;
+  }
+
+  if (volume_info.has_primary) {
+    if (iso9660_build_tree_recursive(disk_index, volume_info.primary_root_extent,
+                                     volume_info.primary_root_size, root_node,
+                                     0) == 0) {
+      goto built_tree;
+    }
+  }
+
+  iso9660_node_free(root_node);
+  return NULL;
+
+built_tree:
+  sb = kmalloc(sizeof(*sb), GFP_KERNEL);
+  if (!sb) {
+    iso9660_node_free(root_node);
+    return NULL;
+  }
+  root_inode = kmalloc(sizeof(*root_inode), GFP_KERNEL);
+  if (!root_inode) {
+    kfree(sb);
+    iso9660_node_free(root_node);
+    return NULL;
+  }
+  root_dentry = kmalloc(sizeof(*root_dentry), GFP_KERNEL);
+  if (!root_dentry) {
+    kfree(root_inode);
+    kfree(sb);
+    iso9660_node_free(root_node);
+    return NULL;
+  }
+
+  for (int i = 0; i < (int)sizeof(*sb); i++)
+    ((uint8_t *)sb)[i] = 0;
+  for (int i = 0; i < (int)sizeof(*root_inode); i++)
+    ((uint8_t *)root_inode)[i] = 0;
+  for (int i = 0; i < (int)sizeof(*root_dentry); i++)
+    ((uint8_t *)root_dentry)[i] = 0;
+
+  sb->s_blocksize = ISO_BLOCK_SIZE;
+  sb->s_type = fs_type;
+  sb->s_disk_index = disk_index;
+  sb->s_fs_info = root_node;
+
+  iso9660_fill_inode(root_inode, sb, root_node);
+  root_dentry->d_name[0] = '/';
+  root_dentry->d_name[1] = '\0';
+  root_dentry->d_inode = root_inode;
+  root_dentry->d_parent = root_dentry;
+  root_dentry->d_child = NULL;
+  root_dentry->d_sibling = NULL;
+  root_dentry->d_sb = sb;
+
+  sb->s_root = root_dentry;
+  return sb;
+}
+
+static void iso9660_kill_sb(struct super_block *sb) {
+  if (!sb)
+    return;
+  if (sb->s_fs_info)
+    iso9660_node_free((iso9660_node_t *)sb->s_fs_info);
+  if (sb->s_root) {
+    if (sb->s_root->d_inode)
+      kfree(sb->s_root->d_inode);
+    kfree(sb->s_root);
+  }
+  kfree(sb);
+}
+
+static struct file_operations iso9660_dir_file_ops = {
+    .readdir = iso9660_readdir,
+};
+
+static struct file_operations iso9660_reg_file_ops = {
+    .read = iso9660_read,
+};
+
+static struct inode_operations iso9660_dir_inode_ops = {
+    .lookup = iso9660_lookup,
+};
+
+static struct file_system_type iso9660_fs_type = {
+    .name = "iso9660",
+    .fs_flags = 0,
+    .mount = iso9660_mount,
+    .kill_sb = iso9660_kill_sb,
+    .next = NULL,
+};
+
+int iso9660_init(void) { return register_filesystem(&iso9660_fs_type); }

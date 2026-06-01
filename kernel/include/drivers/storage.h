@@ -58,6 +58,7 @@ int storage_read_block(int disk_index, uint32_t lba, void *buffer,
 int storage_write_block(int disk_index, uint32_t lba, const void *buffer,
                         uint32_t block_size);
 int storage_write_disk_image(int disk_index, const uint8_t *data, size_t size);
+int storage_write_disk_image_file(int disk_index, const char *path);
 int storage_describe_disk(int index, char *buf, int max);
 void storage_build_disk_overview(char *buf, int max);
 int storage_get_partition_count(int disk_index);
