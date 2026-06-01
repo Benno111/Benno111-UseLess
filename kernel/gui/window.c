@@ -8239,12 +8239,14 @@ static const char *installer_system_image_root_path(void) {
   if (installer_system_image_payload_path[0] &&
       installer_payload_file_exists(installer_system_image_payload_path))
     return installer_system_image_payload_path;
+  if (installer_payload_file_exists("/install/system-image"))
+    return "/install/system-image";
+  if (installer_payload_file_exists("/setup/install/system-image"))
+    return "/setup/install/system-image";
   if (installer_payload_file_exists("/install/system-image.zip"))
     return "/install/system-image.zip";
   if (installer_payload_file_exists("/setup/install/system-image.zip"))
     return "/setup/install/system-image.zip";
-  if (installer_payload_file_exists("/install/system-image"))
-    return "/install/system-image";
   return "/setup/install/system-image";
 }
 
@@ -8357,10 +8359,10 @@ static int installer_validate_system_image_candidate(const char *payload_root) {
 
 static int installer_validate_system_image_payload(void) {
   static const char *payload_candidates[] = {
-      "/install/system-image.zip",
-      "/setup/install/system-image.zip",
       "/install/system-image",
       "/setup/install/system-image",
+      "/install/system-image.zip",
+      "/setup/install/system-image.zip",
   };
 
   installer_select_system_image_payload(NULL);
