@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${1:-build/x86_64}"
 INSTALL_ROOT="${2:-${BUILD_DIR}/system-image}"
+BOOT_IMAGE_ARCHIVE="${BOOT_IMAGE_ARCHIVE:-${BUILD_DIR}/boot-files.zip}"
 LIMINE_CFG_SOURCE="${LIMINE_CFG_SOURCE:-${ROOT_DIR}/os-x86_64/limine.conf}"
 BOOT_PROFILE="${BOOT_PROFILE:-installed-system}"
 KERNEL_PATH="${BUILD_DIR}/kernel/os-x86_64.elf"
@@ -27,6 +28,33 @@ require_file() {
         echo "[ERROR] Required file not found: $1" >&2
         exit 1
     fi
+}
+
+resolve_python() {
+    command -v python3 2>/dev/null || command -v python 2>/dev/null || true
+}
+
+write_zip_archive() {
+    local root_dir="$1"
+    local archive_path="$2"
+    local python_cmd="$3"
+
+    "$python_cmd" - "$root_dir" "$archive_path" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+root = pathlib.Path(sys.argv[1]).resolve()
+archive = pathlib.Path(sys.argv[2]).resolve()
+archive.parent.mkdir(parents=True, exist_ok=True)
+if archive.exists():
+    archive.unlink()
+with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            continue
+        zf.write(path, path.relative_to(root).as_posix())
+PY
 }
 
 case "$BOOT_PROFILE" in
@@ -54,6 +82,12 @@ require_file "$LIMINE_BIN_DIR/BOOTX64.EFI"
 require_file "$LIMINE_BIN_DIR/limine-bios.sys"
 require_file "$LIMINE_BIN_DIR/limine-bios-cd.bin"
 require_file "$LIMINE_BIN_DIR/limine-uefi-cd.bin"
+
+PYTHON_CMD="$(resolve_python)"
+if [ -z "$PYTHON_CMD" ]; then
+    echo "[ERROR] python3 or python is required to package boot files" >&2
+    exit 1
+fi
 
 mkdir -p "$INSTALL_ROOT/boot"
 mkdir -p "$INSTALL_ROOT/EFI/BOOT"
@@ -140,4 +174,7 @@ Primary payload files:
 - /EFI/BOOT/BOOTX64.EFI
 EOF
 
+write_zip_archive "$INSTALL_ROOT" "$BOOT_IMAGE_ARCHIVE" "$PYTHON_CMD"
+
 log "Boot files staged into $INSTALL_ROOT"
+log "Boot file archive: $BOOT_IMAGE_ARCHIVE"

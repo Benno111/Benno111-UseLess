@@ -975,6 +975,8 @@ static void populate_installer_payload(void) {
       "\n"
       "This directory mirrors the bootable installer media contents while\n"
       "running in setup mode, including the ZIP archive payload.\n";
+  uint8_t *boot_archive_data = NULL;
+  size_t boot_archive_size = 0;
   const uint8_t *kernel_image;
   size_t kernel_size;
   size_t bootx64_efi_size;
@@ -1135,11 +1137,22 @@ static void populate_installer_payload(void) {
     }
   }
 
-  if (installer_mode &&
-      copy_tree_to_prefix("/install/system-image", "/setup/bootimage", 0, 0) !=
-          0) {
-    printk(KERN_ERR "INSTALL: failed to mirror boot files into setup bootimage\n");
-    return;
+  if (installer_mode) {
+    if (copy_tree_to_prefix("/setup", "/setup/bootimage", 1, 0) != 0) {
+      printk(KERN_ERR "INSTALL: failed to mirror boot files into setup bootimage\n");
+      return;
+    }
+    if (media_zip_pack_tree("/setup/bootimage", &boot_archive_data,
+                            &boot_archive_size) != 0 ||
+        media_install_file("/setup/bootimage.zip", boot_archive_data,
+                           boot_archive_size) != 0) {
+      media_free_file(boot_archive_data);
+      printk(KERN_ERR "INSTALL: failed to package setup boot archive\n");
+      return;
+    }
+    media_free_file(boot_archive_data);
+    boot_archive_data = NULL;
+    boot_archive_size = 0;
   }
 
   if (installer_mode && !staged_image_present &&

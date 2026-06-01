@@ -24,6 +24,7 @@ INSTALL_LIMINE_CFG="${INSTALL_LIMINE_CFG:-${X86_64_BOOT_ASSET_DIR}/limine-instal
 INSTALL_ROOT="${ISO_ROOT}/install/system-image"
 SYSTEM_IMAGE_ROOT="${SYSTEM_IMAGE_ROOT:-${BUILD_DIR}/system-image}"
 SYSTEM_IMAGE_ARCHIVE="${SYSTEM_IMAGE_ARCHIVE:-${BUILD_DIR}/system-image.zip}"
+BOOT_IMAGE_ARCHIVE="${BOOT_IMAGE_ARCHIVE:-${BUILD_DIR}/boot-files.zip}"
 SYSTEM_DISK_IMAGE="${SYSTEM_DISK_IMAGE:-${IMAGE_DIR}/os8-x86_64-system.img}"
 
 GREEN='\033[0;32m'
@@ -190,6 +191,9 @@ env BOOT_LIMINE_CFG="$INSTALL_LIMINE_CFG" \
 rm -rf "$INSTALL_ROOT"
 cp -R "$SYSTEM_IMAGE_ROOT" "$INSTALL_ROOT"
 cp "$SYSTEM_IMAGE_ARCHIVE" "$ISO_ROOT/install/system-image.zip"
+if [ -f "$BOOT_IMAGE_ARCHIVE" ]; then
+    cp "$BOOT_IMAGE_ARCHIVE" "$ISO_ROOT/install/boot-files.zip"
+fi
 if [ -f "$SYSTEM_DISK_IMAGE" ]; then
     cp "$SYSTEM_DISK_IMAGE" "$ISO_ROOT/install/system.img"
 fi
@@ -244,6 +248,9 @@ require_iso_path "/boot/limine.conf"
 require_iso_path "/EFI/BOOT/limine.conf"
 require_iso_path "/INSTALLERS.TXT"
 require_iso_path "/install/system-image.zip"
+if [ -f "$BOOT_IMAGE_ARCHIVE" ]; then
+    require_iso_path "/install/boot-files.zip"
+fi
 if [ -f "$SYSTEM_DISK_IMAGE" ]; then
     require_iso_path "/install/system.img"
 fi
