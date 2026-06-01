@@ -123,6 +123,8 @@ static int parse_account_manifest(const char *manifest, const char *fallback_nam
                                   int *wallpaper_index,
                                   char *partition_label, int partition_label_max,
                                   char *disk_location, int disk_location_max);
+static void account_unix_home_path(const char *username, char *buf, int max);
+static int account_write_unix_databases(void);
 static void runtime_sync_log_line(const char *line);
 static void runtime_sync_flush_best_effort(const char *path);
 void gui_open_image_viewer(const char *path);
@@ -4248,6 +4250,11 @@ typedef struct {
 #define GUI_SETUP_STATE_PATH "/System/setup-state.cfg"
 #define GUI_ACCOUNT_PATH "/System/account.cfg"
 #define GUI_ACCOUNTS_DIR "/System/Accounts"
+#define GUI_ETC_DIR "/etc"
+#define GUI_PASSWD_PATH "/etc/passwd"
+#define GUI_SHADOW_PATH "/etc/shadow"
+#define GUI_GROUP_PATH "/etc/group"
+#define GUI_HOME_ROOT "/home"
 #define GUI_VERSION_PATH "/System/version.cfg"
 #define ACCOUNT_RAW_SECTORS 16
 #define ACCOUNT_RAW_BYTES (ACCOUNT_RAW_SECTORS * 512)
@@ -4851,8 +4858,10 @@ static int path_is_active_account_home(const char *path) {
   if (!path || !user_home_mount_active || !user_home_mounted_username[0])
     return 0;
 
-  str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
-  idx = 7;
+  str_copy_safe(home_prefix, path_starts_with(path, GUI_HOME_ROOT) ?
+                            "/home/" : "/Users/",
+                sizeof(home_prefix));
+  idx = path_starts_with(path, GUI_HOME_ROOT) ? 6 : 7;
   for (int i = 0; user_home_mounted_username[i] &&
                   idx < (int)sizeof(home_prefix) - 1;
        i++)
@@ -4872,7 +4881,10 @@ static int path_is_active_account_home_root(const char *path) {
   if (!path || !user_home_mount_active || !user_home_mounted_username[0])
     return 0;
 
-  str_copy_safe(home_path, "/Users/", sizeof(home_path));
+  str_copy_safe(home_path, path_starts_with(path, GUI_HOME_ROOT) ?
+                           "/home/" : "/Users/",
+                sizeof(home_path));
+  idx = path_starts_with(path, GUI_HOME_ROOT) ? 6 : 7;
   for (int i = 0; user_home_mounted_username[i] &&
                   idx < (int)sizeof(home_path) - 1;
        i++)
@@ -4884,16 +4896,18 @@ static int path_is_active_account_home_root(const char *path) {
 static int path_is_user_storage(const char *path) {
   if (!path)
     return 0;
-  return str_cmp(path, "/Users") == 0 ||
+  return str_cmp(path, "/Users") == 0 || str_cmp(path, GUI_HOME_ROOT) == 0 ||
          (path[0] == '/' && path[1] == 'U' && path[2] == 's' &&
           path[3] == 'e' && path[4] == 'r' && path[5] == 's' &&
-          path[6] == '/');
+          path[6] == '/') ||
+         (path[0] == '/' && path[1] == 'h' && path[2] == 'o' &&
+          path[3] == 'm' && path[4] == 'e' && path[5] == '/');
 }
 
 static int path_is_runtime_mutable(const char *path) {
   static const char *prefixes[] = {"/System", "/Applications", "/Desktop",
                                    "/Documents", "/Pictures", "/Music",
-                                   "/Users"};
+                                   "/Users", GUI_HOME_ROOT, GUI_ETC_DIR};
 
   if (!path || path[0] != '/')
     return 0;
@@ -4933,8 +4947,10 @@ static const char *resolve_user_storage_path(const char *path, char *buf,
     return path;
   if (path_is_active_account_home(path) &&
       account_storage_root_path(account_root, sizeof(account_root)) == 0) {
-    str_copy_safe(home_prefix, "/Users/", sizeof(home_prefix));
-    path_idx = 7;
+    str_copy_safe(home_prefix, path_starts_with(path, GUI_HOME_ROOT) ?
+                               "/home/" : "/Users/",
+                  sizeof(home_prefix));
+    path_idx = path_starts_with(path, GUI_HOME_ROOT) ? 6 : 7;
     while (home_prefix[path_idx] && path_idx < (int)sizeof(home_prefix) - 1)
       path_idx++;
     for (int i = 0; user_home_mounted_username[i] &&
@@ -4986,8 +5002,12 @@ static void ensure_user_storage_dirs(void) {
   int idx = 0;
 
   vfs_mkdir("/Users", 0755);
+  vfs_mkdir(GUI_HOME_ROOT, 0755);
   resolve_user_storage_path("/Users", persistent_path, sizeof(persistent_path));
   if (str_cmp(persistent_path, "/Users") != 0)
+    vfs_mkdir(persistent_path, 0755);
+  resolve_user_storage_path(GUI_HOME_ROOT, persistent_path, sizeof(persistent_path));
+  if (str_cmp(persistent_path, GUI_HOME_ROOT) != 0)
     vfs_mkdir(persistent_path, 0755);
 
   if (!account_username[0])
@@ -5004,6 +5024,11 @@ static void ensure_user_storage_dirs(void) {
       str_cmp(user_home_mounted_username, account_username) == 0) {
     vfs_mkdir(user_home, 0755);
   }
+  if (str_cmp(persistent_path, user_home) != 0)
+    vfs_mkdir(persistent_path, 0755);
+  account_unix_home_path(account_username, user_home, sizeof(user_home));
+  vfs_mkdir(user_home, 0755);
+  resolve_user_storage_path(user_home, persistent_path, sizeof(persistent_path));
   if (str_cmp(persistent_path, user_home) != 0)
     vfs_mkdir(persistent_path, 0755);
   if (account_storage_root_path(account_root, sizeof(account_root)) == 0) {
@@ -5029,6 +5054,9 @@ static void mount_active_user_home(void) {
     user_home[idx++] = account_username[i];
   user_home[idx] = '\0';
   vfs_mkdir("/Users", 0755);
+  vfs_mkdir(user_home, 0755);
+  account_unix_home_path(account_username, user_home, sizeof(user_home));
+  vfs_mkdir(GUI_HOME_ROOT, 0755);
   vfs_mkdir(user_home, 0755);
 }
 
@@ -5057,8 +5085,10 @@ static int user_storage_mkdir(const char *path, mode_t mode) {
   const char *target = resolve_user_storage_path(path, resolved, sizeof(resolved));
   int ret;
 
-  if (path_is_user_storage(path))
+  if (path_is_user_storage(path)) {
     vfs_mkdir("/Users", 0755);
+    vfs_mkdir(GUI_HOME_ROOT, 0755);
+  }
   if (path_is_active_account_home(path) && str_cmp(target, path) != 0 &&
       !path_is_active_account_home_root(path))
     return vfs_mkdir(target, mode);
@@ -5778,6 +5808,194 @@ static int account_manifest_path(const char *username, char *path, int max) {
   return 0;
 }
 
+
+static void account_unix_home_path(const char *username, char *buf, int max) {
+  int idx = 0;
+
+  if (!buf || max <= 0)
+    return;
+  if (username && str_cmp(username, "root") == 0) {
+    str_copy_safe(buf, "/root", max);
+    return;
+  }
+  str_copy_safe(buf, GUI_HOME_ROOT, max);
+  while (buf[idx] && idx < max - 1)
+    idx++;
+  if (idx < max - 1)
+    buf[idx++] = '/';
+  for (int i = 0; username && username[i] && idx < max - 1; i++)
+    buf[idx++] = username[i];
+  buf[idx] = '\0';
+}
+
+static uint32_t account_unix_uid_for_name(const char *username, int ordinal) {
+  if (username && str_cmp(username, "root") == 0)
+    return 0;
+  if (ordinal < 0)
+    ordinal = 0;
+  return 1000U + (uint32_t)ordinal;
+}
+
+static void account_append_decimal(char *buf, int max, uint64_t value) {
+  int idx = 0;
+
+  if (!buf || max <= 0)
+    return;
+  while (buf[idx] && idx < max - 1)
+    idx++;
+  append_decimal(buf, &idx, value);
+  buf[idx] = '\0';
+}
+
+static void account_append_line(char *buf, int max, const char *text) {
+  installer_append_to_buf(buf, max, text);
+  installer_append_to_buf(buf, max, "\n");
+}
+
+static int account_unix_line_matches_user(const char *line, const char *username) {
+  int i = 0;
+
+  if (!line || !username || !username[0])
+    return 0;
+  while (username[i] && line[i] == username[i])
+    i++;
+  return username[i] == '\0' && line[i] == ':';
+}
+
+static int account_unix_get_field(const char *line, int field, char *out,
+                                  int out_max) {
+  int current = 0;
+  int idx = 0;
+
+  if (!line || !out || out_max <= 0 || field < 0)
+    return -1;
+  out[0] = '\0';
+  for (int i = 0; line[i] && line[i] != '\n' && line[i] != '\r'; i++) {
+    if (line[i] == ':') {
+      if (current == field) {
+        out[idx] = '\0';
+        return 0;
+      }
+      current++;
+      idx = 0;
+      continue;
+    }
+    if (current == field && idx < out_max - 1)
+      out[idx++] = line[i];
+  }
+  if (current == field) {
+    out[idx] = '\0';
+    return 0;
+  }
+  return -1;
+}
+
+static int account_read_unix_manifest(const char *username, char *manifest,
+                                      int max) {
+  char passwd[1024];
+  char shadow[1024];
+  char line[256];
+  char selected[256];
+  char hash[64];
+  char uid_buf[16];
+  char gid_buf[16];
+  char gecos[64];
+  char home[96];
+  char shell[32];
+  int found = 0;
+  int idx = 0;
+
+  if (!username || !username[0] || !manifest || max <= 0)
+    return -1;
+  manifest[0] = '\0';
+  if (read_text_file(GUI_PASSWD_PATH, passwd, sizeof(passwd)) < 0)
+    return -1;
+
+  selected[0] = '\0';
+  for (int i = 0; passwd[i];) {
+    int len = 0;
+    while (passwd[i] && passwd[i] != '\n' && len < (int)sizeof(line) - 1)
+      line[len++] = passwd[i++];
+    while (passwd[i] && passwd[i] != '\n')
+      i++;
+    if (passwd[i] == '\n')
+      i++;
+    line[len] = '\0';
+    if (account_unix_line_matches_user(line, username)) {
+      str_copy_safe(selected, line, sizeof(selected));
+      found = 1;
+      break;
+    }
+  }
+  if (!found)
+    return -1;
+
+  hash[0] = '\0';
+  if (read_text_file(GUI_SHADOW_PATH, shadow, sizeof(shadow)) >= 0) {
+    for (int i = 0; shadow[i];) {
+      int len = 0;
+      while (shadow[i] && shadow[i] != '\n' && len < (int)sizeof(line) - 1)
+        line[len++] = shadow[i++];
+      while (shadow[i] && shadow[i] != '\n')
+        i++;
+      if (shadow[i] == '\n')
+        i++;
+      line[len] = '\0';
+      if (account_unix_line_matches_user(line, username)) {
+        account_unix_get_field(line, 1, hash, sizeof(hash));
+        break;
+      }
+    }
+  }
+  if (!hash[0])
+    account_unix_get_field(selected, 1, hash, sizeof(hash));
+  if (!hash[0] || str_cmp(hash, "x") == 0)
+    return -1;
+
+  account_unix_get_field(selected, 2, uid_buf, sizeof(uid_buf));
+  account_unix_get_field(selected, 3, gid_buf, sizeof(gid_buf));
+  account_unix_get_field(selected, 4, gecos, sizeof(gecos));
+  account_unix_get_field(selected, 5, home, sizeof(home));
+  account_unix_get_field(selected, 6, shell, sizeof(shell));
+
+  for (const char *p = "username="; *p && idx < max - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; username[i] && idx < max - 1; i++)
+    manifest[idx++] = username[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "password_hash="; *p && idx < max - 1; p++)
+    manifest[idx++] = *p;
+  for (int i = 0; hash[i] && idx < max - 1; i++)
+    manifest[idx++] = hash[i];
+  manifest[idx++] = '\n';
+  for (const char *p = "role="; *p && idx < max - 1; p++)
+    manifest[idx++] = *p;
+  {
+    int admin_role = uid_buf[0] == '0' && uid_buf[1] == '\0';
+    for (int i = 0; gecos[i]; i++) {
+      if (gecos[i] == 'a' && gecos[i + 1] == 'd' && gecos[i + 2] == 'm' &&
+          gecos[i + 3] == 'i' && gecos[i + 4] == 'n')
+        admin_role = 1;
+    }
+    if (admin_role)
+      for (const char *p = "admin"; *p && idx < max - 1; p++)
+        manifest[idx++] = *p;
+    else
+      for (const char *p = "user"; *p && idx < max - 1; p++)
+        manifest[idx++] = *p;
+  }
+  manifest[idx++] = '\n';
+  for (const char *p = "wallpaper=4\npartition_label=\ndisk_location=\n";
+       *p && idx < max - 1; p++)
+    manifest[idx++] = *p;
+  manifest[idx] = '\0';
+  (void)gid_buf;
+  (void)gecos;
+  (void)home;
+  (void)shell;
+  return 0;
+}
+
 static int read_account_manifest(const char *username, char *manifest, int max) {
   char path[160];
 
@@ -5785,6 +6003,8 @@ static int read_account_manifest(const char *username, char *manifest, int max) 
     return -1;
 
   if (username && username[0]) {
+    if (account_read_unix_manifest(username, manifest, max) == 0)
+      return 0;
     if (account_manifest_path(username, path, sizeof(path)) != 0)
       return -1;
     return read_text_file(path, manifest, max) >= 0 ? 0 : -1;
@@ -6147,6 +6367,7 @@ static int settings_add_user_account(void) {
     user_home[idx++] = settings_user_new_name[i];
   user_home[idx] = '\0';
   user_storage_mkdir(user_home, 0755);
+  account_write_unix_databases();
 
   str_copy_safe(settings_user_selected, settings_user_new_name,
                 sizeof(settings_user_selected));
@@ -6199,6 +6420,7 @@ static int settings_remove_selected_user_account(void) {
     user_home[idx++] = settings_user_selected[i];
   user_home[idx] = '\0';
   user_storage_rmdir(user_home);
+  account_write_unix_databases();
 
   settings_user_selected[0] = '\0';
   settings_sync_selected_user();
@@ -6585,6 +6807,152 @@ static void save_setup_state(int setup_complete, int apps_seeded) {
   write_text_file(GUI_SETUP_STATE_PATH, manifest);
 }
 
+
+static void account_unix_append_user(char *passwd, int passwd_max,
+                                     char *shadow, int shadow_max,
+                                     char *admin_members, int admin_max,
+                                     char *user_members, int user_max,
+                                     const char *username,
+                                     const char *password_hash,
+                                     const char *role, int ordinal) {
+  char home[96];
+  uint32_t uid;
+  uint32_t gid;
+
+  if (!passwd || !shadow || !username || !username[0] || !password_hash ||
+      !password_hash[0])
+    return;
+
+  uid = account_unix_uid_for_name(username, ordinal);
+  gid = uid == 0 ? 0U : 100U;
+  account_unix_home_path(username, home, sizeof(home));
+
+  installer_append_to_buf(passwd, passwd_max, username);
+  installer_append_to_buf(passwd, passwd_max, ":x:");
+  account_append_decimal(passwd, passwd_max, uid);
+  installer_append_to_buf(passwd, passwd_max, ":");
+  account_append_decimal(passwd, passwd_max, gid);
+  installer_append_to_buf(passwd, passwd_max, ":OS8 ");
+  installer_append_to_buf(passwd, passwd_max,
+                          role && role[0] ? role : "user");
+  installer_append_to_buf(passwd, passwd_max, ":");
+  installer_append_to_buf(passwd, passwd_max, home);
+  installer_append_to_buf(passwd, passwd_max, ":/bin/sh\n");
+
+  installer_append_to_buf(shadow, shadow_max, username);
+  installer_append_to_buf(shadow, shadow_max, ":");
+  installer_append_to_buf(shadow, shadow_max, password_hash);
+  installer_append_to_buf(shadow, shadow_max, ":19000:0:99999:7:::\n");
+
+  if (uid != 0) {
+    if (user_members && user_max > 0) {
+      if (user_members[0])
+        installer_append_to_buf(user_members, user_max, ",");
+      installer_append_to_buf(user_members, user_max, username);
+    }
+    if (role && str_cmp(role, "admin") == 0 && admin_members && admin_max > 0) {
+      if (admin_members[0])
+        installer_append_to_buf(admin_members, admin_max, ",");
+      installer_append_to_buf(admin_members, admin_max, username);
+    }
+  }
+
+  vfs_mkdir(GUI_HOME_ROOT, 0755);
+  vfs_mkdir(home, 0755);
+}
+
+static int account_write_unix_databases(void) {
+  settings_account_list_t list;
+  char passwd[1024];
+  char shadow[1024];
+  char group[512];
+  char admin_members[256];
+  char user_members[256];
+  int ordinal = 0;
+
+  passwd[0] = '\0';
+  shadow[0] = '\0';
+  group[0] = '\0';
+  admin_members[0] = '\0';
+  user_members[0] = '\0';
+
+  ensure_gui_app_dirs();
+  vfs_mkdir(GUI_ETC_DIR, 0755);
+  vfs_mkdir(GUI_HOME_ROOT, 0755);
+
+  settings_account_list_init(&list);
+  settings_collect_accounts(&list);
+
+  if (account_username[0] && account_password[0] &&
+      settings_account_list_index_of(&list, account_username) < 0) {
+    settings_account_list_append(&list, account_username);
+  }
+
+  for (int i = 0; i < list.count; i++) {
+    char manifest[256];
+    char username[32];
+    char password_hash[33];
+    char role[16];
+    int wallpaper = DEFAULT_WALLPAPER_INDEX;
+    char partition_label[32];
+    char disk_location[32];
+
+    username[0] = '\0';
+    password_hash[0] = '\0';
+    str_copy_safe(role, "user", sizeof(role));
+    partition_label[0] = '\0';
+    disk_location[0] = '\0';
+
+    if (account_username[0] && str_cmp(list.names[i], account_username) == 0) {
+      str_copy_safe(username, account_username, sizeof(username));
+      str_copy_safe(password_hash, account_password, sizeof(password_hash));
+      str_copy_safe(role, account_role, sizeof(role));
+    } else {
+      char path[160];
+      if (account_manifest_path(list.names[i], path, sizeof(path)) == 0 &&
+          read_text_file(path, manifest, sizeof(manifest)) >= 0 &&
+          parse_account_manifest(manifest, list.names[i], username,
+                                 sizeof(username), password_hash,
+                                 sizeof(password_hash), role, sizeof(role),
+                                 &wallpaper, partition_label,
+                                 sizeof(partition_label), disk_location,
+                                 sizeof(disk_location)) == 0) {
+        (void)wallpaper;
+      }
+    }
+
+    if (username[0] && password_hash[0]) {
+      account_unix_append_user(passwd, sizeof(passwd), shadow, sizeof(shadow),
+                               admin_members, sizeof(admin_members),
+                               user_members, sizeof(user_members), username,
+                               password_hash, role, ordinal);
+      if (str_cmp(username, "root") != 0)
+        ordinal++;
+    }
+  }
+
+  if (!passwd[0]) {
+    settings_account_list_free(&list);
+    return -1;
+  }
+
+  account_append_line(group, sizeof(group), "root:x:0:root");
+  installer_append_to_buf(group, sizeof(group), "wheel:x:10:root");
+  if (admin_members[0]) {
+    installer_append_to_buf(group, sizeof(group), ",");
+    installer_append_to_buf(group, sizeof(group), admin_members);
+  }
+  installer_append_to_buf(group, sizeof(group), "\nusers:x:100:");
+  installer_append_to_buf(group, sizeof(group), user_members);
+  installer_append_to_buf(group, sizeof(group), "\n");
+
+  write_text_file(GUI_PASSWD_PATH, passwd);
+  write_text_file(GUI_SHADOW_PATH, shadow);
+  write_text_file(GUI_GROUP_PATH, group);
+  settings_account_list_free(&list);
+  return 0;
+}
+
 static void save_account_state(void) {
   char manifest[256];
   char per_user_path[160];
@@ -6639,6 +7007,7 @@ static void save_account_state(void) {
                             sizeof(per_user_path)) == 0) {
     write_text_file(per_user_path, manifest);
   }
+  account_write_unix_databases();
   if (account_partition_storage_ready)
     partition_save_ok = save_account_manifest_to_partition(manifest) == 0;
   if (partition_save_ok)
