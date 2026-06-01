@@ -10271,11 +10271,16 @@ static int disk_imager_write_range(int disk_index, uint32_t start_lba,
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
+  if (storage_get_disk_kind(disk_index) == STORAGE_KIND_CDROM) {
+    disk_imager_set_status("Optical media cannot be imaged as 512-byte sectors.");
+    return -1;
+  }
 
   disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
   if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
     return -1;
 
+  installer_ensure_parent_dirs(path);
   file = vfs_open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (!file)
     return -1;
@@ -10305,6 +10310,10 @@ static int disk_imager_read_range(int disk_index, uint32_t start_lba,
 
   if (disk_index < 0 || !path || path[0] == '\0' || sector_count == 0)
     return -1;
+  if (!storage_disk_supports_partition_writes(disk_index)) {
+    disk_imager_set_status("Selected disk is not writable.");
+    return -1;
+  }
 
   disk_capacity = storage_get_disk_capacity_mib(disk_index) * 2048U;
   if ((uint64_t)start_lba + (uint64_t)sector_count > disk_capacity)
