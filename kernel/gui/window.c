@@ -666,8 +666,8 @@ static int secure_attention_selection = 0;
 /* ===================================================================== */
 /* Wallpaper Manager                                                     */
 /* ===================================================================== */
-#define NUM_WALLPAPERS 10
-#define DEFAULT_WALLPAPER_INDEX 4
+#define NUM_WALLPAPERS 11
+#define DEFAULT_WALLPAPER_INDEX 5
 static int current_wallpaper = DEFAULT_WALLPAPER_INDEX;
 
 /* Wallpaper types: 0 = gradient, 1 = image */
@@ -686,6 +686,7 @@ static struct {
     {1, 26, 92, 82, 9, 37, 48, WALLPAPER_FIT_COVER, "Nature", "/assets/wallpapers/nature.jpg"},
     {1, 84, 108, 148, 26, 33, 52, WALLPAPER_FIT_COVER, "City", "/assets/wallpapers/city.jpg"},
     {1, 124, 82, 126, 48, 28, 64, WALLPAPER_FIT_COVER, "Portrait", "/assets/wallpapers/portrait.jpg"},
+    {1, 58, 88, 118, 22, 28, 46, WALLPAPER_FIT_STRETCH, "Ducks", "/assets/wallpapers/ducks.png"},
     {1, 58, 88, 118, 22, 28, 46, WALLPAPER_FIT_STRETCH, "Default", "/assets/wallpapers/default.jpg"},
     {0, 30, 27, 75, 15, 27, 62, WALLPAPER_FIT_COVER, "Indigo Night", NULL},
     {0, 20, 60, 100, 10, 30, 60, WALLPAPER_FIT_COVER, "Ocean Blue", NULL},
@@ -12074,9 +12075,9 @@ static void draw_window(struct window *win) {
                     theme->about_card);
     gui_draw_string(left_col_x + 90, col_y + 98, gpu_status, theme->accent,
                     theme->about_card);
-    gui_draw_string(left_col_x + 14, col_y + 118, "Build #:",
+    gui_draw_string(left_col_x + 14, col_y + 118, "Build:",
                     theme->about_subtext, theme->about_card);
-    gui_draw_string(left_col_x + 90, col_y + 118, BUILD_NUMBER, theme->accent,
+    gui_draw_string(left_col_x + 90, col_y + 118, BUILD_STRING, theme->accent,
                     theme->about_card);
     gui_draw_string(left_col_x + 14, col_y + 138, "Branch:", theme->about_subtext,
                     theme->about_card);
@@ -18341,7 +18342,7 @@ void gui_open_rename(const char *path) {
 
 /* g_imgview is already defined as extern earlier in the file */
 
-#define NUM_BOOTSTRAP_IMAGES 6
+#define NUM_BOOTSTRAP_IMAGES 7
 
 static const char *get_bootstrap_image_path(int index) {
   static const char *paths[] = {
@@ -18350,6 +18351,7 @@ static const char *get_bootstrap_image_path(int index) {
       "/assets/wallpapers/city.jpg",
       "/assets/wallpapers/portrait.jpg",
       "/assets/wallpapers/square.jpg",
+      "/assets/wallpapers/ducks.png",
       "/assets/wallpapers/default.jpg",
   };
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
@@ -18359,7 +18361,7 @@ static const char *get_bootstrap_image_path(int index) {
 
 static const char *get_bootstrap_image_name(int index) {
   static const char *names[] = {"Landscape", "Nature", "City",
-                                "Portrait",  "Square", "Default"};
+                                "Portrait",  "Square", "Ducks", "Default"};
   if (index >= 0 && index < NUM_BOOTSTRAP_IMAGES)
     return names[index];
   return "Unknown";

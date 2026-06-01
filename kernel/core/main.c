@@ -484,7 +484,7 @@ static void print_banner(void) {
 #endif
   printk("Copyright (c) 2026 OS8 Project\n");
   printk("Build UUID: %s\n", BUILD_UUID);
-  printk("Build Number: %s\n", BUILD_NUMBER);
+  printk("Build: %s\n", BUILD_STRING);
   printk("Branch: %s\n", BUILD_BRANCH);
   printk("Compiled: %s\n", BUILD_COMPILE_TIME);
   printk("\n");
