@@ -637,6 +637,7 @@ static char installer_progress_stage[64] = "Ready";
 static char installer_progress_detail[160] =
     "The installer is waiting to start.";
 static char installer_progress_current_item[160] = "";
+static char installer_system_image_payload_path[96] = "";
 static char partition_manager_status[96] = "Select a real disk to manage.";
 static int installer_disk_count = 0;
 static int installer_selected_disk = 0;
@@ -8235,6 +8236,9 @@ static const char *installer_system_disk_image_path(void) {
 }
 
 static const char *installer_system_image_root_path(void) {
+  if (installer_system_image_payload_path[0] &&
+      installer_payload_file_exists(installer_system_image_payload_path))
+    return installer_system_image_payload_path;
   if (installer_payload_file_exists("/install/system-image.zip"))
     return "/install/system-image.zip";
   if (installer_payload_file_exists("/setup/install/system-image.zip"))
@@ -8244,7 +8248,16 @@ static const char *installer_system_image_root_path(void) {
   return "/setup/install/system-image";
 }
 
-static int installer_validate_system_image_payload(void) {
+static void installer_select_system_image_payload(const char *path) {
+  if (!path || !path[0]) {
+    installer_system_image_payload_path[0] = '\0';
+    return;
+  }
+  str_copy_safe(installer_system_image_payload_path, path,
+                sizeof(installer_system_image_payload_path));
+}
+
+static int installer_validate_system_image_candidate(const char *payload_root) {
   static const char *required_suffixes[] = {
       "/boot/main.sys",
       "/boot/bootloader.sys",
@@ -8265,9 +8278,11 @@ static int installer_validate_system_image_payload(void) {
       "/limine/limine.conf",
       "/EFI/BOOT/limine.conf",
   };
-  const char *payload_root = installer_system_image_root_path();
   char full_path[192];
   char msg[320];
+
+  if (!payload_root || !payload_root[0])
+    return -1;
 
   if (installer_system_image_is_archive(payload_root)) {
     uint8_t *archive_data = NULL;
@@ -8283,10 +8298,9 @@ static int installer_validate_system_image_payload(void) {
     for (int i = 0;
          i < (int)(sizeof(required_suffixes) / sizeof(required_suffixes[0]));
          i++) {
-      if (media_zip_has_entry(archive_data, archive_size,
-                              required_suffixes[i]))
+      if (media_zip_has_entry(archive_data, archive_size, required_suffixes[i]))
         continue;
-      str_copy_safe(msg, "install payload missing: ", sizeof(msg));
+      str_copy_safe(msg, "install archive unusable: ", sizeof(msg));
       installer_append_to_buf(msg, sizeof(msg), payload_root);
       installer_append_to_buf(msg, sizeof(msg), required_suffixes[i]);
       installer_log(msg);
@@ -8297,15 +8311,15 @@ static int installer_validate_system_image_payload(void) {
     for (int i = 0;
          i < (int)(sizeof(limine_cfg_suffixes) / sizeof(limine_cfg_suffixes[0]));
          i++) {
-      if (media_zip_has_entry(archive_data, archive_size,
-                              limine_cfg_suffixes[i])) {
+      if (media_zip_has_entry(archive_data, archive_size, limine_cfg_suffixes[i])) {
         media_free_file(archive_data);
         return 0;
       }
     }
 
-    str_copy_safe(msg, "install payload missing: no Limine config in archive",
+    str_copy_safe(msg, "install archive unusable: no Limine config in ",
                   sizeof(msg));
+    installer_append_to_buf(msg, sizeof(msg), payload_root);
     installer_log(msg);
     media_free_file(archive_data);
     return -1;
@@ -8334,9 +8348,34 @@ static int installer_validate_system_image_payload(void) {
       return 0;
   }
 
-  str_copy_safe(msg, "install payload missing: no Limine config in system image",
+  str_copy_safe(msg, "install payload missing: no Limine config in ",
                 sizeof(msg));
+  installer_append_to_buf(msg, sizeof(msg), payload_root);
   installer_log(msg);
+  return -1;
+}
+
+static int installer_validate_system_image_payload(void) {
+  static const char *payload_candidates[] = {
+      "/install/system-image.zip",
+      "/setup/install/system-image.zip",
+      "/install/system-image",
+      "/setup/install/system-image",
+  };
+
+  installer_select_system_image_payload(NULL);
+  for (int i = 0;
+       i < (int)(sizeof(payload_candidates) / sizeof(payload_candidates[0]));
+       i++) {
+    if (!installer_payload_file_exists(payload_candidates[i]))
+      continue;
+    if (installer_validate_system_image_candidate(payload_candidates[i]) == 0) {
+      installer_select_system_image_payload(payload_candidates[i]);
+      return 0;
+    }
+  }
+
+  installer_log("install payload missing: no usable system image payload found");
   return -1;
 }
 
@@ -8665,6 +8704,7 @@ static void installer_start_background_install(void) {
   installer_efi_root[0] = '\0';
   installer_update_root[0] = '\0';
   installer_progress_current_item[0] = '\0';
+  installer_select_system_image_payload(NULL);
   installer_set_progress_state(2, "Preparing", "Preparing install...",
                                "Loading installer context and refreshing storage.");
   installer_log("starting system image install");
